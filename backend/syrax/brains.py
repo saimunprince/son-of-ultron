@@ -495,7 +495,8 @@ class BrainRouter(LLM):
         if not chain:
             raise BrainError("No brain enabled. Open BRAIN in the UI and add a key.")
 
-        for attempt in range(2):
+        wait_rounds = 0
+        for attempt in range(3):
             failures = []
             soonest = None
             for pid in chain:
@@ -553,7 +554,8 @@ class BrainRouter(LLM):
             now = time.time()
             waits = [self.health[p].until - now for p in chain if self.health[p].until > now]
             soonest = min(waits) if waits else None
-            if attempt == 0 and soonest is not None and soonest <= 20:
+            if wait_rounds < 2 and soonest is not None and soonest <= 30:
+                wait_rounds += 1
                 await self._emit({"type": "notice", "text": f"All brains busy. Retrying in {int(soonest) + 1}s."})
                 await asyncio.sleep(soonest + 0.5)
                 continue
@@ -649,7 +651,9 @@ class BrainRouter(LLM):
         elif isinstance(e, NotFoundError):
             cooldown = 900.0
         elif isinstance(e, RateLimitError):
-            cooldown = _retry_after(e) or 60.0
+            # free tiers usually free up within seconds; keep it short so the
+            # "wait and retry" round can use it again
+            cooldown = _retry_after(e) or 15.0
         elif isinstance(e, APIConnectionError) and not isinstance(e, APITimeoutError):
             cooldown = 60.0
         elif isinstance(e, BadRequestError):

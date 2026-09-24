@@ -22,3 +22,6 @@ backend/workspace/*
 backend/logs/
 *.log
 backend/.syrax-browser/
+backend/config/memory.json
+backend/config/history.jsonl
+backend/config/*.tmp

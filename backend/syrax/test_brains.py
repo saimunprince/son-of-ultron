@@ -10,6 +10,10 @@ import threading
 import time
 
 os.environ.setdefault("OPENMANUS_DISABLE_BROWSER_USE", "1")
+_tmp_mem = __import__("tempfile").mkdtemp()
+os.environ.setdefault("SYRAX_MEMORY_FILE", os.path.join(_tmp_mem, "memory.json"))
+os.environ.setdefault("SYRAX_HISTORY_FILE", os.path.join(_tmp_mem, "history.jsonl"))
+os.environ.setdefault("SYRAX_BROWSER", "0")
 os.environ.setdefault("SYRAX_BRAINS_FILE", os.path.join(tempfile.mkdtemp(), "brains.json"))
 
 import pytest  # noqa: E402

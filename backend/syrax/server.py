@@ -28,6 +28,7 @@ from app.logger import logger
 from syrax.agent import SyraxAgent
 from syrax import browser, voice
 from syrax.brains import PROVIDERS, get_router
+from syrax.memory import get_memory
 
 VOICE_HINT = (
     "\n\n[Spoken aloud by voice. Answer in one or two short spoken English "
@@ -168,11 +169,15 @@ class Session:
         await self.send({"type": "brains", **get_router().describe()})
         await self.send({"type": "state", "state": "idle"})
 
-    async def run_task(self, text: str) -> None:
+    async def run_task(self, text: str, said: Optional[str] = None) -> None:
         assert self.agent is not None
         try:
             reply = await self.agent.run(text)
             await self.send({"type": "final", "text": reply})
+            try:
+                get_memory().add_exchange(said or text, reply)
+            except Exception as e:
+                logger.warning(f"could not save history: {e}")
         except asyncio.CancelledError:
             self.agent.repair_memory(aborted=True)
             await self.send({"type": "notice", "text": "Task aborted."})
@@ -200,7 +205,7 @@ class Session:
                 return
             await self.send({"type": "user", "text": text, "voice": bool(msg.get("voice"))})
             request = text + VOICE_HINT if msg.get("voice") else text
-            self.task = asyncio.create_task(self.run_task(request))
+            self.task = asyncio.create_task(self.run_task(request, said=text))
         elif kind == "answer":
             if not (self.agent and self.agent.ask_tool.answer(text)):
                 await self.send({"type": "notice", "text": "No pending question."})

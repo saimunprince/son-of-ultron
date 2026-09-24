@@ -14,6 +14,7 @@ from app.tool.str_replace_editor import StrReplaceEditor
 
 from syrax import browser  # noqa: F401  (sets BU_CDP_URL before MCP starts)
 from syrax.brains import get_router
+from syrax.memory import ForgetTool, RecallTool, RememberTool, get_memory
 from syrax.prompt import SYRAX_PERSONA
 from syrax.tools import AsyncPythonExecute, Emit, WebAskHuman
 
@@ -62,7 +63,7 @@ class SyraxAgent(Manus):
 
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
-            AsyncPythonExecute(), StrReplaceEditor(), Terminate()
+            AsyncPythonExecute(), StrReplaceEditor(), RememberTool(), RecallTool(), ForgetTool(), Terminate()
         )
     )
 
@@ -88,6 +89,13 @@ class SyraxAgent(Manus):
         self.current_step = 0
         self.state = AgentState.IDLE
         self.last_reply = ""
+        # Fresh persona + long-term memory for every task.
+        base = SYRAX_PERSONA.format(directory=config.workspace_root)
+        try:
+            block = get_memory().prompt_block()
+        except Exception:
+            block = ""
+        self.system_prompt = f"{base}\n\n{block}" if block else base
         self.next_step_prompt = Manus.model_fields["next_step_prompt"].default
         self._trim_memory()
         await self._send({"type": "state", "state": "thinking"})
