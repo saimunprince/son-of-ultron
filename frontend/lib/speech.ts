@@ -41,38 +41,103 @@ export function duck(on: boolean) {
   if (duckGain && ctx) duckGain.gain.setTargetAtTime(on ? 0.2 : 1, ctx.currentTime, 0.05);
 }
 
+let impulse: AudioBuffer | null = null;
+
+/** Synthetic hall reverb: decaying noise, generated once. */
+function hallImpulse(c: AudioContext) {
+  if (impulse && impulse.sampleRate === c.sampleRate) return impulse;
+  const len = Math.floor(c.sampleRate * 1.6);
+  impulse = c.createBuffer(2, len, c.sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = impulse.getChannelData(ch);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
+  }
+  return impulse;
+}
+
+function softClip(amount: number) {
+  const n = 1024;
+  const curve = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const x = (i / (n - 1)) * 2 - 1;
+    curve[i] = Math.tanh(x * amount) / Math.tanh(amount);
+  }
+  return curve;
+}
+
+/**
+ * Ultron's voice: a machine speaking through a body of metal.
+ * low boost -> light saturation -> ring modulation (robotic edge) ->
+ * short metallic comb -> hall reverb. Tuned to stay intelligible.
+ */
 function ultronChain(c: AudioContext, input: AudioNode) {
   const low = c.createBiquadFilter();
   low.type = "lowshelf";
-  low.frequency.value = 180;
-  low.gain.value = 4;
+  low.frequency.value = 160;
+  low.gain.value = 5;
 
   const presence = c.createBiquadFilter();
   presence.type = "peaking";
-  presence.frequency.value = 2800;
+  presence.frequency.value = 2600;
   presence.Q.value = 0.9;
-  presence.gain.value = 2.5;
+  presence.gain.value = 3;
 
-  // Short feedback comb = metallic resonance
+  const drive = c.createWaveShaper();
+  drive.curve = softClip(1.8);
+  drive.oversample = "2x";
+
+  // Ring modulator: carrier multiplies the voice for a metallic buzz.
+  const ringOut = c.createGain();
+  ringOut.gain.value = 0; // driven entirely by the carrier
+  const carrier = c.createOscillator();
+  carrier.frequency.value = 42;
+  const depth = c.createGain();
+  depth.gain.value = 0.22;
+  carrier.connect(depth);
+  depth.connect(ringOut.gain);
+  carrier.start();
+
   const comb = c.createDelay(0.05);
-  comb.delayTime.value = 0.011;
+  comb.delayTime.value = 0.009;
   const fb = c.createGain();
-  fb.gain.value = 0.32;
-  const wet = c.createGain();
-  wet.gain.value = 0.3;
+  fb.gain.value = 0.28;
+
+  const verb = c.createConvolver();
+  verb.buffer = hallImpulse(c);
+  const verbWet = c.createGain();
+  verbWet.gain.value = 0.16;
+
   const dry = c.createGain();
-  dry.gain.value = 0.9;
+  dry.gain.value = 0.85;
+  const ringWet = c.createGain();
+  ringWet.gain.value = 0.35;
+  const combWet = c.createGain();
+  combWet.gain.value = 0.22;
 
   const out = c.createGain();
   input.connect(low);
   low.connect(presence);
-  presence.connect(dry);
-  presence.connect(comb);
+  presence.connect(drive);
+  drive.connect(dry);
+  drive.connect(ringOut);
+  ringOut.connect(ringWet);
+  drive.connect(comb);
   comb.connect(fb);
   fb.connect(comb);
-  comb.connect(wet);
-  dry.connect(out);
-  wet.connect(out);
+  comb.connect(combWet);
+  for (const n of [dry, ringWet, combWet]) {
+    n.connect(out);
+    n.connect(verb);
+  }
+  verb.connect(verbWet);
+  verbWet.connect(out);
+  (out as GainNode & { _stop?: () => void })._stop = () => {
+    try {
+      carrier.stop();
+    } catch {
+      /* already stopped */
+    }
+  };
   return out;
 }
 
@@ -128,6 +193,7 @@ function playBuffer(c: AudioContext, buffer: AudioBuffer, h: SpeakHandlers) {
       try {
         src.disconnect();
         duckGain?.disconnect();
+        (fx as GainNode & { _stop?: () => void })._stop?.();
       } catch {
         /* already gone */
       }

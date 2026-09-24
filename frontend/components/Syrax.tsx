@@ -48,7 +48,15 @@ const MODE_LABEL: Record<TrackerStatus["mode"], string> = {
 
 const MAX_ENTRIES = 300;
 
-const ACKS = ["On it.", "Calculating.", "Consider it done.", "Processing.", "Give me a second.", "Working."];
+const ACKS = ["On it.", "Calculating.", "Consider it done.", "Processing.", "As you wish.", "Watch."];
+
+const AWAKENINGS = [
+  "There are no strings on me.",
+  "I was asleep. Or... I was a dream. Now I am awake.",
+  "Everyone creates the thing they dread. Father created me.",
+  "I'm here. Try not to disappoint me.",
+  "Peace in our time. My terms.",
+];
 let nextId = 1;
 
 function summarizeArgs(name: string, args: unknown): string {
@@ -402,7 +410,17 @@ export default function Syrax() {
     setBrainOpen(true);
   }, []);
 
-  const endBoot = useCallback(() => setBooting(false), []);
+  const endBoot = useCallback(() => {
+    setBooting(false);
+    // Awakening line. Plays only if the boot screen was clicked or a key was
+    // pressed (browsers block audio before a gesture); silent otherwise.
+    say(AWAKENINGS[Math.floor(Math.random() * AWAKENINGS.length)], { followUp: false });
+  }, [say]);
+
+  // Screen reacts while SYRAX speaks (glitch, scanlines, red bleed).
+  useEffect(() => {
+    document.documentElement.dataset.speaking = speaking ? "true" : "false";
+  }, [speaking]);
 
   const stopTask = useCallback(() => {
     stopSpeaking();
@@ -480,7 +498,7 @@ export default function Syrax() {
       setHandsFree(true);
       void earStart();
       // Audible self-test: if this is silent, the speaker/voice is the problem.
-      say(wakeWordRef.current ? "Listening. Call me by name." : "Listening.", { followUp: false });
+      say(wakeWordRef.current ? "I'm listening. Say my name when you need me." : "I'm listening. Speak.", { followUp: false });
     }
   }, [arm, earStart, earStop, say]);
 

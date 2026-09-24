@@ -20,8 +20,8 @@ import httpx
 from app.logger import logger
 
 TTS_VOICE = os.getenv("SYRAX_TTS_VOICE", "en-US-ChristopherNeural")
-TTS_RATE = os.getenv("SYRAX_TTS_RATE", "-4%")
-TTS_PITCH = os.getenv("SYRAX_TTS_PITCH", "-8Hz")
+TTS_RATE = os.getenv("SYRAX_TTS_RATE", "-10%")
+TTS_PITCH = os.getenv("SYRAX_TTS_PITCH", "-14Hz")
 WHISPER_MODEL = os.getenv("SYRAX_WHISPER_MODEL", "small.en")
 MAX_TTS_CHARS = 900
 MAX_AUDIO_BYTES = 12 * 1024 * 1024
