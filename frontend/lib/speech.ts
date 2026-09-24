@@ -14,16 +14,39 @@ export interface SpeakHandlers {
 let ctx: AudioContext | null = null;
 let current: { stop: () => void } | null = null;
 let duckGain: GainNode | null = null;
+let unlockListeners: Array<(ready: boolean) => void> = [];
 
 function audioCtx() {
-  if (!ctx) ctx = new AudioContext();
+  if (!ctx) {
+    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    ctx = new Ctor();
+    (window as unknown as { __ac?: AudioContext }).__ac = ctx;
+  }
   if (ctx.state === "suspended") void ctx.resume();
   return ctx;
 }
 
-/** Call from a user gesture once so later playback is allowed. */
+/** True once the browser will actually let audio play. */
+export function audioReady() {
+  return ctx !== null && ctx.state === "running";
+}
+
+/** Notify when audio becomes playable (for a "tap to enable" prompt). */
+export function onAudioReady(fn: (ready: boolean) => void) {
+  unlockListeners.push(fn);
+  fn(audioReady());
+  return () => {
+    unlockListeners = unlockListeners.filter((f) => f !== fn);
+  };
+}
+
+/** Call from a user gesture so later playback is allowed. */
 export function unlockAudio() {
-  audioCtx();
+  const c = audioCtx();
+  void c.resume().finally(() => {
+    const ready = c.state === "running";
+    unlockListeners.forEach((f) => f(ready));
+  });
 }
 
 export function isSpeaking() {

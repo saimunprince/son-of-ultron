@@ -15,7 +15,7 @@ import {
 import BrainPanel from "@/components/BrainPanel";
 import BootSequence from "@/components/BootSequence";
 import UltronEyes from "@/components/UltronEyes";
-import { chirp, isSpeaking, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
+import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
 import type { Heard } from "@/lib/wake";
 import { useHandsFree } from "@/components/useHandsFree";
 
@@ -113,6 +113,7 @@ export default function Syrax() {
   const [input, setInput] = useState("");
   const [speaking, setSpeaking] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
+  const [audioLive, setAudioLive] = useState(false);
   const [wakeWord, setWakeWord] = useState(false);
   const [hearLang, setHearLang] = useState<"en-IN" | "bn-BD" | "en-US">("en-IN");
   const wakeWordRef = useRef(false);
@@ -196,14 +197,24 @@ export default function Syrax() {
   const setStrictRef = useRef<(on: boolean) => void>(() => {});
   const meterRef = useRef<HTMLSpanElement>(null);
 
-  // Browsers only allow audio after a user gesture.
+  // Browsers only allow audio after a user gesture. Keep trying on every
+  // interaction until the AudioContext is actually running, and show a prompt
+  // until then so the voice is never silently dead.
   useEffect(() => {
     const unlock = () => unlockAudio();
-    window.addEventListener("pointerdown", unlock, { once: true });
-    window.addEventListener("keydown", unlock, { once: true });
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    const off = onAudioReady((ready) => {
+      setAudioLive(ready);
+      if (ready) {
+        window.removeEventListener("pointerdown", unlock);
+        window.removeEventListener("keydown", unlock);
+      }
+    });
     return () => {
       window.removeEventListener("pointerdown", unlock);
       window.removeEventListener("keydown", unlock);
+      off();
     };
   }, []);
 
@@ -412,9 +423,7 @@ export default function Syrax() {
 
   const endBoot = useCallback(() => {
     setBooting(false);
-    // Awakening line. Plays only if the boot screen was clicked or a key was
-    // pressed (browsers block audio before a gesture); silent otherwise.
-    say(AWAKENINGS[Math.floor(Math.random() * AWAKENINGS.length)], { followUp: false });
+    if (audioReady()) say(AWAKENINGS[Math.floor(Math.random() * AWAKENINGS.length)], { followUp: false });
   }, [say]);
 
   // Screen reacts while SYRAX speaks (glitch, scanlines, red bleed).
@@ -967,6 +976,13 @@ export default function Syrax() {
           onTest={testBrain}
           onClose={() => setBrainOpen(false)}
         />
+      )}
+
+      {!booting && voiceOn && !audioLive && (
+        <button type="button" className="voice-unlock" onClick={() => unlockAudio()}>
+          <span className="voice-unlock-dot" />
+          TAP TO ENABLE SYRAX&rsquo;S VOICE
+        </button>
       )}
 
       {booting && <BootSequence onDone={endBoot} />}

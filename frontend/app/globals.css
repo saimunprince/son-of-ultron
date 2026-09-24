@@ -1495,3 +1495,52 @@ body {
     animation: none;
   }
 }
+
+/* ——— Tap-to-enable-voice prompt ——— */
+.voice-unlock {
+  position: fixed;
+  z-index: 55;
+  left: 50%;
+  top: 84px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 16px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--text-bright);
+  background: rgb(var(--accent-rgb) / 0.16);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 0 24px rgb(var(--accent-rgb) / 0.3);
+  animation: unlock-pulse 1.6s ease-in-out infinite;
+}
+
+.voice-unlock:hover {
+  background: rgb(var(--accent-rgb) / 0.26);
+}
+
+.voice-unlock-dot {
+  width: 8px;
+  height: 8px;
+  transform: rotate(45deg);
+  background: var(--accent);
+  box-shadow: var(--accent-glow);
+}
+
+@keyframes unlock-pulse {
+  50% {
+    box-shadow: 0 0 34px rgb(var(--accent-rgb) / 0.55);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-unlock {
+    animation: none;
+  }
+}
