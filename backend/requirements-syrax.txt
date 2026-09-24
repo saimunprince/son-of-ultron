@@ -1,0 +1,6 @@
+# SYRAX bridge extras on top of OpenManus requirements.txt
+-r requirements.txt
+websockets>=13,<16
+# voice: neural TTS (free, no key) + local speech recognition
+edge-tts>=7.0
+faster-whisper>=1.1

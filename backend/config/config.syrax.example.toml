@@ -1,0 +1,13 @@
+# OpenManus needs this file to boot. SYRAX does NOT use this [llm] block:
+# brains (providers, keys, models, failover order) are managed from the
+# BRAIN panel in the SYRAX UI and stored in config/brains.json.
+[llm]
+model = "syrax-router"
+base_url = "http://127.0.0.1:9/v1"
+api_key = "managed-by-syrax"
+max_tokens = 8192
+temperature = 0.0
+
+# Required by OpenManus even when Daytona sandboxes are unused.
+[daytona]
+daytona_api_key = ""

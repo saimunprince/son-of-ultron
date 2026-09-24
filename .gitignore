@@ -1,0 +1,24 @@
+# secrets
+backend/config/config.toml
+backend/config/brains.json
+backend/config/brains.tmp
+backend/config/mcp.json
+.env
+.env.*
+
+# python
+backend/.venv/
+__pycache__/
+*.pyc
+
+# node / next
+frontend/node_modules/
+frontend/.next/
+frontend/next-env.d.ts
+
+# runtime
+backend/workspace/*
+!backend/workspace/example.txt
+backend/logs/
+*.log
+backend/.syrax-browser/
