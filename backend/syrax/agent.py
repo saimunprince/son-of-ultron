@@ -14,7 +14,15 @@ from app.tool.str_replace_editor import StrReplaceEditor
 
 from syrax import browser  # noqa: F401  (sets BU_CDP_URL before MCP starts)
 from syrax.brains import get_router
+from syrax.desktop import DesktopControl
 from syrax.memory import ForgetTool, RecallTool, RememberTool, get_memory
+
+TOOLS_GUIDE = (
+    "TOOL GUIDE: When the human wants something on THEIR computer (open a site or app, "
+    "play music, volume, screenshot of their screen, notifications, clipboard, find their "
+    "files, battery/CPU), use the `desktop` tool. Use browser_* tools only when you yourself "
+    "must read or operate a web page. Use python_execute for calculations and scripts."
+)
 from syrax.prompt import SYRAX_PERSONA
 from syrax.tools import AsyncPythonExecute, Emit, WebAskHuman
 
@@ -63,7 +71,8 @@ class SyraxAgent(Manus):
 
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
-            AsyncPythonExecute(), StrReplaceEditor(), RememberTool(), RecallTool(), ForgetTool(), Terminate()
+            AsyncPythonExecute(), StrReplaceEditor(), DesktopControl(),
+            RememberTool(), RecallTool(), ForgetTool(), Terminate()
         )
     )
 
@@ -95,7 +104,7 @@ class SyraxAgent(Manus):
             block = get_memory().prompt_block()
         except Exception:
             block = ""
-        self.system_prompt = f"{base}\n\n{block}" if block else base
+        self.system_prompt = "\n\n".join(x for x in (base, TOOLS_GUIDE, block) if x)
         self.next_step_prompt = Manus.model_fields["next_step_prompt"].default
         self._trim_memory()
         await self._send({"type": "state", "state": "thinking"})
