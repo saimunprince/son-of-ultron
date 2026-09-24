@@ -82,9 +82,16 @@ SERVICE=0
 for port in 8765 3000; do
   if ss -ltnH "sport = :$port" 2>/dev/null | grep -q .; then
     owner="$(ss -ltnpH "sport = :$port" 2>/dev/null | grep -o 'users:(("[^"]*",pid=[0-9]*' | head -1 | sed 's/users:(("//; s/",pid=/ pid /')"
-    echo "SYRAX: port $port is already in use${owner:+ by $owner}. Is SYRAX already running?" >&2
     # As a login service, another running SYRAX is fine: step aside quietly.
     [[ "$SERVICE" == 1 ]] && exit 0
+    if systemctl --user is-active --quiet syrax.service 2>/dev/null; then
+      echo "SYRAX is already running as your login service." >&2
+      echo "  restart (picks up new code):  systemctl --user restart syrax" >&2
+      echo "  stop:                         systemctl --user stop syrax" >&2
+      echo "  logs:                         journalctl --user -u syrax -f" >&2
+    else
+      echo "SYRAX: port $port is already in use${owner:+ by $owner}. Is SYRAX already running?" >&2
+    fi
     exit 1
   fi
 done
