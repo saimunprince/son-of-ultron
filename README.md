@@ -33,6 +33,36 @@ cd ../frontend && npm install
 Open http://localhost:3000. Ctrl+C stops everything, including SYRAX's browser.
 Both servers listen on 127.0.0.1 only.
 
+## Start at login
+
+```bash
+./syrax.sh --install-service     # enable (systemd --user, starts after GNOME login)
+./syrax.sh --status              # is it running?
+journalctl --user -u syrax -f    # live logs
+./syrax.sh --uninstall-service   # remove
+```
+
+The service opens the UI in your default browser once ready, restarts on
+crashes, and quietly steps aside if SYRAX is already running.
+
+## Memory
+
+SYRAX keeps lasting facts about you and your recent conversations across
+restarts (`backend/config/memory.json`, `history.jsonl`, gitignored, mode 600).
+Tell it things ("my name is Prince, I build Laravel apps") and it stores them
+with its `remember` tool; ask it to forget anything, or "forget everything".
+Passwords, keys and tokens are refused.
+
+## Desktop control
+
+The `desktop` tool acts on your own GNOME session: open sites/files/apps in
+your browser or file manager, volume, play/pause/next, screenshots, notifications,
+clipboard, file search, battery/CPU/RAM/disk, lock screen. Nothing destructive
+(no shutdown, no killing apps, no deleting files).
+
+Try: "open YouTube", "open VS Code", "volume 40", "next song", "what's playing",
+"find my resume", "how much RAM am I using", "lock the screen".
+
 ## Browser
 
 Browser tasks run in SYRAX's **own Chrome window** with a separate profile
