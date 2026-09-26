@@ -338,6 +338,9 @@ export default function Syrax() {
           if (e.event === "verified") push({ kind: "notice", id: nextId++, text: `SKILL BUILT · ${e.skill} v${e.version ?? "?"} · ${e.tests_passed ?? 0} tests passed · now a tool` });
           else if (e.event === "failed") push({ kind: "notice", id: nextId++, text: `SKILL FAILED · ${e.skill} · ${e.tests_failed ?? 0} failing test(s) · not registered` });
           break;
+        case "maintenance":
+          push({ kind: "notice", id: nextId++, text: `MAINTENANCE · pruned ${e.events_pruned} events · trimmed ${e.checkpoint_contexts_trimmed} contexts` });
+          break;
         case "skills":
         case "knowledge_list":
         case "objectives":
@@ -1119,9 +1122,9 @@ export default function Syrax() {
             className="hud-btn"
             aria-pressed={!!autonomy?.enabled}
             onClick={() => clientRef.current?.send({ type: "autonomy", enabled: !autonomy?.enabled })}
-            title="Let SYRAX pursue its own objectives when idle"
+            title={autonomy?.pressure ? `Paused: ${autonomy.pressure}` : "Let SYRAX pursue its own objectives when idle"}
           >
-            {autonomy?.enabled ? `AUTO ON · ${autonomy.objectives.OPEN} OPEN` : "AUTO OFF"}
+            {autonomy?.enabled ? `AUTO ON · ${autonomy.objectives.OPEN} OPEN${autonomy.pressure ? " · PAUSED" : ""}` : "AUTO OFF"}
           </button>
           <button
             type="button"

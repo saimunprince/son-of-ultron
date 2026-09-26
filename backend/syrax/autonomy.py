@@ -32,13 +32,13 @@ from typing import Any, Dict, List, Optional
 
 from app.logger import logger
 
+from syrax import resources
 from syrax.journal import Journal, JournalError
 
 MAX_ATTEMPTS = 3
 DEFAULT_INTERVAL_S = 120.0
 IDLE_INTERVAL_S = 600.0
-LOAD_PER_CORE_MAX = 1.5
-MIN_FREE_MB = 1024
+MAINTENANCE_EVERY_S = 86400.0
 
 AUTONOMOUS_BRIEF = (
     "[AUTONOMOUS OBJECTIVE] You are working on your own objective, not a human request.\n"
@@ -65,24 +65,9 @@ class CycleReport:
 
 
 def resource_pressure() -> Optional[str]:
-    """A reason string when the machine should not take on extra work, else None."""
-    try:
-        load1 = os.getloadavg()[0]
-        cores = os.cpu_count() or 1
-        if load1 / cores > LOAD_PER_CORE_MAX:
-            return f"cpu load {load1:.2f} on {cores} cores"
-    except OSError:
-        pass
-    try:
-        for ln in open("/proc/meminfo"):
-            if ln.startswith("MemAvailable:"):
-                free_mb = int(ln.split()[1]) // 1024
-                if free_mb < MIN_FREE_MB:
-                    return f"only {free_mb} MB RAM available"
-                break
-    except OSError:
-        pass
-    return None
+    """A reason string when the machine should not take on extra work, else None.
+    Delegates to syrax.resources (CPU, RAM, disk, battery, quiet hours)."""
+    return resources.pressure()
 
 
 def derive_objectives(journal: Journal, selfmodel: Any) -> int:
@@ -232,6 +217,7 @@ class Autonomy:
         counts = {st: 0 for st in ("OPEN", "ACTIVE", "DONE", "BLOCKED", "DROPPED")}
         for o in self.journal.objectives(limit=500):
             counts[o["status"]] += 1
+        snap = resources.snapshot()
         return {
             "enabled": self.enabled,
             "running_loop": self._loop_task is not None and not self._loop_task.done(),
@@ -239,6 +225,9 @@ class Autonomy:
             "last_cycle": last,
             "cycles": len(self.reports),
             "objectives": counts,
+            "resources": snap,
+            "pressure": resources.pressure(snap),
+            "last_maintenance": self.journal.get_meta("last_maintenance"),
         }
 
     # ——— one cycle ———
@@ -271,6 +260,13 @@ class Autonomy:
         objective = self._pick()
         if objective is None:
             rep.outcome, rep.reason = "IDLE", "no open objective"
+            if self.journal.maintenance_due(MAINTENANCE_EVERY_S):
+                # useful idle work: keep the journal bounded (measured, journaled)
+                try:
+                    m = await self.journal.run(self.journal.maintain)
+                    rep.reason = f"no open objective; maintenance: pruned {m['events_pruned']} events, trimmed {m['checkpoint_contexts_trimmed']} contexts"
+                except Exception as e:
+                    logger.warning(f"maintenance failed: {e}")
             return await self._finish(rep)
         rep.objective_id = objective["id"]
         # Evidence may already satisfy the objective (e.g. the tool ran for another

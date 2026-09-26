@@ -26,7 +26,7 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 | Skill / tool / module factory (§9) | EXISTS (skills commit) | `syrax/skills.py`: code + tests → subprocess pytest → registry → live tool; metadata (name, purpose, version, dependencies, tests, status, limitations, last_verified); boot re-registration. Module-level generation and auto-commit not yet |
 | Autonomous coding loop with rollback (§10, §41) | EXISTS (devloop commit) | `syrax/devloop.py`: edit → `release` → full gate → commit with verification id, or rollback with evidence; push off by default; `change_released` objectives |
 | Failure-driven learning (§11) | PARTIAL | objectives retry with a derived lesson, block after 3 attempts; no strategy search or research yet |
-| 24/7 cycle + resource awareness (§16, §19) | PARTIAL | `Autonomy.loop` with interval, CPU/RAM gate, idle when nothing to do; off by default; no GPU/disk/network awareness |
+| 24/7 cycle + resource awareness (§16, §19) | EXISTS (operations commit) | `syrax/resources.py` gate (CPU, RAM, disk, battery, quiet hours), bounded loop, idle maintenance with 30-day retention; no GPU/network/thermal awareness |
 | Presentation engine / visual runtime (§22–30) | MISSING | static HUD in `components/Syrax.tsx` |
 | LIVE / HISTORY / WHY observer (§31–35) | EXISTS (observer commit) | console tabs LIVE / HISTORY / TODAY; WHY view per task from `task_detail` (events, checkpoints, objective, lesson); TODAY replay generated from `events_between` — no synthesised lines |
 | Memory layers (§37) | NEEDS REFACTOR | flat `memory.json`/`history.jsonl`; history now derivable from `tasks` |
@@ -40,6 +40,6 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 4. ~~Research + knowledge store (Phase 6)~~ — done: `syrax/research.py`, see `docs/RESEARCH.md`.
 5. ~~Skill factory (Phase 7)~~ — done: `syrax/skills.py`, see `docs/SKILLS.md`.
 6. ~~Autonomous development (Phase 8)~~ — done: `syrax/devloop.py`, see `docs/DEVLOOP.md`.
-7. **24/7 resource-aware operation (Phase 9)** — richer scheduler (disk/network/GPU awareness, quiet hours), long-running task support.
+7. ~~24/7 resource-aware operation (Phase 9)~~ — done: `syrax/resources.py`, `Journal.maintain`, see `docs/OPERATIONS.md`.
 8. **Dynamic presentation engine (Phase 10)** — presentation plans from real state; the observer views are the first consumer.
 9. **Recursive self-improvement (Phase 12)** — objectives that target the mechanisms above, driven by measured weaknesses.

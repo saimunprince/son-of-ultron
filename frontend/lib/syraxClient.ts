@@ -138,6 +138,9 @@ export interface SelfModelSummary {
     cpu: { cores: number | null; load_1_5_15: number[] | null };
     memory_mb: { total_mb: number | null; available_mb: number | null };
     brains: { active: string | null; ready: string[]; cooldown: string[]; needs_key: string[] } | null;
+    battery?: ResourceSnapshot["battery"];
+    quiet_hours?: ResourceSnapshot["quiet_hours"];
+    pressure?: string | null;
   };
 }
 
@@ -173,6 +176,15 @@ export interface CycleReport {
   derived: number;
 }
 
+export interface ResourceSnapshot {
+  ts: number;
+  cpu: { cores: number; load_1_5_15: number[] | null; load_per_core: number | null };
+  memory_mb: { total_mb: number | null; available_mb: number | null };
+  disk: { free_gb: number; total_gb: number } | null;
+  battery: { percent: number; status: string; discharging: boolean } | null;
+  quiet_hours: { window: [number, number] | null; active: boolean };
+}
+
 export interface AutonomyStatus {
   enabled: boolean;
   running_loop: boolean;
@@ -180,6 +192,9 @@ export interface AutonomyStatus {
   last_cycle: CycleReport | null;
   cycles: number;
   objectives: Record<ObjectiveStatus, number>;
+  resources: ResourceSnapshot;
+  pressure: string | null;
+  last_maintenance: string | null;
 }
 
 export interface CheckpointSummary {
@@ -298,6 +313,7 @@ export type ServerEvent =
   | ({ type: "commit"; event: "created" | "failed"; commit?: string; files?: string[]; summary?: string; verification_id?: number; error?: string } & Journaled)
   | ({ type: "rollback"; event: "created"; reason: string; restored: string[]; removed: string[]; clean: boolean; snapshot: string } & Journaled)
   | ({ type: "push"; event: "started" | "completed" | "failed"; ok?: boolean; branch?: string; output?: string } & Journaled)
+  | ({ type: "maintenance"; event: "completed"; tasks_examined: number; events_pruned: number; checkpoint_contexts_trimmed: number; retain_days: number } & Journaled)
   | { type: "skills"; skills: SkillRow[] }
   | ({ type: "skill"; event: "created" | "verified" | "failed" | "disabled" | "not_tested"; skill: string; version?: number; status?: string; tests_passed?: number; tests_failed?: number; purpose?: string; note?: string | null } & Journaled)
   | { type: "knowledge_list"; query: string; knowledge: Knowledge[] }

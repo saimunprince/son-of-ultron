@@ -51,6 +51,11 @@ export default function SelfPanel({ model, onRefresh, onClose }: Props) {
                 {mem?.available_mb != null && mem.total_mb != null ? `${mem.total_mb - mem.available_mb} / ${mem.total_mb} MB` : "?"}
                 {model.runtime.brains ? ` · brain ${model.runtime.brains.active ?? "none yet"} (${model.runtime.brains.ready.length} ready)` : ""}
               </p>
+              <p className="self-dim">
+                {model.runtime.battery ? `battery ${model.runtime.battery.percent}% ${model.runtime.battery.status}` : "no battery"}
+                {model.runtime.quiet_hours?.window ? ` · quiet ${model.runtime.quiet_hours.window[0]}:00-${model.runtime.quiet_hours.window[1]}:00${model.runtime.quiet_hours.active ? " (now)" : ""}` : ""}
+                {model.runtime.pressure ? ` · PAUSED: ${model.runtime.pressure}` : " · resources ok"}
+              </p>
             </section>
             <section>
               <h4>TASKS</h4>

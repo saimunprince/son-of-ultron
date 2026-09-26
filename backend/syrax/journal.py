@@ -145,7 +145,7 @@ _WIRE = {
     "checkpoint.created": "checkpoint",
     "verification.completed": "verification",
 }
-_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback")
+_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback", "maintenance")
 
 
 @dataclass(frozen=True)
@@ -1082,6 +1082,53 @@ class Journal:
         with self._lock:
             rows = self._db.execute(sql, params).fetchall()
         return [self._skill_dict(r) for r in rows]
+
+    # ——— maintenance (retention) ———
+
+    def maintain(self, retain_days: float = 30.0, now: Optional[float] = None) -> dict:
+        """Bounded growth without losing the record: for tasks that ended more
+        than ``retain_days`` ago, drop chatty ``think``/``brain.*`` events and
+        the saved checkpoint context; keep task rows, tool/final/checkpoint
+        events and evidence. Then truncate the WAL. Returns measured counts."""
+        now = now or _now()
+        cutoff = now - retain_days * 86400
+        before = self.path.stat().st_size if self.path.exists() else None
+        with self._txn() as cur:
+            old = [
+                r[0] for r in cur.execute(
+                    "SELECT task_id FROM tasks WHERE status IN ('SUCCESS','PARTIAL','FAILED','CANCELLED','UNKNOWN') AND updated<?",
+                    (cutoff,),
+                ).fetchall()
+            ]
+            pruned = trimmed = 0
+            for tid in old:
+                cur.execute(
+                    "DELETE FROM events WHERE task_id=? AND type IN ('think','brain.failover','brain.answered')", (tid,)
+                )
+                pruned += cur.rowcount
+                cur.execute("UPDATE checkpoints SET context='[]' WHERE task_id=? AND context<>'[]'", (tid,))
+                trimmed += cur.rowcount
+            self._insert_event(
+                cur, now, None, "maintenance.completed",
+                {"tasks_examined": len(old), "events_pruned": pruned, "checkpoint_contexts_trimmed": trimmed, "retain_days": retain_days},
+            )
+            cur.execute("INSERT INTO meta(key, value) VALUES ('last_maintenance', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (str(now),))
+        with self._lock:
+            wal = self._db.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        after = self.path.stat().st_size if self.path.exists() else None
+        return {
+            "tasks_examined": len(old), "events_pruned": pruned, "checkpoint_contexts_trimmed": trimmed,
+            "wal_checkpoint": list(wal) if wal else None, "bytes_before": before, "bytes_after": after,
+        }
+
+    def maintenance_due(self, every_s: float = 86400.0, now: Optional[float] = None) -> bool:
+        last = self.get_meta("last_maintenance")
+        if last is None:
+            return True
+        try:
+            return (now or _now()) - float(last) >= every_s
+        except ValueError:
+            return True
 
     def get_meta(self, key: str, default: Optional[str] = None) -> Optional[str]:
         with self._lock:

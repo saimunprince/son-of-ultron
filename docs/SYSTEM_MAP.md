@@ -1,6 +1,6 @@
 # SYRAX System Map
 
-Rendered from `docs/system_map.json` (audit of 2026-09-26; self-model, autonomy, observer views, research, skill factory and the development loop added the same day). Every entry was checked against the source files it names.
+Rendered from `docs/system_map.json` (audit of 2026-09-26; phases 1–9 and 11 landed the same day). Every entry was checked against the source files it names.
 
 ## Frontend HUD
 
@@ -64,8 +64,8 @@ Durable execution journal: tasks, events, semantic checkpoints, verifications; t
 | Outputs | Event objects (wire()) to subscribers; queries: task, tasks, events, recent_events, checkpoints, verifications; observer queries: task_detail (task + events + checkpoints + objective), events_between (replay window) |
 | State | one sqlite connection guarded by a threading.Lock; boot_id; recovered[] |
 | Persistence | backend/config/journal.db (WAL, synchronous=FULL, 0600); env SYRAX_JOURNAL_FILE |
-| Capabilities | atomic event+state writes; success requires a final event; idempotent recovery with dedupe keys; verify_operation for str_replace_editor create/str_replace/insert; bounded context storage (200 KB) |
-| Limitations | no retention/compaction; only file edits are reality-checked; other tools UNCERTAIN; PENDING tasks are stored but not scheduled |
+| Capabilities | atomic event+state writes; success requires a final event; idempotent recovery with dedupe keys; verify_operation for str_replace_editor create/str_replace/insert; bounded context storage (200 KB); maintain(): 30-day retention of chatty events and checkpoint contexts for finished tasks, WAL truncate, measured counts |
+| Limitations | only file edits are reality-checked; other tools UNCERTAIN; PENDING tasks are stored but not scheduled; maintenance never deletes tasks, knowledge or evidence; no full compaction |
 | Code | backend/syrax/journal.py |
 | Tests | backend/syrax/test_journal.py (SIGKILL crash matrix, transition table, recovery, resume, fan-out) |
 | Failure Modes | JournalError on invalid transition/unknown task/terminal task → rolled back; sqlite3.Error propagates to caller (core handles); crash inside recovery → whole txn lost, redone next boot |
@@ -93,15 +93,15 @@ Objectives table plus a bounded self-directed cycle: derive objectives from self
 
 | | |
 |---|---|
-| Dependencies | syrax.journal (objectives, meta, events); syrax.selfmodel (capabilities, behavior); syrax.core (submit kind=autonomous, wait); os.getloadavg, /proc/meminfo |
+| Dependencies | syrax.journal (objectives, meta, events); syrax.selfmodel (capabilities, behavior); syrax.core (submit kind=autonomous, wait); syrax.resources (CPU, RAM, disk, battery, quiet hours) |
 | Inputs | WS autonomy {enabled}, cycle_now, objective_add, objectives; SYRAX_AUTONOMY, SYRAX_CYCLE_INTERVAL |
-| Outputs | objective.*, cycle.*, reflection.created, autonomy.toggled events; autonomy_status replies; autonomous tasks in the journal |
+| Outputs | objective.*, cycle.*, reflection.created, autonomy.toggled events; autonomy_status replies; autonomous tasks in the journal; autonomy_status.resources / pressure / last_maintenance; maintenance.completed events |
 | State | cycle reports in memory (last 200); enabled flag in journal meta |
 | Persistence | objectives table; events |
-| Capabilities | evidence-only judging (tool_verified, verification_green, task_success, human); idempotent derivation by key; one live objective per tool; objective already satisfied → closed without a task; resource gate; never runs while a human task runs; background loop with interval; off by default |
-| Limitations | no research or self-modification objectives yet; lessons are derived strings, not model reflections; resource gate: CPU load + free RAM only; one task per cycle, no parallel objectives |
-| Code | backend/syrax/autonomy.py |
-| Tests | backend/syrax/test_autonomy.py; backend/syrax/test_bridge.py (autonomy section) |
+| Capabilities | evidence-only judging (tool_verified, verification_green, task_success, human); idempotent derivation by key; one live objective per tool; objective already satisfied → closed without a task; resource gate; never runs while a human task runs; background loop with interval; off by default; quiet hours and battery/disk pressure skip cycles (human cycle_now ignores them); idle cycles run Journal.maintain once per 24 h (retention, WAL truncate) |
+| Limitations | no research or self-modification objectives yet; lessons are derived strings, not model reflections; one task per cycle, no parallel objectives; no GPU/network/thermal awareness |
+| Code | backend/syrax/autonomy.py; backend/syrax/resources.py |
+| Tests | backend/syrax/test_autonomy.py; backend/syrax/test_bridge.py (autonomy section); backend/syrax/test_resources.py |
 | Failure Modes | derivation error → logged, cycle continues; cycle crash in loop → logged, next cycle after interval; core busy → BUSY report, objective back to OPEN |
 
 ## Research engine + knowledge store

@@ -215,8 +215,10 @@ failing tools, a blocked verification, uncertain interrupted tasks), runs one
 autonomous task per cycle, and judges the result from journal evidence, never
 from its own words. Three failed attempts block an objective with a lesson.
 `cycle_now` runs one cycle on demand; `objective_add {goal}` adds your own.
-A running human task always wins, and the cycle skips under CPU/RAM pressure.
-Details: `docs/AUTONOMY.md`.
+A running human task always wins, and the cycle skips under CPU, RAM, disk or
+battery pressure and during `SYRAX_QUIET_HOURS`. Idle cycles do real housekeeping:
+once a day the journal prunes chatty events of tasks older than 30 days and
+truncates its WAL. Details: `docs/AUTONOMY.md`, `docs/OPERATIONS.md`.
 
 ## Research and knowledge
 
@@ -277,6 +279,7 @@ cannot be measured is `null`, never invented.
 | `SYRAX_AUTONOMY` | unset (overrides the stored AUTO flag with `1`/`0`) |
 | `SYRAX_CYCLE_INTERVAL` | `120` seconds between autonomous cycles |
 | `SYRAX_AUTOPUSH` | `0` (set `1` to let `release` push its commits) |
+| `SYRAX_QUIET_HOURS` | unset (e.g. `23-7`: no autonomous cycles in that window) |
 | `NEXT_PUBLIC_SYRAX_WS` | `ws://127.0.0.1:8765/ws` |
 
 The agent executes code on this machine. The server binds to localhost only and

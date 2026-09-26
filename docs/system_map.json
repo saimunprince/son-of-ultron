@@ -1,6 +1,6 @@
 {
   "name": "SYRAX",
-  "generated": "2026-09-26 (self-model, autonomy, observer, research, skills, devloop added)",
+  "generated": "2026-09-26 (phases 1-9 and 11)",
   "source": "hand-audited from source code; regenerate when components change",
   "components": [
     {
@@ -153,12 +153,13 @@
         "success requires a final event",
         "idempotent recovery with dedupe keys",
         "verify_operation for str_replace_editor create/str_replace/insert",
-        "bounded context storage (200 KB)"
+        "bounded context storage (200 KB)",
+        "maintain(): 30-day retention of chatty events and checkpoint contexts for finished tasks, WAL truncate, measured counts"
       ],
       "limitations": [
-        "no retention/compaction",
         "only file edits are reality-checked; other tools UNCERTAIN",
-        "PENDING tasks are stored but not scheduled"
+        "PENDING tasks are stored but not scheduled",
+        "maintenance never deletes tasks, knowledge or evidence; no full compaction"
       ],
       "code": [
         "backend/syrax/journal.py"
@@ -221,7 +222,7 @@
         "syrax.journal (objectives, meta, events)",
         "syrax.selfmodel (capabilities, behavior)",
         "syrax.core (submit kind=autonomous, wait)",
-        "os.getloadavg, /proc/meminfo"
+        "syrax.resources (CPU, RAM, disk, battery, quiet hours)"
       ],
       "inputs": [
         "WS autonomy {enabled}, cycle_now, objective_add, objectives",
@@ -230,7 +231,8 @@
       "outputs": [
         "objective.*, cycle.*, reflection.created, autonomy.toggled events",
         "autonomy_status replies",
-        "autonomous tasks in the journal"
+        "autonomous tasks in the journal",
+        "autonomy_status.resources / pressure / last_maintenance; maintenance.completed events"
       ],
       "state": "cycle reports in memory (last 200); enabled flag in journal meta",
       "persistence": "objectives table; events",
@@ -239,20 +241,24 @@
         "idempotent derivation by key; one live objective per tool",
         "objective already satisfied → closed without a task",
         "resource gate; never runs while a human task runs",
-        "background loop with interval; off by default"
+        "background loop with interval; off by default",
+        "quiet hours and battery/disk pressure skip cycles (human cycle_now ignores them)",
+        "idle cycles run Journal.maintain once per 24 h (retention, WAL truncate)"
       ],
       "limitations": [
         "no research or self-modification objectives yet",
         "lessons are derived strings, not model reflections",
-        "resource gate: CPU load + free RAM only",
-        "one task per cycle, no parallel objectives"
+        "one task per cycle, no parallel objectives",
+        "no GPU/network/thermal awareness"
       ],
       "code": [
-        "backend/syrax/autonomy.py"
+        "backend/syrax/autonomy.py",
+        "backend/syrax/resources.py"
       ],
       "tests": [
         "backend/syrax/test_autonomy.py",
-        "backend/syrax/test_bridge.py (autonomy section)"
+        "backend/syrax/test_bridge.py (autonomy section)",
+        "backend/syrax/test_resources.py"
       ],
       "failure_modes": [
         "derivation error → logged, cycle continues",

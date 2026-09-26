@@ -183,6 +183,9 @@ class SelfModel:
                 running = self.running_provider()
             except Exception:
                 running = None
+        from syrax import resources
+
+        res = resources.snapshot(self.repo_root)
         return {
             "host": platform.node(),
             "os": platform.platform(),
@@ -191,6 +194,9 @@ class SelfModel:
             "cpu": {"cores": os.cpu_count(), "load_1_5_15": load_out},
             "memory_mb": _meminfo(),
             "disk_gb": {"total": du.total // 2**30, "free": du.free // 2**30},
+            "battery": res["battery"],
+            "quiet_hours": res["quiet_hours"],
+            "pressure": resources.pressure(res),
             "gpu": None,  # not probed; no GPU on the reference machine
             "journal": {"path": str(self.journal.path), "bytes": journal_size},
             "brains": brains,
