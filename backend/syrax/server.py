@@ -8,6 +8,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     history {limit?} | task_events {task_id} | resume {task_id} |
                     verifications {limit?} | self_model {section?} |
                     objectives {limit?} | objective_add {goal, reason?, priority?} |
+                    task_detail {task_id} | replay {since?, until?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
                     brain_models {id, api_key?} | brain_test {id}
@@ -16,6 +17,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     task {event} | checkpoint | recovery {event} | verification |
                     history | task_events | verifications | self_model |
                     objectives | autonomy_status | autonomy {event} | objective {event} | cycle {event} |
+                    task_detail | replay |
                     reflection {event} |
                     notice | error | pong | brain | brains | brain_models | brain_test
 
@@ -29,6 +31,7 @@ durable journal first and fanned out to every connected session; ``state``,
 import asyncio
 import json
 import os
+import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -252,6 +255,21 @@ class Session:
             tid = str(msg.get("task_id") or "")
             events = await asyncio.to_thread(journal.events, tid)
             await self.send({"type": "task_events", "task_id": tid, "events": events})
+        elif kind == "task_detail":
+            tid = str(msg.get("task_id") or "")
+            detail = await asyncio.to_thread(journal.task_detail, tid)
+            if detail is None:
+                await self.send({"type": "notice", "text": f"Unknown task {tid}."})
+            else:
+                await self.send({"type": "task_detail", "task_id": tid, **detail})
+        elif kind == "replay":
+            try:
+                since = float(msg.get("since") or (time.time() - 86400))
+                until = float(msg["until"]) if msg.get("until") is not None else None
+            except (TypeError, ValueError):
+                since, until = time.time() - 86400, None
+            events = await asyncio.to_thread(journal.events_between, since, until)
+            await self.send({"type": "replay", "since": since, "until": until, "events": events})
         elif kind == "verifications":
             limit = _limit(msg.get("limit"), 20)
             rows = await asyncio.to_thread(journal.verifications, limit)

@@ -533,3 +533,30 @@ def test_write_failure_raises_and_leaves_db_consistent(tmp_path):
         j.record_sync("think", {"step": 1}, task_id=t)
     j2 = new(tmp_path, recover=False)
     assert types(j2, t) == ["task.started"] and j2.task(t)["status"] == "IN_PROGRESS"
+
+
+# ——— observer queries: replay + WHY ———
+
+
+def test_events_between_and_task_detail(tmp_path):
+    j = new(tmp_path)
+    t0 = __import__("time").time()
+    t = j.start_task_sync("explain")
+    j.record_sync("tool.started", {"id": "c", "name": "python_execute", "args": {"code": "1"}, "step": 1}, task_id=t)
+    j.record_sync("tool.completed", {"id": "c", "name": "python_execute", "ok": True, "output": "1"}, task_id=t)
+    j.checkpoint_sync(t, "observed:python_execute", completed_steps=[{"step": 1}], context=[{"role": "user", "content": "x"}])
+    j.record_sync("final", {"text": "done"}, task_id=t)
+    j.record_sync("task.completed", {"status": "SUCCESS"}, task_id=t)
+    o = j.add_objective_sync("obj", key="k")
+    j.update_objective_sync(o["id"], status="DONE", last_task_id=t, note="met")
+    window = j.events_between(t0)
+    assert [e["type"] for e in window][:2] == ["task.started", "tool.started"]
+    assert any(e["task_id"] is None and e["type"] == "objective.created" for e in window)
+    assert j.events_between(t0, t0) == [] and j.events_between(__import__("time").time() + 10) == []
+    d = j.task_detail(t)
+    assert d["task"]["status"] == "SUCCESS"
+    assert [e["type"] for e in d["events"]][0] == "task.started"
+    assert d["checkpoints"][0]["stage"] == "observed:python_execute" and d["checkpoints"][0]["context_messages"] == 1
+    assert "context" not in d["checkpoints"][0]
+    assert d["objective"]["id"] == o["id"] and d["objective"]["status"] == "DONE"
+    assert j.task_detail("nope") is None

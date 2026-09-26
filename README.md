@@ -197,6 +197,16 @@ WebSocket additions: `history {limit}`, `task_events {task_id}`,
 `verifications {limit}`, `resume {task_id}`, `self_model {section}`; `hello`
 now carries `interrupted`, `running` and `recent`.
 
+## Observer: LIVE / HISTORY / TODAY
+
+The operations log has three tabs. LIVE is the stream as it happens. HISTORY
+lists every journaled task; click one for WHY: what it did (tool steps, asks,
+recovery), what was verified (checkpoints), what it learned (reflection), the
+result, and the objective that caused it. TODAY is a replay generated from the
+real event stream since midnight. Nothing in these views is synthesised; if the
+journal is empty they say so. WebSocket: `task_detail {task_id}`,
+`replay {since?, until?}`.
+
 ## Autonomy (off by default)
 
 Press AUTO (or send `{"type":"autonomy","enabled":true}`) and SYRAX pursues its

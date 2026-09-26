@@ -28,7 +28,7 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 | Failure-driven learning (§11) | PARTIAL | objectives retry with a derived lesson, block after 3 attempts; no strategy search or research yet |
 | 24/7 cycle + resource awareness (§16, §19) | PARTIAL | `Autonomy.loop` with interval, CPU/RAM gate, idle when nothing to do; off by default; no GPU/disk/network awareness |
 | Presentation engine / visual runtime (§22–30) | MISSING | static HUD in `components/Syrax.tsx` |
-| LIVE / HISTORY / WHY observer (§31–35) | PARTIAL | data available over WS (`history`, `task_events`, `verifications`); UI shows notices only |
+| LIVE / HISTORY / WHY observer (§31–35) | EXISTS (observer commit) | console tabs LIVE / HISTORY / TODAY; WHY view per task from `task_detail` (events, checkpoints, objective, lesson); TODAY replay generated from `events_between` — no synthesised lines |
 | Memory layers (§37) | NEEDS REFACTOR | flat `memory.json`/`history.jsonl`; history now derivable from `tasks` |
 | Model interface (§20) | EXISTS | `BrainRouter` already abstracts providers |
 
@@ -36,8 +36,7 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 
 1. ~~Self-model (Phase 3)~~ — done: `syrax/selfmodel.py`, `self_inspect`, WS `self_model`, `/self`, SELF panel.
 2. ~~Objectives + bounded autonomous loop (Phase 5)~~ — done: `syrax/autonomy.py`, see `docs/AUTONOMY.md`.
-3. **LIVE / HISTORY / WHY view (Phase 11)** — frontend consumer of `history`,
-   `task_events`, `checkpoint`, `verification` events.
+3. ~~LIVE / HISTORY / WHY view (Phase 11)~~ — done: `frontend/components/HistoryView.tsx`, WS `task_detail`, `replay`.
 4. **Research + knowledge store (Phase 6)** — `knowledge` table with provenance.
 5. **Skill factory / autonomous development (Phases 7–8)** — generated tools with
    metadata + tests, changes pushed only through the gate.

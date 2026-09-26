@@ -1,6 +1,6 @@
 {
   "name": "SYRAX",
-  "generated": "2026-09-26 (self-model + autonomy added)",
+  "generated": "2026-09-26 (self-model, autonomy, observer added)",
   "source": "hand-audited from source code; regenerate when components change",
   "components": [
     {
@@ -27,14 +27,16 @@
       "capabilities": [
         "render journaled events as feed entries",
         "RECOVERED/RUNNING notices with RESUME action",
-        "hands-free voice, wake word, gestures"
+        "hands-free voice, wake word, gestures",
+        "console tabs LIVE / HISTORY / TODAY: history list, WHY view per task (steps, checkpoints, objective, lesson, result, RESUME), daily replay rendered from real events"
       ],
       "limitations": [
         "hardcoded HUD regions; no dynamic presentation engine",
-        "history/task_events/verifications replies are received but not drawn"
+        "history/today views are polled on tab open and refreshed on task events, not streamed row by row"
       ],
       "code": [
         "frontend/components/Syrax.tsx",
+        "frontend/components/HistoryView.tsx",
         "frontend/lib/syraxClient.ts",
         "frontend/lib/*.ts",
         "frontend/app/globals.css"
@@ -141,7 +143,8 @@
       ],
       "outputs": [
         "Event objects (wire()) to subscribers",
-        "queries: task, tasks, events, recent_events, checkpoints, verifications"
+        "queries: task, tasks, events, recent_events, checkpoints, verifications",
+        "observer queries: task_detail (task + events + checkpoints + objective), events_between (replay window)"
       ],
       "state": "one sqlite connection guarded by a threading.Lock; boot_id; recovered[]",
       "persistence": "backend/config/journal.db (WAL, synchronous=FULL, 0600); env SYRAX_JOURNAL_FILE",

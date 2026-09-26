@@ -1,6 +1,6 @@
 # SYRAX System Map
 
-Rendered from `docs/system_map.json` (audit of 2026-09-26; self-model and autonomy added the same day). Every entry was checked against the source files it names.
+Rendered from `docs/system_map.json` (audit of 2026-09-26; self-model, autonomy and observer views added the same day). Every entry was checked against the source files it names.
 
 ## Frontend HUD
 
@@ -13,9 +13,9 @@ ULTRON orb UI: Three.js orb, operations log feed, voice pipeline, brain panel, b
 | Outputs | ClientMessage JSON over WebSocket; speech (edge-tts audio or browser voice) |
 | State | React useState in components/Syrax.tsx (entries[] capped at 300, agent state, brains, voice flags); localStorage syrax.* for preferences |
 | Persistence | none (observer only) |
-| Capabilities | render journaled events as feed entries; RECOVERED/RUNNING notices with RESUME action; hands-free voice, wake word, gestures |
-| Limitations | hardcoded HUD regions; no dynamic presentation engine; history/task_events/verifications replies are received but not drawn |
-| Code | frontend/components/Syrax.tsx; frontend/lib/syraxClient.ts; frontend/lib/*.ts; frontend/app/globals.css |
+| Capabilities | render journaled events as feed entries; RECOVERED/RUNNING notices with RESUME action; hands-free voice, wake word, gestures; console tabs LIVE / HISTORY / TODAY: history list, WHY view per task (steps, checkpoints, objective, lesson, result, RESUME), daily replay rendered from real events |
+| Limitations | hardcoded HUD regions; no dynamic presentation engine; history/today views are polled on tab open and refreshed on task events, not streamed row by row |
+| Code | frontend/components/Syrax.tsx; frontend/components/HistoryView.tsx; frontend/lib/syraxClient.ts; frontend/lib/*.ts; frontend/app/globals.css |
 | Tests | frontend/lib/wake.test.ts (node --test); npx tsc --noEmit; npx eslint . |
 | Failure Modes | WebGL missing → CSS fallback orb; WS offline → exponential reconnect, agent shown as booting; TTS 502 → browser voice |
 
@@ -61,7 +61,7 @@ Durable execution journal: tasks, events, semantic checkpoints, verifications; t
 |---|---|
 | Dependencies | stdlib only: sqlite3, json, threading, asyncio, subprocess(git) |
 | Inputs | start_task, record(type,payload,task_id), checkpoint, record_verification, recover, resume_context, mark_resumed |
-| Outputs | Event objects (wire()) to subscribers; queries: task, tasks, events, recent_events, checkpoints, verifications |
+| Outputs | Event objects (wire()) to subscribers; queries: task, tasks, events, recent_events, checkpoints, verifications; observer queries: task_detail (task + events + checkpoints + objective), events_between (replay window) |
 | State | one sqlite connection guarded by a threading.Lock; boot_id; recovered[] |
 | Persistence | backend/config/journal.db (WAL, synchronous=FULL, 0600); env SYRAX_JOURNAL_FILE |
 | Capabilities | atomic event+state writes; success requires a final event; idempotent recovery with dedupe keys; verify_operation for str_replace_editor create/str_replace/insert; bounded context storage (200 KB) |

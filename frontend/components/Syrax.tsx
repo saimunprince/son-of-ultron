@@ -12,11 +12,17 @@ import {
   type ClientMessage,
   type LinkState,
   type AutonomyStatus,
+  type JournalEvent,
   type SelfModelSummary,
   type ServerEvent,
+  type TaskDetail,
+  type TaskSummary,
 } from "@/lib/syraxClient";
+
+type ConsoleTab = "live" | "history" | "today";
 import BrainPanel from "@/components/BrainPanel";
 import SelfPanel from "@/components/SelfPanel";
+import { HistoryList, ReplayView, WhyView } from "@/components/HistoryView";
 import BootSequence from "@/components/BootSequence";
 import UltronEyes from "@/components/UltronEyes";
 import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
@@ -43,6 +49,12 @@ type Entry =
   | { kind: "ask"; id: number; text: string }
   | { kind: "notice"; id: number; text: string; action?: { label: string; msg: ClientMessage } }
   | { kind: "error"; id: number; text: string };
+
+function startOfToday(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d.getTime() / 1000;
+}
 
 function recoveredText(t: { task_id: string; goal: string; step: number; tool?: string | null; recovery_state: string }) {
   const where = t.tool ? ` during ${t.tool}` : "";
@@ -116,6 +128,11 @@ export default function Syrax() {
   const [brainOpen, setBrainOpen] = useState(false);
   const [selfOpen, setSelfOpen] = useState(false);
   const [autonomy, setAutonomy] = useState<AutonomyStatus | null>(null);
+  const [consoleTab, setConsoleTab] = useState<ConsoleTab>("live");
+  const [historyTasks, setHistoryTasks] = useState<TaskSummary[] | null>(null);
+  const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
+  const [replayEvents, setReplayEvents] = useState<JournalEvent[] | null>(null);
+  const consoleTabRef = useRef<ConsoleTab>("live");
   const [selfModel, setSelfModel] = useState<SelfModelSummary | null>(null);
   const [booting, setBooting] = useState(true);
   const [theme, setTheme] = useState<OrbTheme>("ultron");
@@ -300,7 +317,23 @@ export default function Syrax() {
           break;
         case "objectives":
           break;
+        case "history":
+          setHistoryTasks(e.tasks);
+          break;
+        case "task_detail": {
+          const { type: _t, task_id: _id, ...rest } = e;
+          void _t;
+          void _id;
+          setTaskDetail(rest);
+          break;
+        }
+        case "replay":
+          setReplayEvents(e.events);
+          break;
         case "task":
+          if (e.event !== "started" && consoleTabRef.current !== "live") {
+            clientRef.current?.send(consoleTabRef.current === "history" ? { type: "history", limit: 50 } : { type: "replay", since: startOfToday() });
+          }
           if (e.event === "interrupted")
             push({
               kind: "notice",
@@ -485,6 +518,18 @@ export default function Syrax() {
 
   const testBrain = useCallback((id: string) => {
     if (clientRef.current?.send({ type: "brain_test", id })) setBrainTests((t) => ({ ...t, [id]: "running" }));
+  }, []);
+
+  const showTab = useCallback((tab: ConsoleTab) => {
+    consoleTabRef.current = tab;
+    setConsoleTab(tab);
+    setTaskDetail(null);
+    if (tab === "history") clientRef.current?.send({ type: "history", limit: 50 });
+    if (tab === "today") clientRef.current?.send({ type: "replay", since: startOfToday() });
+  }, []);
+
+  const openWhy = useCallback((id: string) => {
+    clientRef.current?.send({ type: "task_detail", task_id: id });
   }, []);
 
   const openSelf = useCallback(() => {
@@ -778,7 +823,24 @@ export default function Syrax() {
 
       <aside className={`hud hud-console${consoleOpen ? "" : " collapsed"}`} aria-label="SYRAX console">
         <div className="console-head">
-          <span>// OPERATIONS LOG</span>
+          {consoleOpen ? (
+            <div className="console-tabs" role="tablist">
+              {(["live", "history", "today"] as ConsoleTab[]).map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  className="hud-link console-tab"
+                  aria-selected={consoleTab === tab}
+                  onClick={() => showTab(tab)}
+                >
+                  {tab === "live" ? "// LIVE" : tab === "history" ? "HISTORY" : "TODAY"}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span>// OPERATIONS LOG</span>
+          )}
           <div className="console-actions">
             <button type="button" className="hud-link" onClick={resetMemory} title="Wipe conversation memory">
               WIPE
@@ -793,7 +855,23 @@ export default function Syrax() {
             </button>
           </div>
         </div>
-        {consoleOpen && (
+        {consoleOpen && consoleTab === "history" && (
+          <div className="console-feed">
+            {taskDetail ? (
+              <WhyView detail={taskDetail} onBack={() => setTaskDetail(null)} onResume={(id) => clientRef.current?.send({ type: "resume", task_id: id })} />
+            ) : historyTasks === null ? (
+              <div className="entry entry-notice">Reading the journal…</div>
+            ) : (
+              <HistoryList tasks={historyTasks} onOpen={openWhy} />
+            )}
+          </div>
+        )}
+        {consoleOpen && consoleTab === "today" && (
+          <div className="console-feed">
+            {replayEvents === null ? <div className="entry entry-notice">Reading the journal…</div> : <ReplayView events={replayEvents} />}
+          </div>
+        )}
+        {consoleOpen && consoleTab === "live" && (
           <div className="console-feed" ref={feedRef}>
             {entries.length === 0 && (
               <div className="entry entry-notice">

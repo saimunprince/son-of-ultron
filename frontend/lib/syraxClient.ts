@@ -181,6 +181,30 @@ export interface AutonomyStatus {
   objectives: Record<ObjectiveStatus, number>;
 }
 
+export interface CheckpointSummary {
+  id: number;
+  task_id: string;
+  seq: number;
+  ts: number;
+  stage: string;
+  completed_steps: { step?: number; tool?: string; ok?: boolean }[];
+  current_operation: Record<string, unknown> | null;
+  verified: Record<string, unknown>;
+  remaining: string | null;
+  assumptions: unknown[];
+  env: Record<string, unknown>;
+  next_action: string | null;
+  evidence_state: string;
+  context_messages: number;
+}
+
+export interface TaskDetail {
+  task: TaskSummary & { operation: Record<string, unknown> | null; recovery: Record<string, unknown> | null };
+  events: JournalEvent[];
+  checkpoints: CheckpointSummary[];
+  objective: Objective | null;
+}
+
 /** Fields the journal adds to every event it fanned out. */
 export interface Journaled {
   task_id?: string;
@@ -231,6 +255,8 @@ export type ServerEvent =
   | { type: "history"; tasks: TaskSummary[] }
   | { type: "task_events"; task_id: string; events: JournalEvent[] }
   | { type: "verifications"; verifications: Verification[] }
+  | ({ type: "task_detail"; task_id: string } & TaskDetail)
+  | { type: "replay"; since: number; until: number | null; events: JournalEvent[] }
   | { type: "objectives"; objectives: Objective[] }
   | ({ type: "autonomy_status" } & AutonomyStatus)
   | ({ type: "autonomy"; event: "toggled"; enabled: boolean } & Journaled)
@@ -268,6 +294,8 @@ export type ClientMessage =
   | { type: "objective_add"; goal: string; reason?: string; priority?: number }
   | { type: "autonomy"; enabled?: boolean }
   | { type: "cycle_now" }
+  | { type: "task_detail"; task_id: string }
+  | { type: "replay"; since?: number; until?: number }
   | { type: "brains_get" }
   | { type: "brains_save"; providers: Record<string, BrainChange>; order?: string[] }
   | { type: "brain_models"; id: string; api_key?: string }

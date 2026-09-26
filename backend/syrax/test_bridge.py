@@ -639,3 +639,33 @@ def test_autonomy_toggle_persists_and_cycle_refuses_while_busy(script):
     assert get_journal().get_meta("autonomy_enabled") == "0"
     kinds = [e["type"] for e in get_journal().recent_events()]
     assert kinds.count("autonomy.toggled") == 2
+
+
+# ——— observer: task_detail (WHY) and replay (TODAY) ———
+
+
+def test_task_detail_and_replay_over_ws(script):
+    script.queue = [
+        call("python_execute", {"code": "print(1)"}, "one"),
+        call("terminate", {"status": "success"}, "Done."),
+    ]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "why test"})
+        drain_until_idle(ws)
+        tid = get_journal().tasks()[0]["task_id"]
+        ws.send_json({"type": "task_detail", "task_id": tid})
+        d, _ = recv_until(ws, "task_detail")
+        assert d["task"]["goal"] == "why test" and d["task"]["status"] == "SUCCESS"
+        assert [e["type"] for e in d["events"]][:3] == ["task.started", "think", "tool.started"]
+        assert d["checkpoints"] and d["objective"] is None
+        ws.send_json({"type": "task_detail", "task_id": "nope"})
+        n, _ = recv_until(ws, "notice")
+        assert "Unknown task" in n["text"]
+        ws.send_json({"type": "replay"})
+        r, _ = recv_until(ws, "replay")
+        kinds = [e["type"] for e in r["events"]]
+        assert "task.started" in kinds and "task.completed" in kinds and r["since"] < r["events"][0]["ts"]
+        ws.send_json({"type": "replay", "since": "garbage"})
+        r2, _ = recv_until(ws, "replay")
+        assert len(r2["events"]) == len(r["events"])

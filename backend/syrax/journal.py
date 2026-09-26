@@ -914,6 +914,37 @@ class Journal:
             ).fetchall()
         return [Event(r["id"], r["ts"], r["task_id"], r["type"], r["seq"], _loads(r["payload"], {})) for r in rows]
 
+    def events_between(self, ts_from: float, ts_to: Optional[float] = None, limit: int = 2000) -> List[dict]:
+        """All events (task-bound and task-less) in a time window, oldest first.
+        This is what a daily replay is generated from; nothing is synthesised."""
+        limit = max(1, min(int(limit), 10000))
+        ts_to = ts_to if ts_to is not None else _now()
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, ts, task_id, type, payload, seq FROM events WHERE ts>=? AND ts<=? ORDER BY id LIMIT ?",
+                (ts_from, ts_to, limit),
+            ).fetchall()
+        return [{**dict(r), "payload": _loads(r["payload"], {})} for r in rows]
+
+    def task_detail(self, task_id: str) -> Optional[dict]:
+        """Everything the journal knows about one task: the WHY view."""
+        task = self.task(task_id)
+        if task is None:
+            return None
+        with self._lock:
+            obj = self._db.execute(
+                "SELECT * FROM objectives WHERE last_task_id=? ORDER BY updated DESC LIMIT 1", (task_id,)
+            ).fetchone()
+        return {
+            "task": task,
+            "events": self.events(task_id),
+            "checkpoints": [
+                {k: v for k, v in cp.items() if k != "context"} | {"context_messages": len(cp.get("context") or [])}
+                for cp in self.checkpoints(task_id)
+            ],
+            "objective": self._objective_dict(obj) if obj else None,
+        }
+
     def recent_events(self, limit: int = 100) -> List[dict]:
         limit = max(1, min(int(limit), 5000))
         with self._lock:
