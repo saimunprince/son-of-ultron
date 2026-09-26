@@ -1721,3 +1721,82 @@ body {
 .replay-bad {
   color: var(--accent-hot);
 }
+
+/* ——— stage: what the presentation engine decided to show ——— */
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 42vh;
+  overflow-y: auto;
+  padding: 10px 14px 4px;
+  border-bottom: 1px solid rgb(var(--line-rgb) / 0.1);
+  font-family: var(--font-code);
+  font-size: 12px;
+  line-height: 1.5;
+  scrollbar-width: thin;
+}
+
+.stage-el {
+  padding: 8px 10px;
+  border: 1px solid rgb(var(--line-rgb) / 0.14);
+  background: rgb(0 0 0 / 0.3);
+}
+
+.stage-el header {
+  margin-bottom: 4px;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+}
+
+.stage-el.attn-focus {
+  border-color: rgb(var(--accent-rgb) / 0.8);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.stage-el.attn-ambient {
+  opacity: 0.8;
+}
+
+.stage-src {
+  margin-left: 6px;
+  color: var(--accent);
+}
+
+.stage-path {
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--text-bright);
+}
+
+.stage-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.stage-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.stage-note {
+  white-space: pre-wrap;
+}
+
+.stage-note.level-error {
+  color: var(--accent-hot);
+}
+
+.stage-note.level-question {
+  color: var(--text-bright);
+}
+
+.stage .self-table th {
+  padding: 3px 6px;
+  text-align: left;
+  font-weight: 700;
+  color: var(--text-bright);
+  border-bottom: 1px solid rgb(var(--line-rgb) / 0.3);
+}

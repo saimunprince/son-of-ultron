@@ -96,6 +96,8 @@ export function describeEvent(e: JournalEvent): string | null {
     case "push.started":
     case "research.started":
     case "skill.created":
+    case "presentation.created":
+    case "presentation.dismissed":
       return null;
     case "research.completed":
       return `Researched: ${s("question").slice(0, 70)} · ${p["stored"]} stored`;

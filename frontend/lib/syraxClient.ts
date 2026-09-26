@@ -257,6 +257,30 @@ export interface SkillRow {
   registered: boolean;
 }
 
+export type PresentationKind = "status" | "card" | "code" | "terminal" | "table" | "list" | "image" | "notification";
+
+export interface PresentationElement {
+  presentation_id: string;
+  kind: PresentationKind;
+  purpose: string;
+  data: Record<string, unknown>;
+  attention: "ambient" | "notice" | "focus";
+  position: "stage" | "overlay";
+  priority: number;
+  ttl_s: number | null;
+  replaces: string | null;
+  dismiss_on: string[];
+  slot: string | null;
+  source: "engine" | "model";
+  created: number;
+  task_id: string | null;
+}
+
+export interface PresentationPlan {
+  elements: PresentationElement[];
+  minimal: boolean;
+}
+
 /** Fields the journal adds to every event it fanned out. */
 export interface Journaled {
   task_id?: string;
@@ -274,6 +298,7 @@ export type ServerEvent =
       running: RunningTask | null;
       recent: TaskSummary[];
       autonomy: AutonomyStatus;
+      presentation: PresentationPlan;
     }
   | ({ type: "brains" } & BrainsState)
   | { type: "brain"; event: "answered"; provider: string; label: string; model: string }
@@ -313,6 +338,9 @@ export type ServerEvent =
   | ({ type: "commit"; event: "created" | "failed"; commit?: string; files?: string[]; summary?: string; verification_id?: number; error?: string } & Journaled)
   | ({ type: "rollback"; event: "created"; reason: string; restored: string[]; removed: string[]; clean: boolean; snapshot: string } & Journaled)
   | ({ type: "push"; event: "started" | "completed" | "failed"; ok?: boolean; branch?: string; output?: string } & Journaled)
+  | ({ type: "presentation"; event: "created" } & PresentationElement & Journaled)
+  | ({ type: "presentation"; event: "dismissed"; presentation_id: string; reason: string; kind: PresentationKind } & Journaled)
+  | ({ type: "presentation_plan" } & PresentationPlan)
   | ({ type: "maintenance"; event: "completed"; tasks_examined: number; events_pruned: number; checkpoint_contexts_trimmed: number; retain_days: number } & Journaled)
   | { type: "skills"; skills: SkillRow[] }
   | ({ type: "skill"; event: "created" | "verified" | "failed" | "disabled" | "not_tested"; skill: string; version?: number; status?: string; tests_passed?: number; tests_failed?: number; purpose?: string; note?: string | null } & Journaled)
@@ -360,6 +388,7 @@ export type ClientMessage =
   | { type: "replay"; since?: number; until?: number }
   | { type: "knowledge"; query?: string; limit?: number }
   | { type: "skills" }
+  | { type: "presentation" }
   | { type: "brains_get" }
   | { type: "brains_save"; providers: Record<string, BrainChange>; order?: string[] }
   | { type: "brain_models"; id: string; api_key?: string }

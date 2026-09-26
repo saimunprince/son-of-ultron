@@ -13,6 +13,7 @@ import {
   type LinkState,
   type AutonomyStatus,
   type JournalEvent,
+  type PresentationElement,
   type SelfModelSummary,
   type ServerEvent,
   type TaskDetail,
@@ -23,6 +24,7 @@ type ConsoleTab = "live" | "history" | "today";
 import BrainPanel from "@/components/BrainPanel";
 import SelfPanel from "@/components/SelfPanel";
 import { HistoryList, ReplayView, WhyView } from "@/components/HistoryView";
+import Stage from "@/components/Stage";
 import BootSequence from "@/components/BootSequence";
 import UltronEyes from "@/components/UltronEyes";
 import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
@@ -133,6 +135,7 @@ export default function Syrax() {
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
   const [replayEvents, setReplayEvents] = useState<JournalEvent[] | null>(null);
   const consoleTabRef = useRef<ConsoleTab>("live");
+  const [stage, setStage] = useState<PresentationElement[]>([]);
   const [selfModel, setSelfModel] = useState<SelfModelSummary | null>(null);
   const [booting, setBooting] = useState(true);
   const [theme, setTheme] = useState<OrbTheme>("ultron");
@@ -293,6 +296,21 @@ export default function Syrax() {
           }
           if (e.running) push({ kind: "notice", id: nextId++, text: `RUNNING · "${e.running.goal.slice(0, 80)}" · step ${e.running.step}` });
           setAutonomy(e.autonomy);
+          setStage(e.presentation.elements);
+          break;
+        case "presentation":
+          if (e.event === "created") {
+            const { type: _t, event: _e, ...el } = e;
+            void _t;
+            void _e;
+            setStage((prev) => [...prev.filter((x) => x.presentation_id !== el.presentation_id && x.presentation_id !== el.replaces), el as PresentationElement]);
+          } else {
+            const gone = e.presentation_id;
+            setStage((prev) => prev.filter((x) => x.presentation_id !== gone));
+          }
+          break;
+        case "presentation_plan":
+          setStage(e.elements);
           break;
         case "autonomy_status": {
           const { type: _t, ...rest } = e;
@@ -899,6 +917,7 @@ export default function Syrax() {
             {replayEvents === null ? <div className="entry entry-notice">Reading the journal…</div> : <ReplayView events={replayEvents} />}
           </div>
         )}
+        {consoleOpen && consoleTab === "live" && <Stage elements={[...stage].sort((a, b) => b.priority - a.priority || a.created - b.created)} />}
         {consoleOpen && consoleTab === "live" && (
           <div className="console-feed" ref={feedRef}>
             {entries.length === 0 && (

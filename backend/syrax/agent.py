@@ -30,9 +30,12 @@ TOOLS_GUIDE = (
     "unresearched guess as fact. When a job needs a capability you lack and will need again, "
     "build it with `skill_create` (code + tests); it becomes a tool only if its tests pass. "
     "If you change SYRAX's own code, finish with `release`: it runs the real gate and commits "
-    "only on GREEN, otherwise rolls back and shows you the evidence."
+    "only on GREEN, otherwise rolls back and shows you the evidence. When a visual beats "
+    "prose (a table, a code block, a comparison), put it on the stage with `present`; "
+    "when nothing needs showing, show nothing."
 )
 from syrax.prompt import SYRAX_PERSONA
+from syrax.presentation import PresentTool
 from syrax.research import KnowTool, LearnTool, ResearchTool
 from syrax.selfmodel import SelfInspectTool
 from syrax.skills import SkillCreateTool, SkillListTool, SkillTestTool
@@ -90,7 +93,7 @@ class SyraxAgent(Manus):
             AsyncPythonExecute(), StrReplaceEditor(), DesktopControl(),
             RememberTool(), RecallTool(), ForgetTool(), SelfInspectTool(),
             ResearchTool(), KnowTool(), LearnTool(),
-            SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), Terminate()
+            SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), PresentTool(), Terminate()
         )
     )
 

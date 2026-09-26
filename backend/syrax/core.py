@@ -31,6 +31,7 @@ from syrax.brains import get_router
 from syrax.devloop import REPO_ROOT, DevLoop, ReleaseTool
 from syrax.journal import Event, Journal, JournalError, get_journal
 from syrax.memory import get_memory
+from syrax.presentation import PresentTool, PresentationEngine
 from syrax.research import KnowTool, LearnTool, Researcher, ResearchTool
 from syrax.selfmodel import SelfInspectTool, SelfModel
 from syrax.skills import SkillCreateTool, SkillFactory, SkillListTool, SkillTestTool
@@ -88,6 +89,8 @@ class Core:
         self.researcher = Researcher(self.journal, task_id_provider=self.current_task_id)
         self.skills = SkillFactory(self.journal, task_id_provider=self.current_task_id)
         self.devloop = DevLoop(self.journal, task_id_provider=self.current_task_id)
+        self.presentation = PresentationEngine(self.journal, emit=self.broadcast)
+        self.journal.subscribe(self.presentation.on_event)
 
     # ——— observers ———
 
@@ -102,6 +105,8 @@ class Core:
     async def broadcast(self, event: dict) -> None:
         if event.get("type") == "state":
             self.state = {k: v for k, v in event.items() if k != "type"}
+        elif event.get("type") == "error" and getattr(self, "presentation", None) is not None:
+            await self.presentation.on_direct(event)
         for cb in list(self.observers):
             try:
                 await cb(event)
@@ -138,6 +143,10 @@ class Core:
             rt = tools.get_tool("release")
             if isinstance(rt, ReleaseTool):
                 rt.loop = self.devloop
+            pt = tools.get_tool("present")
+            if isinstance(pt, PresentTool):
+                pt.engine = self.presentation
+                pt.task_id_provider = self.current_task_id
             loaded = self.skills.attach(tools)  # VERIFIED skills from the registry become live tools
             if loaded:
                 logger.info(f"registered {loaded} skill(s) from the registry")
@@ -361,6 +370,7 @@ class Core:
             "running": running,
             "interrupted": interrupted,
             "recent": [_task_summary(t) for t in self.journal.tasks(limit=10)],
+            "presentation": self.presentation.plan(),
         }
 
     async def shutdown(self) -> None:
@@ -373,6 +383,7 @@ class Core:
             await self.agent.shutdown()
             self.agent = None
         self.journal.unsubscribe(self._on_journal_event)
+        self.journal.unsubscribe(self.presentation.on_event)
 
 
 def _repo_edit(steps: List[dict], args: dict) -> Optional[dict]:

@@ -76,7 +76,7 @@ EVIDENCE_STATES = ("SUCCESS", "PARTIAL", "FAILED", "BLOCKED", "UNKNOWN", "NOT_VE
 RECOVERY_STATES = ("RESUMABLE", "UNCERTAIN", "BLOCKED", "COMPLETED", "FAILED")
 
 # Event types allowed on a task that is already terminal (read-only attachments).
-TERMINAL_OK = frozenset({"verification.completed", "reflection.created", "knowledge.stored", "skill.verified", "skill.failed", "skill.not_tested", "skill.disabled"})
+TERMINAL_OK = frozenset({"verification.completed", "reflection.created", "knowledge.stored", "skill.verified", "skill.failed", "skill.not_tested", "skill.disabled", "presentation.created", "presentation.dismissed"})
 
 # Tools whose side effects can be verified against the filesystem after a crash.
 CHECKABLE_TOOLS = frozenset({"str_replace_editor"})
@@ -145,7 +145,7 @@ _WIRE = {
     "checkpoint.created": "checkpoint",
     "verification.completed": "verification",
 }
-_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback", "maintenance")
+_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback", "maintenance", "presentation")
 
 
 @dataclass(frozen=True)
@@ -1103,11 +1103,17 @@ class Journal:
             pruned = trimmed = 0
             for tid in old:
                 cur.execute(
-                    "DELETE FROM events WHERE task_id=? AND type IN ('think','brain.failover','brain.answered')", (tid,)
+                    "DELETE FROM events WHERE task_id=? AND type IN ('think','brain.failover','brain.answered',"
+                    "'presentation.created','presentation.dismissed')", (tid,)
                 )
                 pruned += cur.rowcount
                 cur.execute("UPDATE checkpoints SET context='[]' WHERE task_id=? AND context<>'[]'", (tid,))
                 trimmed += cur.rowcount
+            cur.execute(
+                "DELETE FROM events WHERE task_id IS NULL AND type IN ('presentation.created','presentation.dismissed') AND ts<?",
+                (cutoff,),
+            )
+            pruned += cur.rowcount
             self._insert_event(
                 cur, now, None, "maintenance.completed",
                 {"tasks_examined": len(old), "events_pruned": pruned, "checkpoint_contexts_trimmed": trimmed, "retain_days": retain_days},

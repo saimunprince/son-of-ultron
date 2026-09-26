@@ -197,6 +197,17 @@ WebSocket additions: `history {limit}`, `task_events {task_id}`,
 `verifications {limit}`, `resume {task_id}`, `self_model {section}`; `hello`
 now carries `interrupted`, `running` and `recent`.
 
+## The stage: SYRAX decides what to show
+
+Above the LIVE feed sits the stage. The presentation engine in the core watches
+the real event stream and decides what deserves a visual, how much attention
+it gets and how long it stays: the goal as an ambient status, code being
+executed and its output, a file being edited, an error or a question in focus,
+the reply as a card, a research summary as a list. Each slot holds one element,
+so old information is replaced rather than piled up, and when nothing needs
+showing the stage is empty. SYRAX can also choose to present a table, a code
+block or a list itself with the `present` tool. Details: `docs/PRESENTATION.md`.
+
 ## Observer: LIVE / HISTORY / TODAY
 
 The operations log has three tabs. LIVE is the stream as it happens. HISTORY

@@ -1,6 +1,6 @@
 # SYRAX System Map
 
-Rendered from `docs/system_map.json` (audit of 2026-09-26; phases 1–9 and 11 landed the same day). Every entry was checked against the source files it names.
+Rendered from `docs/system_map.json` (audit of 2026-09-26; phases 1–11 landed the same day). Every entry was checked against the source files it names.
 
 ## Frontend HUD
 
@@ -13,9 +13,9 @@ ULTRON orb UI: Three.js orb, operations log feed, voice pipeline, brain panel, b
 | Outputs | ClientMessage JSON over WebSocket; speech (edge-tts audio or browser voice) |
 | State | React useState in components/Syrax.tsx (entries[] capped at 300, agent state, brains, voice flags); localStorage syrax.* for preferences |
 | Persistence | none (observer only) |
-| Capabilities | render journaled events as feed entries; RECOVERED/RUNNING notices with RESUME action; hands-free voice, wake word, gestures; console tabs LIVE / HISTORY / TODAY: history list, WHY view per task (steps, checkpoints, objective, lesson, result, RESUME), daily replay rendered from real events |
-| Limitations | hardcoded HUD regions; no dynamic presentation engine; history/today views are polled on tab open and refreshed on task events, not streamed row by row |
-| Code | frontend/components/Syrax.tsx; frontend/components/HistoryView.tsx; frontend/lib/syraxClient.ts; frontend/lib/*.ts; frontend/app/globals.css |
+| Capabilities | render journaled events as feed entries; RECOVERED/RUNNING notices with RESUME action; hands-free voice, wake word, gestures; console tabs LIVE / HISTORY / TODAY: history list, WHY view per task (steps, checkpoints, objective, lesson, result, RESUME), daily replay rendered from real events; Stage above the LIVE feed renders the presentation plan (kinds, attention, ttl) and nothing when the plan is empty |
+| Limitations | history/today views are polled on tab open and refreshed on task events, not streamed row by row; HUD regions (orb, controls, console) are fixed; only the stage is engine-driven |
+| Code | frontend/components/Syrax.tsx; frontend/components/HistoryView.tsx; frontend/components/Stage.tsx; frontend/lib/syraxClient.ts; frontend/lib/*.ts; frontend/app/globals.css |
 | Tests | frontend/lib/wake.test.ts (node --test); npx tsc --noEmit; npx eslint . |
 | Failure Modes | WebGL missing → CSS fallback orb; WS offline → exponential reconnect, agent shown as booting; TTS 502 → browser voice |
 
@@ -155,6 +155,23 @@ release {summary}: inspect the working tree (scope, forbidden paths, diff scan),
 | Tests | backend/syrax/test_devloop.py; backend/syrax/test_bridge.py (release section); backend/syrax/test_autonomy.py (change_released) |
 | Failure Modes | gate BLOCKED → rollback.created, tree restored; git commit fails → commit.failed; push fails → push.failed, commit stays local |
 
+## Presentation engine
+
+Decides what to show from the real event stream: elements from a visual vocabulary (status, card, code, terminal, table, list, image, notification) with attention, priority, ttl, slot replacement and dismissal rules; the model can present explicitly with the `present` tool; the frontend Stage only draws the plan.
+
+| | |
+|---|---|
+| Dependencies | syrax.journal (subscriber, presentation.* events); syrax.core (broadcast for unjournaled fallback, direct error events) |
+| Inputs | journaled events (task, tool, ask, final, research, commit, rollback, skill); direct error events; present {kind, ...}; WS presentation |
+| Outputs | presentation.created / presentation.dismissed events; hello.presentation and presentation_plan replies |
+| State | active elements in memory (rebuilt from events as they arrive; not restored across restarts) |
+| Persistence | events only |
+| Capabilities | state → decision rules in the core, not the UI; one element per slot, replaces old information; ttl expiry server- and client-side; empty plan = minimal UI; SYRAX-chosen tables/code/lists via present |
+| Limitations | hand-written rules; no measurement of whether a presentation helped; only the stage position is drawn; no charts, maps, 3D or video kinds; stage is not restored after a backend restart |
+| Code | backend/syrax/presentation.py; frontend/components/Stage.tsx |
+| Tests | backend/syrax/test_presentation.py; backend/syrax/test_bridge.py (presentation section) |
+| Failure Modes | journal outage → element still broadcast with unjournaled=true; bad present arguments → tool error, nothing shown |
+
 ## SyraxAgent
 
 Manus subclass that streams think/tool/result events through emit, checkpoints after each tool step, exports/imports working context for resume.
@@ -208,7 +225,7 @@ Long-term facts and recent exchanges injected into every system prompt; remember
 
 ## Tools
 
-python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, release, terminate, browser_* (MCP).
+python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, release, present, terminate, browser_* (MCP).
 
 | | |
 |---|---|

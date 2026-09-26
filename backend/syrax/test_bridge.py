@@ -826,3 +826,38 @@ def test_agent_edits_its_code_and_release_commits_only_on_green(script, tmp_path
     assert kinds.count("code.changed") >= 3  # two editor edits + release inspections
     assert kinds.count("rollback.created") == 1 and kinds.count("commit.created") == 1
     assert [v["status"] for v in get_journal().verifications(limit=5)] == ["GREEN", "BLOCKED"]
+
+
+# ——— presentation over the bridge: the stage follows real events, reconnect gets the plan ———
+
+
+def test_presentation_events_follow_the_task_and_reconnect_gets_the_plan(script):
+    script.queue = [
+        call("python_execute", {"code": "print(6*7)"}, "Computing."),
+        call("present", {"kind": "table", "title": "Result", "rows": [["expr", "value"], ["6*7", 42]], "ttl_s": 600}, "Showing a table."),
+        reply("Forty-two."),
+    ]
+    with TestClient(server.app) as client:
+        with client.websocket_connect("/ws", headers=ORIGIN) as ws:
+            hello = boot(ws)
+            assert hello["presentation"] == {"elements": [], "minimal": True}
+            ws.send_json({"type": "task", "text": "6*7 and show me"})
+            seen = drain_until_idle(ws)
+        created = [e for e in seen if e["type"] == "presentation" and e["event"] == "created"]
+        kinds = [e["kind"] for e in created]
+        assert kinds[:3] == ["status", "code", "terminal"] and "table" in kinds and "card" in kinds
+        table = [e for e in created if e["kind"] == "table"][0]
+        assert table["source"] == "model" and table["data"]["rows"][1] == ["6*7", "42"]
+        dismissed = [e for e in seen if e["type"] == "presentation" and e["event"] == "dismissed"]
+        assert any(d["reason"] == "dismissed by task.completed" for d in dismissed)  # status gone at task end
+        with client.websocket_connect("/ws", headers=ORIGIN) as ws2:
+            hello2 = boot(ws2)
+            live = {e["kind"] for e in hello2["presentation"]["elements"]}
+            assert "table" in live and "card" in live and "status" not in live and "terminal" not in live
+            ws2.send_json({"type": "presentation"})
+            plan, _ = recv_until(ws2, "presentation_plan")
+            assert plan["minimal"] is False and {e["kind"] for e in plan["elements"]} == live
+        tid = get_journal().tasks()[0]["task_id"]
+        assert "presentation.created" not in [e["type"] for e in get_journal().events(tid)]
+        shown = [e for e in get_journal().recent_events(500) if e["type"] == "presentation.created"]
+        assert len(shown) == len(created) and all(e["payload"]["task_id"] == tid for e in shown)
