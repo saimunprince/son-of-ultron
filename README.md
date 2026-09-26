@@ -194,8 +194,19 @@ Details, schema and limits: `docs/EXECUTION_MODEL.md`. Component map:
 `docs/SYSTEM_MAP.md`. Gap analysis and roadmap: `docs/GAP_ANALYSIS.md`.
 
 WebSocket additions: `history {limit}`, `task_events {task_id}`,
-`verifications {limit}`, `resume {task_id}`; `hello` now carries
-`interrupted`, `running` and `recent`.
+`verifications {limit}`, `resume {task_id}`, `self_model {section}`; `hello`
+now carries `interrupted`, `running` and `recent`.
+
+## Self-model
+
+SYRAX can inspect itself from evidence, not from a script: identity and the
+git version actually running, the component map plus live repo stats, task
+history and failures from the journal, a capability registry (each tool with
+uses, failures, confidence, derived status VERIFIED / FAILING / NOT_TESTED),
+runtime resources, and derived weaknesses with evidence pointers. Ask it
+("what can you do?", "what failed?") and it calls `self_inspect`; press `S`
+for the SELF panel; `GET /self?section=summary` for scripts. Anything that
+cannot be measured is `null`, never invented.
 
 ## Configuration
 

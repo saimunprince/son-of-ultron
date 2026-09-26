@@ -1550,3 +1550,73 @@ body {
     animation: none;
   }
 }
+
+/* ——— self-model panel (read-only) ——— */
+.self-panel {
+  width: min(720px, 100%);
+}
+
+.self-version {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--text-dim);
+}
+
+.self-body {
+  gap: 14px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.self-body section h4 {
+  margin: 0 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  color: var(--accent);
+}
+
+.self-body p {
+  margin: 0 0 2px;
+}
+
+.self-dim {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.self-warn {
+  color: var(--accent-hot);
+}
+
+.self-kind {
+  display: inline-block;
+  min-width: 90px;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--text-dim);
+}
+
+.self-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-code);
+  font-size: 11px;
+}
+
+.self-table td {
+  padding: 3px 6px;
+  border-bottom: 1px solid rgb(var(--line-rgb) / 0.08);
+}
+
+.self-table tr.cap-failing td:nth-child(2) {
+  color: var(--accent-hot);
+}
+
+.self-table tr.cap-verified td:nth-child(2) {
+  color: var(--text-bright);
+}
+
+.self-table tr.cap-not_tested td,
+.self-table tr.cap-missing td {
+  color: var(--text-dim);
+}

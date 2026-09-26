@@ -108,6 +108,38 @@ export interface Verification {
   gates: VerificationGate[];
 }
 
+export interface SelfCapability {
+  capability: string;
+  status: "VERIFIED" | "FAILING" | "NOT_TESTED" | "MISSING";
+  uses: number;
+  confidence: number | null;
+}
+
+export interface SelfWeakness {
+  kind: string;
+  detail: string;
+  evidence: string;
+}
+
+/** The compact ("summary") self-model. Every value is measured or null. */
+export interface SelfModelSummary {
+  generated: number;
+  identity: { name: string; version: string | null; stage: string; principles: string[]; boot_id: string; process_uptime_s: number };
+  tasks_by_status: Record<string, number>;
+  success_rate: number | null;
+  running_task: RunningTask | null;
+  interrupted: { task_id: string; goal: string; step: number | null; recovery_state: string | null; operation_state: string | null }[];
+  last_verification: { status: "GREEN" | "BLOCKED"; git_head: string | null; ts: number; gates: { name: string; status: string }[] } | null;
+  capabilities: SelfCapability[];
+  weaknesses: SelfWeakness[];
+  known_limitations: number;
+  runtime: {
+    cpu: { cores: number | null; load_1_5_15: number[] | null };
+    memory_mb: { total_mb: number | null; available_mb: number | null };
+    brains: { active: string | null; ready: string[]; cooldown: string[]; needs_key: string[] } | null;
+  };
+}
+
 /** Fields the journal adds to every event it fanned out. */
 export interface Journaled {
   task_id?: string;
@@ -157,6 +189,8 @@ export type ServerEvent =
   | { type: "history"; tasks: TaskSummary[] }
   | { type: "task_events"; task_id: string; events: JournalEvent[] }
   | { type: "verifications"; verifications: Verification[] }
+  | ({ type: "self_model"; section: "summary" } & SelfModelSummary)
+  | { type: "self_model"; section: string; [key: string]: unknown }
   | { type: "notice"; text: string }
   | { type: "error"; message: string }
   | { type: "pong" };
@@ -171,6 +205,7 @@ export type ClientMessage =
   | { type: "task_events"; task_id: string }
   | { type: "verifications"; limit?: number }
   | { type: "resume"; task_id: string }
+  | { type: "self_model"; section?: string }
   | { type: "brains_get" }
   | { type: "brains_save"; providers: Record<string, BrainChange>; order?: string[] }
   | { type: "brain_models"; id: string; api_key?: string }

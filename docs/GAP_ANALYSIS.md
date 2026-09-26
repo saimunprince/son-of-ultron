@@ -19,8 +19,8 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 | **Event stream = single source of truth (§6, §33)** | EXISTS (this commit) | journal fan-out → sessions; history/task_events over WS |
 | **Verification gate with evidence (§8, §25)** | EXISTS (this commit) | `syrax/verify.py`, `verifications` table |
 | Truthful states (§7, §12) | EXISTS (this commit) | status enum, `final`-required guard, `unjournaled` flag, NOT_VERIFIED gates |
-| System map / self-model input (§5, §10) | PARTIAL | `docs/system_map.json` (static); runtime + journal not yet combined |
-| Self-understanding engine (§6) | MISSING | no code reads the map/journal to answer "what am I" |
+| System map / self-model (§5, §10) | EXISTS (self-model commit) | `syrax/selfmodel.py` merges `docs/system_map.json`, repo/git, journal and runtime; capability registry derived from evidence |
+| Self-understanding engine (§6) | PARTIAL | `self_inspect` tool + WS `self_model` + `/self` answer what/version/tools/failed/weakness from evidence; no natural-language reasoning layer beyond the LLM reading the snapshot |
 | Objectives (§17) | MISSING | no table, no engine |
 | Research / learning / knowledge store (§7, §8) | MISSING | — |
 | Skill / tool / module factory (§9) | MISSING | — |
@@ -34,10 +34,7 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 
 ## Roadmap mapped to files (next phases)
 
-1. **Self-model (Phase 3)** — `syrax/selfmodel.py`: merge `docs/system_map.json`
-   (structure), `journal.tasks/verifications` (behaviour, failure), runtime
-   probes (`desktop.system_info`, `brains.describe`, `git`), expose over WS
-   `self_model` and as a `self_inspect` tool.
+1. ~~Self-model (Phase 3)~~ — done: `syrax/selfmodel.py`, `self_inspect`, WS `self_model`, `/self`, SELF panel.
 2. **Objectives + bounded autonomous loop (Phase 5)** — `objectives` table in the
    journal, `Core.submit(kind="autonomous")`, `ResumeHook`, cycles gated by
    `verify.run_gates`.

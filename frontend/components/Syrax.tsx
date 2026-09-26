@@ -11,9 +11,11 @@ import {
   type BrainTestResult,
   type ClientMessage,
   type LinkState,
+  type SelfModelSummary,
   type ServerEvent,
 } from "@/lib/syraxClient";
 import BrainPanel from "@/components/BrainPanel";
+import SelfPanel from "@/components/SelfPanel";
 import BootSequence from "@/components/BootSequence";
 import UltronEyes from "@/components/UltronEyes";
 import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
@@ -111,6 +113,8 @@ export default function Syrax() {
   const [brainModels, setBrainModels] = useState<Record<string, { list: string[]; error?: string; loading: boolean }>>({});
   const [brainTests, setBrainTests] = useState<Record<string, BrainTestResult | "running">>({});
   const [brainOpen, setBrainOpen] = useState(false);
+  const [selfOpen, setSelfOpen] = useState(false);
+  const [selfModel, setSelfModel] = useState<SelfModelSummary | null>(null);
   const [booting, setBooting] = useState(true);
   const [theme, setTheme] = useState<OrbTheme>("ultron");
   const orbModeRef = useRef<OrbMode>("idle");
@@ -281,6 +285,14 @@ export default function Syrax() {
         case "recovery":
           if (e.event === "resumed") push({ kind: "notice", id: nextId++, text: "RESUMING interrupted task." });
           break;
+        case "self_model":
+          if (e.section === "summary") {
+            const { type: _t, section: _s, ...rest } = e;
+            void _t;
+            void _s;
+            setSelfModel(rest as SelfModelSummary);
+          }
+          break;
         case "checkpoint":
         case "verification":
         case "stage":
@@ -449,6 +461,12 @@ export default function Syrax() {
     if (clientRef.current?.send({ type: "brain_test", id })) setBrainTests((t) => ({ ...t, [id]: "running" }));
   }, []);
 
+  const openSelf = useCallback(() => {
+    setSelfModel(null);
+    setSelfOpen(true);
+    clientRef.current?.send({ type: "self_model" });
+  }, []);
+
   const openBrain = useCallback(() => {
     clientRef.current?.send({ type: "brains_get" });
     setBrainOpen(true);
@@ -611,7 +629,7 @@ export default function Syrax() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (brainOpen || booting) return; // the panel / boot screen own the keyboard
+      if (brainOpen || selfOpen || booting) return; // the panel / boot screen own the keyboard
       if (isTypingTarget(e.target)) {
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
@@ -638,6 +656,10 @@ export default function Syrax() {
         case "C":
           setConsoleOpen((v) => !v);
           break;
+        case "s":
+        case "S":
+          openSelf();
+          break;
         case "b":
         case "B":
           openBrain();
@@ -657,7 +679,7 @@ export default function Syrax() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [booting, brainOpen, openBrain, stopTask, toggleGestures, toggleHandsFree]);
+  }, [booting, brainOpen, selfOpen, openBrain, openSelf, stopTask, toggleGestures, toggleHandsFree]);
 
   const cameraOn = camera === "on";
 
@@ -960,6 +982,9 @@ export default function Syrax() {
           <button type="button" className="hud-btn" onClick={openBrain} title="Brain settings (B)">
             BRAIN
           </button>
+          <button type="button" className="hud-btn" onClick={openSelf} title="Self model (S)">
+            SELF
+          </button>
           <button
             type="button"
             className="hud-btn"
@@ -997,6 +1022,7 @@ export default function Syrax() {
             ["/", "command"],
             ["M", "voice"],
             ["B", "brain"],
+            ["S", "self"],
             ["C", "log"],
             ["ESC", "abort"],
           ].map(([k, label]) => (
@@ -1017,6 +1043,14 @@ export default function Syrax() {
           onModels={loadModels}
           onTest={testBrain}
           onClose={() => setBrainOpen(false)}
+        />
+      )}
+
+      {selfOpen && (
+        <SelfPanel
+          model={selfModel}
+          onRefresh={() => clientRef.current?.send({ type: "self_model" })}
+          onClose={() => setSelfOpen(false)}
         />
       )}
 

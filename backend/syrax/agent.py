@@ -21,9 +21,12 @@ TOOLS_GUIDE = (
     "TOOL GUIDE: When the human wants something on THEIR computer (open a site or app, "
     "play music, volume, screenshot of their screen, notifications, clipboard, find their "
     "files, battery/CPU), use the `desktop` tool. Use browser_* tools only when you yourself "
-    "must read or operate a web page. Use python_execute for calculations and scripts."
+    "must read or operate a web page. Use python_execute for calculations and scripts. "
+    "When asked what you are, what you can do, what failed, your version, your code or your "
+    "weaknesses, call `self_inspect` and answer from its evidence; never guess."
 )
 from syrax.prompt import SYRAX_PERSONA
+from syrax.selfmodel import SelfInspectTool
 from syrax.tools import AsyncPythonExecute, Emit, WebAskHuman
 
 RESULT_PREVIEW_CHARS = 4000
@@ -76,7 +79,7 @@ class SyraxAgent(Manus):
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
             AsyncPythonExecute(), StrReplaceEditor(), DesktopControl(),
-            RememberTool(), RecallTool(), ForgetTool(), Terminate()
+            RememberTool(), RecallTool(), ForgetTool(), SelfInspectTool(), Terminate()
         )
     )
 

@@ -1,6 +1,6 @@
 # SYRAX System Map
 
-Rendered from `docs/system_map.json` (audit of 2026-09-26). Every entry was checked against the source files it names.
+Rendered from `docs/system_map.json` (audit of 2026-09-26, self-model added the same day). Every entry was checked against the source files it names.
 
 ## Frontend HUD
 
@@ -70,6 +70,23 @@ Durable execution journal: tasks, events, semantic checkpoints, verifications; t
 | Tests | backend/syrax/test_journal.py (SIGKILL crash matrix, transition table, recovery, resume, fan-out) |
 | Failure Modes | JournalError on invalid transition/unknown task/terminal task → rolled back; sqlite3.Error propagates to caller (core handles); crash inside recovery → whole txn lost, redone next boot |
 
+## Self-model
+
+Evidence-based model of SYRAX itself: identity/version from git, structure from docs/system_map.json + repo introspection, behavior/failures/verifications from the journal, a capability registry (registered tools × journal evidence), runtime resources, derived weaknesses. Exposed as the self_inspect tool, WS self_model and GET /self, and the SELF panel.
+
+| | |
+|---|---|
+| Dependencies | syrax.journal (status_counts, tool_stats, tasks, verifications); git; /proc/meminfo, os.getloadavg, shutil.disk_usage; core providers: tool names, brains.describe, running task |
+| Inputs | snapshot(section) with section in summary|identity|structure|runtime|behavior|capabilities|weaknesses|all |
+| Outputs | JSON snapshot; self_inspect tool output (truncated at 6000 chars) |
+| State | none (computed on demand; process start time for uptime) |
+| Persistence | none; reads docs/system_map.json and the journal |
+| Capabilities | capability status derived: VERIFIED / FAILING / NOT_TESTED / MISSING with uses, failures, confidence; weaknesses with evidence pointers; None instead of invented values when git or the map is unavailable |
+| Limitations | GPU is not probed; system_map.json is hand-audited and must be regenerated when components change; no historical performance/latency metrics yet (journal has timestamps but nothing aggregates them); does not yet feed an objectives engine |
+| Code | backend/syrax/selfmodel.py; frontend/components/SelfPanel.tsx |
+| Tests | backend/syrax/test_selfmodel.py; backend/syrax/test_bridge.py (self-model section) |
+| Failure Modes | git unavailable → version/head None; map missing → components [] and present=false; self_inspect before the core exists → tool error |
+
 ## SyraxAgent
 
 Manus subclass that streams think/tool/result events through emit, checkpoints after each tool step, exports/imports working context for resume.
@@ -81,7 +98,7 @@ Manus subclass that streams think/tool/result events through emit, checkpoints a
 | Outputs | emit: state, think, tool_start{step}, tool_result{step,image?}, notice |
 | State | OpenManus Memory (messages, trimmed to ~120), current_step, step_limit_hit, last_reply |
 | Persistence | none (context is snapshotted by the journal via export_context) |
-| Capabilities | chat mode ends turn without tools; MCP browser tools stay connected between tasks; repair_memory after abort/interruption |
+| Capabilities | chat mode ends turn without tools; MCP browser tools stay connected between tasks; repair_memory after abort/interruption; self_inspect tool reads the self-model |
 | Limitations | max_steps 20; tool success is a heuristic on the result text (_succeeded) |
 | Code | backend/syrax/agent.py |
 | Tests | backend/syrax/test_bridge.py |
@@ -123,7 +140,7 @@ Long-term facts and recent exchanges injected into every system prompt; remember
 
 ## Tools
 
-python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), terminate, browser_* (MCP).
+python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, terminate, browser_* (MCP).
 
 | | |
 |---|---|

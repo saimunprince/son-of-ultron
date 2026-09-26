@@ -27,8 +27,10 @@ from app.logger import logger
 from app.schema import Message
 
 from syrax.agent import SyraxAgent
+from syrax.brains import get_router
 from syrax.journal import Event, Journal, JournalError, get_journal
 from syrax.memory import get_memory
+from syrax.selfmodel import SelfInspectTool, SelfModel
 
 Observer = Callable[[dict], Awaitable[None]]
 
@@ -71,7 +73,10 @@ class Core:
         self.observers: List[Observer] = []
         self.state: dict = {"state": "idle"}  # last direct state event
         self.journal.subscribe(self._on_journal_event)
-        self._creating: Optional[asyncio.Future] = None
+        self.selfmodel = SelfModel(self.journal)
+        self.selfmodel.tools_provider = self.tool_names
+        self.selfmodel.brains_provider = lambda: get_router().describe()
+        self.selfmodel.running_provider = lambda: self.snapshot()["running"]
 
     # ——— observers ———
 
@@ -101,7 +106,15 @@ class Core:
         if self.agent is None:
             self.agent = await SyraxAgent.create(emit=self.emit)
             self.agent.checkpoint = self._checkpoint
+            tool = self.agent.available_tools.get_tool("self_inspect")
+            if isinstance(tool, SelfInspectTool):
+                tool.model = self.selfmodel
         return self.agent
+
+    def tool_names(self) -> List[str]:
+        if self.agent is None:
+            return []
+        return sorted(self.agent.available_tools.tool_map.keys())
 
     @property
     def busy(self) -> bool:

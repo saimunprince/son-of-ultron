@@ -1,6 +1,6 @@
 {
   "name": "SYRAX",
-  "generated": "2026-09-26",
+  "generated": "2026-09-26 (self-model added)",
   "source": "hand-audited from source code; regenerate when components change",
   "components": [
     {
@@ -170,6 +170,48 @@
       ]
     },
     {
+      "component": "Self-model",
+      "purpose": "Evidence-based model of SYRAX itself: identity/version from git, structure from docs/system_map.json + repo introspection, behavior/failures/verifications from the journal, a capability registry (registered tools × journal evidence), runtime resources, derived weaknesses. Exposed as the self_inspect tool, WS self_model and GET /self, and the SELF panel.",
+      "dependencies": [
+        "syrax.journal (status_counts, tool_stats, tasks, verifications)",
+        "git",
+        "/proc/meminfo, os.getloadavg, shutil.disk_usage",
+        "core providers: tool names, brains.describe, running task"
+      ],
+      "inputs": [
+        "snapshot(section) with section in summary|identity|structure|runtime|behavior|capabilities|weaknesses|all"
+      ],
+      "outputs": [
+        "JSON snapshot; self_inspect tool output (truncated at 6000 chars)"
+      ],
+      "state": "none (computed on demand; process start time for uptime)",
+      "persistence": "none; reads docs/system_map.json and the journal",
+      "capabilities": [
+        "capability status derived: VERIFIED / FAILING / NOT_TESTED / MISSING with uses, failures, confidence",
+        "weaknesses with evidence pointers",
+        "None instead of invented values when git or the map is unavailable"
+      ],
+      "limitations": [
+        "GPU is not probed",
+        "system_map.json is hand-audited and must be regenerated when components change",
+        "no historical performance/latency metrics yet (journal has timestamps but nothing aggregates them)",
+        "does not yet feed an objectives engine"
+      ],
+      "code": [
+        "backend/syrax/selfmodel.py",
+        "frontend/components/SelfPanel.tsx"
+      ],
+      "tests": [
+        "backend/syrax/test_selfmodel.py",
+        "backend/syrax/test_bridge.py (self-model section)"
+      ],
+      "failure_modes": [
+        "git unavailable → version/head None",
+        "map missing → components [] and present=false",
+        "self_inspect before the core exists → tool error"
+      ]
+    },
+    {
       "component": "SyraxAgent",
       "purpose": "Manus subclass that streams think/tool/result events through emit, checkpoints after each tool step, exports/imports working context for resume.",
       "dependencies": [
@@ -193,7 +235,8 @@
       "capabilities": [
         "chat mode ends turn without tools",
         "MCP browser tools stay connected between tasks",
-        "repair_memory after abort/interruption"
+        "repair_memory after abort/interruption",
+        "self_inspect tool reads the self-model"
       ],
       "limitations": [
         "max_steps 20",
@@ -280,7 +323,7 @@
     },
     {
       "component": "Tools",
-      "purpose": "python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), terminate, browser_* (MCP).",
+      "purpose": "python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, terminate, browser_* (MCP).",
       "dependencies": [
         "app.tool.*",
         "browser-use MCP via uvx",

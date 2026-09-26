@@ -520,3 +520,46 @@ def test_journal_write_failure_never_fakes_success(script, monkeypatch):
     monkeypatch.setattr(Journal, "record_sync", orig)
     task = get_journal().tasks()[0]
     assert task["status"] == "IN_PROGRESS"  # truthfully unresolved; next boot marks it INTERRUPTED
+
+
+# ——— self-model ———
+
+
+def test_self_model_over_ws_and_http_reflects_real_state(script):
+    script.queue = [reply("I am SYRAX.")]
+    client = TestClient(server.app)
+    with client.websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello = boot(ws)
+        assert "self_inspect" in hello["tools"]
+        ws.send_json({"type": "task", "text": "who are you"})
+        drain_until_idle(ws)
+        ws.send_json({"type": "self_model"})
+        sm, _ = recv_until(ws, "self_model")
+        assert sm["section"] == "summary" and sm["identity"]["name"] == "SYRAX"
+        assert sm["tasks_by_status"] == {"SUCCESS": 1} and sm["running_task"] is None
+        caps = {c["capability"] for c in sm["capabilities"]}
+        assert caps == set(hello["tools"])  # registry = the tools actually registered
+        ws.send_json({"type": "self_model", "section": "soul"})
+        err, _ = recv_until(ws, "error")
+        assert "unknown section" in err["message"]
+    r = client.get("/self?section=behavior")
+    assert r.status_code == 200 and r.json()["behavior"]["tasks_total"] == 1
+    assert client.get("/self?section=nope").status_code == 400
+
+
+def test_agent_can_inspect_itself_through_the_tool(script):
+    script.queue = [
+        call("self_inspect", {"section": "capabilities"}),
+        reply("I have tools. Evidence attached."),
+    ]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "what can you do?"})
+        res, _ = recv_until(ws, "tool_result")
+        assert res["name"] == "self_inspect" and res["ok"]
+        body = res["output"].split("executed:\n", 1)[1]  # upstream prefixes tool output
+        out = json.loads(body)
+        assert any(c["capability"] == "python_execute" for c in out["capabilities"])
+        drain_until_idle(ws)
+    caps = {c["capability"]: c for c in core_mod.get_core().selfmodel.capabilities()}
+    assert caps["self_inspect"]["status"] == "VERIFIED" and caps["self_inspect"]["uses"] == 1

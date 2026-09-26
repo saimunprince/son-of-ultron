@@ -6,13 +6,13 @@ Run from the backend directory:
 Protocol (JSON over ws://HOST:PORT/ws)
   client -> server: task {text, voice?} | answer {text} | stop | reset | ping |
                     history {limit?} | task_events {task_id} | resume {task_id} |
-                    verifications {limit?} |
+                    verifications {limit?} | self_model {section?} |
                     brains_get | brains_save {providers, order} |
                     brain_models {id, api_key?} | brain_test {id}
   server -> client: hello {name, tools, interrupted, running, recent} | state |
                     user | think | tool_start | tool_result | ask | final |
                     task {event} | checkpoint | recovery {event} | verification |
-                    history | task_events | verifications |
+                    history | task_events | verifications | self_model |
                     notice | error | pong | brain | brains | brain_models | brain_test
 
 Sessions are observers: the task runs in ``syrax.core`` and continues when the
@@ -144,6 +144,15 @@ async def voice_status():
     }
 
 
+@app.get("/self")
+async def self_model(section: str = "summary"):
+    """Read-only self-model (evidence-based). ?section=summary|identity|structure|runtime|behavior|capabilities|weaknesses|all"""
+    try:
+        return await asyncio.to_thread(get_core().selfmodel.snapshot, section)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/health")
 async def health():
     router = get_router()
@@ -239,6 +248,13 @@ class Session:
             limit = _limit(msg.get("limit"), 20)
             rows = await asyncio.to_thread(journal.verifications, limit)
             await self.send({"type": "verifications", "verifications": rows})
+        elif kind == "self_model":
+            section = str(msg.get("section") or "summary")
+            try:
+                snap = await asyncio.to_thread(self.core.selfmodel.snapshot, section)
+                await self.send({"type": "self_model", "section": section, **snap})
+            except ValueError as e:
+                await self.send({"type": "error", "message": str(e)})
         elif kind == "resume":
             tid = str(msg.get("task_id") or "")
             try:

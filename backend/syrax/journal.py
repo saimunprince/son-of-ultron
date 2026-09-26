@@ -795,6 +795,38 @@ class Journal:
             ).fetchall()
         return [{**dict(r), "gates": _loads(r["gates"], [])} for r in rows]
 
+    def status_counts(self) -> Dict[str, int]:
+        with self._lock:
+            rows = self._db.execute("SELECT status, COUNT(*) FROM tasks GROUP BY status").fetchall()
+        return {r[0]: int(r[1]) for r in rows}
+
+    def tool_stats(self) -> Dict[str, dict]:
+        """Per-tool evidence from events: uses, failures, last use, last failure,
+        last outcome. Derived, never hand-written."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT type, ts, json_extract(payload, '$.name') AS name FROM events "
+                "WHERE type IN ('tool.started','tool.completed','tool.failed') AND name IS NOT NULL "
+                "ORDER BY id"
+            ).fetchall()
+        out: Dict[str, dict] = {}
+        for r in rows:
+            st = out.setdefault(
+                r["name"],
+                {"uses": 0, "successes": 0, "failures": 0, "last_used": None, "last_failed": None, "last_outcome": None},
+            )
+            if r["type"] == "tool.started":
+                st["uses"] += 1
+                st["last_used"] = r["ts"]
+            elif r["type"] == "tool.completed":
+                st["successes"] += 1
+                st["last_outcome"] = "ok"
+            else:
+                st["failures"] += 1
+                st["last_failed"] = r["ts"]
+                st["last_outcome"] = "fail"
+        return out
+
     def count(self, table: str) -> int:
         if table not in ("events", "tasks", "checkpoints", "verifications"):
             raise ValueError(table)
