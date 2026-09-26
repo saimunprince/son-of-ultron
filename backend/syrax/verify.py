@@ -227,6 +227,10 @@ def isolated_next_build(frontend: Path = FRONTEND_ROOT, timeout: float = 1200.0)
         link = subprocess.run(["cp", "-al", str(frontend / "node_modules"), str(scratch / "node_modules")], capture_output=True, text=True, timeout=300)
         if link.returncode != 0:  # different filesystem: fall back to a real copy
             shutil.copytree(frontend / "node_modules", scratch / "node_modules", symlinks=True)
+        cache = frontend / ".next" / "cache"
+        if cache.is_dir():  # reuse the local build cache (Google Fonts are fetched at build time; the cache makes the gate offline-safe)
+            (scratch / ".next").mkdir(exist_ok=True)
+            subprocess.run(["cp", "-al", str(cache), str(scratch / ".next" / "cache")], capture_output=True, text=True, timeout=300)
         proc = subprocess.run(["npx", "next", "build"], cwd=str(scratch), capture_output=True, text=True, timeout=timeout)
         out = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
         return proc.returncode == 0, out
