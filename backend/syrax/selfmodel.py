@@ -421,6 +421,7 @@ def _implementation_of(tool: str) -> str:
         "release": "backend/syrax/devloop.py",
         "present": "backend/syrax/presentation.py",
         "experiment": "backend/syrax/experiments.py",
+        "compare_versions": "backend/syrax/versions.py",
     }.get(tool, "unknown")
 
 

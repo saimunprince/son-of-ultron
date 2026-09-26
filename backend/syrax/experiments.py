@@ -43,7 +43,7 @@ async def run_arm(collection: ToolCollection, arm: dict, metric: str, repeats: i
     args = arm.get("args") if isinstance(arm.get("args"), dict) else {}
     if name not in collection.tool_map:
         raise ValueError(f"unknown tool {name!r}")
-    if name in ("release", "skill_create", "experiment", "ask_human", "terminate"):
+    if name in ("release", "skill_create", "experiment", "compare_versions", "ask_human", "terminate"):
         raise ValueError(f"{name} cannot be an experiment arm")
     samples: List[float] = []
     successes = 0

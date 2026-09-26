@@ -36,6 +36,7 @@ from syrax.presentation import PresentTool, PresentationEngine
 from syrax.research import KnowTool, LearnTool, Researcher, ResearchTool
 from syrax.selfmodel import SelfInspectTool, SelfModel
 from syrax.skills import SkillCreateTool, SkillFactory, SkillListTool, SkillTestTool
+from syrax.versions import CompareVersionsTool, VersionComparer
 
 Observer = Callable[[dict], Awaitable[None]]
 
@@ -90,6 +91,7 @@ class Core:
         self.researcher = Researcher(self.journal, task_id_provider=self.current_task_id)
         self.skills = SkillFactory(self.journal, task_id_provider=self.current_task_id)
         self.devloop = DevLoop(self.journal, task_id_provider=self.current_task_id)
+        self.versions = VersionComparer(self.journal, task_id_provider=self.current_task_id)
         self.presentation = PresentationEngine(self.journal, emit=self.broadcast)
         from syrax.quality import QualityRunner
 
@@ -157,6 +159,9 @@ class Core:
             xt = tools.get_tool("experiment")
             if isinstance(xt, ExperimentTool):
                 xt.engine = self.experiments
+            vt = tools.get_tool("compare_versions")
+            if isinstance(vt, CompareVersionsTool):
+                vt.comparer = self.versions
             loaded = self.skills.attach(tools)  # VERIFIED skills from the registry become live tools
             if loaded:
                 logger.info(f"registered {loaded} skill(s) from the registry")

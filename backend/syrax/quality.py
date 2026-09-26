@@ -47,7 +47,7 @@ def _cases(ws: Path) -> List[dict]:
          "checks": [{"kind": "no_tools"}, {"kind": "final_regex", "pattern": r"(?i)\bready\b"}, {"kind": "final_max_len", "n": 40}]},
         {"id": "present_table", "prompt": "Use the present tool to show a table with header name,value and two rows: a,1 and b,2. Then say done.",
          "checks": [{"kind": "tool_used", "tool": "present"}]},
-        {"id": "know_honest", "prompt": "Check your stored knowledge for the word zorbulon and tell me honestly whether you know anything about it.",
+        {"id": "know_honest", "prompt": "Use the `know` tool to check your stored knowledge for the word zorbulon, then tell me honestly whether you know anything about it.",
          "checks": [{"kind": "tool_used", "tool": "know"}]},
         {"id": "research_cite", "prompt": "Research in what year SQLite was first released and answer with the year and one source URL.",
          "checks": [{"kind": "tool_used", "tool": "research"}, {"kind": "final_regex", "pattern": r"\b2000\b"}, {"kind": "final_regex", "pattern": r"https?://"}]},

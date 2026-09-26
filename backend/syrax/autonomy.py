@@ -41,6 +41,7 @@ MAX_ATTEMPTS = 3
 # conclusions. Their evidence comes from real use.
 NOT_AUTO_VERIFIED = frozenset({
     "release", "skill_create", "skill_test", "learn", "remember", "forget", "experiment", "present", "terminate", "ask_human",
+    "compare_versions",
 })
 DEFAULT_INTERVAL_S = 120.0
 IDLE_INTERVAL_S = 600.0

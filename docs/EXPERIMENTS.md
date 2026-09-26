@@ -58,6 +58,19 @@ holds hypothesis, method (tools, args, repeats), samples, result, conclusion
 and next action. The model chooses the hypothesis; it cannot choose the verdict.
 `release`, `skill_create`, `experiment`, `ask_human` and `terminate` cannot be arms.
 
+## Experiments over code versions (`compare_versions`)
+
+```
+compare_versions {base: "HEAD~1", candidate: "HEAD", hypothesis?}
+```
+
+Each ref is checked out into a detached git worktree; the backend test suite
+runs there with this venv's Python, and that version's benchmark suite runs
+from its own code. The result is an experiment whose arms are the two commits:
+tests decide first (more failing tests loses), then benchmark regressions
+(>50 % and >5 ms); a version that cannot be measured makes the experiment
+INCONCLUSIVE. Worktrees are removed afterwards. Cost: two test-suite runs.
+
 ## Objectives about SYRAX's own mechanisms
 
 Derived every cycle (idempotent):
@@ -81,5 +94,5 @@ a weakness with evidence `journal.benchmarks`.
 ## Limits
 
 - The task-quality suite is small (10 cases) and brain-dependent; it measures outcomes, not reasoning quality.
-- Experiments measure tool calls, not code changes; changing code and measuring is still research → `release`.
+- `experiment` measures tool calls; `compare_versions` measures commits (tests + mechanism benchmarks), not task quality per commit.
 - Objectives are executed by the same agent with the same tools; "fix the regression" depends on the model finding the cause.

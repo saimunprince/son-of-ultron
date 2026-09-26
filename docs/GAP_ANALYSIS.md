@@ -48,5 +48,5 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 
 - ~~A task-quality benchmark~~ — `syrax/quality.py` (10 machine-checked tasks, on demand).
 - Presentation engine self-improvement (§30): no measurement of whether a presentation helped.
-- Experiments over code versions (run the suite on two commits) rather than tool calls.
+- ~~Experiments over code versions~~ — `syrax/versions.py` (`compare_versions`).
 - Model research and fine-tuning (§20, §51): the router abstracts providers; nothing trains anything.

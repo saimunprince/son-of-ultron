@@ -42,6 +42,7 @@ from syrax.research import KnowTool, LearnTool, ResearchTool
 from syrax.selfmodel import SelfInspectTool
 from syrax.skills import SkillCreateTool, SkillListTool, SkillTestTool
 from syrax.tools import AsyncPythonExecute, Emit, WebAskHuman
+from syrax.versions import CompareVersionsTool
 
 RESULT_PREVIEW_CHARS = 4000
 MAX_MEMORY_MESSAGES = 120
@@ -95,7 +96,7 @@ class SyraxAgent(Manus):
             AsyncPythonExecute(), StrReplaceEditor(), DesktopControl(),
             RememberTool(), RecallTool(), ForgetTool(), SelfInspectTool(),
             ResearchTool(), KnowTool(), LearnTool(),
-            SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), PresentTool(), ExperimentTool(), Terminate()
+            SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), PresentTool(), ExperimentTool(), CompareVersionsTool(), Terminate()
         )
     )
 

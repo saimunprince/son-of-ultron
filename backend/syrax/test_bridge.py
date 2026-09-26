@@ -558,8 +558,9 @@ def test_agent_can_inspect_itself_through_the_tool(script):
         res, _ = recv_until(ws, "tool_result")
         assert res["name"] == "self_inspect" and res["ok"]
         body = res["output"].split("executed:\n", 1)[1]  # upstream prefixes tool output
-        out = json.loads(body)
-        assert any(c["capability"] == "python_execute" for c in out["capabilities"])
+        # the wire event carries a 4000-char preview (RESULT_PREVIEW_CHARS); the model gets the full text
+        assert body.startswith('{"capabilities":[') and '"capability":"python_execute"' in body
+        assert res["truncated"] is (len(body) >= 3900)
         drain_until_idle(ws)
     caps = {c["capability"]: c for c in core_mod.get_core().selfmodel.capabilities()}
     assert caps["self_inspect"]["status"] == "VERIFIED" and caps["self_inspect"]["uses"] == 1
