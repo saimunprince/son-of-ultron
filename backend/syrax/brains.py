@@ -84,7 +84,7 @@ PROVIDERS: Dict[str, Provider] = {
             label="Groq",
             base_url="https://api.groq.com/openai/v1",
             tier="free",
-            default_model="llama-3.3-70b-versatile",
+            default_model="openai/gpt-oss-120b",  # llama-3.3-70b was retired by Groq (2026-09)
             signup_url="https://console.groq.com/keys",
             note="Free tier. Extremely fast.",
         ),
