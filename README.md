@@ -197,6 +197,17 @@ WebSocket additions: `history {limit}`, `task_events {task_id}`,
 `verifications {limit}`, `resume {task_id}`, `self_model {section}`; `hello`
 now carries `interrupted`, `running` and `recent`.
 
+## Autonomy (off by default)
+
+Press AUTO (or send `{"type":"autonomy","enabled":true}`) and SYRAX pursues its
+own objectives when idle: it derives them from its self-model (untested tools,
+failing tools, a blocked verification, uncertain interrupted tasks), runs one
+autonomous task per cycle, and judges the result from journal evidence, never
+from its own words. Three failed attempts block an objective with a lesson.
+`cycle_now` runs one cycle on demand; `objective_add {goal}` adds your own.
+A running human task always wins, and the cycle skips under CPU/RAM pressure.
+Details: `docs/AUTONOMY.md`.
+
 ## Self-model
 
 SYRAX can inspect itself from evidence, not from a script: identity and the
@@ -220,6 +231,8 @@ cannot be measured is `null`, never invented.
 | `SYRAX_BRAINS_FILE` | `backend/config/brains.json` |
 | `SYRAX_JOURNAL_FILE` | `backend/config/journal.db` |
 | `SYRAX_AUTO_RESUME` | `0` (set `1` to resume RESUMABLE tasks at boot) |
+| `SYRAX_AUTONOMY` | unset (overrides the stored AUTO flag with `1`/`0`) |
+| `SYRAX_CYCLE_INTERVAL` | `120` seconds between autonomous cycles |
 | `NEXT_PUBLIC_SYRAX_WS` | `ws://127.0.0.1:8765/ws` |
 
 The agent executes code on this machine. The server binds to localhost only and

@@ -21,12 +21,12 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 | Truthful states (§7, §12) | EXISTS (this commit) | status enum, `final`-required guard, `unjournaled` flag, NOT_VERIFIED gates |
 | System map / self-model (§5, §10) | EXISTS (self-model commit) | `syrax/selfmodel.py` merges `docs/system_map.json`, repo/git, journal and runtime; capability registry derived from evidence |
 | Self-understanding engine (§6) | PARTIAL | `self_inspect` tool + WS `self_model` + `/self` answer what/version/tools/failed/weakness from evidence; no natural-language reasoning layer beyond the LLM reading the snapshot |
-| Objectives (§17) | MISSING | no table, no engine |
+| Objectives (§17) | EXISTS (autonomy commit) | `objectives` table, transitions, derivation from self-model weaknesses, human objectives over WS |
 | Research / learning / knowledge store (§7, §8) | MISSING | — |
 | Skill / tool / module factory (§9) | MISSING | — |
 | Autonomous coding loop with rollback (§10, §41) | MISSING | gate exists; no agent-driven change pipeline |
-| Failure-driven learning (§11) | MISSING | failures are journaled, not analysed |
-| 24/7 cycle + resource awareness (§16, §19) | MISSING | `desktop system_info` exists as a tool only |
+| Failure-driven learning (§11) | PARTIAL | objectives retry with a derived lesson, block after 3 attempts; no strategy search or research yet |
+| 24/7 cycle + resource awareness (§16, §19) | PARTIAL | `Autonomy.loop` with interval, CPU/RAM gate, idle when nothing to do; off by default; no GPU/disk/network awareness |
 | Presentation engine / visual runtime (§22–30) | MISSING | static HUD in `components/Syrax.tsx` |
 | LIVE / HISTORY / WHY observer (§31–35) | PARTIAL | data available over WS (`history`, `task_events`, `verifications`); UI shows notices only |
 | Memory layers (§37) | NEEDS REFACTOR | flat `memory.json`/`history.jsonl`; history now derivable from `tasks` |
@@ -35,9 +35,7 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 ## Roadmap mapped to files (next phases)
 
 1. ~~Self-model (Phase 3)~~ — done: `syrax/selfmodel.py`, `self_inspect`, WS `self_model`, `/self`, SELF panel.
-2. **Objectives + bounded autonomous loop (Phase 5)** — `objectives` table in the
-   journal, `Core.submit(kind="autonomous")`, `ResumeHook`, cycles gated by
-   `verify.run_gates`.
+2. ~~Objectives + bounded autonomous loop (Phase 5)~~ — done: `syrax/autonomy.py`, see `docs/AUTONOMY.md`.
 3. **LIVE / HISTORY / WHY view (Phase 11)** — frontend consumer of `history`,
    `task_events`, `checkpoint`, `verification` events.
 4. **Research + knowledge store (Phase 6)** — `knowledge` table with provenance.

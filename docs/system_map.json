@@ -1,6 +1,6 @@
 {
   "name": "SYRAX",
-  "generated": "2026-09-26 (self-model added)",
+  "generated": "2026-09-26 (self-model + autonomy added)",
   "source": "hand-audited from source code; regenerate when components change",
   "components": [
     {
@@ -209,6 +209,52 @@
         "git unavailable → version/head None",
         "map missing → components [] and present=false",
         "self_inspect before the core exists → tool error"
+      ]
+    },
+    {
+      "component": "Autonomy",
+      "purpose": "Objectives table plus a bounded self-directed cycle: derive objectives from self-model weaknesses, run one autonomous task per cycle through the core, judge completion from journal evidence only, reflect, retry with a lesson or block after 3 attempts.",
+      "dependencies": [
+        "syrax.journal (objectives, meta, events)",
+        "syrax.selfmodel (capabilities, behavior)",
+        "syrax.core (submit kind=autonomous, wait)",
+        "os.getloadavg, /proc/meminfo"
+      ],
+      "inputs": [
+        "WS autonomy {enabled}, cycle_now, objective_add, objectives",
+        "SYRAX_AUTONOMY, SYRAX_CYCLE_INTERVAL"
+      ],
+      "outputs": [
+        "objective.*, cycle.*, reflection.created, autonomy.toggled events",
+        "autonomy_status replies",
+        "autonomous tasks in the journal"
+      ],
+      "state": "cycle reports in memory (last 200); enabled flag in journal meta",
+      "persistence": "objectives table; events",
+      "capabilities": [
+        "evidence-only judging (tool_verified, verification_green, task_success, human)",
+        "idempotent derivation by key; one live objective per tool",
+        "objective already satisfied → closed without a task",
+        "resource gate; never runs while a human task runs",
+        "background loop with interval; off by default"
+      ],
+      "limitations": [
+        "no research or self-modification objectives yet",
+        "lessons are derived strings, not model reflections",
+        "resource gate: CPU load + free RAM only",
+        "one task per cycle, no parallel objectives"
+      ],
+      "code": [
+        "backend/syrax/autonomy.py"
+      ],
+      "tests": [
+        "backend/syrax/test_autonomy.py",
+        "backend/syrax/test_bridge.py (autonomy section)"
+      ],
+      "failure_modes": [
+        "derivation error → logged, cycle continues",
+        "cycle crash in loop → logged, next cycle after interval",
+        "core busy → BUSY report, objective back to OPEN"
       ]
     },
     {

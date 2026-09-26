@@ -563,3 +563,79 @@ def test_agent_can_inspect_itself_through_the_tool(script):
         drain_until_idle(ws)
     caps = {c["capability"]: c for c in core_mod.get_core().selfmodel.capabilities()}
     assert caps["self_inspect"]["status"] == "VERIFIED" and caps["self_inspect"]["uses"] == 1
+
+
+# ——— autonomy over the bridge (scripted brain, real tools) ———
+
+
+def test_objective_cycle_over_ws_marks_done_only_with_tool_evidence(script, monkeypatch):
+    from syrax import autonomy as auto_mod
+
+    monkeypatch.setattr(auto_mod, "resource_pressure", lambda: None)
+    script.queue = [
+        call("desktop", {"action": "system_info"}, "Checking the machine."),
+        reply("desktop works: system info returned."),
+    ]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello = boot(ws)
+        assert hello["autonomy"]["enabled"] is False and hello["autonomy"]["objectives"]["OPEN"] == 0
+        ws.send_json({"type": "objective_add", "goal": "Verify the desktop tool", "priority": 1})
+        created, _ = recv_until(ws, "objective")
+        assert created["event"] == "created" and created["source"] == "human"
+        ws.send_json({"type": "cycle_now"})
+        started, _ = recv_until(ws, "cycle")
+        assert started["event"] == "started" and started["forced"] is True
+        res, seen = recv_until(ws, "tool_result")
+        assert res["name"] == "desktop" and res["ok"] and "CPU" in res["output"]
+        done, seen = recv_until(ws, "objective")
+        while done["event"] == "updated":
+            done, seen = recv_until(ws, "objective")
+        st, _ = recv_until(ws, "autonomy_status")
+        assert st["last_cycle"]["outcome"] == "RAN" and st["last_cycle"]["verdict"] == "DONE"
+        ws.send_json({"type": "objectives"})
+        objs, _ = recv_until(ws, "objectives")
+        j = get_journal()
+        human = [o for o in objs["objectives"] if o["source"] == "human"][0]
+        assert human["status"] == "DONE" and human["evidence"]["judged"]["task_status"] == "SUCCESS"
+        task = j.task(human["last_task_id"])
+        assert task["kind"] == "autonomous" and task["status"] == "SUCCESS"
+        # the cycle derived verify-capability objectives for every untested tool before running
+        derived = {o["key"]: o for o in objs["objectives"] if o["source"] == "selfmodel"}
+        assert "verify-capability:python_execute" in derived
+        assert derived["verify-capability:desktop"]["status"] == "OPEN"
+        caps = {c["capability"]: c for c in core_mod.get_core().selfmodel.capabilities()}
+        assert caps["desktop"]["status"] == "VERIFIED"
+        # next cycle: the desktop objective is already satisfied by that evidence → closed with NO task
+        tasks_before = len(j.tasks(limit=100))
+        ws.send_json({"type": "cycle_now"})
+        st, seen = recv_until(ws, "autonomy_status")
+        assert st["last_cycle"]["verdict"] == "DONE" and st["last_cycle"]["task_id"] is None
+        assert "existing evidence" in st["last_cycle"]["reason"]
+        assert not any(e["type"] == "task" and e["event"] == "started" for e in seen)
+        assert len(j.tasks(limit=100)) == tasks_before
+        assert j.objective(derived["verify-capability:desktop"]["id"])["status"] == "DONE"
+    # autonomous work never lands in the conversation history
+    from syrax.memory import get_memory
+    assert all("AUTONOMOUS" not in r["user"] for r in get_memory().recent(50))
+
+
+def test_autonomy_toggle_persists_and_cycle_refuses_while_busy(script):
+    script.queue = [call("slow", {}, cid="call_slow")]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "autonomy", "enabled": True})
+        st, _ = recv_until(ws, "autonomy_status")
+        assert st["enabled"] is True
+        ws.send_json({"type": "task", "text": "wait"})
+        recv_until(ws, "tool_start")
+        ws.send_json({"type": "cycle_now"})
+        n, _ = recv_until(ws, "notice")
+        assert "Already executing" in n["text"]
+        ws.send_json({"type": "autonomy", "enabled": False})
+        st, _ = recv_until(ws, "autonomy_status")
+        assert st["enabled"] is False and st["running_loop"] is False
+        ws.send_json({"type": "stop"})
+        drain_until_idle(ws)
+    assert get_journal().get_meta("autonomy_enabled") == "0"
+    kinds = [e["type"] for e in get_journal().recent_events()]
+    assert kinds.count("autonomy.toggled") == 2

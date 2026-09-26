@@ -7,12 +7,16 @@ Protocol (JSON over ws://HOST:PORT/ws)
   client -> server: task {text, voice?} | answer {text} | stop | reset | ping |
                     history {limit?} | task_events {task_id} | resume {task_id} |
                     verifications {limit?} | self_model {section?} |
+                    objectives {limit?} | objective_add {goal, reason?, priority?} |
+                    autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
                     brain_models {id, api_key?} | brain_test {id}
   server -> client: hello {name, tools, interrupted, running, recent} | state |
                     user | think | tool_start | tool_result | ask | final |
                     task {event} | checkpoint | recovery {event} | verification |
                     history | task_events | verifications | self_model |
+                    objectives | autonomy_status | autonomy {event} | objective {event} | cycle {event} |
+                    reflection {event} |
                     notice | error | pong | brain | brains | brain_models | brain_test
 
 Sessions are observers: the task runs in ``syrax.core`` and continues when the
@@ -68,6 +72,9 @@ async def lifespan(_: FastAPI):
     core = get_core()
     for tid in await core.auto_resume():
         logger.warning(f"auto-resumed task {tid}")
+    if core.autonomy.enabled:
+        core.autonomy.start()
+        logger.info("autonomy loop started")
     logger.info(f"SYRAX online at ws://{HOST}:{PORT}/ws")
     # Warm the local ear in the background so the first voice command is fast.
     warm = asyncio.create_task(asyncio.to_thread(_warm_whisper))
@@ -198,6 +205,7 @@ class Session:
                 "interrupted": snap["interrupted"],
                 "running": snap["running"],
                 "recent": snap["recent"],
+                "autonomy": await asyncio.to_thread(self.core.autonomy.status),
             }
         )
         await self.send({"type": "brains", **get_router().describe()})
@@ -255,6 +263,34 @@ class Session:
                 await self.send({"type": "self_model", "section": section, **snap})
             except ValueError as e:
                 await self.send({"type": "error", "message": str(e)})
+        elif kind == "objectives":
+            limit = _limit(msg.get("limit"), 50)
+            rows = await asyncio.to_thread(journal.objectives, limit)
+            await self.send({"type": "objectives", "objectives": rows})
+        elif kind == "objective_add":
+            goal = str(msg.get("goal") or "").strip()
+            if not goal:
+                await self.send({"type": "notice", "text": "Objective needs a goal."})
+                return
+            try:
+                priority = max(1, min(int(msg.get("priority") or 3), 9))
+            except (TypeError, ValueError):
+                priority = 3
+            await journal.add_objective(goal, str(msg.get("reason") or "") or None, priority, "human")
+        elif kind == "autonomy":
+            if "enabled" in msg:
+                on = bool(msg.get("enabled"))
+                await self.core.autonomy.set_enabled_async(on)
+                if on:
+                    self.core.autonomy.start()
+                else:
+                    await self.core.autonomy.stop()
+            await self.send({"type": "autonomy_status", **await asyncio.to_thread(self.core.autonomy.status)})
+        elif kind == "cycle_now":
+            if self.core.busy:
+                await self.send({"type": "notice", "text": "Already executing. Stop it first."})
+                return
+            self.spawn(self._cycle())
         elif kind == "resume":
             tid = str(msg.get("task_id") or "")
             try:
@@ -280,6 +316,12 @@ class Session:
                 self.spawn(self._test(pid))
         else:
             await self.send({"type": "error", "message": f"Unknown message: {kind}"})
+
+    async def _cycle(self) -> None:
+        rep = await self.core.autonomy.run_once(force=True)
+        await self.core.broadcast({"type": "autonomy_status", **await asyncio.to_thread(self.core.autonomy.status)})
+        if rep.outcome != "RAN":
+            await self.send({"type": "notice", "text": f"Cycle {rep.outcome.lower()}: {rep.reason}"})
 
     async def _models(self, pid: str, key: Optional[str]) -> None:
         router = get_router()

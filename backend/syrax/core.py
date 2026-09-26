@@ -63,6 +63,7 @@ class Running:
     task: Optional[asyncio.Task] = None
     steps: List[dict] = field(default_factory=list)  # completed tool steps, in order
     unjournaled: int = 0
+    kind: str = "conversation"
 
 
 class Core:
@@ -77,6 +78,9 @@ class Core:
         self.selfmodel.tools_provider = self.tool_names
         self.selfmodel.brains_provider = lambda: get_router().describe()
         self.selfmodel.running_provider = lambda: self.snapshot()["running"]
+        from syrax.autonomy import Autonomy  # local import: autonomy depends on the core type
+
+        self.autonomy = Autonomy(self)
 
     # ——— observers ———
 
@@ -168,15 +172,22 @@ class Core:
 
     # ——— commands ———
 
-    async def submit(self, goal: str, said: Optional[str], session_id: Optional[str]) -> Optional[str]:
+    async def submit(
+        self, goal: str, said: Optional[str], session_id: Optional[str], kind: str = "conversation"
+    ) -> Optional[str]:
         """Start a task. Returns its id, or None when SYRAX is already busy."""
         if self.busy:
             return None
         await self.ensure_agent()
-        task_id = await self.journal.start_task(said or goal, session_id=session_id)
-        self.current = Running(task_id=task_id, goal=goal, session_id=session_id)
+        task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)
+        self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind)
         self.current.task = asyncio.create_task(self._run(goal, said))
         return task_id
+
+    async def wait(self) -> None:
+        """Wait for the running task (if any) to finish. Never raises."""
+        if self.current is not None and self.current.task is not None:
+            await asyncio.gather(self.current.task, return_exceptions=True)
 
     async def _run(self, request: str, said: Optional[str]) -> None:
         assert self.agent is not None and self.current is not None
@@ -188,10 +199,11 @@ class Core:
             await self.journal.record(
                 "task.completed", {"status": status, "result": reply}, task_id=self.current.task_id
             )
-            try:
-                get_memory().add_exchange(said or request, reply)
-            except Exception as e:
-                logger.warning(f"could not save history: {e}")
+            if self.current.kind == "conversation":  # autonomous work is not a conversation
+                try:
+                    get_memory().add_exchange(said or request, reply)
+                except Exception as e:
+                    logger.warning(f"could not save history: {e}")
         except asyncio.CancelledError:
             self.agent.repair_memory(aborted=True)
             await self._mark("task.cancelled", {"error": "aborted by human"})
@@ -315,6 +327,7 @@ class Core:
         }
 
     async def shutdown(self) -> None:
+        await self.autonomy.stop()
         if self.busy:
             assert self.current is not None and self.current.task is not None
             self.current.task.cancel()

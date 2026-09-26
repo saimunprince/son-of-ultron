@@ -76,7 +76,7 @@ EVIDENCE_STATES = ("SUCCESS", "PARTIAL", "FAILED", "BLOCKED", "UNKNOWN", "NOT_VE
 RECOVERY_STATES = ("RESUMABLE", "UNCERTAIN", "BLOCKED", "COMPLETED", "FAILED")
 
 # Event types allowed on a task that is already terminal (read-only attachments).
-TERMINAL_OK = frozenset({"verification.completed"})
+TERMINAL_OK = frozenset({"verification.completed", "reflection.created"})
 
 # Tools whose side effects can be verified against the filesystem after a crash.
 CHECKABLE_TOOLS = frozenset({"str_replace_editor"})
@@ -133,7 +133,7 @@ _WIRE = {
     "checkpoint.created": "checkpoint",
     "verification.completed": "verification",
 }
-_GROUPED = ("task", "recovery", "brain")
+_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy")
 
 
 @dataclass(frozen=True)
@@ -223,7 +223,35 @@ CREATE TABLE IF NOT EXISTS verifications (
   status   TEXT NOT NULL CHECK (status IN ('GREEN','BLOCKED')),
   gates    TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS objectives (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  key          TEXT UNIQUE,
+  goal         TEXT NOT NULL,
+  reason       TEXT,
+  priority     INTEGER NOT NULL DEFAULT 3,
+  status       TEXT NOT NULL CHECK (status IN ('OPEN','ACTIVE','DONE','BLOCKED','DROPPED')),
+  source       TEXT NOT NULL,
+  check_spec   TEXT NOT NULL,
+  evidence     TEXT NOT NULL,
+  progress     TEXT NOT NULL,
+  dependencies TEXT NOT NULL,
+  next_action  TEXT,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  last_task_id TEXT,
+  created      REAL NOT NULL,
+  updated      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS objectives_status_priority ON objectives(status, priority, created);
 """
+
+OBJECTIVE_STATUSES = ("OPEN", "ACTIVE", "DONE", "BLOCKED", "DROPPED")
+OBJECTIVE_TRANSITIONS: Dict[str, frozenset] = {
+    "OPEN": frozenset({"ACTIVE", "BLOCKED", "DROPPED", "DONE"}),
+    "ACTIVE": frozenset({"OPEN", "DONE", "BLOCKED", "DROPPED"}),
+    "BLOCKED": frozenset({"OPEN", "DROPPED", "DONE"}),
+    "DONE": frozenset(),
+    "DROPPED": frozenset({"OPEN"}),
+}
 
 
 class Journal:
@@ -719,6 +747,123 @@ class Journal:
         assert ev is not None
         return ev
 
+    # ——— objectives ———
+
+    @staticmethod
+    def _objective_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        for k in ("check_spec", "evidence", "progress", "dependencies"):
+            d[k] = _loads(d.get(k), {} if k != "dependencies" else [])
+        return d
+
+    def add_objective_sync(
+        self,
+        goal: str,
+        reason: Optional[str] = None,
+        priority: int = 3,
+        source: str = "human",
+        check: Optional[dict] = None,
+        key: Optional[str] = None,
+        dependencies: Optional[List[int]] = None,
+        status: str = "OPEN",
+        evidence: Optional[dict] = None,
+        next_action: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Create an objective. With ``key`` it is idempotent: an existing key
+        returns None (nothing written)."""
+        if status not in OBJECTIVE_STATUSES:
+            raise JournalError(f"bad objective status {status!r}")
+        ts = _now()
+        with self._txn() as cur:
+            if key and cur.execute("SELECT 1 FROM objectives WHERE key=?", (key,)).fetchone():
+                return None
+            cur.execute(
+                "INSERT INTO objectives(key, goal, reason, priority, status, source, check_spec, evidence, "
+                "progress, dependencies, next_action, created, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    key, goal, reason, int(priority), status, source,
+                    _dumps(check or {"kind": "task_success"}), _dumps(evidence or {}), _dumps({}),
+                    _dumps(dependencies or []), next_action, ts, ts,
+                ),
+            )
+            oid = int(cur.lastrowid)
+            self._insert_event(
+                cur, ts, None, "objective.created",
+                {"objective_id": oid, "goal": goal, "priority": int(priority), "source": source, "status": status, "key": key},
+            )
+        return self.objective(oid)
+
+    def update_objective_sync(
+        self,
+        objective_id: int,
+        status: Optional[str] = None,
+        progress: Optional[dict] = None,
+        evidence: Optional[dict] = None,
+        next_action: Optional[str] = None,
+        last_task_id: Optional[str] = None,
+        bump_attempts: bool = False,
+        note: Optional[str] = None,
+    ) -> dict:
+        ts = _now()
+        with self._txn() as cur:
+            row = cur.execute("SELECT * FROM objectives WHERE id=?", (objective_id,)).fetchone()
+            if row is None:
+                raise JournalError(f"unknown objective {objective_id}")
+            current = row["status"]
+            new_status = status or current
+            if new_status != current and new_status not in OBJECTIVE_TRANSITIONS[current]:
+                raise JournalError(f"invalid objective transition {current} -> {new_status}")
+            upd: Dict[str, Any] = {"updated": ts, "status": new_status}
+            if progress is not None:
+                upd["progress"] = _dumps({**_loads(row["progress"], {}), **progress})
+            if evidence is not None:
+                upd["evidence"] = _dumps({**_loads(row["evidence"], {}), **evidence})
+            if next_action is not None:
+                upd["next_action"] = next_action
+            if last_task_id is not None:
+                upd["last_task_id"] = last_task_id
+            if bump_attempts:
+                upd["attempts"] = int(row["attempts"]) + 1
+            cols = ", ".join(f"{k}=?" for k in upd)
+            cur.execute(f"UPDATE objectives SET {cols} WHERE id=?", (*upd.values(), objective_id))
+            kind = {
+                "DONE": "objective.completed", "BLOCKED": "objective.blocked", "DROPPED": "objective.dropped",
+            }.get(new_status if new_status != current else "", "objective.updated")
+            self._insert_event(
+                cur, ts, last_task_id, kind,
+                {"objective_id": objective_id, "status": new_status, "attempts": upd.get("attempts", row["attempts"]),
+                 "note": note, "evidence": evidence or {}},
+            )
+        return self.objective(objective_id)
+
+    def objective(self, objective_id: int) -> Optional[dict]:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM objectives WHERE id=?", (objective_id,)).fetchone()
+        return self._objective_dict(row) if row else None
+
+    def objectives(self, limit: int = 50, status: Optional[str | Iterable[str]] = None) -> List[dict]:
+        limit = max(1, min(int(limit), 500))
+        sql = "SELECT * FROM objectives"
+        params: list = []
+        if status:
+            statuses = [status] if isinstance(status, str) else list(status)
+            sql += f" WHERE status IN ({','.join('?' * len(statuses))})"
+            params += statuses
+        sql += " ORDER BY priority, created LIMIT ?"
+        params.append(limit)
+        with self._lock:
+            rows = self._db.execute(sql, params).fetchall()
+        return [self._objective_dict(r) for r in rows]
+
+    def get_meta(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        with self._lock:
+            row = self._db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+        return row[0] if row else default
+
+    def set_meta(self, key: str, value: str) -> None:
+        with self._txn() as cur:
+            cur.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
+
     # ——— queries ———
 
     @staticmethod
@@ -756,6 +901,18 @@ class Journal:
                 (task_id, after_id, limit),
             ).fetchall()
         return [{**dict(r), "payload": _loads(r["payload"], {})} for r in rows]
+
+    def last_event_id(self) -> int:
+        with self._lock:
+            return int(self._db.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0])
+
+    def events_since(self, event_id: int, limit: int = 1000) -> List[Event]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, ts, task_id, type, payload, seq FROM events WHERE id>? ORDER BY id LIMIT ?",
+                (event_id, limit),
+            ).fetchall()
+        return [Event(r["id"], r["ts"], r["task_id"], r["type"], r["seq"], _loads(r["payload"], {})) for r in rows]
 
     def recent_events(self, limit: int = 100) -> List[dict]:
         limit = max(1, min(int(limit), 5000))
@@ -828,7 +985,7 @@ class Journal:
         return out
 
     def count(self, table: str) -> int:
-        if table not in ("events", "tasks", "checkpoints", "verifications"):
+        if table not in ("events", "tasks", "checkpoints", "verifications", "objectives"):
             raise ValueError(table)
         with self._lock:
             return int(self._db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
@@ -865,6 +1022,21 @@ class Journal:
                 await cb(ev)
             except Exception as e:  # observers must never break the journal
                 log.warning("journal subscriber failed: %s", e)
+
+    async def run(self, fn: Callable[..., Any], *args, **kwargs) -> Any:
+        """Run a sync journal call in a worker thread, then fan out every event
+        it committed. Use this for objective/meta writes from async code."""
+        before = self.last_event_id()
+        result = await asyncio.to_thread(lambda: fn(*args, **kwargs))
+        for ev in self.events_since(before):
+            await self._fanout(ev)
+        return result
+
+    async def add_objective(self, *args, **kwargs) -> Optional[dict]:
+        return await self.run(self.add_objective_sync, *args, **kwargs)
+
+    async def update_objective(self, *args, **kwargs) -> dict:
+        return await self.run(self.update_objective_sync, *args, **kwargs)
 
     async def start_task(self, goal: str, session_id: Optional[str] = None, kind: str = "conversation") -> str:
         task_id = await asyncio.to_thread(self.start_task_sync, goal, session_id, kind)

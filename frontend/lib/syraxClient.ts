@@ -140,6 +140,47 @@ export interface SelfModelSummary {
   };
 }
 
+export type ObjectiveStatus = "OPEN" | "ACTIVE" | "DONE" | "BLOCKED" | "DROPPED";
+
+export interface Objective {
+  id: number;
+  key: string | null;
+  goal: string;
+  reason: string | null;
+  priority: number;
+  status: ObjectiveStatus;
+  source: string;
+  check_spec: Record<string, unknown>;
+  evidence: Record<string, unknown>;
+  progress: Record<string, unknown>;
+  dependencies: number[];
+  next_action: string | null;
+  attempts: number;
+  last_task_id: string | null;
+  created: number;
+  updated: number;
+}
+
+export interface CycleReport {
+  started: number;
+  outcome: "RAN" | "IDLE" | "SKIPPED" | "DISABLED" | "BUSY";
+  reason: string | null;
+  objective_id: number | null;
+  task_id: string | null;
+  task_status: TaskStatus | null;
+  verdict: "DONE" | "RETRY" | "BLOCKED" | null;
+  derived: number;
+}
+
+export interface AutonomyStatus {
+  enabled: boolean;
+  running_loop: boolean;
+  interval_s: number;
+  last_cycle: CycleReport | null;
+  cycles: number;
+  objectives: Record<ObjectiveStatus, number>;
+}
+
 /** Fields the journal adds to every event it fanned out. */
 export interface Journaled {
   task_id?: string;
@@ -156,6 +197,7 @@ export type ServerEvent =
       interrupted: InterruptedTask[];
       running: RunningTask | null;
       recent: TaskSummary[];
+      autonomy: AutonomyStatus;
     }
   | ({ type: "brains" } & BrainsState)
   | { type: "brain"; event: "answered"; provider: string; label: string; model: string }
@@ -189,6 +231,22 @@ export type ServerEvent =
   | { type: "history"; tasks: TaskSummary[] }
   | { type: "task_events"; task_id: string; events: JournalEvent[] }
   | { type: "verifications"; verifications: Verification[] }
+  | { type: "objectives"; objectives: Objective[] }
+  | ({ type: "autonomy_status" } & AutonomyStatus)
+  | ({ type: "autonomy"; event: "toggled"; enabled: boolean } & Journaled)
+  | ({
+      type: "objective";
+      event: "created" | "updated" | "completed" | "blocked" | "dropped";
+      objective_id: number;
+      goal?: string;
+      status?: ObjectiveStatus;
+      priority?: number;
+      source?: string;
+      note?: string | null;
+      attempts?: number;
+    } & Journaled)
+  | ({ type: "cycle"; event: "started" | "completed"; forced?: boolean; outcome?: CycleReport["outcome"]; reason?: string | null; verdict?: string | null } & Journaled)
+  | ({ type: "reflection"; event: "created"; objective_id: number; verdict: string; lesson: string; attempt: number } & Journaled)
   | ({ type: "self_model"; section: "summary" } & SelfModelSummary)
   | { type: "self_model"; section: string; [key: string]: unknown }
   | { type: "notice"; text: string }
@@ -206,6 +264,10 @@ export type ClientMessage =
   | { type: "verifications"; limit?: number }
   | { type: "resume"; task_id: string }
   | { type: "self_model"; section?: string }
+  | { type: "objectives"; limit?: number }
+  | { type: "objective_add"; goal: string; reason?: string; priority?: number }
+  | { type: "autonomy"; enabled?: boolean }
+  | { type: "cycle_now" }
   | { type: "brains_get" }
   | { type: "brains_save"; providers: Record<string, BrainChange>; order?: string[] }
   | { type: "brain_models"; id: string; api_key?: string }

@@ -11,6 +11,7 @@ import {
   type BrainTestResult,
   type ClientMessage,
   type LinkState,
+  type AutonomyStatus,
   type SelfModelSummary,
   type ServerEvent,
 } from "@/lib/syraxClient";
@@ -114,6 +115,7 @@ export default function Syrax() {
   const [brainTests, setBrainTests] = useState<Record<string, BrainTestResult | "running">>({});
   const [brainOpen, setBrainOpen] = useState(false);
   const [selfOpen, setSelfOpen] = useState(false);
+  const [autonomy, setAutonomy] = useState<AutonomyStatus | null>(null);
   const [selfModel, setSelfModel] = useState<SelfModelSummary | null>(null);
   const [booting, setBooting] = useState(true);
   const [theme, setTheme] = useState<OrbTheme>("ultron");
@@ -273,6 +275,30 @@ export default function Syrax() {
             });
           }
           if (e.running) push({ kind: "notice", id: nextId++, text: `RUNNING · "${e.running.goal.slice(0, 80)}" · step ${e.running.step}` });
+          setAutonomy(e.autonomy);
+          break;
+        case "autonomy_status": {
+          const { type: _t, ...rest } = e;
+          void _t;
+          setAutonomy(rest);
+          break;
+        }
+        case "autonomy":
+          push({ kind: "notice", id: nextId++, text: e.enabled ? "AUTONOMY ON · SYRAX will pursue its own objectives when idle." : "AUTONOMY OFF." });
+          break;
+        case "objective":
+          if (e.event === "created") push({ kind: "notice", id: nextId++, text: `OBJECTIVE · P${e.priority ?? "?"} · ${e.goal ?? ""}` });
+          else if (e.event === "completed") push({ kind: "notice", id: nextId++, text: `OBJECTIVE DONE · #${e.objective_id} · ${e.note ?? ""}` });
+          else if (e.event === "blocked") push({ kind: "notice", id: nextId++, text: `OBJECTIVE BLOCKED · #${e.objective_id} · ${e.note ?? ""}` });
+          break;
+        case "cycle":
+          if (e.event === "started") push({ kind: "notice", id: nextId++, text: "CYCLE · reviewing objectives" });
+          else if (e.outcome === "RAN") push({ kind: "notice", id: nextId++, text: `CYCLE · ${e.verdict ?? "?"}${e.reason ? ` · ${e.reason}` : ""}` });
+          break;
+        case "reflection":
+          push({ kind: "notice", id: nextId++, text: `LESSON · ${e.lesson}` });
+          break;
+        case "objectives":
           break;
         case "task":
           if (e.event === "interrupted")
@@ -984,6 +1010,15 @@ export default function Syrax() {
           </button>
           <button type="button" className="hud-btn" onClick={openSelf} title="Self model (S)">
             SELF
+          </button>
+          <button
+            type="button"
+            className="hud-btn"
+            aria-pressed={!!autonomy?.enabled}
+            onClick={() => clientRef.current?.send({ type: "autonomy", enabled: !autonomy?.enabled })}
+            title="Let SYRAX pursue its own objectives when idle"
+          >
+            {autonomy?.enabled ? `AUTO ON · ${autonomy.objectives.OPEN} OPEN` : "AUTO OFF"}
           </button>
           <button
             type="button"

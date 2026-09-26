@@ -1,6 +1,6 @@
 # SYRAX System Map
 
-Rendered from `docs/system_map.json` (audit of 2026-09-26, self-model added the same day). Every entry was checked against the source files it names.
+Rendered from `docs/system_map.json` (audit of 2026-09-26; self-model and autonomy added the same day). Every entry was checked against the source files it names.
 
 ## Frontend HUD
 
@@ -86,6 +86,23 @@ Evidence-based model of SYRAX itself: identity/version from git, structure from 
 | Code | backend/syrax/selfmodel.py; frontend/components/SelfPanel.tsx |
 | Tests | backend/syrax/test_selfmodel.py; backend/syrax/test_bridge.py (self-model section) |
 | Failure Modes | git unavailable → version/head None; map missing → components [] and present=false; self_inspect before the core exists → tool error |
+
+## Autonomy
+
+Objectives table plus a bounded self-directed cycle: derive objectives from self-model weaknesses, run one autonomous task per cycle through the core, judge completion from journal evidence only, reflect, retry with a lesson or block after 3 attempts.
+
+| | |
+|---|---|
+| Dependencies | syrax.journal (objectives, meta, events); syrax.selfmodel (capabilities, behavior); syrax.core (submit kind=autonomous, wait); os.getloadavg, /proc/meminfo |
+| Inputs | WS autonomy {enabled}, cycle_now, objective_add, objectives; SYRAX_AUTONOMY, SYRAX_CYCLE_INTERVAL |
+| Outputs | objective.*, cycle.*, reflection.created, autonomy.toggled events; autonomy_status replies; autonomous tasks in the journal |
+| State | cycle reports in memory (last 200); enabled flag in journal meta |
+| Persistence | objectives table; events |
+| Capabilities | evidence-only judging (tool_verified, verification_green, task_success, human); idempotent derivation by key; one live objective per tool; objective already satisfied → closed without a task; resource gate; never runs while a human task runs; background loop with interval; off by default |
+| Limitations | no research or self-modification objectives yet; lessons are derived strings, not model reflections; resource gate: CPU load + free RAM only; one task per cycle, no parallel objectives |
+| Code | backend/syrax/autonomy.py |
+| Tests | backend/syrax/test_autonomy.py; backend/syrax/test_bridge.py (autonomy section) |
+| Failure Modes | derivation error → logged, cycle continues; cycle crash in loop → logged, next cycle after interval; core busy → BUSY report, objective back to OPEN |
 
 ## SyraxAgent
 
