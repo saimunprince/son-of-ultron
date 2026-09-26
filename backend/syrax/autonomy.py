@@ -36,6 +36,12 @@ from syrax import resources
 from syrax.journal import Journal, JournalError
 
 MAX_ATTEMPTS = 3
+# Tools that cannot be exercised "harmlessly" without a real need: verifying them
+# on their own would mean junk releases, junk skills, fake memories or uncited
+# conclusions. Their evidence comes from real use.
+NOT_AUTO_VERIFIED = frozenset({
+    "release", "skill_create", "skill_test", "learn", "remember", "forget", "experiment", "present", "terminate", "ask_human",
+})
 DEFAULT_INTERVAL_S = 120.0
 IDLE_INTERVAL_S = 600.0
 MAINTENANCE_EVERY_S = 86400.0
@@ -82,7 +88,7 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
     }
     for c in caps:
         name = c["capability"]
-        if not c["registered"] or name in ("terminate", "ask_human") or name in targeted:
+        if not c["registered"] or name in NOT_AUTO_VERIFIED or name in targeted:
             continue
         if c["status"] == "NOT_TESTED":
             ok = journal.add_objective_sync(
@@ -106,6 +112,11 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
                 evidence={"capability": c},
             )
             created += bool(ok)
+    # objectives created for such tools by an earlier version are dropped, with the reason
+    for o in journal.objectives(limit=500, status=["OPEN", "ACTIVE", "BLOCKED"]):
+        spec = o.get("check_spec") or {}
+        if spec.get("kind") == "tool_verified" and spec.get("tool") in NOT_AUTO_VERIFIED and o.get("source") == "selfmodel":
+            journal.update_objective_sync(o["id"], status="DROPPED", note=f"{spec['tool']} is not auto-verified: it needs a real purpose")
     behavior = selfmodel.behavior()
     last_v = behavior["verifications"]["last"]
     if last_v and last_v["status"] == "BLOCKED":
@@ -236,6 +247,7 @@ class Autonomy:
         self.interval = float(os.getenv("SYRAX_CYCLE_INTERVAL", DEFAULT_INTERVAL_S))
         self.reports: List[CycleReport] = []
         self._loop_task: Optional[asyncio.Task] = None
+        self._cycle_running = False
         self.recover_active("process restarted")
 
     def recover_active(self, why: str) -> int:
@@ -296,9 +308,16 @@ class Autonomy:
         if not force and not self.enabled:
             rep.outcome, rep.reason = "DISABLED", "autonomy is off"
             return await self._finish(rep)
-        if self.core.busy:
-            rep.outcome, rep.reason = "BUSY", "a task is already running"
+        if self.core.busy or self._cycle_running:
+            rep.outcome, rep.reason = "BUSY", "a task is already running" if self.core.busy else "a cycle is already running"
             return await self._finish(rep)
+        self._cycle_running = True
+        try:
+            return await self._run_cycle(rep, force)
+        finally:
+            self._cycle_running = False
+
+    async def _run_cycle(self, rep: CycleReport, force: bool) -> CycleReport:
         pressure = resource_pressure()
         if pressure and not force:
             rep.outcome, rep.reason = "SKIPPED", pressure
@@ -414,7 +433,8 @@ class Autonomy:
             self._loop_task.cancel()
             await asyncio.gather(self._loop_task, return_exceptions=True)
         self._loop_task = None
-        await self.journal.run(self.recover_active, "loop stopped")
+        if not self._cycle_running:  # a cycle started by cycle_now keeps its objective until it finishes
+            await self.journal.run(self.recover_active, "loop stopped")
 
 
 def auto_keywords(text: str) -> List[str]:

@@ -31,6 +31,11 @@ Events: `objective.created / updated / completed / blocked / dropped`,
   - last verification BLOCKED → `verification-blocked:<ts>` (P1, check `verification_green`);
   - an interrupted task with an UNCERTAIN operation → `uncertain-task:<id>`, created **BLOCKED** with check `human`.
   - At most one live (OPEN/ACTIVE/BLOCKED) objective per tool.
+  - Never for tools that cannot be exercised harmlessly without a real need
+    (`release`, `skill_create`, `skill_test`, `learn`, `remember`, `forget`,
+    `experiment`, `present`, `terminate`, `ask_human`): verifying them on their
+    own would mean junk releases, junk skills or fake memories. Their evidence
+    comes from real use; stale objectives of that kind are DROPPED.
 
 ## The cycle (`Autonomy.run_once`)
 
@@ -55,7 +60,7 @@ called the tool" (`test_model_claiming_success_without_evidence_is_not_done`).
 `task_success` (human goals) needs the task to end SUCCESS, which itself needs
 a journaled final. `human` is never auto-completed.
 
-Bounds: one task per cycle; `MAX_ATTEMPTS = 3` then BLOCKED with
+Bounds: one cycle at a time (a second `cycle_now` or loop tick reports BUSY); turning AUTO off does not reopen the objective of a cycle that is still running; one task per cycle; `MAX_ATTEMPTS = 3` then BLOCKED with
 `next_action = "needs a different strategy or a human"`; interval
 `SYRAX_CYCLE_INTERVAL` (default 120 s) after a run, 600 s when idle; blocked
 objectives are never retried blindly.

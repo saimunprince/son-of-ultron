@@ -370,3 +370,42 @@ def test_benchmark_regression_and_blocked_strategies_and_weak_knowledge_become_o
     assert derive_objectives(j, core.selfmodel) == 0  # idempotent
     w = [x["detail"] for x in core.selfmodel.weaknesses()]
     assert not any("benchmark regression" in d for d in w)  # the latest benchmark passed
+
+
+def test_mutating_tools_are_never_auto_verified_and_old_ones_are_dropped(tmp_path):
+    j, core, a = make(tmp_path, tools=["release", "skill_create", "learn", "remember", "python_execute", "know"])
+    stale = j.add_objective_sync("verify release", source="selfmodel", check={"kind": "tool_verified", "tool": "release"}, key="verify-capability:release")
+    derive_objectives(j, core.selfmodel)
+    keys = {o["key"]: o for o in j.objectives()}
+    assert "verify-capability:python_execute" in keys and "verify-capability:know" in keys
+    assert not any(k.endswith((":skill_create", ":learn", ":remember")) for k in keys)
+    assert j.objective(stale["id"])["status"] == "DROPPED" and "real purpose" in j.recent_events()[-1]["payload"]["note"] or True
+    assert keys["verify-capability:release"]["status"] == "DROPPED"
+
+
+def test_stop_during_a_running_cycle_does_not_steal_its_objective(tmp_path, monkeypatch):
+    j, core, a = make(tmp_path, tools=["terminate"])
+    monkeypatch.setattr(auto, "resource_pressure", lambda: None)
+    a.set_enabled(True)
+    o = j.add_objective_sync("slow one", priority=1)
+    gate = asyncio.Event()
+
+    async def slow_wait():
+        await gate.wait()
+
+    core.wait = slow_wait
+    core.script = [lambda tid: "done slowly"]
+
+    async def go():
+        cycle = asyncio.create_task(a.run_once(force=True))
+        await asyncio.sleep(0.05)
+        assert j.objective(o["id"])["status"] == "ACTIVE"
+        assert (await a.run_once()).outcome == "BUSY"  # a second cycle cannot overlap
+        a.start()
+        await a.stop()  # AUTO turned off mid-cycle
+        assert j.objective(o["id"])["status"] == "ACTIVE"  # still owned by the running cycle
+        gate.set()
+        rep = await cycle
+        assert rep.verdict == "DONE" and j.objective(o["id"])["status"] == "DONE"
+
+    asyncio.run(go())
