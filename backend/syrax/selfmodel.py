@@ -264,6 +264,11 @@ class SelfModel:
                 if last else None
             ),
             "benchmarks": self.journal.count("benchmarks"),
+            "last_quality": (
+                {"id": q[0]["id"], "ts": q[0]["ts"], "status": q[0]["status"], "pass_rate": q[0]["pass_rate"], "delta": q[0]["delta"],
+                 "brain": q[0]["brain"], "failed": [r["id"] for r in q[0]["results"] if not r.get("ok")]}
+                if (q := self.journal.quality_runs(limit=1)) else None
+            ),
             "experiments": {
                 "count": self.journal.count("experiments"),
                 "recent": [{"id": e["id"], "verdict": e["verdict"], "metric": e["metric"], "hypothesis": e["hypothesis"][:100]} for e in self.journal.experiments(limit=5)],
@@ -330,6 +335,9 @@ class SelfModel:
         perf = self.performance()
         if perf["last_benchmark"] and perf["last_benchmark"]["status"] == "REGRESSION":
             out.append({"kind": "performance", "detail": f"benchmark regression in {', '.join(perf['last_benchmark']['regressions'])}", "evidence": "journal.benchmarks"})
+        lq = perf.get("last_quality")
+        if lq and (lq["status"] == "REGRESSION" or lq["failed"]):
+            out.append({"kind": "quality", "detail": f"task-quality {lq['pass_rate']}% ({lq['status']}); failing cases: {', '.join(lq['failed']) or 'none'}", "evidence": "journal.quality_runs"})
         if b["success_rate"] is not None and b["success_rate"] < 0.7 and b["tasks_total"] >= 5:
             out.append({"kind": "behavior", "detail": f"success rate {b['success_rate']} over {b['tasks_total']} tasks", "evidence": "journal.tasks"})
         smap = self.system_map() or {}

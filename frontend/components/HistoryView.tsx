@@ -113,6 +113,10 @@ export function describeEvent(e: JournalEvent): string | null {
       return null;
     case "experiment.completed":
       return `Experiment ${s("verdict")}: ${s("hypothesis").slice(0, 70)}`;
+    case "quality.started":
+      return null;
+    case "quality.completed":
+      return `Quality ${s("status")} · ${p["pass_rate"]}%${(p["failed"] as string[] | undefined)?.length ? ` · failed ${(p["failed"] as string[]).join(", ")}` : ""}`;
     case "maintenance.completed":
       return `Maintenance: pruned ${p["events_pruned"]} events`;
     case "brain.failover":

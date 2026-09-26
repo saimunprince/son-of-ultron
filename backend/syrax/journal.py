@@ -145,7 +145,7 @@ _WIRE = {
     "checkpoint.created": "checkpoint",
     "verification.completed": "verification",
 }
-_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback", "maintenance", "presentation", "benchmark", "experiment")
+_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback", "maintenance", "presentation", "benchmark", "experiment", "quality")
 
 
 @dataclass(frozen=True)
@@ -281,6 +281,17 @@ CREATE TABLE IF NOT EXISTS benchmarks (
   compared_to INTEGER,
   deltas   TEXT NOT NULL,
   task_id  TEXT
+);
+CREATE TABLE IF NOT EXISTS quality_runs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts          REAL NOT NULL,
+  git_head    TEXT,
+  brain       TEXT,
+  results     TEXT NOT NULL,
+  pass_rate   REAL NOT NULL,
+  status      TEXT NOT NULL CHECK (status IN ('BASELINE','PASS','REGRESSION')),
+  compared_to INTEGER,
+  delta       REAL
 );
 CREATE TABLE IF NOT EXISTS experiments (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1068,6 +1079,34 @@ class Journal:
         d["deltas"] = _loads(d.get("deltas"), {})
         return d
 
+    def add_quality_run_sync(self, results: list, pass_rate: float, status: str, compared_to: Optional[int] = None,
+                             delta: Optional[float] = None, brain: Optional[str] = None) -> dict:
+        if status not in ("BASELINE", "PASS", "REGRESSION"):
+            raise JournalError(f"bad quality status {status!r}")
+        ts = _now()
+        with self._txn() as cur:
+            cur.execute(
+                "INSERT INTO quality_runs(ts, git_head, brain, results, pass_rate, status, compared_to, delta) VALUES (?,?,?,?,?,?,?,?)",
+                (ts, _git_head(self.repo_root), brain, _dumps(results), float(pass_rate), status, compared_to, delta),
+            )
+            qid = int(cur.lastrowid)
+            self._insert_event(cur, ts, None, "quality.completed", {
+                "quality_id": qid, "status": status, "pass_rate": float(pass_rate), "delta": delta, "compared_to": compared_to, "brain": brain,
+                "failed": [r["id"] for r in results if not r.get("ok")],
+            })
+        return self.quality_run(qid)
+
+    def quality_run(self, quality_id: int) -> Optional[dict]:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM quality_runs WHERE id=?", (quality_id,)).fetchone()
+        return {**dict(row), "results": _loads(row["results"], [])} if row else None
+
+    def quality_runs(self, limit: int = 20) -> List[dict]:
+        limit = max(1, min(int(limit), 500))
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM quality_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [{**dict(r), "results": _loads(r["results"], [])} for r in rows]
+
     def add_experiment_sync(self, hypothesis: str, baseline: dict, candidate: dict, metric: str, result: dict, conclusion: str,
                             verdict: str, objective: Optional[str] = None, next_action: Optional[str] = None,
                             task_id: Optional[str] = None) -> dict:
@@ -1390,7 +1429,7 @@ class Journal:
         return out
 
     def count(self, table: str) -> int:
-        if table not in ("events", "tasks", "checkpoints", "verifications", "objectives", "knowledge", "skills", "benchmarks", "experiments"):
+        if table not in ("events", "tasks", "checkpoints", "verifications", "objectives", "knowledge", "skills", "benchmarks", "experiments", "quality_runs"):
             raise ValueError(table)
         with self._lock:
             return int(self._db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])

@@ -137,6 +137,7 @@ export interface SelfModelSummary {
   performance: {
     last_benchmark: { id: number; ts: number; status: BenchmarkRow["status"]; git_head: string | null; metrics: Record<string, number>; regressions: string[] } | null;
     benchmarks: number;
+    last_quality: { id: number; ts: number; status: QualityRun["status"]; pass_rate: number; delta: number | null; brain: string | null; failed: string[] } | null;
     experiments: { count: number; recent: { id: number; verdict: ExperimentRow["verdict"]; metric: string; hypothesis: string }[] };
   };
   runtime: {
@@ -312,6 +313,18 @@ export interface ExperimentRow {
   task_id: string | null;
 }
 
+export interface QualityRun {
+  id: number;
+  ts: number;
+  git_head: string | null;
+  brain: string | null;
+  results: { id: string; ok: boolean; task_id: string | null; status?: string; steps?: number; ms: number; checks: { check: string; ok: boolean; detail: string }[]; final?: string }[];
+  pass_rate: number;
+  status: "BASELINE" | "PASS" | "REGRESSION";
+  compared_to: number | null;
+  delta: number | null;
+}
+
 /** Fields the journal adds to every event it fanned out. */
 export interface Journaled {
   task_id?: string;
@@ -372,6 +385,8 @@ export type ServerEvent =
   | ({ type: "presentation"; event: "created" } & PresentationElement & Journaled)
   | ({ type: "presentation"; event: "dismissed"; presentation_id: string; reason: string; kind: PresentationKind } & Journaled)
   | ({ type: "presentation_plan" } & PresentationPlan)
+  | { type: "quality_runs"; runs: QualityRun[] }
+  | ({ type: "quality"; event: "started" | "completed"; cases?: string[]; quality_id?: number; status?: QualityRun["status"]; pass_rate?: number; delta?: number | null; failed?: string[]; brain?: string | null } & Journaled)
   | { type: "benchmarks"; benchmarks: BenchmarkRow[] }
   | { type: "experiments"; experiments: ExperimentRow[] }
   | ({ type: "benchmark"; event: "completed"; benchmark_id: number; status: BenchmarkRow["status"]; compared_to: number | null; regressions: string[] } & Journaled)
@@ -425,6 +440,8 @@ export type ClientMessage =
   | { type: "skills" }
   | { type: "presentation" }
   | { type: "benchmarks"; limit?: number }
+  | { type: "quality_run"; only?: string[] }
+  | { type: "quality_runs"; limit?: number }
   | { type: "experiments"; limit?: number }
   | { type: "brains_get" }
   | { type: "brains_save"; providers: Record<string, BrainChange>; order?: string[] }

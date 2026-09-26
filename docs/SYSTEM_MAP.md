@@ -174,19 +174,19 @@ Decides what to show from the real event stream: elements from a visual vocabula
 
 ## Experiments + benchmarks
 
-Measured self-improvement: a benchmark suite of SYRAX's own mechanisms compared with the previous run (BASELINE/PASS/REGRESSION), an experiment engine that runs baseline vs candidate tool calls and computes the verdict from measurements, and objectives derived from benchmark regressions, repeatedly blocked strategies and weakly supported knowledge.
+Measured self-improvement: a benchmark suite of SYRAX's own mechanisms compared with the previous run (BASELINE/PASS/REGRESSION), an experiment engine that runs baseline vs candidate tool calls and computes the verdict from measurements, and objectives derived from benchmark regressions, repeatedly blocked strategies and weakly supported knowledge. Plus a task-quality benchmark: ten fixed tasks run through the real core and brain, outcomes checked by machine, pass rate compared run to run.
 
 | | |
 |---|---|
 | Dependencies | syrax.journal benchmarks/experiments tables; syrax.selfmodel (performance section); syrax.verify performance gate; the live tool collection |
-| Inputs | python -m syrax.bench; experiment {hypothesis, baseline, candidate, metric, repeats}; WS benchmarks, experiments |
-| Outputs | benchmark.completed / experiment.started / experiment.completed events; benchmarks and experiments rows; self-improvement objectives |
+| Inputs | python -m syrax.bench; experiment {hypothesis, baseline, candidate, metric, repeats}; WS benchmarks, experiments; WS quality_run {only?}, quality_runs |
+| Outputs | benchmark.completed / experiment.started / experiment.completed events; benchmarks and experiments rows; self-improvement objectives; quality_runs rows; quality.started / quality.completed events; quality_recovered objectives |
 | State | none |
 | Persistence | journal tables |
 | Capabilities | regression = >50% and >5 ms slower than the last run; verdicts from numbers only; 10% noise band; both-fail = INCONCLUSIVE; dangerous tools cannot be experiment arms; performance gate records every release's benchmark |
-| Limitations | performance gate is optional (laptop noise); no task-quality or model-quality benchmark; experiments compare tool calls, not code versions |
-| Code | backend/syrax/bench.py; backend/syrax/experiments.py |
-| Tests | backend/syrax/test_bench.py; backend/syrax/test_experiments.py; backend/syrax/test_autonomy.py (self-improvement); backend/syrax/test_bridge.py (experiments section) |
+| Limitations | performance gate is optional (laptop noise); experiments compare tool calls, not code versions; quality suite: 10 cases, brain-dependent, on demand only |
+| Code | backend/syrax/bench.py; backend/syrax/experiments.py; backend/syrax/quality.py |
+| Tests | backend/syrax/test_bench.py; backend/syrax/test_experiments.py; backend/syrax/test_autonomy.py (self-improvement); backend/syrax/test_bridge.py (experiments section); backend/syrax/test_quality.py |
 | Failure Modes | both arms fail → INCONCLUSIVE, no conclusion drawn; benchmark under load → REGRESSION reported, objective created, gate optional |
 
 ## SyraxAgent

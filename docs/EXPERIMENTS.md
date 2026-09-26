@@ -28,6 +28,23 @@ It is recorded and reported but stays optional (not required for GREEN), because
 a laptop under load can produce false regressions; a required gate would block
 releases on noise. The regression is still a measured weakness (below).
 
+## Task-quality benchmark (`quality_run`)
+
+`backend/syrax/quality.py` runs ten fixed tasks through the real core and
+brain and checks the outcome by machine only: the final text (regex), which
+tools ran, and file contents. Cases: arithmetic, python tool use, file create,
+file edit, self-version via `self_inspect`, CPU count via `desktop`, restraint
+(one word, no tools), `present` a table, honest `know`, `research` with a
+source. Each run stores per-case evidence and a pass rate in `quality_runs`;
+a drop of more than 15 percentage points against the previous run is a
+REGRESSION, the first run is a BASELINE. Eval tasks have `kind = "eval"` and
+never enter the conversation history. It costs model calls (about a minute
+per case on the free brain) and needs an idle core, so it is on demand:
+WebSocket `quality_run {only?}` / `quality_runs`, never part of the release
+gate. A regression becomes an objective (`quality_recovered`) that closes only
+when a newer run is not a regression; the self-model lists the last run under
+`performance.last_quality` and failing cases as a weakness.
+
 ## Experiments (`experiment` tool)
 
 ```
@@ -63,6 +80,6 @@ a weakness with evidence `journal.benchmarks`.
 
 ## Limits
 
-- Benchmarks measure SYRAX's own mechanisms only; no model-quality or task-quality benchmark exists.
+- The task-quality suite is small (10 cases) and brain-dependent; it measures outcomes, not reasoning quality.
 - Experiments measure tool calls, not code changes; changing code and measuring is still research → `release`.
 - Objectives are executed by the same agent with the same tools; "fix the regression" depends on the model finding the cause.

@@ -273,7 +273,9 @@ first run is a BASELINE. The release gate records a benchmark on every
 release. The `experiment` tool runs a baseline and a candidate tool call,
 repeated, and computes the verdict from the numbers. Regressions, repeatedly
 blocked strategies and weakly supported knowledge become objectives about
-SYRAX itself. Details: `docs/EXPERIMENTS.md`.
+SYRAX itself. `quality_run` over WebSocket runs ten fixed tasks through the
+real brain and checks the outcomes by machine (pass rate, compared run to run).
+Details: `docs/EXPERIMENTS.md`.
 
 ## Self-model
 

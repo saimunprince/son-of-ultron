@@ -362,6 +362,11 @@ export default function Syrax() {
         case "experiment":
           if (e.event === "completed") push({ kind: "notice", id: nextId++, text: `EXPERIMENT · ${e.verdict} · ${e.hypothesis.slice(0, 70)}` });
           break;
+        case "quality":
+          if (e.event === "started") push({ kind: "notice", id: nextId++, text: `QUALITY RUN · ${e.cases?.length ?? 0} cases` });
+          else push({ kind: "notice", id: nextId++, text: `QUALITY · ${e.status} · ${e.pass_rate}%${e.delta != null ? ` (${e.delta >= 0 ? "+" : ""}${e.delta} pp)` : ""}${e.failed?.length ? ` · failed: ${e.failed.join(", ")}` : ""}` });
+          break;
+        case "quality_runs":
         case "benchmarks":
         case "experiments":
           break;

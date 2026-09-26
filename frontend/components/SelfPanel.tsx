@@ -101,6 +101,11 @@ export default function SelfPanel({ model, onRefresh, onClose }: Props) {
                     Object.entries(model.performance.last_benchmark.metrics).map(([k, v]) => `${k.replace(/_ms$/, "")} ${v}ms`).join(" · ")
                   : "no benchmark recorded yet"}
               </p>
+              <p className={model.performance.last_quality?.status === "REGRESSION" ? "self-warn" : ""}>
+                {model.performance.last_quality
+                  ? `task quality #${model.performance.last_quality.id} ${model.performance.last_quality.status} · ${model.performance.last_quality.pass_rate}% · ${ago(model.performance.last_quality.ts)}${model.performance.last_quality.failed.length ? ` · failed: ${model.performance.last_quality.failed.join(", ")}` : ""}`
+                  : "no task-quality run yet"}
+              </p>
               <p className="self-dim">
                 {model.performance.experiments.count} experiment(s)
                 {model.performance.experiments.recent.length ? ` · last: ${model.performance.experiments.recent[0].verdict} — ${model.performance.experiments.recent[0].hypothesis.slice(0, 60)}` : ""}

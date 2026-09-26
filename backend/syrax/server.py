@@ -10,6 +10,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     objectives {limit?} | objective_add {goal, reason?, priority?} |
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
                     skills | presentation | benchmarks {limit?} | experiments {limit?} |
+                    quality_run {only?} | quality_runs {limit?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
                     brain_models {id, api_key?} | brain_test {id}
@@ -21,6 +22,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     task_detail | replay | knowledge | research {event} | knowledge {event} |
                     skills | skill {event} | presentation {event} | presentation_plan |
                     benchmarks | experiments | benchmark {event} | experiment {event} |
+                    quality_runs | quality {event} |
                     reflection {event} |
                     notice | error | pong | brain | brains | brain_models | brain_test
 
@@ -259,6 +261,14 @@ class Session:
             tid = str(msg.get("task_id") or "")
             events = await asyncio.to_thread(journal.events, tid)
             await self.send({"type": "task_events", "task_id": tid, "events": events})
+        elif kind == "quality_run":
+            if self.core.busy:
+                await self.send({"type": "notice", "text": "Already executing. Stop it first."})
+                return
+            only = msg.get("only") if isinstance(msg.get("only"), list) else None
+            self.spawn(self._quality(only))
+        elif kind == "quality_runs":
+            await self.send({"type": "quality_runs", "runs": await asyncio.to_thread(journal.quality_runs, _limit(msg.get("limit"), 10))})
         elif kind == "benchmarks":
             await self.send({"type": "benchmarks", "benchmarks": await asyncio.to_thread(journal.benchmarks, _limit(msg.get("limit"), 20))})
         elif kind == "experiments":
@@ -354,6 +364,16 @@ class Session:
                 self.spawn(self._test(pid))
         else:
             await self.send({"type": "error", "message": f"Unknown message: {kind}"})
+
+    async def _quality(self, only) -> None:
+        from syrax.quality import format_report
+
+        try:
+            row = await self.core.quality.run(only=only)
+        except JournalError as e:
+            await self.send({"type": "notice", "text": str(e)})
+            return
+        await self.core.broadcast({"type": "notice", "text": format_report(row)})
 
     async def _cycle(self) -> None:
         rep = await self.core.autonomy.run_once(force=True)

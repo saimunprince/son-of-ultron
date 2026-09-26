@@ -164,6 +164,18 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
                     evidence={"benchmark": {"id": bench[0]["id"], "delta": d}},
                 )
                 created += bool(ok)
+    q = journal.quality_runs(limit=1)
+    if q and q[0]["status"] == "REGRESSION":
+        failed = [r["id"] for r in q[0]["results"] if not r.get("ok")]
+        ok = journal.add_objective_sync(
+            goal=f"Task quality regressed to {q[0]['pass_rate']}% ({q[0]['delta']:+.1f} pp); failing cases: {', '.join(failed)}. Inspect those tasks in the journal, find why the outcome was wrong, fix the cause in SYRAX's own code or prompts, release, and run the quality suite again.",
+            reason="a lower pass rate on fixed tasks is a measured weakness of SYRAX itself",
+            priority=2, source="selfmodel",
+            check={"kind": "quality_recovered"},
+            key=f"quality-regression:{q[0]['id']}",
+            evidence={"quality": {"id": q[0]["id"], "failed": failed, "delta": q[0]["delta"]}},
+        )
+        created += bool(ok)
     blocked_tools: Dict[str, int] = {}
     for o in journal.objectives(limit=500, status="BLOCKED"):
         tool = (o.get("check_spec") or {}).get("tool")
@@ -225,6 +237,10 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         rows = journal.knowledge_recent(limit=50, since=objective["created"])
         hits = [k for k in rows if topic_words & set(auto_keywords(" ".join([k["claim"], k.get("question") or "", " ".join(k["tags"])])))]
         return ("DONE" if hits else "RETRY"), {"topic": spec.get("topic"), "stored_after_objective": len(rows), "matching": [k["id"] for k in hits][:10]}
+    if kind == "quality_recovered":
+        rows = journal.quality_runs(limit=1)
+        ok = bool(rows and rows[0]["ts"] >= objective["created"] and rows[0]["status"] != "REGRESSION")
+        return ("DONE" if ok else "RETRY"), {"quality": rows[0]["id"] if rows else None, "status": rows[0]["status"] if rows else None}
     if kind == "benchmark_recovered":
         rows = journal.benchmarks(limit=1)
         ok = bool(rows and rows[0]["ts"] >= objective["created"] and not rows[0]["deltas"].get(spec.get("metric"), {}).get("regression"))
@@ -479,6 +495,8 @@ def _lesson(objective: dict, task: dict, verdict: str, evidence: dict) -> str:
         return f"`{spec.get('tool')}` ran and failed again (last outcome {evidence.get('last_outcome')}); the same approach will not work"
     if spec.get("kind") == "human":
         return "waiting for a human decision"
+    if spec.get("kind") == "quality_recovered":
+        return "no newer quality run without a regression; fix, release, then run the quality suite"
     if spec.get("kind") == "benchmark_recovered":
         return f"no newer benchmark without a regression in {spec.get('metric')}; run the benchmark after fixing"
     if spec.get("kind") == "knowledge_confidence":

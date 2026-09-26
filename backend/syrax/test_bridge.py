@@ -892,3 +892,42 @@ def test_agent_runs_an_experiment_and_benchmarks_are_queryable(script):
         ws.send_json({"type": "self_model", "section": "performance"})
         sm, _ = recv_until(ws, "self_model")
         assert sm["performance"]["experiments"]["count"] == 1 and sm["performance"]["last_benchmark"]["status"] == "BASELINE"
+
+
+# ——— task-quality benchmark through the real core with a scripted brain ———
+
+
+def test_quality_suite_judges_outcomes_and_detects_regression(script, tmp_path):
+    import asyncio as _a
+    from syrax.quality import _cases
+
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)  # creates the core and its agent
+    core = core_mod.get_core()
+    core.quality.ws = tmp_path / "ws"
+    subset = [c for c in _cases(tmp_path / "ws") if c["id"] in ("arith", "python", "restraint")]  # runs in this order
+    # run 1: arith right, python computed without the tool, restraint right → 2/3
+    script.queue = [reply("391"), reply("6765"), reply("ready")]
+    row = _a.run(core.quality.run(cases=subset))
+    assert row["status"] == "BASELINE" and row["pass_rate"] == 66.7
+    by = {r["id"]: r for r in row["results"]}
+    assert by["arith"]["ok"] and by["restraint"]["ok"] and not by["python"]["ok"]
+    assert by["python"]["checks"][0]["check"] == "tool python_execute used" and not by["python"]["checks"][0]["ok"]
+    assert all(get_journal().task(r["task_id"])["kind"] == "eval" for r in row["results"])
+    # run 2: everything wrong → REGRESSION, an objective is derived, and it closes on a good run 3
+    script.queue = [reply("390"), reply("wrong"), call("python_execute", {"code": "print('ready')"}, "hmm"), reply("ready")]
+    row2 = _a.run(core.quality.run(cases=subset))
+    assert row2["status"] == "REGRESSION" and row2["pass_rate"] == 0.0 and row2["compared_to"] == row["id"] and row2["delta"] == -66.7
+    from syrax.autonomy import derive_objectives, judge
+
+    derive_objectives(get_journal(), core.selfmodel)
+    o = [x for x in get_journal().objectives() if x["key"] == f"quality-regression:{row2['id']}"][0]
+    assert o["check_spec"] == {"kind": "quality_recovered"} and "python" in o["goal"]
+    assert judge(get_journal(), o, None)[0] == "RETRY"
+    assert any(w["kind"] == "quality" for w in core.selfmodel.weaknesses())
+    script.queue = [reply("391"), call("python_execute", {"code": "print(6765)"}, "computing"), reply("6765"), reply("ready")]
+    row3 = _a.run(core.quality.run(cases=subset))
+    assert row3["status"] == "PASS" and row3["pass_rate"] == 100.0
+    assert judge(get_journal(), o, None)[0] == "DONE"
+    assert get_journal().recent_events()[-1]["type"] == "quality.completed"
+    assert core.selfmodel.performance()["last_quality"]["pass_rate"] == 100.0

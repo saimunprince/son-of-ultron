@@ -91,6 +91,9 @@ class Core:
         self.skills = SkillFactory(self.journal, task_id_provider=self.current_task_id)
         self.devloop = DevLoop(self.journal, task_id_provider=self.current_task_id)
         self.presentation = PresentationEngine(self.journal, emit=self.broadcast)
+        from syrax.quality import QualityRunner
+
+        self.quality = QualityRunner(self)
         self.experiments = ExperimentEngine(
             self.journal, lambda: self.agent.available_tools if self.agent else None, task_id_provider=self.current_task_id
         )
