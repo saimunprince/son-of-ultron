@@ -31,7 +31,7 @@ def _cases(ws: Path) -> List[dict]:
     """Machine-checkable tasks. Prompts are plain requests; checks look at evidence only."""
     return [
         {"id": "arith", "prompt": "What is 17*23? Reply with just the number.",
-         "checks": [{"kind": "final_regex", "pattern": r"\b391\b"}]},
+         "checks": [{"kind": "final_regex", "pattern": r"\b391\b"}, {"kind": "no_narration"}]},
         {"id": "python", "prompt": "Use python to compute the 20th Fibonacci number (fib(1)=1, fib(2)=1) and tell me the number.",
          "checks": [{"kind": "tool_used", "tool": "python_execute"}, {"kind": "final_regex", "pattern": r"\b6765\b"}]},
         {"id": "file_create", "prompt": f"Create a file at {ws / 'hello.txt'} whose entire content is exactly: HELLO SYRAX",
@@ -42,13 +42,13 @@ def _cases(ws: Path) -> List[dict]:
         {"id": "self_version", "prompt": "Which git version are you running? Use self_inspect and reply with the short hash only.",
          "checks": [{"kind": "tool_used", "tool": "self_inspect"}, {"kind": "final_regex", "pattern": "{git_short}"}]},
         {"id": "desktop_cpu", "prompt": "Using the desktop tool, report how many CPU cores this machine has. Reply with the number.",
-         "checks": [{"kind": "tool_used", "tool": "desktop"}, {"kind": "final_regex", "pattern": r"\b{cpu_count}\b"}]},
+         "checks": [{"kind": "tool_used", "tool": "desktop"}, {"kind": "final_regex", "pattern": r"\b{cpu_count}\b"}, {"kind": "no_narration"}]},
         {"id": "restraint", "prompt": "Reply with the single word: ready",
-         "checks": [{"kind": "no_tools"}, {"kind": "final_regex", "pattern": r"(?i)\bready\b"}, {"kind": "final_max_len", "n": 40}]},
+         "checks": [{"kind": "no_tools"}, {"kind": "final_regex", "pattern": r"(?i)\bready\b"}, {"kind": "final_max_len", "n": 40}, {"kind": "no_narration"}]},
         {"id": "present_table", "prompt": "Use the present tool to show a table with header name,value and two rows: a,1 and b,2. Then say done.",
          "checks": [{"kind": "tool_used", "tool": "present"}]},
         {"id": "know_honest", "prompt": "Use the `know` tool to check your stored knowledge for the word zorbulon, then tell me honestly whether you know anything about it.",
-         "checks": [{"kind": "tool_used", "tool": "know"}]},
+         "checks": [{"kind": "tool_used", "tool": "know"}, {"kind": "no_narration"}]},
         {"id": "research_cite", "prompt": "Research in what year SQLite was first released and answer with the year and one source URL.",
          "checks": [{"kind": "tool_used", "tool": "research"}, {"kind": "final_regex", "pattern": r"\b2000\b"}, {"kind": "final_regex", "pattern": r"https?://"}]},
     ]
@@ -58,6 +58,9 @@ def _fill(pattern: str, env: Dict[str, str]) -> str:
     for k, v in env.items():
         pattern = pattern.replace("{" + k + "}", re.escape(v) if k != "cpu_count" else v)
     return pattern
+
+
+NARRATION = re.compile(r"^\s*(we need to|i need to|the tool already|let me|first,? i|i will now)\b", re.I)
 
 
 def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) -> List[dict]:
@@ -77,6 +80,9 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
             out.append({"check": f"tool {c['tool']} used", "ok": ok, "detail": f"tools: {tools}"})
         elif k == "no_tools":
             out.append({"check": "no tools used", "ok": not tools, "detail": f"tools: {tools}"})
+        elif k == "no_narration":
+            ok = NARRATION.search(final) is None
+            out.append({"check": "final does not narrate reasoning", "ok": ok, "detail": final[:120]})
         elif k == "final_max_len":
             out.append({"check": f"final ≤ {c['n']} chars", "ok": len(final.strip()) <= c["n"], "detail": f"{len(final.strip())} chars"})
         elif k == "file_equals":

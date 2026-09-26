@@ -35,7 +35,9 @@ brain and checks the outcome by machine only: the final text (regex), which
 tools ran, and file contents. Cases: arithmetic, python tool use, file create,
 file edit, self-version via `self_inspect`, CPU count via `desktop`, restraint
 (one word, no tools), `present` a table, honest `know`, `research` with a
-source. Each run stores per-case evidence and a pass rate in `quality_runs`;
+source. Four cases also require that the final reply does not narrate reasoning
+(`no_narration`: no "We need to…", "The tool already…", "Let me…"). Each run stores
+per-case evidence (including which brain actually answered) and a pass rate in `quality_runs`;
 a drop of more than 15 percentage points against the previous run is a
 REGRESSION, the first run is a BASELINE. Eval tasks have `kind = "eval"` and
 never enter the conversation history. It costs model calls (about a minute

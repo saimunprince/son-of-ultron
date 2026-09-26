@@ -71,3 +71,15 @@ def test_recent_exchanges_come_from_the_journal_and_history_file_is_fallback(tmp
     assert [r["user"] for r in rec] == ["what is my colour?"] and rec[0]["reply"] == "Crimson."
     assert "what is my colour?" in m.prompt_block() and "old question" not in m.prompt_block()
     assert j.recent_exchanges(1)[0]["user"] == "what is my colour?"
+
+
+def test_no_narration_check(tmp_path):
+    ws = tmp_path / "ws"; ws.mkdir()
+    cases = {c["id"]: c for c in _cases(ws)}
+    env = {"git_short": "x", "cpu_count": "16"}
+    res = check_case(cases["restraint"], {"status": "SUCCESS", "result": 'We need to respond with "ready".'}, [], env)
+    assert [c["ok"] for c in res] == [True, True, True, False]
+    res = check_case(cases["restraint"], {"status": "SUCCESS", "result": "ready"}, [], env)
+    assert all(c["ok"] for c in res)
+    res = check_case(cases["desktop_cpu"], {"status": "SUCCESS", "result": "The tool already gave 16 cores."}, [{"type": "tool.started", "payload": {"name": "desktop"}}], env)
+    assert res[-1]["ok"] is False and res[-1]["check"] == "final does not narrate reasoning"

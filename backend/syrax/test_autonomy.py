@@ -414,3 +414,24 @@ def test_stop_during_a_running_cycle_does_not_steal_its_objective(tmp_path, monk
         assert rep.verdict == "DONE" and j.objective(o["id"])["status"] == "DONE"
 
     asyncio.run(go())
+
+
+def test_persistent_quality_failures_and_own_tracebacks_become_code_fix_objectives(tmp_path):
+    j, core, a = make(tmp_path, tools=["terminate", "desktop"])
+    res_fail = [{"id": "arith", "ok": False, "task_id": "t1", "checks": [{"check": "final matches 391", "ok": False, "detail": "311"}]}, {"id": "python", "ok": True, "checks": []}]
+    j.add_quality_run_sync(res_fail, 50.0, "BASELINE")
+    j.add_quality_run_sync(res_fail, 50.0, "PASS", compared_to=1, delta=0.0)
+    t = j.start_task_sync("x")
+    j.record_sync("tool.started", {"id": "c", "name": "desktop", "args": {}}, task_id=t)
+    j.record_sync("tool.failed", {"id": "c", "name": "desktop", "ok": False, "output": 'Traceback (most recent call last):\n  File "/home/prince/son-of-ultron/backend/syrax/desktop.py", line 310, in _do_system_info\n    x = 1/0\nZeroDivisionError: division by zero'}, task_id=t)
+    derive_objectives(j, core.selfmodel)
+    keys = {o["key"]: o for o in j.objectives()}
+    q = keys["quality-case:arith:2"]
+    assert q["check_spec"] == {"kind": "quality_case_passes", "case": "arith"} and "311" in q["goal"] and "release" in q["goal"]
+    assert judge(j, q, None)[0] == "RETRY"
+    j.add_quality_run_sync([{"id": "arith", "ok": True, "checks": []}], 100.0, "PASS", compared_to=2, delta=50.0)
+    assert judge(j, q, None)[0] == "DONE"
+    b = keys["tool-bug:desktop:backend/syrax/desktop.py:310"]
+    assert b["check_spec"] == {"kind": "tool_verified", "tool": "desktop"} and "ZeroDivisionError" in b["goal"] and b["priority"] == 2
+    assert "repair-capability:desktop:1" not in keys  # one live objective per tool: the bug objective took the slot
+    assert derive_objectives(j, core.selfmodel) == 0

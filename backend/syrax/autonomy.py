@@ -87,6 +87,25 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
     """Turn evidence-based weaknesses into objectives. Idempotent via keys."""
     created = 0
     caps = selfmodel.capabilities()
+    # a traceback inside SYRAX's own code is a bug SYRAX can fix
+    for e in journal.recent_events(300):
+        if e["type"] != "tool.failed":
+            continue
+        out = str(e["payload"].get("output") or "")
+        m = TRACE_IN_SYRAX.search(out)
+        if not m:
+            continue
+        tool = e["payload"].get("name") or "?"
+        path, line = m.group(1), m.group(2)
+        ok = journal.add_objective_sync(
+            goal=f"The `{tool}` tool raised inside SYRAX's own code at {path} line {line}: {out.strip().splitlines()[-1][:120]!r}. Read that code, fix the bug, add or adjust a test in backend/syrax if one is missing, and `release`. Then call `{tool}` again the same way to confirm.",
+            reason="a traceback in our own code is a defect with a known location",
+            priority=2, source="selfmodel",
+            check={"kind": "tool_verified", "tool": tool},
+            key=f"tool-bug:{tool}:{path}:{line}",
+            evidence={"event_id": e["id"], "traceback_tail": out[-600:]},
+        )
+        created += bool(ok)
     # one live objective per tool: repeated failures must not spawn a new objective each cycle
     targeted = {
         (o.get("check_spec") or {}).get("tool")
@@ -177,6 +196,23 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
             evidence={"quality": {"id": q[0]["id"], "failed": failed, "delta": q[0]["delta"]}},
         )
         created += bool(ok)
+    # a quality case that failed in the last two runs is a defect to fix, not a fluke
+    runs = journal.quality_runs(limit=2)
+    if len(runs) == 2:
+        failed_now = {r["id"]: r for r in runs[0]["results"] if not r.get("ok")}
+        failed_before = {r["id"] for r in runs[1]["results"] if not r.get("ok")}
+        for cid in sorted(set(failed_now) & failed_before):
+            r = failed_now[cid]
+            why = "; ".join(c["check"] + " → " + str(c.get("detail", ""))[:80] for c in r.get("checks", []) if not c.get("ok"))
+            ok = journal.add_objective_sync(
+                goal=f"Quality case `{cid}` failed in the last two runs ({why}). Read the case in backend/syrax/quality.py and the journaled task {r.get('task_id')}, find the cause in SYRAX's own code or prompts, fix it and `release`; the objective closes when a newer quality run passes `{cid}`.",
+                reason="a repeatable failure on a fixed task is a defect in SYRAX, not noise",
+                priority=2, source="selfmodel",
+                check={"kind": "quality_case_passes", "case": cid},
+                key=f"quality-case:{cid}:{runs[0]['id']}",
+                evidence={"quality_ids": [runs[0]["id"], runs[1]["id"]], "case": r},
+            )
+            created += bool(ok)
     blocked_tools: Dict[str, int] = {}
     for o in journal.objectives(limit=500, status="BLOCKED"):
         tool = (o.get("check_spec") or {}).get("tool")
@@ -238,6 +274,14 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         rows = journal.knowledge_recent(limit=50, since=objective["created"])
         hits = [k for k in rows if topic_words & set(auto_keywords(" ".join([k["claim"], k.get("question") or "", " ".join(k["tags"])])))]
         return ("DONE" if hits else "RETRY"), {"topic": spec.get("topic"), "stored_after_objective": len(rows), "matching": [k["id"] for k in hits][:10]}
+    if kind == "quality_case_passes":
+        rows = journal.quality_runs(limit=1)
+        case = spec.get("case")
+        if rows and rows[0]["ts"] >= objective["created"]:
+            hit = [r for r in rows[0]["results"] if r["id"] == case]
+            ok = bool(hit and hit[0].get("ok"))
+            return ("DONE" if ok else "RETRY"), {"case": case, "quality": rows[0]["id"], "passed": ok}
+        return "RETRY", {"case": case, "quality": rows[0]["id"] if rows else None, "passed": None}
     if kind == "quality_recovered":
         rows = journal.quality_runs(limit=1)
         ok = bool(rows and rows[0]["ts"] >= objective["created"] and rows[0]["status"] != "REGRESSION")
@@ -464,6 +508,9 @@ class Autonomy:
             await self.journal.run(self.recover_active, "loop stopped")
 
 
+TRACE_IN_SYRAX = re.compile(r'File "[^"]*?(backend/syrax/[A-Za-z0-9_/]+\.py)", line (\d+)')
+
+
 def auto_keywords(text: str) -> List[str]:
     from syrax.research import keywords
 
@@ -496,6 +543,8 @@ def _lesson(objective: dict, task: dict, verdict: str, evidence: dict) -> str:
         return f"`{spec.get('tool')}` ran and failed again (last outcome {evidence.get('last_outcome')}); the same approach will not work"
     if spec.get("kind") == "human":
         return "waiting for a human decision"
+    if spec.get("kind") == "quality_case_passes":
+        return f"no newer quality run passes case {spec.get('case')!r}; fix, release, then run the quality suite"
     if spec.get("kind") == "quality_recovered":
         return "no newer quality run without a regression; fix, release, then run the quality suite"
     if spec.get("kind") == "benchmark_recovered":

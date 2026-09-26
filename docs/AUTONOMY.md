@@ -29,7 +29,10 @@ Events: `objective.created / updated / completed / blocked / dropped`,
   - a registered tool with no journal evidence → `verify-capability:<tool>` (P5, check `tool_verified`);
   - a tool whose last use failed → `repair-capability:<tool>:<failures>` (P2, check `tool_verified`);
   - last verification BLOCKED → `verification-blocked:<ts>` (P1, check `verification_green`);
-  - an interrupted task with an UNCERTAIN operation → `uncertain-task:<id>`, created **BLOCKED** with check `human`.
+  - an interrupted task with an UNCERTAIN operation → `uncertain-task:<id>`, created **BLOCKED** with check `human`;
+  - a quality case that failed in the last two runs → `quality-case:<case>:<run>` (P2, check `quality_case_passes`): read the case and the journaled task, fix SYRAX's code or prompts, `release`;
+  - a tool that raised a traceback inside `backend/syrax/` → `tool-bug:<tool>:<file>:<line>` (P2, check `tool_verified`): fix the bug, add a test, `release`, call the tool again.
+  These two are how SYRAX turns measured weaknesses into code changes of its own; the change only exists if `release` reports COMMITTED.
   - At most one live (OPEN/ACTIVE/BLOCKED) objective per tool.
   - Never for tools that cannot be exercised harmlessly without a real need
     (`release`, `skill_create`, `skill_test`, `learn`, `remember`, `forget`,
