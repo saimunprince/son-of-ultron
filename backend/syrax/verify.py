@@ -238,7 +238,26 @@ def isolated_next_build(frontend: Path = FRONTEND_ROOT, timeout: float = 1200.0)
         shutil.rmtree(scratch, ignore_errors=True)
 
 
-def default_gates(root: Path = REPO_ROOT) -> List[Gate]:
+def performance_gate(journal_path: Optional[str] = None) -> Tuple[bool, str]:
+    """Run the benchmark suite and compare with the last stored run. BASELINE and
+    PASS are ok; REGRESSION fails. Without a journal there is nothing to compare
+    with, so the run is recorded nowhere and reported as a baseline."""
+    from syrax import bench
+
+    path = journal_path or os.getenv("SYRAX_JOURNAL_FILE")
+    if not path:
+        metrics = bench.run_suite()
+        status, deltas = bench.compare(metrics, None)
+        return True, bench.format_report({"status": status, "deltas": deltas, "compared_to": None}) + "\n(no journal: not recorded)"
+    j = Journal(path, recover=False)
+    try:
+        row = bench.run_and_record(j)
+    finally:
+        j.close()
+    return row["status"] != "REGRESSION", bench.format_report(row)
+
+
+def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None) -> List[Gate]:
     py = str(BACKEND_ROOT / ".venv" / "bin" / "python")
     test_env = {
         "OPENMANUS_DISABLE_BROWSER_USE": "1",
@@ -254,7 +273,7 @@ def default_gates(root: Path = REPO_ROOT) -> List[Gate]:
         Gate("node_test", ["npm", "test", "--silent"], cwd=FRONTEND_ROOT),
         Gate("next_build", isolated_next_build),
         Gate("diff_scan", lambda: diff_scan(root)),
-        Gate("performance", lambda: (_ for _ in ()).throw(RuntimeError("no benchmark defined yet")), required=False),
+        Gate("performance", lambda: performance_gate(journal_path), required=False, timeout=600),
     ]
 
 
@@ -276,7 +295,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--json", action="store_true", help="print the verification as JSON")
     ap.add_argument("--journal", help="journal file to record into (default: SYRAX_JOURNAL_FILE or none)")
     args = ap.parse_args(argv)
-    gates = default_gates()
+    gates = default_gates(journal_path=args.journal or os.getenv("SYRAX_JOURNAL_FILE"))
     if args.gate:
         wanted = set(args.gate)
         gates = [g for g in gates if g.name in wanted]

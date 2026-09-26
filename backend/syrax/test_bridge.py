@@ -861,3 +861,34 @@ def test_presentation_events_follow_the_task_and_reconnect_gets_the_plan(script)
         assert "presentation.created" not in [e["type"] for e in get_journal().events(tid)]
         shown = [e for e in get_journal().recent_events(500) if e["type"] == "presentation.created"]
         assert len(shown) == len(created) and all(e["payload"]["task_id"] == tid for e in shown)
+
+
+# ——— experiments and benchmarks over the bridge ———
+
+
+def test_agent_runs_an_experiment_and_benchmarks_are_queryable(script):
+    script.queue = [
+        call("experiment", {"hypothesis": "a short loop is faster than a long one", "metric": "ms", "repeats": 2,
+                            "baseline": {"tool": "python_execute", "args": {"code": "sum(range(2_000_000))"}},
+                            "candidate": {"tool": "python_execute", "args": {"code": "sum(range(10))"}}}, "Measuring."),
+        reply("Measured. The short loop wins."),
+    ]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello = boot(ws)
+        assert "experiment" in hello["tools"]
+        ws.send_json({"type": "task", "text": "which is faster?"})
+        res, seen = recv_until(ws, "tool_result")
+        assert res["name"] == "experiment" and res["ok"] and "EXPERIMENT #1" in res["output"]
+        assert any(e["type"] == "experiment" and e["event"] == "completed" for e in seen)
+        drain_until_idle(ws)
+        ws.send_json({"type": "experiments"})
+        ex, _ = recv_until(ws, "experiments")
+        row = ex["experiments"][0]
+        assert row["verdict"] in ("CANDIDATE_BETTER", "NO_DIFFERENCE") and row["baseline"]["successes"] == 2
+        get_journal().add_benchmark_sync({"recovery_ms": 5.0}, "BASELINE", {})
+        ws.send_json({"type": "benchmarks"})
+        b, _ = recv_until(ws, "benchmarks")
+        assert b["benchmarks"][0]["status"] == "BASELINE"
+        ws.send_json({"type": "self_model", "section": "performance"})
+        sm, _ = recv_until(ws, "self_model")
+        assert sm["performance"]["experiments"]["count"] == 1 and sm["performance"]["last_benchmark"]["status"] == "BASELINE"

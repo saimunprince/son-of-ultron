@@ -29,6 +29,7 @@ from app.schema import Message
 from syrax.agent import SyraxAgent
 from syrax.brains import get_router
 from syrax.devloop import REPO_ROOT, DevLoop, ReleaseTool
+from syrax.experiments import ExperimentEngine, ExperimentTool
 from syrax.journal import Event, Journal, JournalError, get_journal
 from syrax.memory import get_memory
 from syrax.presentation import PresentTool, PresentationEngine
@@ -90,6 +91,9 @@ class Core:
         self.skills = SkillFactory(self.journal, task_id_provider=self.current_task_id)
         self.devloop = DevLoop(self.journal, task_id_provider=self.current_task_id)
         self.presentation = PresentationEngine(self.journal, emit=self.broadcast)
+        self.experiments = ExperimentEngine(
+            self.journal, lambda: self.agent.available_tools if self.agent else None, task_id_provider=self.current_task_id
+        )
         self.journal.subscribe(self.presentation.on_event)
 
     # ——— observers ———
@@ -147,6 +151,9 @@ class Core:
             if isinstance(pt, PresentTool):
                 pt.engine = self.presentation
                 pt.task_id_provider = self.current_task_id
+            xt = tools.get_tool("experiment")
+            if isinstance(xt, ExperimentTool):
+                xt.engine = self.experiments
             loaded = self.skills.attach(tools)  # VERIFIED skills from the registry become live tools
             if loaded:
                 logger.info(f"registered {loaded} skill(s) from the registry")

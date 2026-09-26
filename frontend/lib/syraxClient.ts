@@ -134,6 +134,11 @@ export interface SelfModelSummary {
   weaknesses: SelfWeakness[];
   known_limitations: number;
   knowledge_count: number;
+  performance: {
+    last_benchmark: { id: number; ts: number; status: BenchmarkRow["status"]; git_head: string | null; metrics: Record<string, number>; regressions: string[] } | null;
+    benchmarks: number;
+    experiments: { count: number; recent: { id: number; verdict: ExperimentRow["verdict"]; metric: string; hypothesis: string }[] };
+  };
   runtime: {
     cpu: { cores: number | null; load_1_5_15: number[] | null };
     memory_mb: { total_mb: number | null; available_mb: number | null };
@@ -281,6 +286,32 @@ export interface PresentationPlan {
   minimal: boolean;
 }
 
+export interface BenchmarkRow {
+  id: number;
+  ts: number;
+  git_head: string | null;
+  metrics: Record<string, number>;
+  status: "BASELINE" | "PASS" | "REGRESSION" | "NOT_VERIFIED";
+  compared_to: number | null;
+  deltas: Record<string, { now: number; before: number | null; pct: number | null; regression: boolean }>;
+  task_id: string | null;
+}
+
+export interface ExperimentRow {
+  id: number;
+  ts: number;
+  hypothesis: string;
+  objective: string | null;
+  baseline: Record<string, unknown>;
+  candidate: Record<string, unknown>;
+  metric: string;
+  result: Record<string, unknown>;
+  conclusion: string;
+  verdict: "CANDIDATE_BETTER" | "BASELINE_BETTER" | "NO_DIFFERENCE" | "INCONCLUSIVE";
+  next_action: string | null;
+  task_id: string | null;
+}
+
 /** Fields the journal adds to every event it fanned out. */
 export interface Journaled {
   task_id?: string;
@@ -341,6 +372,10 @@ export type ServerEvent =
   | ({ type: "presentation"; event: "created" } & PresentationElement & Journaled)
   | ({ type: "presentation"; event: "dismissed"; presentation_id: string; reason: string; kind: PresentationKind } & Journaled)
   | ({ type: "presentation_plan" } & PresentationPlan)
+  | { type: "benchmarks"; benchmarks: BenchmarkRow[] }
+  | { type: "experiments"; experiments: ExperimentRow[] }
+  | ({ type: "benchmark"; event: "completed"; benchmark_id: number; status: BenchmarkRow["status"]; compared_to: number | null; regressions: string[] } & Journaled)
+  | ({ type: "experiment"; event: "started" | "completed"; hypothesis: string; verdict?: ExperimentRow["verdict"]; metric: string; experiment_id?: number } & Journaled)
   | ({ type: "maintenance"; event: "completed"; tasks_examined: number; events_pruned: number; checkpoint_contexts_trimmed: number; retain_days: number } & Journaled)
   | { type: "skills"; skills: SkillRow[] }
   | ({ type: "skill"; event: "created" | "verified" | "failed" | "disabled" | "not_tested"; skill: string; version?: number; status?: string; tests_passed?: number; tests_failed?: number; purpose?: string; note?: string | null } & Journaled)
@@ -389,6 +424,8 @@ export type ClientMessage =
   | { type: "knowledge"; query?: string; limit?: number }
   | { type: "skills" }
   | { type: "presentation" }
+  | { type: "benchmarks"; limit?: number }
+  | { type: "experiments"; limit?: number }
   | { type: "brains_get" }
   | { type: "brains_save"; providers: Record<string, BrainChange>; order?: string[] }
   | { type: "brain_models"; id: string; api_key?: string }

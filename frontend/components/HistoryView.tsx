@@ -107,6 +107,14 @@ export function describeEvent(e: JournalEvent): string | null {
       return `Skill ${s("skill")} verified (${p["tests_passed"]} tests)`;
     case "skill.failed":
       return `Skill ${s("skill")} FAILED tests`;
+    case "benchmark.completed":
+      return `Benchmark ${s("status")}${(p["regressions"] as string[] | undefined)?.length ? ` · regressed ${(p["regressions"] as string[]).join(", ")}` : ""}`;
+    case "experiment.started":
+      return null;
+    case "experiment.completed":
+      return `Experiment ${s("verdict")}: ${s("hypothesis").slice(0, 70)}`;
+    case "maintenance.completed":
+      return `Maintenance: pruned ${p["events_pruned"]} events`;
     case "brain.failover":
       return `Brain ${s("provider")} failed over: ${s("reason").slice(0, 60)}`;
     case "brain.answered":
@@ -139,7 +147,7 @@ export function WhyView({ detail, onBack, onResume }: { detail: TaskDetail; onBa
   const steps = detail.events.filter(
     (e) =>
       e.type === "tool.started" || e.type === "tool.failed" || e.type === "tool.completed" || e.type === "ask" || e.type === "answer" || e.type === "final" ||
-      ["task.", "recovery.", "code.", "commit.", "rollback.", "push.", "research.", "knowledge.", "skill."].some((pfx) => e.type.startsWith(pfx)),
+      ["task.", "recovery.", "code.", "commit.", "rollback.", "push.", "research.", "knowledge.", "skill.", "experiment.", "benchmark."].some((pfx) => e.type.startsWith(pfx)),
   );
   const reflection = detail.events.find((e) => e.type === "reflection.created");
   const rec = (t.recovery ?? null) as { state?: string; operation_state?: string; checks?: unknown } | null;

@@ -356,6 +356,15 @@ export default function Syrax() {
           if (e.event === "verified") push({ kind: "notice", id: nextId++, text: `SKILL BUILT · ${e.skill} v${e.version ?? "?"} · ${e.tests_passed ?? 0} tests passed · now a tool` });
           else if (e.event === "failed") push({ kind: "notice", id: nextId++, text: `SKILL FAILED · ${e.skill} · ${e.tests_failed ?? 0} failing test(s) · not registered` });
           break;
+        case "benchmark":
+          push({ kind: "notice", id: nextId++, text: `BENCHMARK · ${e.status}${e.regressions.length ? ` · regressed: ${e.regressions.join(", ")}` : ""}` });
+          break;
+        case "experiment":
+          if (e.event === "completed") push({ kind: "notice", id: nextId++, text: `EXPERIMENT · ${e.verdict} · ${e.hypothesis.slice(0, 70)}` });
+          break;
+        case "benchmarks":
+        case "experiments":
+          break;
         case "maintenance":
           push({ kind: "notice", id: nextId++, text: `MAINTENANCE · pruned ${e.events_pruned} events · trimmed ${e.checkpoint_contexts_trimmed} contexts` });
           break;

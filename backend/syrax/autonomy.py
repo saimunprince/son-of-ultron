@@ -133,6 +133,47 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
                 evidence={"failure": f},
             )
             created += bool(ok)
+    # ——— weaknesses of SYRAX's own mechanisms (recursive self-improvement) ———
+    bench = journal.benchmarks(limit=1)
+    if bench and bench[0]["status"] == "REGRESSION":
+        for metric, d in bench[0]["deltas"].items():
+            if d.get("regression"):
+                ok = journal.add_objective_sync(
+                    goal=f"Benchmark metric {metric} regressed from {d['before']} ms to {d['now']} ms ({d['pct']:+.1f}%). Find the cause in SYRAX's own code (journal/self-model/recovery), fix it, and release; the objective closes when a newer benchmark shows no regression for {metric}.",
+                    reason="a slower mechanism is a measured weakness, not an opinion",
+                    priority=2, source="selfmodel",
+                    check={"kind": "benchmark_recovered", "metric": metric},
+                    key=f"benchmark-regression:{metric}:{bench[0]['id']}",
+                    evidence={"benchmark": {"id": bench[0]["id"], "delta": d}},
+                )
+                created += bool(ok)
+    blocked_tools: Dict[str, int] = {}
+    for o in journal.objectives(limit=500, status="BLOCKED"):
+        tool = (o.get("check_spec") or {}).get("tool")
+        if tool:
+            blocked_tools[tool] = blocked_tools.get(tool, 0) + 1
+    for tool, n in blocked_tools.items():
+        if n >= 2:
+            ok = journal.add_objective_sync(
+                goal=f"{n} objectives about the `{tool}` tool are BLOCKED after repeated failures. Research a genuinely different approach ({tool} alternative approach) with `research`, store what you find with `learn`, then propose the change.",
+                reason="the same strategy failed repeatedly; change the strategy, not the retry count",
+                priority=3, source="selfmodel",
+                check={"kind": "knowledge_stored", "topic": f"{tool} alternative approach"},
+                key=f"strategy-change:{tool}:{n}",
+                evidence={"blocked": n},
+            )
+            created += bool(ok)
+    for k in journal.knowledge_recent(limit=200):
+        if k["uses"] >= 3 and k["confidence"] < 0.5 and k["kind"] in ("web", "conclusion"):
+            ok = journal.add_objective_sync(
+                goal=f"Knowledge #{k['id']} is used often ({k['uses']}x) but rests on weak evidence (confidence {k['confidence']:.2f}): {k['claim'][:120]!r}. Corroborate or refute it with `research` (more sources) and store the stronger result.",
+                reason="frequently used beliefs deserve stronger evidence",
+                priority=4, source="selfmodel",
+                check={"kind": "knowledge_confidence", "knowledge_id": k["id"], "min": 0.6},
+                key=f"corroborate:{k['id']}",
+                evidence={"knowledge": {"id": k["id"], "confidence": k["confidence"], "uses": k["uses"]}},
+            )
+            created += bool(ok)
     for t in behavior["interrupted"]:
         if t["recovery_state"] == "UNCERTAIN":
             ok = journal.add_objective_sync(
@@ -167,6 +208,16 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         rows = journal.knowledge_recent(limit=50, since=objective["created"])
         hits = [k for k in rows if topic_words & set(auto_keywords(" ".join([k["claim"], k.get("question") or "", " ".join(k["tags"])])))]
         return ("DONE" if hits else "RETRY"), {"topic": spec.get("topic"), "stored_after_objective": len(rows), "matching": [k["id"] for k in hits][:10]}
+    if kind == "benchmark_recovered":
+        rows = journal.benchmarks(limit=1)
+        ok = bool(rows and rows[0]["ts"] >= objective["created"] and not rows[0]["deltas"].get(spec.get("metric"), {}).get("regression"))
+        return ("DONE" if ok else "RETRY"), {"metric": spec.get("metric"), "benchmark": rows[0]["id"] if rows else None, "status": rows[0]["status"] if rows else None}
+    if kind == "knowledge_confidence":
+        base = journal.knowledge(int(spec.get("knowledge_id") or 0))
+        want = float(spec.get("min") or 0.6)
+        tags = set((base or {}).get("tags") or [])
+        newer = [k for k in journal.knowledge_recent(limit=200, since=objective["created"]) if k["confidence"] >= want and (tags & set(k["tags"]))]
+        return ("DONE" if newer else "RETRY"), {"knowledge_id": spec.get("knowledge_id"), "min": want, "stronger": [k["id"] for k in newer][:5]}
     if kind == "change_released":
         commits = [e for e in journal.events_between(objective["created"]) if e["type"] == "commit.created"]
         return ("DONE" if commits else "RETRY"), {"commits": [e["payload"].get("commit") for e in commits][:5]}
@@ -398,6 +449,10 @@ def _lesson(objective: dict, task: dict, verdict: str, evidence: dict) -> str:
         return f"`{spec.get('tool')}` ran and failed again (last outcome {evidence.get('last_outcome')}); the same approach will not work"
     if spec.get("kind") == "human":
         return "waiting for a human decision"
+    if spec.get("kind") == "benchmark_recovered":
+        return f"no newer benchmark without a regression in {spec.get('metric')}; run the benchmark after fixing"
+    if spec.get("kind") == "knowledge_confidence":
+        return "no stronger knowledge with the same tags was stored; research more sources"
     if spec.get("kind") == "change_released":
         return "no commit was created: the change was never released, or the gate rolled it back"
     if spec.get("kind") == "knowledge_stored":

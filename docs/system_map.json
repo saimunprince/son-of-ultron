@@ -1,6 +1,6 @@
 {
   "name": "SYRAX",
-  "generated": "2026-09-26 (phases 1-11)",
+  "generated": "2026-09-26 (all 12 phases have a first real implementation)",
   "source": "hand-audited from source code; regenerate when components change",
   "components": [
     {
@@ -458,6 +458,53 @@
       ]
     },
     {
+      "component": "Experiments + benchmarks",
+      "purpose": "Measured self-improvement: a benchmark suite of SYRAX's own mechanisms compared with the previous run (BASELINE/PASS/REGRESSION), an experiment engine that runs baseline vs candidate tool calls and computes the verdict from measurements, and objectives derived from benchmark regressions, repeatedly blocked strategies and weakly supported knowledge.",
+      "dependencies": [
+        "syrax.journal benchmarks/experiments tables",
+        "syrax.selfmodel (performance section)",
+        "syrax.verify performance gate",
+        "the live tool collection"
+      ],
+      "inputs": [
+        "python -m syrax.bench",
+        "experiment {hypothesis, baseline, candidate, metric, repeats}",
+        "WS benchmarks, experiments"
+      ],
+      "outputs": [
+        "benchmark.completed / experiment.started / experiment.completed events",
+        "benchmarks and experiments rows",
+        "self-improvement objectives"
+      ],
+      "state": "none",
+      "persistence": "journal tables",
+      "capabilities": [
+        "regression = >50% and >5 ms slower than the last run",
+        "verdicts from numbers only; 10% noise band; both-fail = INCONCLUSIVE",
+        "dangerous tools cannot be experiment arms",
+        "performance gate records every release's benchmark"
+      ],
+      "limitations": [
+        "performance gate is optional (laptop noise)",
+        "no task-quality or model-quality benchmark",
+        "experiments compare tool calls, not code versions"
+      ],
+      "code": [
+        "backend/syrax/bench.py",
+        "backend/syrax/experiments.py"
+      ],
+      "tests": [
+        "backend/syrax/test_bench.py",
+        "backend/syrax/test_experiments.py",
+        "backend/syrax/test_autonomy.py (self-improvement)",
+        "backend/syrax/test_bridge.py (experiments section)"
+      ],
+      "failure_modes": [
+        "both arms fail → INCONCLUSIVE, no conclusion drawn",
+        "benchmark under load → REGRESSION reported, objective created, gate optional"
+      ]
+    },
+    {
       "component": "SyraxAgent",
       "purpose": "Manus subclass that streams think/tool/result events through emit, checkpoints after each tool step, exports/imports working context for resume.",
       "dependencies": [
@@ -569,7 +616,7 @@
     },
     {
       "component": "Tools",
-      "purpose": "python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, release, present, terminate, browser_* (MCP).",
+      "purpose": "python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, release, present, experiment, terminate, browser_* (MCP).",
       "dependencies": [
         "app.tool.*",
         "browser-use MCP via uvx",

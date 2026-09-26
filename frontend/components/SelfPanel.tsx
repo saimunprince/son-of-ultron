@@ -94,6 +94,19 @@ export default function SelfPanel({ model, onRefresh, onClose }: Props) {
               </table>
             </section>
             <section>
+              <h4>PERFORMANCE (measured)</h4>
+              <p className={model.performance.last_benchmark?.status === "REGRESSION" ? "self-warn" : ""}>
+                {model.performance.last_benchmark
+                  ? `benchmark #${model.performance.last_benchmark.id} ${model.performance.last_benchmark.status} · ${ago(model.performance.last_benchmark.ts)} · ` +
+                    Object.entries(model.performance.last_benchmark.metrics).map(([k, v]) => `${k.replace(/_ms$/, "")} ${v}ms`).join(" · ")
+                  : "no benchmark recorded yet"}
+              </p>
+              <p className="self-dim">
+                {model.performance.experiments.count} experiment(s)
+                {model.performance.experiments.recent.length ? ` · last: ${model.performance.experiments.recent[0].verdict} — ${model.performance.experiments.recent[0].hypothesis.slice(0, 60)}` : ""}
+              </p>
+            </section>
+            <section>
               <h4>WEAKNESSES</h4>
               {model.weaknesses.length === 0 ? (
                 <p className="self-dim">none derived from evidence</p>

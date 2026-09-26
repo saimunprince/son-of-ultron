@@ -76,7 +76,7 @@ EVIDENCE_STATES = ("SUCCESS", "PARTIAL", "FAILED", "BLOCKED", "UNKNOWN", "NOT_VE
 RECOVERY_STATES = ("RESUMABLE", "UNCERTAIN", "BLOCKED", "COMPLETED", "FAILED")
 
 # Event types allowed on a task that is already terminal (read-only attachments).
-TERMINAL_OK = frozenset({"verification.completed", "reflection.created", "knowledge.stored", "skill.verified", "skill.failed", "skill.not_tested", "skill.disabled", "presentation.created", "presentation.dismissed"})
+TERMINAL_OK = frozenset({"verification.completed", "reflection.created", "knowledge.stored", "skill.verified", "skill.failed", "skill.not_tested", "skill.disabled", "presentation.created", "presentation.dismissed", "benchmark.completed", "experiment.completed"})
 
 # Tools whose side effects can be verified against the filesystem after a crash.
 CHECKABLE_TOOLS = frozenset({"str_replace_editor"})
@@ -145,7 +145,7 @@ _WIRE = {
     "checkpoint.created": "checkpoint",
     "verification.completed": "verification",
 }
-_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback", "maintenance", "presentation")
+_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback", "maintenance", "presentation", "benchmark", "experiment")
 
 
 @dataclass(frozen=True)
@@ -272,6 +272,30 @@ CREATE TABLE IF NOT EXISTS knowledge (
   uses         INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS knowledge_created ON knowledge(created);
+CREATE TABLE IF NOT EXISTS benchmarks (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts       REAL NOT NULL,
+  git_head TEXT,
+  metrics  TEXT NOT NULL,
+  status   TEXT NOT NULL CHECK (status IN ('BASELINE','PASS','REGRESSION','NOT_VERIFIED')),
+  compared_to INTEGER,
+  deltas   TEXT NOT NULL,
+  task_id  TEXT
+);
+CREATE TABLE IF NOT EXISTS experiments (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts          REAL NOT NULL,
+  hypothesis  TEXT NOT NULL,
+  objective   TEXT,
+  baseline    TEXT NOT NULL,
+  candidate   TEXT NOT NULL,
+  metric      TEXT NOT NULL,
+  result      TEXT NOT NULL,
+  conclusion  TEXT NOT NULL,
+  verdict     TEXT NOT NULL CHECK (verdict IN ('CANDIDATE_BETTER','BASELINE_BETTER','NO_DIFFERENCE','INCONCLUSIVE')),
+  next_action TEXT,
+  task_id     TEXT
+);
 CREATE TABLE IF NOT EXISTS skills (
   name              TEXT PRIMARY KEY,
   version           INTEGER NOT NULL DEFAULT 1,
@@ -1009,6 +1033,75 @@ class Journal:
                 )
         return out
 
+    # ——— benchmarks + experiments (performance is measured, never asserted) ———
+
+    def add_benchmark_sync(self, metrics: dict, status: str, deltas: Optional[dict] = None, compared_to: Optional[int] = None,
+                           git_head: Optional[str] = None, task_id: Optional[str] = None) -> dict:
+        if status not in ("BASELINE", "PASS", "REGRESSION", "NOT_VERIFIED"):
+            raise JournalError(f"bad benchmark status {status!r}")
+        ts = _now()
+        with self._txn() as cur:
+            cur.execute(
+                "INSERT INTO benchmarks(ts, git_head, metrics, status, compared_to, deltas, task_id) VALUES (?,?,?,?,?,?,?)",
+                (ts, git_head or _git_head(self.repo_root), _dumps(metrics), status, compared_to, _dumps(deltas or {}), task_id),
+            )
+            bid = int(cur.lastrowid)
+            self._insert_event(cur, ts, task_id, "benchmark.completed", {"benchmark_id": bid, "status": status, "compared_to": compared_to,
+                                                                          "regressions": [k for k, d in (deltas or {}).items() if d.get("regression")]})
+        return self.benchmark(bid)
+
+    def benchmark(self, benchmark_id: int) -> Optional[dict]:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM benchmarks WHERE id=?", (benchmark_id,)).fetchone()
+        return self._bench_dict(row) if row else None
+
+    def benchmarks(self, limit: int = 20) -> List[dict]:
+        limit = max(1, min(int(limit), 500))
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM benchmarks ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [self._bench_dict(r) for r in rows]
+
+    @staticmethod
+    def _bench_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        d["metrics"] = _loads(d.get("metrics"), {})
+        d["deltas"] = _loads(d.get("deltas"), {})
+        return d
+
+    def add_experiment_sync(self, hypothesis: str, baseline: dict, candidate: dict, metric: str, result: dict, conclusion: str,
+                            verdict: str, objective: Optional[str] = None, next_action: Optional[str] = None,
+                            task_id: Optional[str] = None) -> dict:
+        if verdict not in ("CANDIDATE_BETTER", "BASELINE_BETTER", "NO_DIFFERENCE", "INCONCLUSIVE"):
+            raise JournalError(f"bad verdict {verdict!r}")
+        ts = _now()
+        with self._txn() as cur:
+            cur.execute(
+                "INSERT INTO experiments(ts, hypothesis, objective, baseline, candidate, metric, result, conclusion, verdict, next_action, task_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (ts, hypothesis, objective, _dumps(baseline), _dumps(candidate), metric, _dumps(result), conclusion, verdict, next_action, task_id),
+            )
+            eid = int(cur.lastrowid)
+            self._insert_event(cur, ts, task_id, "experiment.completed", {"experiment_id": eid, "hypothesis": hypothesis[:160], "verdict": verdict, "metric": metric})
+        return self.experiment(eid)
+
+    def experiment(self, experiment_id: int) -> Optional[dict]:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM experiments WHERE id=?", (experiment_id,)).fetchone()
+        return self._exp_dict(row) if row else None
+
+    def experiments(self, limit: int = 20) -> List[dict]:
+        limit = max(1, min(int(limit), 500))
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM experiments ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [self._exp_dict(r) for r in rows]
+
+    @staticmethod
+    def _exp_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        for k in ("baseline", "candidate", "result"):
+            d[k] = _loads(d.get(k), {})
+        return d
+
     # ——— skills registry ———
 
     @staticmethod
@@ -1297,7 +1390,7 @@ class Journal:
         return out
 
     def count(self, table: str) -> int:
-        if table not in ("events", "tasks", "checkpoints", "verifications", "objectives", "knowledge", "skills"):
+        if table not in ("events", "tasks", "checkpoints", "verifications", "objectives", "knowledge", "skills", "benchmarks", "experiments"):
             raise ValueError(table)
         with self._lock:
             return int(self._db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])

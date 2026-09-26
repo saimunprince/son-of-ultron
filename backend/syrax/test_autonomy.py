@@ -337,3 +337,36 @@ def test_change_released_check_needs_a_commit_event(tmp_path):
     j.record_sync("commit.created", {"commit": "abc123", "files": ["a"], "summary": "x"})
     verdict, ev = judge(j, o, None)
     assert verdict == "DONE" and ev["commits"] == ["abc123"]
+
+
+# ——— recursive self-improvement: objectives about SYRAX's own mechanisms ———
+
+
+def test_benchmark_regression_and_blocked_strategies_and_weak_knowledge_become_objectives(tmp_path):
+    j, core, a = make(tmp_path, tools=["terminate"])
+    j.add_benchmark_sync({"recovery_ms": 10.0}, "BASELINE", {})
+    j.add_benchmark_sync({"recovery_ms": 40.0}, "REGRESSION", {"recovery_ms": {"now": 40.0, "before": 10.0, "pct": 300.0, "regression": True}}, compared_to=1)
+    for i in range(2):
+        o = j.add_objective_sync(f"fix desktop {i}", check={"kind": "tool_verified", "tool": "desktop"}, key=f"k{i}")
+        j.update_objective_sync(o["id"], status="BLOCKED")
+    k = j.add_knowledge_sync("weak belief about wal", "web", source_url="http://w", tags=["wal", "sqlite"])
+    for _ in range(3):
+        j.knowledge_search("wal")
+    derive_objectives(j, core.selfmodel)
+    objs = {o["key"]: o for o in j.objectives()}
+    reg = objs["benchmark-regression:recovery_ms:2"]
+    assert reg["check_spec"] == {"kind": "benchmark_recovered", "metric": "recovery_ms"} and reg["priority"] == 2
+    assert judge(j, reg, None)[0] == "RETRY"
+    j.add_benchmark_sync({"recovery_ms": 11.0}, "PASS", {"recovery_ms": {"now": 11.0, "before": 40.0, "pct": -72.5, "regression": False}}, compared_to=2)
+    assert judge(j, reg, None)[0] == "DONE"
+    strat = objs["strategy-change:desktop:2"]
+    assert strat["check_spec"] == {"kind": "knowledge_stored", "topic": "desktop alternative approach"}
+    cor = objs[f"corroborate:{k['id']}"]
+    assert cor["check_spec"] == {"kind": "knowledge_confidence", "knowledge_id": k["id"], "min": 0.6} and cor["priority"] == 4
+    assert judge(j, cor, None)[0] == "RETRY"
+    j.add_knowledge_sync("wal is durable with FULL", "web", source_url="http://a", tags=["wal"], agreeing_sources=3)
+    verdict, ev = judge(j, cor, None)
+    assert verdict == "DONE" and ev["stronger"]
+    assert derive_objectives(j, core.selfmodel) == 0  # idempotent
+    w = [x["detail"] for x in core.selfmodel.weaknesses()]
+    assert not any("benchmark regression" in d for d in w)  # the latest benchmark passed

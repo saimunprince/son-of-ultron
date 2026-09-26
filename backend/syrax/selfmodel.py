@@ -43,7 +43,7 @@ PRINCIPLES = [
     "Unknown is a valid state; say it.",
     "The UI observes; the core is the brain.",
 ]
-SECTIONS = ("summary", "identity", "structure", "runtime", "behavior", "capabilities", "weaknesses", "all")
+SECTIONS = ("summary", "identity", "structure", "runtime", "behavior", "capabilities", "performance", "weaknesses", "all")
 _PROCESS_STARTED = time.time()
 
 
@@ -252,6 +252,24 @@ class SelfModel:
             },
         }
 
+    # ——— performance (benchmarks + experiments) ———
+
+    def performance(self) -> dict:
+        b = self.journal.benchmarks(limit=1)
+        last = b[0] if b else None
+        return {
+            "last_benchmark": (
+                {"id": last["id"], "ts": last["ts"], "status": last["status"], "git_head": last["git_head"], "metrics": last["metrics"],
+                 "regressions": [k for k, d in last["deltas"].items() if d.get("regression")]}
+                if last else None
+            ),
+            "benchmarks": self.journal.count("benchmarks"),
+            "experiments": {
+                "count": self.journal.count("experiments"),
+                "recent": [{"id": e["id"], "verdict": e["verdict"], "metric": e["metric"], "hypothesis": e["hypothesis"][:100]} for e in self.journal.experiments(limit=5)],
+            },
+        }
+
     # ——— capability registry (tools × evidence) ———
 
     def capabilities(self) -> List[dict]:
@@ -309,6 +327,9 @@ class SelfModel:
                 out.append({"kind": "recovery", "detail": f"task {t['task_id']} ({t['goal'][:60]!r}) is interrupted with an UNCERTAIN operation; needs a human", "evidence": "journal.tasks.recovery"})
         if b["verifications"]["last"] and b["verifications"]["last"]["status"] == "BLOCKED":
             out.append({"kind": "verification", "detail": "the last verification run was BLOCKED", "evidence": "journal.verifications"})
+        perf = self.performance()
+        if perf["last_benchmark"] and perf["last_benchmark"]["status"] == "REGRESSION":
+            out.append({"kind": "performance", "detail": f"benchmark regression in {', '.join(perf['last_benchmark']['regressions'])}", "evidence": "journal.benchmarks"})
         if b["success_rate"] is not None and b["success_rate"] < 0.7 and b["tasks_total"] >= 5:
             out.append({"kind": "behavior", "detail": f"success rate {b['success_rate']} over {b['tasks_total']} tasks", "evidence": "journal.tasks"})
         smap = self.system_map() or {}
@@ -334,6 +355,8 @@ class SelfModel:
             return {"capabilities": self.capabilities()}
         if section == "weaknesses":
             return {"weaknesses": self.weaknesses()}
+        if section == "performance":
+            return {"performance": self.performance()}
         identity = self.identity()
         behavior = self.behavior()
         caps = self.capabilities()
@@ -349,6 +372,7 @@ class SelfModel:
                 "interrupted": behavior["interrupted"],
                 "last_verification": behavior["verifications"]["last"],
                 "knowledge_count": behavior["knowledge"]["count"],
+                "performance": self.performance(),
                 "capabilities": [
                     {"capability": c["capability"], "status": c["status"], "uses": c["uses"], "confidence": c["confidence"]} for c in caps
                 ],
@@ -363,6 +387,7 @@ class SelfModel:
             "runtime": runtime,
             "behavior": behavior,
             "capabilities": caps,
+            "performance": self.performance(),
             "weaknesses": weak,
         }
 
@@ -385,6 +410,9 @@ def _implementation_of(tool: str) -> str:
         "research": "backend/syrax/research.py",
         "know": "backend/syrax/research.py",
         "learn": "backend/syrax/research.py",
+        "release": "backend/syrax/devloop.py",
+        "present": "backend/syrax/presentation.py",
+        "experiment": "backend/syrax/experiments.py",
     }.get(tool, "unknown")
 
 

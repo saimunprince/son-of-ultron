@@ -1,6 +1,6 @@
 # SYRAX System Map
 
-Rendered from `docs/system_map.json` (audit of 2026-09-26; phases 1–11 landed the same day). Every entry was checked against the source files it names.
+Rendered from `docs/system_map.json` (audit of 2026-09-26; all twelve phases landed a first real implementation the same day). Every entry was checked against the source files it names.
 
 ## Frontend HUD
 
@@ -172,6 +172,23 @@ Decides what to show from the real event stream: elements from a visual vocabula
 | Tests | backend/syrax/test_presentation.py; backend/syrax/test_bridge.py (presentation section) |
 | Failure Modes | journal outage → element still broadcast with unjournaled=true; bad present arguments → tool error, nothing shown |
 
+## Experiments + benchmarks
+
+Measured self-improvement: a benchmark suite of SYRAX's own mechanisms compared with the previous run (BASELINE/PASS/REGRESSION), an experiment engine that runs baseline vs candidate tool calls and computes the verdict from measurements, and objectives derived from benchmark regressions, repeatedly blocked strategies and weakly supported knowledge.
+
+| | |
+|---|---|
+| Dependencies | syrax.journal benchmarks/experiments tables; syrax.selfmodel (performance section); syrax.verify performance gate; the live tool collection |
+| Inputs | python -m syrax.bench; experiment {hypothesis, baseline, candidate, metric, repeats}; WS benchmarks, experiments |
+| Outputs | benchmark.completed / experiment.started / experiment.completed events; benchmarks and experiments rows; self-improvement objectives |
+| State | none |
+| Persistence | journal tables |
+| Capabilities | regression = >50% and >5 ms slower than the last run; verdicts from numbers only; 10% noise band; both-fail = INCONCLUSIVE; dangerous tools cannot be experiment arms; performance gate records every release's benchmark |
+| Limitations | performance gate is optional (laptop noise); no task-quality or model-quality benchmark; experiments compare tool calls, not code versions |
+| Code | backend/syrax/bench.py; backend/syrax/experiments.py |
+| Tests | backend/syrax/test_bench.py; backend/syrax/test_experiments.py; backend/syrax/test_autonomy.py (self-improvement); backend/syrax/test_bridge.py (experiments section) |
+| Failure Modes | both arms fail → INCONCLUSIVE, no conclusion drawn; benchmark under load → REGRESSION reported, objective created, gate optional |
+
 ## SyraxAgent
 
 Manus subclass that streams think/tool/result events through emit, checkpoints after each tool step, exports/imports working context for resume.
@@ -225,7 +242,7 @@ Long-term facts and recent exchanges injected into every system prompt; remember
 
 ## Tools
 
-python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, release, present, terminate, browser_* (MCP).
+python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, release, present, experiment, terminate, browser_* (MCP).
 
 | | |
 |---|---|

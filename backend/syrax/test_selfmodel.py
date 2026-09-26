@@ -125,7 +125,7 @@ def test_snapshot_sections_and_json_safety(tmp_path):
     s = m.snapshot("summary")
     assert set(s) >= {"identity", "tasks_by_status", "capabilities", "weaknesses", "runtime", "known_limitations"}
     full = m.snapshot("all")
-    assert set(full) == {"generated", "identity", "structure", "runtime", "behavior", "capabilities", "weaknesses"}
+    assert set(full) == {"generated", "identity", "structure", "runtime", "behavior", "capabilities", "performance", "weaknesses"}
 
 
 def test_self_inspect_tool(tmp_path):

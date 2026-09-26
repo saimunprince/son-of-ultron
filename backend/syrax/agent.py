@@ -16,6 +16,7 @@ from syrax import browser  # noqa: F401  (sets BU_CDP_URL before MCP starts)
 from syrax.brains import get_router
 from syrax.desktop import DesktopControl
 from syrax.devloop import ReleaseTool
+from syrax.experiments import ExperimentTool
 from syrax.memory import ForgetTool, RecallTool, RememberTool, get_memory
 
 TOOLS_GUIDE = (
@@ -32,7 +33,8 @@ TOOLS_GUIDE = (
     "If you change SYRAX's own code, finish with `release`: it runs the real gate and commits "
     "only on GREEN, otherwise rolls back and shows you the evidence. When a visual beats "
     "prose (a table, a code block, a comparison), put it on the stage with `present`; "
-    "when nothing needs showing, show nothing."
+    "when nothing needs showing, show nothing. Never claim one approach is better without "
+    "an `experiment` that measured it."
 )
 from syrax.prompt import SYRAX_PERSONA
 from syrax.presentation import PresentTool
@@ -93,7 +95,7 @@ class SyraxAgent(Manus):
             AsyncPythonExecute(), StrReplaceEditor(), DesktopControl(),
             RememberTool(), RecallTool(), ForgetTool(), SelfInspectTool(),
             ResearchTool(), KnowTool(), LearnTool(),
-            SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), PresentTool(), Terminate()
+            SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), PresentTool(), ExperimentTool(), Terminate()
         )
     )
 

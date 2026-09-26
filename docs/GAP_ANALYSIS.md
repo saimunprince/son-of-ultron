@@ -25,7 +25,7 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 | Research / learning / knowledge store (§7, §8) | EXISTS (research commit) | `syrax/research.py` + `knowledge` table: search → fetch → excerpts → provenance + confidence policy; `learn` capped by evidence; failure → research objective. Knowledge → skill/tool progression not yet |
 | Skill / tool / module factory (§9) | EXISTS (skills commit) | `syrax/skills.py`: code + tests → subprocess pytest → registry → live tool; metadata (name, purpose, version, dependencies, tests, status, limitations, last_verified); boot re-registration. Module-level generation and auto-commit not yet |
 | Autonomous coding loop with rollback (§10, §41) | EXISTS (devloop commit) | `syrax/devloop.py`: edit → `release` → full gate → commit with verification id, or rollback with evidence; push off by default; `change_released` objectives |
-| Failure-driven learning (§11) | PARTIAL | objectives retry with a derived lesson, block after 3 attempts; no strategy search or research yet |
+| Failure-driven learning (§11) | EXISTS | lessons on retry, BLOCKED after 3, research objectives from failures, strategy-change objectives after repeated blocks |
 | 24/7 cycle + resource awareness (§16, §19) | EXISTS (operations commit) | `syrax/resources.py` gate (CPU, RAM, disk, battery, quiet hours), bounded loop, idle maintenance with 30-day retention; no GPU/network/thermal awareness |
 | Presentation engine / visual runtime (§22–30) | EXISTS (presentation commit) | `syrax/presentation.py` decides elements (kind, attention, ttl, slot, dismissal) from real events + `present` tool; `Stage.tsx` draws the plan, nothing when empty. Self-improving presentation (§30) not yet |
 | LIVE / HISTORY / WHY observer (§31–35) | EXISTS (observer commit) | console tabs LIVE / HISTORY / TODAY; WHY view per task from `task_detail` (events, checkpoints, objective, lesson); TODAY replay generated from `events_between` — no synthesised lines |
@@ -42,4 +42,11 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 6. ~~Autonomous development (Phase 8)~~ — done: `syrax/devloop.py`, see `docs/DEVLOOP.md`.
 7. ~~24/7 resource-aware operation (Phase 9)~~ — done: `syrax/resources.py`, `Journal.maintain`, see `docs/OPERATIONS.md`.
 8. ~~Dynamic presentation engine (Phase 10)~~ — done: `syrax/presentation.py`, `Stage.tsx`, see `docs/PRESENTATION.md`.
-9. **Recursive self-improvement (Phase 12)** — objectives that target the mechanisms above, driven by measured weaknesses.
+9. ~~Recursive self-improvement (Phase 12)~~ — first real implementation: `syrax/bench.py`, `syrax/experiments.py`, mechanism-targeting objectives; see `docs/EXPERIMENTS.md`.
+
+## What remains beyond the twelve phases
+
+- A task-quality benchmark (does SYRAX answer/act better?), not only mechanism speed.
+- Presentation engine self-improvement (§30): no measurement of whether a presentation helped.
+- Experiments over code versions (run the suite on two commits) rather than tool calls.
+- Model research and fine-tuning (§20, §51): the router abstracts providers; nothing trains anything.

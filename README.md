@@ -264,6 +264,17 @@ back so the next attempt is different. Only `backend/syrax`, `backend/skills`,
 refused before any gate runs. Pushing stays with you unless
 `SYRAX_AUTOPUSH=1`. Details: `docs/DEVLOOP.md`.
 
+## Measured, not asserted: benchmarks and experiments
+
+`python -m syrax.bench` measures SYRAX's own mechanisms (durable write,
+checkpoint, registry query, recovery, self-model) and compares with the last
+run; a metric that got more than 50 % and 5 ms slower is a REGRESSION, the
+first run is a BASELINE. The release gate records a benchmark on every
+release. The `experiment` tool runs a baseline and a candidate tool call,
+repeated, and computes the verdict from the numbers. Regressions, repeatedly
+blocked strategies and weakly supported knowledge become objectives about
+SYRAX itself. Details: `docs/EXPERIMENTS.md`.
+
 ## Self-model
 
 SYRAX can inspect itself from evidence, not from a script: identity and the

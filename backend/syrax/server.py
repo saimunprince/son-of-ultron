@@ -9,7 +9,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     verifications {limit?} | self_model {section?} |
                     objectives {limit?} | objective_add {goal, reason?, priority?} |
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
-                    skills | presentation |
+                    skills | presentation | benchmarks {limit?} | experiments {limit?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
                     brain_models {id, api_key?} | brain_test {id}
@@ -20,6 +20,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     objectives | autonomy_status | autonomy {event} | objective {event} | cycle {event} |
                     task_detail | replay | knowledge | research {event} | knowledge {event} |
                     skills | skill {event} | presentation {event} | presentation_plan |
+                    benchmarks | experiments | benchmark {event} | experiment {event} |
                     reflection {event} |
                     notice | error | pong | brain | brains | brain_models | brain_test
 
@@ -258,6 +259,10 @@ class Session:
             tid = str(msg.get("task_id") or "")
             events = await asyncio.to_thread(journal.events, tid)
             await self.send({"type": "task_events", "task_id": tid, "events": events})
+        elif kind == "benchmarks":
+            await self.send({"type": "benchmarks", "benchmarks": await asyncio.to_thread(journal.benchmarks, _limit(msg.get("limit"), 20))})
+        elif kind == "experiments":
+            await self.send({"type": "experiments", "experiments": await asyncio.to_thread(journal.experiments, _limit(msg.get("limit"), 20))})
         elif kind == "presentation":
             await self.core.presentation.expire()
             await self.send({"type": "presentation_plan", **self.core.presentation.plan()})
