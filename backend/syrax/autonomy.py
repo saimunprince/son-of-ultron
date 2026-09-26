@@ -51,8 +51,14 @@ AUTONOMOUS_BRIEF = (
     "Goal: {goal}\nReason: {reason}\n"
     "Do the work with your tools. Your completion is judged from the journal evidence "
     "(which tools ran and whether they succeeded), not from what you say. Do not claim "
-    "success you did not produce. When done, or if you cannot proceed, say so plainly."
+    "success you did not produce. Be economical: every step costs a model call; take the "
+    "fewest steps that produce the evidence, do nothing unrelated, and then finish with one "
+    "plain sentence stating exactly what you observed.{hint}"
 )
+BRIEF_HINTS = {
+    "tool_verified": " For this objective one call of the `{tool}` tool with a harmless read-only action is enough; report its output and finish.",
+    "knowledge_stored": " Use `research` once on the stated topic, then `learn` one verified conclusion citing the knowledge_ids, then finish.",
+}
 
 
 @dataclass
@@ -354,7 +360,9 @@ class Autonomy:
             objective["id"], status="ACTIVE",
             progress={"cycle_started": rep.started}, note="cycle picked this objective",
         )
-        brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-")
+        spec = objective.get("check_spec") or {}
+        hint = BRIEF_HINTS.get(spec.get("kind", ""), "").format(**{k: v for k, v in spec.items() if isinstance(v, str)})
+        brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-", hint=hint)
         task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous")
         if task_id is None:
             await self.journal.update_objective(objective["id"], status="OPEN", note="core busy")
@@ -403,6 +411,8 @@ class Autonomy:
         self.reports.append(rep)
         if len(self.reports) > 200:
             self.reports = self.reports[-200:]
+        if rep.outcome in ("BUSY", "DISABLED"):
+            return rep  # nothing happened; a loop tick every interval must not fill the journal
         try:
             await self.journal.record("cycle.completed", rep.to_dict())
         except Exception as e:

@@ -176,7 +176,8 @@ def test_cycle_disabled_busy_and_pressure_do_nothing(tmp_path, monkeypatch):
     assert rep.outcome == "SKIPPED" and "cpu load" in rep.reason
     assert core.submitted == [] and j.count("objectives") == 0  # nothing derived, nothing run
     kinds = [e["type"] for e in j.recent_events()]
-    assert kinds.count("cycle.completed") == 3 and "cycle.started" not in kinds
+    assert kinds.count("cycle.completed") == 1 and "cycle.started" not in kinds  # only SKIPPED is journaled; BUSY/DISABLED are silent
+    assert [r.outcome for r in a.reports] == ["DISABLED", "BUSY", "SKIPPED"]
     monkeypatch.setenv("SYRAX_AUTONOMY", "0")
     assert not a.enabled  # env overrides the stored flag
 
@@ -190,6 +191,7 @@ def test_cycle_runs_one_objective_and_marks_done_from_evidence(tmp_path, monkeyp
     assert rep.outcome == "RAN" and rep.verdict == "DONE" and rep.task_status == "SUCCESS"
     tid, goal, kind = core.submitted[0]
     assert kind == "autonomous" and "[AUTONOMOUS OBJECTIVE]" in goal and "`desktop`" in goal
+    assert "one call of the `desktop` tool" in goal and "Be economical" in goal  # the brief steers the model to the minimum
     o = j.objective(rep.objective_id)
     assert o["status"] == "DONE" and o["attempts"] == 1 and o["last_task_id"] == tid
     assert o["evidence"]["judged"]["used_after_objective"] is True
