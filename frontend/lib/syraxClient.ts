@@ -294,6 +294,10 @@ export type ServerEvent =
   | { type: "verifications"; verifications: Verification[] }
   | ({ type: "task_detail"; task_id: string } & TaskDetail)
   | { type: "replay"; since: number; until: number | null; events: JournalEvent[] }
+  | ({ type: "code"; event: "changed"; path?: string; command?: string; files?: Record<string, string>; stat?: string; head?: string } & Journaled)
+  | ({ type: "commit"; event: "created" | "failed"; commit?: string; files?: string[]; summary?: string; verification_id?: number; error?: string } & Journaled)
+  | ({ type: "rollback"; event: "created"; reason: string; restored: string[]; removed: string[]; clean: boolean; snapshot: string } & Journaled)
+  | ({ type: "push"; event: "started" | "completed" | "failed"; ok?: boolean; branch?: string; output?: string } & Journaled)
   | { type: "skills"; skills: SkillRow[] }
   | ({ type: "skill"; event: "created" | "verified" | "failed" | "disabled" | "not_tested"; skill: string; version?: number; status?: string; tests_passed?: number; tests_failed?: number; purpose?: string; note?: string | null } & Journaled)
   | { type: "knowledge_list"; query: string; knowledge: Knowledge[] }

@@ -322,6 +322,18 @@ export default function Syrax() {
         case "knowledge":
           push({ kind: "notice", id: nextId++, text: `LEARNED · ${e.kind} · ${Math.round(e.confidence * 100)}% · ${e.claim.slice(0, 80)}` });
           break;
+        case "code":
+          if (e.path) push({ kind: "notice", id: nextId++, text: `CODE · ${e.command} ${e.path}` });
+          break;
+        case "commit":
+          push({ kind: "notice", id: nextId++, text: e.event === "created" ? `COMMITTED · ${e.commit?.slice(0, 10)} · ${e.summary ?? ""}` : `COMMIT FAILED · ${e.error ?? ""}` });
+          break;
+        case "rollback":
+          push({ kind: "notice", id: nextId++, text: `ROLLED BACK · ${e.reason} · restored ${e.restored.length}, removed ${e.removed.length}` });
+          break;
+        case "push":
+          if (e.event !== "started") push({ kind: "notice", id: nextId++, text: e.event === "completed" ? `PUSHED · ${e.branch}` : `PUSH FAILED · ${e.output ?? ""}` });
+          break;
         case "skill":
           if (e.event === "verified") push({ kind: "notice", id: nextId++, text: `SKILL BUILT · ${e.skill} v${e.version ?? "?"} · ${e.tests_passed ?? 0} tests passed · now a tool` });
           else if (e.event === "failed") push({ kind: "notice", id: nextId++, text: `SKILL FAILED · ${e.skill} · ${e.tests_failed ?? 0} failing test(s) · not registered` });

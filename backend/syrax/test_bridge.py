@@ -766,3 +766,63 @@ def test_agent_builds_a_skill_and_uses_it_in_the_same_task(script, monkeypatch):
     with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
         hello = boot(ws)
         assert "shout" in hello["tools"]
+
+
+# ——— autonomous development over the bridge: edit → release → gate → commit / rollback ———
+
+
+def _tmp_repo(tmp_path):
+    import subprocess
+
+    root = tmp_path / "repo"
+    (root / "backend" / "syrax").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+    (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 1\n")
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "add", "-A"], cwd=root, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init"], cwd=root, check=True)
+    return root
+
+
+def test_agent_edits_its_code_and_release_commits_only_on_green(script, tmp_path, monkeypatch):
+    import subprocess
+    import sys
+    from syrax.verify import Gate
+
+    root = _tmp_repo(tmp_path)
+    target = root / "backend" / "syrax" / "mod.py"
+    gates = {"list": [Gate("tests", [sys.executable, "-c", "import sys; print('boom'); sys.exit(1)"])]}
+    script.queue = [
+        call("str_replace_editor", {"command": "str_replace", "path": str(target), "old_str": "VALUE = 1", "new_str": "VALUE = 2"}, "Editing."),
+        call("release", {"summary": "set VALUE to 2"}, "Releasing."),
+        call("str_replace_editor", {"command": "str_replace", "path": str(target), "old_str": "VALUE = 1", "new_str": "VALUE = 3"}, "Trying differently."),
+        call("release", {"summary": "set VALUE to 3"}, "Releasing again."),
+        reply("Second attempt committed."),
+    ]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello = boot(ws)
+        assert "release" in hello["tools"]
+        core = core_mod.get_core()
+        core.devloop.root = root
+        core.devloop.snapshot_dir = tmp_path / "rb"
+        core.devloop.gates = lambda: gates["list"]
+        monkeypatch.setattr(core_mod, "REPO_ROOT", root)  # code.changed detection uses the repo root
+        ws.send_json({"type": "task", "text": "bump VALUE and release"})
+        r1, seen = recv_until(ws, "tool_result")
+        assert r1["name"] == "str_replace_editor" and r1["ok"]
+        r2, seen = recv_until(ws, "tool_result")
+        assert r2["name"] == "release" and r2["ok"] and "ROLLED_BACK" in r2["output"] and "boom" in r2["output"]
+        assert any(e["type"] == "rollback" and e["event"] == "created" for e in seen)
+        assert target.read_text() == "VALUE = 1\n"  # rolled back for real
+        gates["list"] = [Gate("tests", [sys.executable, "-c", "pass"])]  # the "different approach" passes
+        r3, _ = recv_until(ws, "tool_result")
+        r4, seen = recv_until(ws, "tool_result")
+        assert r4["name"] == "release" and "COMMITTED" in r4["output"]
+        assert any(e["type"] == "commit" and e["event"] == "created" for e in seen)
+        drain_until_idle(ws)
+    head_msg = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=root, capture_output=True, text=True).stdout.strip()
+    assert head_msg == "syrax: set VALUE to 3" and target.read_text() == "VALUE = 3\n"
+    tid = get_journal().tasks()[0]["task_id"]
+    kinds = [e["type"] for e in get_journal().events(tid)]
+    assert kinds.count("code.changed") >= 3  # two editor edits + release inspections
+    assert kinds.count("rollback.created") == 1 and kinds.count("commit.created") == 1
+    assert [v["status"] for v in get_journal().verifications(limit=5)] == ["GREEN", "BLOCKED"]

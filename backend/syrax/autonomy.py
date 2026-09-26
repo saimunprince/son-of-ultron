@@ -182,6 +182,9 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         rows = journal.knowledge_recent(limit=50, since=objective["created"])
         hits = [k for k in rows if topic_words & set(auto_keywords(" ".join([k["claim"], k.get("question") or "", " ".join(k["tags"])])))]
         return ("DONE" if hits else "RETRY"), {"topic": spec.get("topic"), "stored_after_objective": len(rows), "matching": [k["id"] for k in hits][:10]}
+    if kind == "change_released":
+        commits = [e for e in journal.events_between(objective["created"]) if e["type"] == "commit.created"]
+        return ("DONE" if commits else "RETRY"), {"commits": [e["payload"].get("commit") for e in commits][:5]}
     if kind == "verification_green":
         rows = journal.verifications(limit=1)
         ok = bool(rows and rows[0]["status"] == "GREEN" and rows[0]["ts"] >= objective["created"])
@@ -399,6 +402,8 @@ def _lesson(objective: dict, task: dict, verdict: str, evidence: dict) -> str:
         return f"`{spec.get('tool')}` ran and failed again (last outcome {evidence.get('last_outcome')}); the same approach will not work"
     if spec.get("kind") == "human":
         return "waiting for a human decision"
+    if spec.get("kind") == "change_released":
+        return "no commit was created: the change was never released, or the gate rolled it back"
     if spec.get("kind") == "knowledge_stored":
         return f"nothing about {spec.get('topic')!r} was stored; research and `learn` must actually run"
     return f"task ended {task.get('status')} with error {task.get('error')!r}"

@@ -30,3 +30,4 @@ backend/config/*.tmp
 backend/config/journal.db
 backend/config/journal.db-wal
 backend/config/journal.db-shm
+backend/config/rollback/

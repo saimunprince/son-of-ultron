@@ -24,7 +24,7 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 | Objectives (§17) | EXISTS (autonomy commit) | `objectives` table, transitions, derivation from self-model weaknesses, human objectives over WS |
 | Research / learning / knowledge store (§7, §8) | EXISTS (research commit) | `syrax/research.py` + `knowledge` table: search → fetch → excerpts → provenance + confidence policy; `learn` capped by evidence; failure → research objective. Knowledge → skill/tool progression not yet |
 | Skill / tool / module factory (§9) | EXISTS (skills commit) | `syrax/skills.py`: code + tests → subprocess pytest → registry → live tool; metadata (name, purpose, version, dependencies, tests, status, limitations, last_verified); boot re-registration. Module-level generation and auto-commit not yet |
-| Autonomous coding loop with rollback (§10, §41) | MISSING | gate exists; no agent-driven change pipeline |
+| Autonomous coding loop with rollback (§10, §41) | EXISTS (devloop commit) | `syrax/devloop.py`: edit → `release` → full gate → commit with verification id, or rollback with evidence; push off by default; `change_released` objectives |
 | Failure-driven learning (§11) | PARTIAL | objectives retry with a derived lesson, block after 3 attempts; no strategy search or research yet |
 | 24/7 cycle + resource awareness (§16, §19) | PARTIAL | `Autonomy.loop` with interval, CPU/RAM gate, idle when nothing to do; off by default; no GPU/disk/network awareness |
 | Presentation engine / visual runtime (§22–30) | MISSING | static HUD in `components/Syrax.tsx` |
@@ -39,4 +39,7 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 3. ~~LIVE / HISTORY / WHY view (Phase 11)~~ — done: `frontend/components/HistoryView.tsx`, WS `task_detail`, `replay`.
 4. ~~Research + knowledge store (Phase 6)~~ — done: `syrax/research.py`, see `docs/RESEARCH.md`.
 5. ~~Skill factory (Phase 7)~~ — done: `syrax/skills.py`, see `docs/SKILLS.md`.
-6. **Autonomous development (Phase 8)** — inspect → modify → gate → commit with rollback, generated skills committed only through `verify.run_gates`.
+6. ~~Autonomous development (Phase 8)~~ — done: `syrax/devloop.py`, see `docs/DEVLOOP.md`.
+7. **24/7 resource-aware operation (Phase 9)** — richer scheduler (disk/network/GPU awareness, quiet hours), long-running task support.
+8. **Dynamic presentation engine (Phase 10)** — presentation plans from real state; the observer views are the first consumer.
+9. **Recursive self-improvement (Phase 12)** — objectives that target the mechanisms above, driven by measured weaknesses.

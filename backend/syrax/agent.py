@@ -15,6 +15,7 @@ from app.tool.str_replace_editor import StrReplaceEditor
 from syrax import browser  # noqa: F401  (sets BU_CDP_URL before MCP starts)
 from syrax.brains import get_router
 from syrax.desktop import DesktopControl
+from syrax.devloop import ReleaseTool
 from syrax.memory import ForgetTool, RecallTool, RememberTool, get_memory
 
 TOOLS_GUIDE = (
@@ -27,7 +28,9 @@ TOOLS_GUIDE = (
     "For facts you do not have, check `know` first, then `research` (web, with sources); "
     "store a verified conclusion with `learn`, citing the knowledge_ids. Never present an "
     "unresearched guess as fact. When a job needs a capability you lack and will need again, "
-    "build it with `skill_create` (code + tests); it becomes a tool only if its tests pass."
+    "build it with `skill_create` (code + tests); it becomes a tool only if its tests pass. "
+    "If you change SYRAX's own code, finish with `release`: it runs the real gate and commits "
+    "only on GREEN, otherwise rolls back and shows you the evidence."
 )
 from syrax.prompt import SYRAX_PERSONA
 from syrax.research import KnowTool, LearnTool, ResearchTool
@@ -87,7 +90,7 @@ class SyraxAgent(Manus):
             AsyncPythonExecute(), StrReplaceEditor(), DesktopControl(),
             RememberTool(), RecallTool(), ForgetTool(), SelfInspectTool(),
             ResearchTool(), KnowTool(), LearnTool(),
-            SkillCreateTool(), SkillListTool(), SkillTestTool(), Terminate()
+            SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), Terminate()
         )
     )
 

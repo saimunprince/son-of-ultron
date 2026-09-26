@@ -240,6 +240,17 @@ next boot from the registry. `skill_list`, `skill_test {name}` and
 `skill_test {name, action: remove}` manage them; WebSocket `skills` lists them.
 Details: `docs/SKILLS.md`.
 
+## SYRAX changing its own code
+
+After editing its repository with `str_replace_editor` or `skill_create`, SYRAX
+calls `release {summary}`. That runs the same gate as a human release and
+commits only on GREEN (the commit message carries the verification id);
+otherwise the change is rolled back and the failing gate's output is handed
+back so the next attempt is different. Only `backend/syrax`, `backend/skills`,
+`frontend`, `docs` and `README.md` are in scope; secrets and runtime state are
+refused before any gate runs. Pushing stays with you unless
+`SYRAX_AUTOPUSH=1`. Details: `docs/DEVLOOP.md`.
+
 ## Self-model
 
 SYRAX can inspect itself from evidence, not from a script: identity and the
@@ -265,6 +276,7 @@ cannot be measured is `null`, never invented.
 | `SYRAX_AUTO_RESUME` | `0` (set `1` to resume RESUMABLE tasks at boot) |
 | `SYRAX_AUTONOMY` | unset (overrides the stored AUTO flag with `1`/`0`) |
 | `SYRAX_CYCLE_INTERVAL` | `120` seconds between autonomous cycles |
+| `SYRAX_AUTOPUSH` | `0` (set `1` to let `release` push its commits) |
 | `NEXT_PUBLIC_SYRAX_WS` | `ws://127.0.0.1:8765/ws` |
 
 The agent executes code on this machine. The server binds to localhost only and

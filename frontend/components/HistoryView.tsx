@@ -81,6 +81,30 @@ export function describeEvent(e: JournalEvent): string | null {
       return `Lesson: ${s("lesson").slice(0, 100)}`;
     case "autonomy.toggled":
       return `Autonomy ${p["enabled"] ? "ON" : "OFF"}`;
+    case "code.changed":
+      return p["path"] ? `Edited ${s("path")} (${s("command")})` : `Prepared release: ${Object.keys((p["files"] as Record<string, string>) ?? {}).length} file(s)`;
+    case "commit.created":
+      return `Committed ${s("commit").slice(0, 10)}: ${s("summary").slice(0, 80)}`;
+    case "commit.failed":
+      return `Commit FAILED: ${s("error").slice(0, 80)}`;
+    case "rollback.created":
+      return `Rolled back (${s("reason")})`;
+    case "push.completed":
+      return `Pushed ${s("branch")}`;
+    case "push.failed":
+      return `Push FAILED`;
+    case "push.started":
+    case "research.started":
+    case "skill.created":
+      return null;
+    case "research.completed":
+      return `Researched: ${s("question").slice(0, 70)} · ${p["stored"]} stored`;
+    case "knowledge.stored":
+      return `Learned (${s("kind")}, ${Math.round(Number(p["confidence"] ?? 0) * 100)}%): ${s("claim").slice(0, 70)}`;
+    case "skill.verified":
+      return `Skill ${s("skill")} verified (${p["tests_passed"]} tests)`;
+    case "skill.failed":
+      return `Skill ${s("skill")} FAILED tests`;
     case "brain.failover":
       return `Brain ${s("provider")} failed over: ${s("reason").slice(0, 60)}`;
     case "brain.answered":
@@ -110,7 +134,11 @@ export function HistoryList({ tasks, onOpen }: { tasks: TaskSummary[]; onOpen: (
 
 export function WhyView({ detail, onBack, onResume }: { detail: TaskDetail; onBack: () => void; onResume?: (id: string) => void }) {
   const t = detail.task;
-  const steps = detail.events.filter((e) => e.type === "tool.started" || e.type === "tool.failed" || e.type === "tool.completed" || e.type === "ask" || e.type === "answer" || e.type === "final" || e.type.startsWith("task.") || e.type.startsWith("recovery."));
+  const steps = detail.events.filter(
+    (e) =>
+      e.type === "tool.started" || e.type === "tool.failed" || e.type === "tool.completed" || e.type === "ask" || e.type === "answer" || e.type === "final" ||
+      ["task.", "recovery.", "code.", "commit.", "rollback.", "push.", "research.", "knowledge.", "skill."].some((pfx) => e.type.startsWith(pfx)),
+  );
   const reflection = detail.events.find((e) => e.type === "reflection.created");
   const rec = (t.recovery ?? null) as { state?: string; operation_state?: string; checks?: unknown } | null;
   return (

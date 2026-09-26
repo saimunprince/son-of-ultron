@@ -1,6 +1,6 @@
 # SYRAX System Map
 
-Rendered from `docs/system_map.json` (audit of 2026-09-26; self-model, autonomy, observer views, research and the skill factory added the same day). Every entry was checked against the source files it names.
+Rendered from `docs/system_map.json` (audit of 2026-09-26; self-model, autonomy, observer views, research, skill factory and the development loop added the same day). Every entry was checked against the source files it names.
 
 ## Frontend HUD
 
@@ -138,6 +138,23 @@ SYRAX writes its own tools: skill_create takes code + pytest tests, compiles and
 | Tests | backend/syrax/test_skills.py; backend/syrax/test_bridge.py (skill section) |
 | Failure Modes | compile error → FAILED at stage compile; failing/absent tests → FAILED with pytest tail; loads but wrong Skill.name → FAILED at stage load; test timeout → FAILED |
 
+## Autonomous development loop
+
+release {summary}: inspect the working tree (scope, forbidden paths, diff scan), snapshot the diff, run the full verification gate, commit on GREEN with the verification id in the message, otherwise roll back and hand the evidence to the model. Push only with SYRAX_AUTOPUSH=1.
+
+| | |
+|---|---|
+| Dependencies | git; syrax.verify (run_gates, default_gates, scan_diff_text); syrax.journal |
+| Inputs | release {summary}; code edits made with str_replace_editor / skill_create; SYRAX_AUTOPUSH |
+| Outputs | commits authored SYRAX <syrax@localhost>; code.changed / verification.completed / commit.created / commit.failed / rollback.created / push.* events; backend/config/rollback/*.patch snapshots |
+| State | none |
+| Persistence | git history; journal events; rollback patches |
+| Capabilities | gate-driven commit; rollback verified by git status; scope + forbidden-path + secret/debug refusal before any gate runs; per-edit code.changed events from the core; change_released objective check |
+| Limitations | push off by default; no benchmark/perf gate; rollback covers the repository only; one release per tool call; the gate takes about a minute |
+| Code | backend/syrax/devloop.py |
+| Tests | backend/syrax/test_devloop.py; backend/syrax/test_bridge.py (release section); backend/syrax/test_autonomy.py (change_released) |
+| Failure Modes | gate BLOCKED → rollback.created, tree restored; git commit fails → commit.failed; push fails → push.failed, commit stays local |
+
 ## SyraxAgent
 
 Manus subclass that streams think/tool/result events through emit, checkpoints after each tool step, exports/imports working context for resume.
@@ -191,7 +208,7 @@ Long-term facts and recent exchanges injected into every system prompt; remember
 
 ## Tools
 
-python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, terminate, browser_* (MCP).
+python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, release, terminate, browser_* (MCP).
 
 | | |
 |---|---|

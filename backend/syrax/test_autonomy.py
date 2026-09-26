@@ -328,3 +328,12 @@ def test_failed_task_becomes_a_research_objective_judged_by_stored_knowledge(tmp
     assert auto._research_topic("") is None and auto._research_topic("All brains failed. x") is None
     assert auto._research_topic("ValueError: bad shape for tensor") == "ValueError: bad shape for tensor"
     assert auto._research_topic("weird failure in the toaster") == "weird failure toaster"
+
+
+def test_change_released_check_needs_a_commit_event(tmp_path):
+    j = Journal(tmp_path / "j.db")
+    o = j.add_objective_sync("improve x", check={"kind": "change_released"})
+    assert judge(j, o, {"status": "SUCCESS"})[0] == "RETRY"
+    j.record_sync("commit.created", {"commit": "abc123", "files": ["a"], "summary": "x"})
+    verdict, ev = judge(j, o, None)
+    assert verdict == "DONE" and ev["commits"] == ["abc123"]

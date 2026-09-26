@@ -1,6 +1,6 @@
 {
   "name": "SYRAX",
-  "generated": "2026-09-26 (self-model, autonomy, observer, research, skills added)",
+  "generated": "2026-09-26 (self-model, autonomy, observer, research, skills, devloop added)",
   "source": "hand-audited from source code; regenerate when components change",
   "components": [
     {
@@ -359,6 +359,52 @@
       ]
     },
     {
+      "component": "Autonomous development loop",
+      "purpose": "release {summary}: inspect the working tree (scope, forbidden paths, diff scan), snapshot the diff, run the full verification gate, commit on GREEN with the verification id in the message, otherwise roll back and hand the evidence to the model. Push only with SYRAX_AUTOPUSH=1.",
+      "dependencies": [
+        "git",
+        "syrax.verify (run_gates, default_gates, scan_diff_text)",
+        "syrax.journal"
+      ],
+      "inputs": [
+        "release {summary}",
+        "code edits made with str_replace_editor / skill_create",
+        "SYRAX_AUTOPUSH"
+      ],
+      "outputs": [
+        "commits authored SYRAX <syrax@localhost>",
+        "code.changed / verification.completed / commit.created / commit.failed / rollback.created / push.* events",
+        "backend/config/rollback/*.patch snapshots"
+      ],
+      "state": "none",
+      "persistence": "git history; journal events; rollback patches",
+      "capabilities": [
+        "gate-driven commit; rollback verified by git status",
+        "scope + forbidden-path + secret/debug refusal before any gate runs",
+        "per-edit code.changed events from the core",
+        "change_released objective check"
+      ],
+      "limitations": [
+        "push off by default",
+        "no benchmark/perf gate",
+        "rollback covers the repository only",
+        "one release per tool call; the gate takes about a minute"
+      ],
+      "code": [
+        "backend/syrax/devloop.py"
+      ],
+      "tests": [
+        "backend/syrax/test_devloop.py",
+        "backend/syrax/test_bridge.py (release section)",
+        "backend/syrax/test_autonomy.py (change_released)"
+      ],
+      "failure_modes": [
+        "gate BLOCKED → rollback.created, tree restored",
+        "git commit fails → commit.failed",
+        "push fails → push.failed, commit stays local"
+      ]
+    },
+    {
       "component": "SyraxAgent",
       "purpose": "Manus subclass that streams think/tool/result events through emit, checkpoints after each tool step, exports/imports working context for resume.",
       "dependencies": [
@@ -470,7 +516,7 @@
     },
     {
       "component": "Tools",
-      "purpose": "python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, terminate, browser_* (MCP).",
+      "purpose": "python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, release, terminate, browser_* (MCP).",
       "dependencies": [
         "app.tool.*",
         "browser-use MCP via uvx",

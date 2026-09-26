@@ -28,6 +28,7 @@ from app.schema import Message
 
 from syrax.agent import SyraxAgent
 from syrax.brains import get_router
+from syrax.devloop import REPO_ROOT, DevLoop, ReleaseTool
 from syrax.journal import Event, Journal, JournalError, get_journal
 from syrax.memory import get_memory
 from syrax.research import KnowTool, LearnTool, Researcher, ResearchTool
@@ -75,6 +76,7 @@ class Core:
         self.current: Optional[Running] = None
         self.observers: List[Observer] = []
         self.state: dict = {"state": "idle"}  # last direct state event
+        self._last_tool_args: dict = {}
         self.journal.subscribe(self._on_journal_event)
         self.selfmodel = SelfModel(self.journal)
         self.selfmodel.tools_provider = self.tool_names
@@ -85,6 +87,7 @@ class Core:
         self.autonomy = Autonomy(self)
         self.researcher = Researcher(self.journal, task_id_provider=self.current_task_id)
         self.skills = SkillFactory(self.journal, task_id_provider=self.current_task_id)
+        self.devloop = DevLoop(self.journal, task_id_provider=self.current_task_id)
 
     # ——— observers ———
 
@@ -132,6 +135,9 @@ class Core:
                 st = tools.get_tool(tname)
                 if isinstance(st, (SkillCreateTool, SkillListTool, SkillTestTool)):
                     st.factory = self.skills
+            rt = tools.get_tool("release")
+            if isinstance(rt, ReleaseTool):
+                rt.loop = self.devloop
             loaded = self.skills.attach(tools)  # VERIFIED skills from the registry become live tools
             if loaded:
                 logger.info(f"registered {loaded} skill(s) from the registry")
@@ -157,12 +163,18 @@ class Core:
             return
         payload = {k: v for k, v in event.items() if k not in ("type", "image")}
         volatile = {"image": event["image"]} if event.get("image") else None
+        if kind == "tool.started":
+            self._last_tool_args = event.get("args") if isinstance(event.get("args"), dict) else {}
         if kind in ("tool.completed", "tool.failed"):
             self.current.steps.append(
                 {"step": event.get("step"), "tool": event.get("name"), "id": event.get("id"), "ok": bool(event.get("ok"))}
             )
         try:
             await self.journal.record(kind, payload, task_id=self.current.task_id, volatile=volatile)
+            if kind == "tool.completed" and event.get("name") == "str_replace_editor":
+                edit = _repo_edit(self.current.steps, self._last_tool_args)
+                if edit:
+                    await self.journal.record("code.changed", edit, task_id=self.current.task_id)
         except (sqlite3.Error, JournalError) as e:
             # Bookkeeping must never kill a task, but we never pretend it was journaled.
             self.current.unjournaled += 1
@@ -361,6 +373,23 @@ class Core:
             await self.agent.shutdown()
             self.agent = None
         self.journal.unsubscribe(self._on_journal_event)
+
+
+def _repo_edit(steps: List[dict], args: dict) -> Optional[dict]:
+    """A str_replace_editor edit inside SYRAX's own repository → code.changed payload."""
+    cmd = str(args.get("command") or "")
+    if cmd not in ("create", "str_replace", "insert", "undo_edit"):
+        return None
+    raw = str(args.get("path") or "")
+    if not raw:
+        return None
+    try:
+        rel = os.path.relpath(os.path.realpath(raw), os.path.realpath(str(REPO_ROOT)))
+    except ValueError:
+        return None
+    if rel.startswith(".."):
+        return None
+    return {"path": rel, "command": cmd, "step": steps[-1].get("step") if steps else None}
 
 
 def _task_summary(t: dict) -> dict:
