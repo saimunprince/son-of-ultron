@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -134,6 +135,19 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
             evidence={"verification": last_v},
         )
         created += bool(ok)
+    for f in behavior["recent_failures"]:
+        topic = _research_topic(f.get("error") or "")
+        if topic:
+            ok = journal.add_objective_sync(
+                goal=f"A task failed with: {str(f.get('error'))[:160]!r}. Research the cause ({topic}) with `research`, store what you learn with `learn`, and say what should change.",
+                reason="failure is information; a researched cause beats a blind retry",
+                priority=3,
+                source="selfmodel",
+                check={"kind": "knowledge_stored", "topic": topic},
+                key=f"research-failure:{f['task_id']}",
+                evidence={"failure": f},
+            )
+            created += bool(ok)
     for t in behavior["interrupted"]:
         if t["recovery_state"] == "UNCERTAIN":
             ok = journal.add_objective_sync(
@@ -163,6 +177,11 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         ok = bool(st and st["last_outcome"] == "ok")
         ev = {"tool": spec.get("tool"), "used_after_objective": used_after, "last_outcome": st["last_outcome"] if st else None, "stats": st}
         return ("DONE" if used_after and ok else "RETRY"), ev
+    if kind == "knowledge_stored":
+        topic_words = set(auto_keywords(spec.get("topic") or ""))
+        rows = journal.knowledge_recent(limit=50, since=objective["created"])
+        hits = [k for k in rows if topic_words & set(auto_keywords(" ".join([k["claim"], k.get("question") or "", " ".join(k["tags"])])))]
+        return ("DONE" if hits else "RETRY"), {"topic": spec.get("topic"), "stored_after_objective": len(rows), "matching": [k["id"] for k in hits][:10]}
     if kind == "verification_green":
         rows = journal.verifications(limit=1)
         ok = bool(rows and rows[0]["status"] == "GREEN" and rows[0]["ts"] >= objective["created"])
@@ -348,6 +367,28 @@ class Autonomy:
         await self.journal.run(self.recover_active, "loop stopped")
 
 
+def auto_keywords(text: str) -> List[str]:
+    from syrax.research import keywords
+
+    return keywords(text)
+
+
+def _research_topic(error: str) -> Optional[str]:
+    """A researchable topic from an error message, or None when it is not
+    something the web can explain (aborts, empty errors, journal outages)."""
+    err = (error or "").strip()
+    if not err or err.startswith("aborted") or "journal unavailable" in err or "All brains failed" in err:
+        return None
+    m = re.search(r"No module named ['\"]?([\w.]+)", err)
+    if m:
+        return f"python module {m.group(1)}"
+    m = re.search(r"([A-Za-z]+Error|Exception)[:\s]+(.{0,80})", err)
+    if m:
+        return f"{m.group(1)}: {m.group(2).strip()}"
+    words = auto_keywords(err)
+    return " ".join(words[:6]) if len(words) >= 2 else None
+
+
 def _lesson(objective: dict, task: dict, verdict: str, evidence: dict) -> str:
     spec = objective.get("check_spec") or {}
     if verdict == "DONE":
@@ -358,4 +399,6 @@ def _lesson(objective: dict, task: dict, verdict: str, evidence: dict) -> str:
         return f"`{spec.get('tool')}` ran and failed again (last outcome {evidence.get('last_outcome')}); the same approach will not work"
     if spec.get("kind") == "human":
         return "waiting for a human decision"
+    if spec.get("kind") == "knowledge_stored":
+        return f"nothing about {spec.get('topic')!r} was stored; research and `learn` must actually run"
     return f"task ended {task.get('status')} with error {task.get('error')!r}"

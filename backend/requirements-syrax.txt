@@ -4,3 +4,4 @@ websockets>=13,<16
 # voice: neural TTS (free, no key) + local speech recognition
 edge-tts>=7.0
 faster-whisper>=1.1
+ddgs>=9,<10

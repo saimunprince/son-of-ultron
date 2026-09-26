@@ -99,7 +99,9 @@ export default function SelfPanel({ model, onRefresh, onClose }: Props) {
                   </p>
                 ))
               )}
-              <p className="self-dim">{model.known_limitations} known limitations documented in the system map.</p>
+              <p className="self-dim">
+                {model.known_limitations} known limitations documented in the system map · {model.knowledge_count} knowledge entries stored.
+              </p>
             </section>
           </div>
         )}

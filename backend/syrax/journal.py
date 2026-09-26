@@ -76,7 +76,7 @@ EVIDENCE_STATES = ("SUCCESS", "PARTIAL", "FAILED", "BLOCKED", "UNKNOWN", "NOT_VE
 RECOVERY_STATES = ("RESUMABLE", "UNCERTAIN", "BLOCKED", "COMPLETED", "FAILED")
 
 # Event types allowed on a task that is already terminal (read-only attachments).
-TERMINAL_OK = frozenset({"verification.completed", "reflection.created"})
+TERMINAL_OK = frozenset({"verification.completed", "reflection.created", "knowledge.stored"})
 
 # Tools whose side effects can be verified against the filesystem after a crash.
 CHECKABLE_TOOLS = frozenset({"str_replace_editor"})
@@ -91,6 +91,18 @@ class JournalError(RuntimeError):
 
 def _now() -> float:
     return time.time()
+
+
+_WORD = None
+
+
+def re_words(text: str) -> List[str]:
+    global _WORD
+    if _WORD is None:
+        import re
+
+        _WORD = re.compile(r"[a-z0-9_]+")
+    return _WORD.findall((text or "").lower())
 
 
 def _dumps(obj: Any) -> str:
@@ -133,7 +145,7 @@ _WIRE = {
     "checkpoint.created": "checkpoint",
     "verification.completed": "verification",
 }
-_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy")
+_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research")
 
 
 @dataclass(frozen=True)
@@ -242,7 +254,35 @@ CREATE TABLE IF NOT EXISTS objectives (
   updated      REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS objectives_status_priority ON objectives(status, priority, created);
+CREATE TABLE IF NOT EXISTS knowledge (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  claim        TEXT NOT NULL,
+  kind         TEXT NOT NULL CHECK (kind IN ('web','local','experiment','human','conclusion')),
+  source_url   TEXT,
+  source_title TEXT,
+  excerpt      TEXT,
+  confidence   REAL NOT NULL,
+  basis        TEXT NOT NULL,
+  sources      TEXT NOT NULL,
+  tags         TEXT NOT NULL,
+  question     TEXT,
+  task_id      TEXT,
+  created      REAL NOT NULL,
+  last_used    REAL,
+  uses         INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS knowledge_created ON knowledge(created);
 """
+
+KNOWLEDGE_KINDS = ("web", "local", "experiment", "human", "conclusion")
+# Confidence policy: evidence decides, never the author.
+CONFIDENCE_CEILING = {"web": 0.75, "local": 0.9, "experiment": 0.95, "human": 1.0, "conclusion": 0.9}
+
+
+def confidence_for(kind: str, agreeing_sources: int = 1) -> float:
+    if kind == "web":
+        return {1: 0.4, 2: 0.6}.get(max(1, agreeing_sources), 0.75)
+    return CONFIDENCE_CEILING.get(kind, 0.4)
 
 OBJECTIVE_STATUSES = ("OPEN", "ACTIVE", "DONE", "BLOCKED", "DROPPED")
 OBJECTIVE_TRANSITIONS: Dict[str, frozenset] = {
@@ -855,6 +895,102 @@ class Journal:
             rows = self._db.execute(sql, params).fetchall()
         return [self._objective_dict(r) for r in rows]
 
+    # ——— knowledge (provenance-aware) ———
+
+    @staticmethod
+    def _knowledge_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        d["sources"] = _loads(d.get("sources"), [])
+        d["tags"] = _loads(d.get("tags"), [])
+        return d
+
+    def add_knowledge_sync(
+        self,
+        claim: str,
+        kind: str,
+        source_url: Optional[str] = None,
+        source_title: Optional[str] = None,
+        excerpt: Optional[str] = None,
+        sources: Optional[list] = None,
+        tags: Optional[List[str]] = None,
+        question: Optional[str] = None,
+        task_id: Optional[str] = None,
+        confidence: Optional[float] = None,
+        agreeing_sources: int = 1,
+        basis: Optional[str] = None,
+    ) -> dict:
+        """Store a fact with provenance. Confidence is capped by the evidence
+        kind; a caller may lower it, never raise it above the policy."""
+        if kind not in KNOWLEDGE_KINDS:
+            raise JournalError(f"bad knowledge kind {kind!r}")
+        claim = (claim or "").strip()
+        if not claim:
+            raise JournalError("empty claim")
+        if kind != "human" and not (source_url or sources):
+            raise JournalError("knowledge needs a source (url or source ids)")
+        policy = confidence_for(kind, agreeing_sources)
+        conf = policy if confidence is None else max(0.0, min(float(confidence), policy))
+        ts = _now()
+        with self._txn() as cur:
+            cur.execute(
+                "INSERT INTO knowledge(claim, kind, source_url, source_title, excerpt, confidence, basis, sources, "
+                "tags, question, task_id, created) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    claim[:2000], kind, source_url, source_title, (excerpt or "")[:2000] or None, conf,
+                    basis or f"{kind}: {agreeing_sources} source(s)", _dumps(sources or []),
+                    _dumps(sorted({t.lower() for t in (tags or []) if t})), question, task_id, ts,
+                ),
+            )
+            kid = int(cur.lastrowid)
+            self._insert_event(
+                cur, ts, task_id, "knowledge.stored",
+                {"knowledge_id": kid, "kind": kind, "confidence": conf, "claim": claim[:160], "source_url": source_url, "tags": sorted({t.lower() for t in (tags or []) if t})},
+            )
+        return self.knowledge(kid)
+
+    def knowledge(self, knowledge_id: int) -> Optional[dict]:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM knowledge WHERE id=?", (knowledge_id,)).fetchone()
+        return self._knowledge_dict(row) if row else None
+
+    def knowledge_recent(self, limit: int = 50, since: Optional[float] = None, tag: Optional[str] = None) -> List[dict]:
+        limit = max(1, min(int(limit), 500))
+        sql, params = "SELECT * FROM knowledge", []
+        conds = []
+        if since is not None:
+            conds.append("created>=?"); params.append(since)
+        if tag:
+            conds.append("tags LIKE ?"); params.append(f'%"{tag.lower()}"%')
+        if conds:
+            sql += " WHERE " + " AND ".join(conds)
+        sql += " ORDER BY created DESC LIMIT ?"
+        params.append(limit)
+        with self._lock:
+            rows = self._db.execute(sql, params).fetchall()
+        return [self._knowledge_dict(r) for r in rows]
+
+    def knowledge_search(self, query: str, limit: int = 8) -> List[dict]:
+        """Keyword-overlap ranking over claim, excerpt, tags and question."""
+        words = {w for w in re_words(query) if len(w) > 2}
+        if not words:
+            return []
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM knowledge ORDER BY created DESC LIMIT 2000").fetchall()
+        scored = []
+        for r in rows:
+            hay = " ".join(str(r[k] or "") for k in ("claim", "excerpt", "tags", "question")).lower()
+            hits = sum(1 for w in words if w in hay)
+            if hits:
+                scored.append((hits / len(words), r["confidence"], r["created"], r))
+        scored.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+        out = [self._knowledge_dict(r) for _, _, _, r in scored[:limit]]
+        if out:
+            with self._txn() as cur:
+                cur.executemany(
+                    "UPDATE knowledge SET uses=uses+1, last_used=? WHERE id=?", [(_now(), k["id"]) for k in out]
+                )
+        return out
+
     def get_meta(self, key: str, default: Optional[str] = None) -> Optional[str]:
         with self._lock:
             row = self._db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
@@ -1016,7 +1152,7 @@ class Journal:
         return out
 
     def count(self, table: str) -> int:
-        if table not in ("events", "tasks", "checkpoints", "verifications", "objectives"):
+        if table not in ("events", "tasks", "checkpoints", "verifications", "objectives", "knowledge"):
             raise ValueError(table)
         with self._lock:
             return int(self._db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])

@@ -133,6 +133,7 @@ export interface SelfModelSummary {
   capabilities: SelfCapability[];
   weaknesses: SelfWeakness[];
   known_limitations: number;
+  knowledge_count: number;
   runtime: {
     cpu: { cores: number | null; load_1_5_15: number[] | null };
     memory_mb: { total_mb: number | null; available_mb: number | null };
@@ -205,6 +206,24 @@ export interface TaskDetail {
   objective: Objective | null;
 }
 
+export interface Knowledge {
+  id: number;
+  claim: string;
+  kind: "web" | "local" | "experiment" | "human" | "conclusion";
+  source_url: string | null;
+  source_title: string | null;
+  excerpt: string | null;
+  confidence: number;
+  basis: string;
+  sources: (number | string)[];
+  tags: string[];
+  question: string | null;
+  task_id: string | null;
+  created: number;
+  last_used: number | null;
+  uses: number;
+}
+
 /** Fields the journal adds to every event it fanned out. */
 export interface Journaled {
   task_id?: string;
@@ -257,6 +276,9 @@ export type ServerEvent =
   | { type: "verifications"; verifications: Verification[] }
   | ({ type: "task_detail"; task_id: string } & TaskDetail)
   | { type: "replay"; since: number; until: number | null; events: JournalEvent[] }
+  | { type: "knowledge_list"; query: string; knowledge: Knowledge[] }
+  | ({ type: "research"; event: "started" | "completed"; question: string; sources?: number; fetched?: number; stored?: number; failures?: string[]; ms?: number } & Journaled)
+  | ({ type: "knowledge"; event: "stored"; knowledge_id: number; kind: Knowledge["kind"]; confidence: number; claim: string; source_url: string | null; tags: string[] } & Journaled)
   | { type: "objectives"; objectives: Objective[] }
   | ({ type: "autonomy_status" } & AutonomyStatus)
   | ({ type: "autonomy"; event: "toggled"; enabled: boolean } & Journaled)
@@ -296,6 +318,7 @@ export type ClientMessage =
   | { type: "cycle_now" }
   | { type: "task_detail"; task_id: string }
   | { type: "replay"; since?: number; until?: number }
+  | { type: "knowledge"; query?: string; limit?: number }
   | { type: "brains_get" }
   | { type: "brains_save"; providers: Record<string, BrainChange>; order?: string[] }
   | { type: "brain_models"; id: string; api_key?: string }

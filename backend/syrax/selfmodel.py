@@ -201,6 +201,7 @@ class SelfModel:
         failed = self.journal.tasks(limit=10, status=["FAILED", "UNKNOWN"])
         interrupted = self.journal.tasks(limit=10, status="INTERRUPTED")
         verifications = self.journal.verifications(limit=10)
+        knowledge = self.journal.knowledge_recent(limit=5)
         total = sum(counts.values())
         done = counts.get("SUCCESS", 0) + counts.get("PARTIAL", 0)
         finished = done + counts.get("FAILED", 0) + counts.get("CANCELLED", 0) + counts.get("UNKNOWN", 0)
@@ -226,6 +227,10 @@ class SelfModel:
                 }
                 for t in interrupted
             ],
+            "knowledge": {
+                "count": self.journal.count("knowledge"),
+                "recent": [{"id": k["id"], "kind": k["kind"], "confidence": k["confidence"], "claim": k["claim"][:120]} for k in knowledge],
+            },
             "verifications": {
                 "last": (
                     {"status": verifications[0]["status"], "git_head": verifications[0]["git_head"], "ts": verifications[0]["ts"],
@@ -333,6 +338,7 @@ class SelfModel:
                 "running_task": runtime["running_task"],
                 "interrupted": behavior["interrupted"],
                 "last_verification": behavior["verifications"]["last"],
+                "knowledge_count": behavior["knowledge"]["count"],
                 "capabilities": [
                     {"capability": c["capability"], "status": c["status"], "uses": c["uses"], "confidence": c["confidence"]} for c in caps
                 ],
@@ -364,6 +370,9 @@ def _implementation_of(tool: str) -> str:
         "ask_human": "backend/syrax/tools.py WebAskHuman",
         "terminate": "backend/app/tool/terminate.py",
         "self_inspect": "backend/syrax/selfmodel.py",
+        "research": "backend/syrax/research.py",
+        "know": "backend/syrax/research.py",
+        "learn": "backend/syrax/research.py",
     }.get(tool, "unknown")
 
 

@@ -669,3 +669,46 @@ def test_task_detail_and_replay_over_ws(script):
         ws.send_json({"type": "replay", "since": "garbage"})
         r2, _ = recv_until(ws, "replay")
         assert len(r2["events"]) == len(r["events"])
+
+
+# ——— research over the bridge (engines faked, journal real) ———
+
+
+def test_agent_researches_and_knowledge_is_queryable(script, monkeypatch):
+    from syrax import research as research_mod
+    from syrax.research import Source
+
+    page = "SQLite with synchronous=FULL in WAL mode syncs the WAL after each commit so transactions survive power loss. " * 4
+    monkeypatch.setattr(research_mod, "ENGINES", [lambda q, n: [Source(url="http://a.test/wal", title="WAL", snippet="sqlite wal")]])
+
+    async def fetch(url):
+        return page
+
+    script.queue = [
+        call("research", {"question": "does sqlite synchronous FULL make WAL commits durable", "max_sources": 1}, "Checking sources."),
+        call("learn", {"claim": "synchronous=FULL syncs the WAL on each commit", "sources": [1]}, "Storing the conclusion."),
+        reply("Yes. FULL syncs the WAL on every commit. [1]"),
+    ]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello = boot(ws)
+        assert {"research", "know", "learn"} <= set(hello["tools"])
+        core_mod.get_core().researcher.fetch = fetch
+        ws.send_json({"type": "task", "text": "is FULL durable?"})
+        r1, seen = recv_until(ws, "tool_result")
+        assert r1["name"] == "research" and r1["ok"] and "knowledge_id=1" in r1["output"]
+        assert any(e["type"] == "research" and e["event"] == "completed" and e["stored"] == 1 for e in seen)
+        r2, _ = recv_until(ws, "tool_result")
+        assert r2["name"] == "learn" and r2["ok"] and "confidence 0.40" in r2["output"]
+        drain_until_idle(ws)
+        ws.send_json({"type": "knowledge", "query": "sqlite wal commit"})
+        kl, _ = recv_until(ws, "knowledge_list")
+        kinds = sorted(k["kind"] for k in kl["knowledge"])
+        assert kinds == ["conclusion", "web"]
+        tid = get_journal().tasks()[0]["task_id"]
+        assert all(k["task_id"] == tid for k in kl["knowledge"])
+        ws.send_json({"type": "knowledge"})
+        recent, _ = recv_until(ws, "knowledge_list")
+        assert len(recent["knowledge"]) == 2
+        ws.send_json({"type": "self_model"})
+        sm, _ = recv_until(ws, "self_model")
+        assert sm["knowledge_count"] == 2

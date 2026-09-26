@@ -218,6 +218,18 @@ from its own words. Three failed attempts block an objective with a lesson.
 A running human task always wins, and the cycle skips under CPU/RAM pressure.
 Details: `docs/AUTONOMY.md`.
 
+## Research and knowledge
+
+`research {question}` searches the web (ddgs, DuckDuckGo lite fallback),
+fetches the pages, extracts the passages that answer the question and stores
+them as knowledge with the source URL and a confidence derived from how many
+sources agree (0.40 / 0.60 / 0.75). `know` searches what is already stored;
+`learn` stores a conclusion that must cite knowledge ids or URLs and can never
+be more confident than its sources. When nothing is found the tool says
+UNKNOWN and stores nothing. A failed task with a researchable error becomes a
+research objective that only closes once matching knowledge is stored.
+WebSocket `knowledge {query?}`. Details: `docs/RESEARCH.md`.
+
 ## Self-model
 
 SYRAX can inspect itself from evidence, not from a script: identity and the

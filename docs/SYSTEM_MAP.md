@@ -1,6 +1,6 @@
 # SYRAX System Map
 
-Rendered from `docs/system_map.json` (audit of 2026-09-26; self-model, autonomy and observer views added the same day). Every entry was checked against the source files it names.
+Rendered from `docs/system_map.json` (audit of 2026-09-26; self-model, autonomy, observer views and research added the same day). Every entry was checked against the source files it names.
 
 ## Frontend HUD
 
@@ -104,6 +104,23 @@ Objectives table plus a bounded self-directed cycle: derive objectives from self
 | Tests | backend/syrax/test_autonomy.py; backend/syrax/test_bridge.py (autonomy section) |
 | Failure Modes | derivation error → logged, cycle continues; cycle crash in loop → logged, next cycle after interval; core busy → BUSY report, objective back to OPEN |
 
+## Research engine + knowledge store
+
+Web research with provenance: search (ddgs, DuckDuckGo lite fallback), fetch pages, extract question-relevant passages, store verbatim excerpts as knowledge rows with URL, tags, basis and an evidence-derived confidence; tools research / know / learn; research objectives derived from failed tasks.
+
+| | |
+|---|---|
+| Dependencies | ddgs (uv-installed, requirements-syrax.txt); requests + bs4 (upstream WebContentFetcher); syrax.journal knowledge table; network access to duckduckgo.com |
+| Inputs | research {question, max_sources}; know {query}; learn {claim, sources, confidence?, tags?}; WS knowledge {query?, limit?} |
+| Outputs | knowledge rows (kind web|conclusion, confidence ≤ policy); research.started / research.completed / knowledge.stored events; knowledge_list replies |
+| State | none (engine list is a module constant, monkeypatched in tests) |
+| Persistence | journal knowledge table |
+| Capabilities | no fabricated claims: excerpts only, UNKNOWN when nothing is found; confidence policy: web 0.4/0.6/0.75 by agreeing sources, conclusion capped by cited sources, human 1.0; learn refuses uncited or unknown-id conclusions; keyword-ranked know search with usage counters; failure → research objective judged by stored knowledge |
+| Limitations | keyword overlap, not semantic understanding; contradictions are shown, not detected; only web and conclusion kinds are produced automatically; no cache, rate limit, expiry or supersession; depends on DuckDuckGo reachability |
+| Code | backend/syrax/research.py; backend/syrax/journal.py (knowledge) |
+| Tests | backend/syrax/test_research.py; backend/syrax/test_bridge.py (research section); backend/syrax/test_autonomy.py (research objective) |
+| Failure Modes | all engines fail → report UNKNOWN, nothing stored; page fetch fails → snippet only, basis says NOT fetched; engine crash inside the tool → tool error, task continues |
+
 ## SyraxAgent
 
 Manus subclass that streams think/tool/result events through emit, checkpoints after each tool step, exports/imports working context for resume.
@@ -157,7 +174,7 @@ Long-term facts and recent exchanges injected into every system prompt; remember
 
 ## Tools
 
-python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, terminate, browser_* (MCP).
+python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, terminate, browser_* (MCP).
 
 | | |
 |---|---|

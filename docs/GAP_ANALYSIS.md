@@ -22,7 +22,7 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 | System map / self-model (§5, §10) | EXISTS (self-model commit) | `syrax/selfmodel.py` merges `docs/system_map.json`, repo/git, journal and runtime; capability registry derived from evidence |
 | Self-understanding engine (§6) | PARTIAL | `self_inspect` tool + WS `self_model` + `/self` answer what/version/tools/failed/weakness from evidence; no natural-language reasoning layer beyond the LLM reading the snapshot |
 | Objectives (§17) | EXISTS (autonomy commit) | `objectives` table, transitions, derivation from self-model weaknesses, human objectives over WS |
-| Research / learning / knowledge store (§7, §8) | MISSING | — |
+| Research / learning / knowledge store (§7, §8) | EXISTS (research commit) | `syrax/research.py` + `knowledge` table: search → fetch → excerpts → provenance + confidence policy; `learn` capped by evidence; failure → research objective. Knowledge → skill/tool progression not yet |
 | Skill / tool / module factory (§9) | MISSING | — |
 | Autonomous coding loop with rollback (§10, §41) | MISSING | gate exists; no agent-driven change pipeline |
 | Failure-driven learning (§11) | PARTIAL | objectives retry with a derived lesson, block after 3 attempts; no strategy search or research yet |
@@ -37,6 +37,6 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 1. ~~Self-model (Phase 3)~~ — done: `syrax/selfmodel.py`, `self_inspect`, WS `self_model`, `/self`, SELF panel.
 2. ~~Objectives + bounded autonomous loop (Phase 5)~~ — done: `syrax/autonomy.py`, see `docs/AUTONOMY.md`.
 3. ~~LIVE / HISTORY / WHY view (Phase 11)~~ — done: `frontend/components/HistoryView.tsx`, WS `task_detail`, `replay`.
-4. **Research + knowledge store (Phase 6)** — `knowledge` table with provenance.
+4. ~~Research + knowledge store (Phase 6)~~ — done: `syrax/research.py`, see `docs/RESEARCH.md`.
 5. **Skill factory / autonomous development (Phases 7–8)** — generated tools with
    metadata + tests, changes pushed only through the gate.

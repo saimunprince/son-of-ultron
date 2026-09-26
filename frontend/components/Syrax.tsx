@@ -315,6 +315,14 @@ export default function Syrax() {
         case "reflection":
           push({ kind: "notice", id: nextId++, text: `LESSON · ${e.lesson}` });
           break;
+        case "research":
+          if (e.event === "completed")
+            push({ kind: "notice", id: nextId++, text: `RESEARCH · ${e.sources ?? 0} sources · ${e.fetched ?? 0} fetched · ${e.stored ?? 0} stored${e.failures?.length ? ` · ${e.failures.length} engine failure(s)` : ""}` });
+          break;
+        case "knowledge":
+          push({ kind: "notice", id: nextId++, text: `LEARNED · ${e.kind} · ${Math.round(e.confidence * 100)}% · ${e.claim.slice(0, 80)}` });
+          break;
+        case "knowledge_list":
         case "objectives":
           break;
         case "history":

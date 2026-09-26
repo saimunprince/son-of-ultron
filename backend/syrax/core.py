@@ -30,6 +30,7 @@ from syrax.agent import SyraxAgent
 from syrax.brains import get_router
 from syrax.journal import Event, Journal, JournalError, get_journal
 from syrax.memory import get_memory
+from syrax.research import KnowTool, LearnTool, Researcher, ResearchTool
 from syrax.selfmodel import SelfInspectTool, SelfModel
 
 Observer = Callable[[dict], Awaitable[None]]
@@ -81,6 +82,7 @@ class Core:
         from syrax.autonomy import Autonomy  # local import: autonomy depends on the core type
 
         self.autonomy = Autonomy(self)
+        self.researcher = Researcher(self.journal, task_id_provider=self.current_task_id)
 
     # ——— observers ———
 
@@ -110,10 +112,24 @@ class Core:
         if self.agent is None:
             self.agent = await SyraxAgent.create(emit=self.emit)
             self.agent.checkpoint = self._checkpoint
-            tool = self.agent.available_tools.get_tool("self_inspect")
+            tools = self.agent.available_tools
+            tool = tools.get_tool("self_inspect")
             if isinstance(tool, SelfInspectTool):
                 tool.model = self.selfmodel
+            r = tools.get_tool("research")
+            if isinstance(r, ResearchTool):
+                r.researcher = self.researcher
+            k = tools.get_tool("know")
+            if isinstance(k, KnowTool):
+                k.journal = self.journal
+            le = tools.get_tool("learn")
+            if isinstance(le, LearnTool):
+                le.journal = self.journal
+                le.task_id_provider = self.current_task_id
         return self.agent
+
+    def current_task_id(self) -> Optional[str]:
+        return self.current.task_id if self.current is not None else None
 
     def tool_names(self) -> List[str]:
         if self.agent is None:

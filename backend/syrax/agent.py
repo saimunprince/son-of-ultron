@@ -23,9 +23,13 @@ TOOLS_GUIDE = (
     "files, battery/CPU), use the `desktop` tool. Use browser_* tools only when you yourself "
     "must read or operate a web page. Use python_execute for calculations and scripts. "
     "When asked what you are, what you can do, what failed, your version, your code or your "
-    "weaknesses, call `self_inspect` and answer from its evidence; never guess."
+    "weaknesses, call `self_inspect` and answer from its evidence; never guess. "
+    "For facts you do not have, check `know` first, then `research` (web, with sources); "
+    "store a verified conclusion with `learn`, citing the knowledge_ids. Never present an "
+    "unresearched guess as fact."
 )
 from syrax.prompt import SYRAX_PERSONA
+from syrax.research import KnowTool, LearnTool, ResearchTool
 from syrax.selfmodel import SelfInspectTool
 from syrax.tools import AsyncPythonExecute, Emit, WebAskHuman
 
@@ -79,7 +83,8 @@ class SyraxAgent(Manus):
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
             AsyncPythonExecute(), StrReplaceEditor(), DesktopControl(),
-            RememberTool(), RecallTool(), ForgetTool(), SelfInspectTool(), Terminate()
+            RememberTool(), RecallTool(), ForgetTool(), SelfInspectTool(),
+            ResearchTool(), KnowTool(), LearnTool(), Terminate()
         )
     )
 

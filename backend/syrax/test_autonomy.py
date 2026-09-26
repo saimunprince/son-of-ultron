@@ -305,3 +305,26 @@ def test_active_objectives_are_reopened_on_restart_and_stop(tmp_path, monkeypatc
     monkeypatch.setattr(auto, "resource_pressure", lambda: "busy machine")
     asyncio.run(go())
     assert j.objective(o["id"])["status"] == "OPEN" and "loop stopped" in j.recent_events()[-1]["payload"]["note"]
+
+
+# ——— research objectives from failures ———
+
+
+def test_failed_task_becomes_a_research_objective_judged_by_stored_knowledge(tmp_path, monkeypatch):
+    j, core, a = make(tmp_path, tools=["terminate"])
+    t = j.start_task_sync("plot data")
+    j.record_sync("task.failed", {"error": "ModuleNotFoundError: No module named 'matplotlib'"}, task_id=t)
+    t2 = j.start_task_sync("aborted one")
+    j.record_sync("task.failed", {"error": "aborted by human"}, task_id=t2)
+    derive_objectives(j, core.selfmodel)
+    objs = {o["key"]: o for o in j.objectives()}
+    o = objs[f"research-failure:{t}"]
+    assert o["check_spec"] == {"kind": "knowledge_stored", "topic": "python module matplotlib"} and o["priority"] == 3
+    assert f"research-failure:{t2}" not in objs  # aborts are not researchable
+    assert judge(j, o, {"status": "SUCCESS"})[0] == "RETRY"  # words are not knowledge
+    j.add_knowledge_sync("matplotlib is a Python plotting module installed with pip", "web", source_url="http://m", tags=["matplotlib", "python"])
+    verdict, ev = judge(j, o, None)
+    assert verdict == "DONE" and ev["matching"]
+    assert auto._research_topic("") is None and auto._research_topic("All brains failed. x") is None
+    assert auto._research_topic("ValueError: bad shape for tensor") == "ValueError: bad shape for tensor"
+    assert auto._research_topic("weird failure in the toaster") == "weird failure toaster"
