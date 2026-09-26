@@ -131,3 +131,32 @@ def test_release_tool_reports_and_refuses(tmp_path):
     (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 9\n")
     out = asyncio.run(tool.execute(summary="nine"))
     assert not out.error and "ROLLED_BACK" in out.output and (root / "backend" / "syrax" / "mod.py").read_text() == "VALUE = 1\n"
+
+
+def test_release_refuses_python_that_does_not_compile_before_running_the_gate(tmp_path):
+    root = repo(tmp_path)
+    (root / "backend" / "syrax" / "mod.py").write_text("VALUE = (1\n")
+    j, t, dl = loop(tmp_path, root, PASS)
+    with pytest.raises(ValueError, match="does not compile"):
+        asyncio.run(dl.release("broken"))
+    assert j.count("verifications") == 0  # the gate never ran
+    assert (root / "backend" / "syrax" / "mod.py").read_text() == "VALUE = (1\n"  # refusal does not touch the tree
+
+
+def test_release_and_rollback_never_touch_a_humans_uncommitted_work(tmp_path):
+    root = repo(tmp_path)
+    (root / "README.md").write_text("# repo\nhuman edit in progress\n")  # dirty before the task
+    j, t, dl = loop(tmp_path, root, FAIL)
+    dl.begin_task()
+    with pytest.raises(ValueError, match="predate this task"):
+        asyncio.run(dl.release("x"))
+    (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 7\n")  # the task's own edit
+    rep = asyncio.run(dl.release("seven"))
+    assert rep["outcome"] == "ROLLED_BACK" and list(rep["files"]) == ["backend/syrax/mod.py"]
+    assert (root / "backend" / "syrax" / "mod.py").read_text() == "VALUE = 1\n"
+    assert (root / "README.md").read_text() == "# repo\nhuman edit in progress\n"  # untouched
+    dl.gates = lambda: PASS
+    (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 8\n")
+    rep = asyncio.run(dl.release("eight"))
+    assert rep["outcome"] == "COMMITTED" and rep["files"] == {"backend/syrax/mod.py": "M"}
+    assert git(root, "status", "--porcelain") == "M README.md"  # the human's change stays uncommitted (helper strips)

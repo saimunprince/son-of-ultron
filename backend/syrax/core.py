@@ -239,6 +239,7 @@ class Core:
         if self.busy:
             return None
         await self.ensure_agent()
+        await asyncio.to_thread(self.devloop.begin_task)  # a task owns only the changes it makes
         task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)
         self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind)
         self.current.task = asyncio.create_task(self._run(goal, said))
@@ -278,8 +279,51 @@ class Core:
             await self._mark("task.failed", {"error": _explain(e)})
             await self.broadcast({"type": "error", "message": _explain(e)})
         finally:
+            await self._clean_repo_after_task()
             self.current = None
             await self.broadcast({"type": "state", "state": "idle"})
+
+    async def _clean_repo_after_task(self) -> None:
+        """Autonomous work may edit SYRAX's own repository, but only `release`
+        (gate → commit) may make that permanent. If such a task ends with
+        uncommitted edits of its own — step limit, failure, cancel — restore
+        those files so a restart can never load half-finished code. Files that
+        were already modified before the task (a human's work) and human
+        conversations are left alone."""
+        if self.current is None or self.current.kind == "conversation":
+            return
+        try:
+            info = await asyncio.to_thread(self._dirty_repo_info)
+        except Exception as e:
+            logger.warning(f"could not inspect the repository after task: {e}")
+            return
+        if not info:
+            return
+        try:
+            snap = await asyncio.to_thread(self.devloop.snapshot, info)
+            rb = await asyncio.to_thread(self.devloop.rollback, info)
+            await self.journal.record(
+                "rollback.created",
+                {"reason": "task ended without a committed release", **rb, "snapshot": str(snap), "files": info["files"]},
+                task_id=self.current.task_id,
+            )
+            logger.warning(f"rolled back uncommitted edits left by task {self.current.task_id}: {list(info['files'])}")
+        except Exception as e:
+            logger.error(f"rollback after task failed: {e}")
+
+    def _dirty_repo_info(self) -> Optional[dict]:
+        from syrax.devloop import _git, changed_files
+
+        files = self.devloop.task_files(changed_files(self.devloop.root))
+        if not files:
+            return None
+        tracked = [p for p, st in files.items() if st != "??"]
+        return {
+            "files": files,
+            "diff": _git(["diff", "HEAD", "--", *tracked], self.devloop.root).stdout if tracked else "",
+            "untracked": [p for p, st in files.items() if st == "??"],
+            "head": _git(["rev-parse", "HEAD"], self.devloop.root).stdout.strip(),
+        }
 
     async def cancel(self) -> bool:
         if not self.busy:
@@ -336,6 +380,7 @@ class Core:
             )
         )
         await self.journal.mark_resumed(task_id, session_id)
+        await asyncio.to_thread(self.devloop.begin_task)
         self.current = Running(
             task_id=task_id,
             goal=task["goal"],

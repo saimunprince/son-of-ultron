@@ -81,17 +81,37 @@ class DevLoop:
         self.task_id_provider = task_id_provider or (lambda: None)
         self.snapshot_dir = Path(snapshot_dir or SNAPSHOT_DIR)
         self.autopush = os.getenv("SYRAX_AUTOPUSH", "0") == "1"
+        # Files that were already modified before the current task started. A task
+        # may only release, and may only roll back, what it changed itself; a
+        # human's uncommitted work is never touched.
+        self.baseline: Dict[str, str] = {}
+
+    def begin_task(self) -> Dict[str, str]:
+        """Record the pre-existing working-tree changes when a task starts."""
+        try:
+            self.baseline = changed_files(self.root)
+        except Exception:
+            self.baseline = {}
+        return dict(self.baseline)
+
+    def task_files(self, files: Dict[str, str]) -> Dict[str, str]:
+        """Changed files this task is responsible for: everything not dirty at task start."""
+        return {p: st for p, st in files.items() if p not in self.baseline}
 
     # ——— steps ———
 
     def inspect(self) -> Dict[str, Any]:
-        files = changed_files(self.root)
+        all_files = changed_files(self.root)
+        files = self.task_files(all_files)
         if not files:
+            if all_files:
+                raise ValueError("nothing to release: the only changes in the tree predate this task (a human's uncommitted work: "
+                                 + ", ".join(sorted(all_files)) + ")")
             raise ValueError("nothing to release: the working tree has no changes")
         problems = scope_problems(files)
         if problems:
             raise ValueError("refused: " + "; ".join(problems))
-        diff = _git(["diff", "HEAD", "--"], self.root).stdout
+        diff = _git(["diff", "HEAD", "--", *[p for p, st in files.items() if st != "??"]], self.root).stdout if any(st != "??" for st in files.values()) else ""
         untracked_text = ""
         for path, st in files.items():
             if st == "??":
@@ -104,7 +124,16 @@ class DevLoop:
         findings = scan_diff_text(diff + untracked_text)
         if findings:
             raise ValueError("refused by diff scan: " + "; ".join(findings[:5]))
-        stat = _git(["diff", "HEAD", "--stat"], self.root).stdout.strip()
+        broken = []
+        for path in files:
+            if path.endswith(".py") and (self.root / path).is_file():
+                try:
+                    compile((self.root / path).read_text(errors="replace"), str(path), "exec")  # syntax only, no .pyc written
+                except SyntaxError as e:
+                    broken.append(f"{path}: line {e.lineno}: {e.msg}")
+        if broken:
+            raise ValueError("refused: python does not compile — fix it before the gate: " + "; ".join(broken))
+        stat = _git(["diff", "HEAD", "--stat", "--", *files], self.root).stdout.strip()
         head = _git(["rev-parse", "HEAD"], self.root).stdout.strip()
         return {"files": files, "diff": diff, "untracked": [p for p, s in files.items() if s == "??"], "stat": stat, "head": head}
 
@@ -222,7 +251,10 @@ class ReleaseTool(BaseTool):
         "str_replace_editor or skill_create) and commit them if it is GREEN, otherwise roll them "
         "back. The gate runs the real test suite, type checks, lint, build and a secret/debug scan; "
         "it takes a minute or two. Nothing outside backend/syrax, backend/skills, frontend, docs "
-        "and README can be released this way. Give a one-line summary for the commit message."
+        "and README can be released this way. Give a one-line summary for the commit message. "
+        "Before calling it, re-read the edited region with str_replace_editor view and make sure "
+        "Python still compiles; a release that fails costs two minutes and is rolled back. "
+        "If a task ends without a COMMITTED release, all its repository edits are rolled back."
     )
     parameters: dict = {
         "type": "object",

@@ -76,7 +76,7 @@ EVIDENCE_STATES = ("SUCCESS", "PARTIAL", "FAILED", "BLOCKED", "UNKNOWN", "NOT_VE
 RECOVERY_STATES = ("RESUMABLE", "UNCERTAIN", "BLOCKED", "COMPLETED", "FAILED")
 
 # Event types allowed on a task that is already terminal (read-only attachments).
-TERMINAL_OK = frozenset({"verification.completed", "reflection.created", "knowledge.stored", "skill.verified", "skill.failed", "skill.not_tested", "skill.disabled", "presentation.created", "presentation.dismissed", "benchmark.completed", "experiment.completed"})
+TERMINAL_OK = frozenset({"verification.completed", "reflection.created", "knowledge.stored", "skill.verified", "skill.failed", "skill.not_tested", "skill.disabled", "presentation.created", "presentation.dismissed", "benchmark.completed", "experiment.completed", "rollback.created"})
 
 # Tools whose side effects can be verified against the filesystem after a crash.
 CHECKABLE_TOOLS = frozenset({"str_replace_editor"})

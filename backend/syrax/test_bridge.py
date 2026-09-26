@@ -966,3 +966,39 @@ def test_quality_run_with_brain_and_history_from_journal(script, tmp_path):
         drain_until_idle(ws)
     last = get_memory().recent(1)[0]
     assert last["user"] == "my colour?" and last["reply"] == "Teal."
+
+
+
+# ——— an autonomous task that edits the repo but never releases is rolled back; human work is not ———
+
+
+def test_autonomous_task_without_release_leaves_no_edits_behind(script, tmp_path, monkeypatch):
+    import asyncio as _a
+
+    root = _tmp_repo(tmp_path)
+    target = root / "backend" / "syrax" / "mod.py"
+    human = root / "backend" / "syrax" / "human.py"
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+    core = core_mod.get_core()
+    core.devloop.root = root
+    core.devloop.snapshot_dir = tmp_path / "rb"
+    monkeypatch.setattr(core_mod, "REPO_ROOT", root)
+    human.write_text("work = 'in progress'\n")  # a human's uncommitted file, present before the task
+    script.queue = [call("str_replace_editor", {"command": "str_replace", "path": str(target), "old_str": "VALUE = 1", "new_str": "VALUE = ("}, "Editing."), reply("I give up.")]
+
+    async def run_task(goal, kind):  # submit and wait in ONE loop: the task lives in it
+        tid = await core.submit(goal, said=goal, session_id=None, kind=kind)
+        await core.wait()
+        return tid
+
+    tid = _a.run(run_task("improve mod", "autonomous"))
+    assert target.read_text() == "VALUE = 1\n" and human.exists()
+    events = [e for e in get_journal().events(tid) if e["type"] == "rollback.created"]
+    assert len(events) == 1 and "without a committed release" in events[0]["payload"]["reason"]
+    assert events[0]["payload"]["restored"] == ["backend/syrax/mod.py"] and events[0]["payload"]["removed"] == []
+    assert list((tmp_path / "rb").glob("*.patch"))
+    script.queue = [call("str_replace_editor", {"command": "str_replace", "path": str(target), "old_str": "VALUE = 1", "new_str": "VALUE = 5"}, "Editing."), reply("Changed.")]
+    tid2 = _a.run(run_task("set VALUE to 5", "conversation"))
+    assert target.read_text() == "VALUE = 5\n"  # a human conversation's edits stay
+    assert not [e for e in get_journal().events(tid2) if e["type"] == "rollback.created"]

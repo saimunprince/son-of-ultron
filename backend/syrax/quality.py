@@ -124,8 +124,10 @@ class QualityRunner:
         events = self.journal.events(task_id)
         checks = check_case(case, task, events, env)
         steps = task.get("current_step", 0)
+        answered = [e["payload"].get("provider") for e in events if e["type"] == "brain.answered"]
         return {"id": case["id"], "ok": all(c["ok"] for c in checks), "task_id": task_id, "status": task.get("status"),
-                "steps": steps, "ms": int((time.time() - started) * 1000), "checks": checks, "final": (task.get("result") or "")[:300]}
+                "steps": steps, "ms": int((time.time() - started) * 1000), "checks": checks, "final": (task.get("result") or "")[:300],
+                "brains": sorted(set(p for p in answered if p))}  # who actually answered (failover shows here)
 
     async def run(self, only: Optional[List[str]] = None, cases: Optional[List[dict]] = None, brain: Optional[str] = None) -> dict:
         if self.core.busy:
@@ -196,7 +198,7 @@ def format_report(row: dict) -> str:
     lines = [f"QUALITY {row['status']} · {row['pass_rate']}% pass ({sum(1 for r in row['results'] if r['ok'])}/{len(row['results'])})"
              + (f" · vs #{row['compared_to']} {row['delta']:+.1f} pp" if row.get("compared_to") else "") + (f" · brain {row['brain']}" if row.get("brain") else "")]
     for r in row["results"]:
-        lines.append(f"  {'PASS' if r['ok'] else 'FAIL':<4} {r['id']:<14} {r.get('steps', 0):>2} step(s) {r['ms']:>7} ms")
+        lines.append(f"  {'PASS' if r['ok'] else 'FAIL':<4} {r['id']:<14} {r.get('steps', 0):>2} step(s) {r['ms']:>7} ms" + (f"  via {','.join(r['brains'])}" if r.get("brains") else ""))
         for c in r["checks"]:
             if not c["ok"]:
                 lines.append(f"       ✕ {c['check']}: {c['detail'][:120]}")

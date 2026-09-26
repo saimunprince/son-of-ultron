@@ -28,6 +28,25 @@ Scope (`SCOPE`): `backend/syrax/`, `backend/skills/`, `backend/requirements-syra
 Forbidden anywhere: `.env`, `config/config.toml`, `config/brains.json`,
 `journal.db`, `.git/`, `node_modules/`, `.venv/`, `.next/`.
 
+## A task owns only its own changes
+
+When a task starts, the working tree's pre-existing modifications are recorded
+(`DevLoop.begin_task`). `release` considers only files changed since then; if
+the only changes predate the task it refuses ("a human's uncommitted work"),
+and rollback restores only the task's files. Before the gate runs, every
+changed Python file must compile (a pure syntax check) — a broken file is
+refused in seconds instead of blocking the gate after two minutes.
+
+When an autonomous or eval task ends without a COMMITTED release — step limit,
+failure, cancel — the core rolls back the task's own edits (snapshot kept,
+`rollback.created` with reason "task ended without a committed release"), so a
+restart can never load half-finished code. Human conversations are left alone.
+
+Learned from the first live self-modification run: the model's edit broke a
+string literal, the gate correctly rolled it back twice, the task hit its step
+limit with the broken file still on disk, and the rollback had restored every
+modified file in the tree, including an operator's unrelated work.
+
 ## Truthfulness
 
 - COMMITTED only after the same gate a human release uses returned GREEN;
