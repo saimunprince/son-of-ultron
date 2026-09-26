@@ -156,7 +156,10 @@ class QualityRunner:
         ra = await self.run(only=only, brain=a)
         rb = await self.run(only=only, brain=b)
         pa, pb = ra["pass_rate"], rb["pass_rate"]
-        if abs(pa - pb) < 10:
+        honored = all("never answered" not in str(r.get("brain") or "") for r in (ra, rb))
+        if not honored:
+            verdict, conclusion = "INCONCLUSIVE", f"a requested brain never answered (a: {ra['brain']}; b: {rb['brain']})"
+        elif abs(pa - pb) < 10:
             verdict, conclusion = "NO_DIFFERENCE", f"pass rates within 10 pp ({a} {pa}%, {b} {pb}%)"
         elif pb > pa:
             verdict, conclusion = "CANDIDATE_BETTER", f"{b} passed {pb}% vs {a} {pa}%"
@@ -189,11 +192,20 @@ class QualityRunner:
             delta = round(rate - prev[0]["pass_rate"], 1)
             status = "REGRESSION" if delta < -REGRESSION_PP else "PASS"
             compared_to = prev[0]["id"]
-        if not brain:
-            try:
-                brain = self.core.agent.llm.active if self.core.agent is not None else None
-            except Exception:
-                brain = None
+        # The brain column must say who actually answered. A requested brain that
+        # never answered (cooldown, quota) is reported as such, never as its result.
+        answered: Dict[str, int] = {}
+        for r in results:
+            for b in r.get("brains") or []:
+                answered[b] = answered.get(b, 0) + 1
+        actual = ",".join(sorted(answered, key=lambda b: -answered[b])) or None
+        requested = brain
+        if requested and requested not in answered:
+            brain = f"{actual or 'none'} (requested {requested}, which never answered)"
+        elif requested and len(answered) > 1:
+            brain = f"{requested} (+failover: {','.join(b for b in answered if b != requested)})"
+        elif not requested:
+            brain = actual
         row = await self.journal.run(
             self.journal.add_quality_run_sync, results, rate, status, compared_to, delta, brain,
         )

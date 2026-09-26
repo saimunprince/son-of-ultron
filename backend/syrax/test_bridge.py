@@ -955,7 +955,8 @@ def test_quality_run_with_brain_and_history_from_journal(script, tmp_path):
     script.queue = [reply("391"), reply("ready"), reply("wrong"), reply("ready")]
     ra = _a.run(core.quality.run(cases=subset, brain="pollinations"))
     rb = _a.run(core.quality.run(cases=subset, brain="ollama"))
-    assert ra["brain"] == "pollinations" and rb["brain"] == "ollama" and router.preferred is None
+    # the scripted brain never emits brain.answered, so no provider "answered": the run says so instead of claiming the requested brain
+    assert ra["brain"].startswith("none (requested pollinations") and rb["brain"].startswith("none (requested ollama") and router.preferred is None
     assert ra["pass_rate"] == 100.0 and rb["pass_rate"] == 50.0
     # eval tasks never reach the conversation history; a real conversation does, from the journal
     assert all("17*23" not in r["user"] for r in get_memory().recent(50))

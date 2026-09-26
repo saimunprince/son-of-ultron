@@ -83,3 +83,32 @@ def test_no_narration_check(tmp_path):
     assert all(c["ok"] for c in res)
     res = check_case(cases["desktop_cpu"], {"status": "SUCCESS", "result": "The tool already gave 16 cores."}, [{"type": "tool.started", "payload": {"name": "desktop"}}], env)
     assert res[-1]["ok"] is False and res[-1]["check"] == "final does not narrate reasoning"
+
+
+def test_brain_column_reports_who_actually_answered(tmp_path):
+    import asyncio
+    from syrax.quality import QualityRunner
+
+    j = Journal(tmp_path / "j.db")
+
+    class FakeCore:
+        journal = j
+        busy = False
+        agent = None
+
+        async def submit(self, goal, said, session_id, kind="conversation"):
+            t = j.start_task_sync(said or goal, kind=kind)
+            j.record_sync("brain.answered", {"provider": "pollinations", "label": "P", "model": "m"}, task_id=t)
+            j.record_sync("final", {"text": "391"}, task_id=t)
+            j.record_sync("task.completed", {"status": "SUCCESS"}, task_id=t)
+            return t
+
+        async def wait(self):
+            return None
+
+    runner = QualityRunner(FakeCore(), j, workspace=tmp_path / "ws")
+    case = [{"id": "arith", "prompt": "17*23?", "checks": [{"kind": "final_regex", "pattern": r"\b391\b"}]}]
+    row = asyncio.run(runner._run(None, case, "gemini"))
+    assert row["brain"] == "pollinations (requested gemini, which never answered)" and row["results"][0]["brains"] == ["pollinations"]
+    row2 = asyncio.run(runner._run(None, case, None))
+    assert row2["brain"] == "pollinations"

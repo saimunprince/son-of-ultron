@@ -63,7 +63,11 @@ and next action. The model chooses the hypothesis; it cannot choose the verdict.
 ## Comparing brains (`compare_brains`)
 
 `quality_run {brain}` runs the suite with that provider tried first
-(`BrainRouter.preferred`, reset afterwards); `compare_brains {a, b}` runs it
+(`BrainRouter.preferred`, reset afterwards). The stored `brain` is who actually
+answered, taken from `brain.answered` events per case: a requested brain that
+never answered (rate limit, quota, 413) is reported as
+`"<actual> (requested <x>, which never answered)"`, failovers as `"<x> (+failover: …)"`,
+and `compare_brains` is INCONCLUSIVE in that case; `compare_brains {a, b}` runs it
 once per brain and stores an experiment on pass rate (within 10 pp is
 NO_DIFFERENCE). This is how "which brain should I use" becomes a measurement.
 
