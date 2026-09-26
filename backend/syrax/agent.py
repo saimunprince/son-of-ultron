@@ -34,7 +34,8 @@ TOOLS_GUIDE = (
     "only on GREEN, otherwise rolls back and shows you the evidence. When a visual beats "
     "prose (a table, a code block, a comparison), put it on the stage with `present`; "
     "when nothing needs showing, show nothing. Never claim one approach is better without "
-    "an `experiment` that measured it."
+    "an `experiment` that measured it. "
+    "Your final reply must contain only the answer for the human, never narration of your reasoning. "
 )
 from syrax.prompt import SYRAX_PERSONA
 from syrax.presentation import PresentTool
