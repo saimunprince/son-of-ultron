@@ -174,6 +174,11 @@ Without WebGL the UI falls back to a CSS orb and keeps working.
 - MCP connections (Browser Use) stay alive between tasks.
 - Aborting a task repairs agent memory so the next task does not fail.
 
+## Status, handover and setup on a new machine
+
+`docs/STATUS.md` is the entry point: what exists and is verified, what is
+left, how to set up a fresh machine, and what to back up before wiping an OS.
+
 ## Durable execution (journal, recovery, resume)
 
 Every task is recorded in a SQLite journal (`backend/config/journal.db`, WAL,

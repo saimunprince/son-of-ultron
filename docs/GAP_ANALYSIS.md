@@ -1,4 +1,6 @@
-# SYRAX Gap Analysis (audit of 2026-09-26, updated after the foundation commit)
+# SYRAX Gap Analysis
+
+See `docs/STATUS.md` for the handover summary and the prioritised remaining work. (audit of 2026-09-26, updated after the foundation commit)
 
 Legend: EXISTS · PARTIAL · MISSING · NEEDS REFACTOR · NEEDS REPLACEMENT.
 Every row names the code that backs the verdict; nothing is claimed from docs.
