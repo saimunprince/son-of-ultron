@@ -400,7 +400,10 @@ def test_stop_during_a_running_cycle_does_not_steal_its_objective(tmp_path, monk
 
     async def go():
         cycle = asyncio.create_task(a.run_once(force=True))
-        await asyncio.sleep(0.05)
+        for _ in range(200):  # derive + pick + mark run in worker threads; wait for ACTIVE deterministically
+            if j.objective(o["id"])["status"] == "ACTIVE":
+                break
+            await asyncio.sleep(0.02)
         assert j.objective(o["id"])["status"] == "ACTIVE"
         assert (await a.run_once()).outcome == "BUSY"  # a second cycle cannot overlap
         a.start()

@@ -53,7 +53,10 @@ def _p(values: List[float], q: float) -> float:
 
 
 def run_suite(workdir: Optional[Path] = None) -> Dict[str, float]:
-    """Run every benchmark on a scratch journal; returns {metric: ms}."""
+    """Run every benchmark on a scratch journal; returns {metric: ms}.
+    A scratch directory created here is removed afterwards (the suite must not
+    leave 700 KB behind on every release)."""
+    own_tmp = workdir is None
     tmp = Path(workdir or tempfile.mkdtemp(prefix="syrax-bench-"))
     j = Journal(tmp / "bench.db", recover=False)
     try:
@@ -91,6 +94,10 @@ def run_suite(workdir: Optional[Path] = None) -> Dict[str, float]:
         }
     finally:
         j.close()
+        if own_tmp:
+            import shutil
+
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 def compare(current: Dict[str, float], previous: Optional[Dict[str, float]]) -> Tuple[str, Dict[str, dict]]:

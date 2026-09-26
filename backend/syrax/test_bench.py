@@ -50,3 +50,11 @@ def test_performance_gate_uses_the_journal(tmp_path):
 def test_cli_without_journal_reports_baseline(capsys):
     assert bench.main([]) == 0
     assert capsys.readouterr().out.startswith("BENCHMARK BASELINE")
+
+
+def test_suite_cleans_its_scratch_directory():
+    import glob
+
+    before = set(glob.glob("/tmp/syrax-bench-*"))
+    bench.run_suite()
+    assert set(glob.glob("/tmp/syrax-bench-*")) - before == set()
