@@ -322,6 +322,11 @@ export default function Syrax() {
         case "knowledge":
           push({ kind: "notice", id: nextId++, text: `LEARNED · ${e.kind} · ${Math.round(e.confidence * 100)}% · ${e.claim.slice(0, 80)}` });
           break;
+        case "skill":
+          if (e.event === "verified") push({ kind: "notice", id: nextId++, text: `SKILL BUILT · ${e.skill} v${e.version ?? "?"} · ${e.tests_passed ?? 0} tests passed · now a tool` });
+          else if (e.event === "failed") push({ kind: "notice", id: nextId++, text: `SKILL FAILED · ${e.skill} · ${e.tests_failed ?? 0} failing test(s) · not registered` });
+          break;
+        case "skills":
         case "knowledge_list":
         case "objectives":
           break;

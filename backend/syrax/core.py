@@ -32,6 +32,7 @@ from syrax.journal import Event, Journal, JournalError, get_journal
 from syrax.memory import get_memory
 from syrax.research import KnowTool, LearnTool, Researcher, ResearchTool
 from syrax.selfmodel import SelfInspectTool, SelfModel
+from syrax.skills import SkillCreateTool, SkillFactory, SkillListTool, SkillTestTool
 
 Observer = Callable[[dict], Awaitable[None]]
 
@@ -83,6 +84,7 @@ class Core:
 
         self.autonomy = Autonomy(self)
         self.researcher = Researcher(self.journal, task_id_provider=self.current_task_id)
+        self.skills = SkillFactory(self.journal, task_id_provider=self.current_task_id)
 
     # ——— observers ———
 
@@ -126,6 +128,13 @@ class Core:
             if isinstance(le, LearnTool):
                 le.journal = self.journal
                 le.task_id_provider = self.current_task_id
+            for tname in ("skill_create", "skill_list", "skill_test"):
+                st = tools.get_tool(tname)
+                if isinstance(st, (SkillCreateTool, SkillListTool, SkillTestTool)):
+                    st.factory = self.skills
+            loaded = self.skills.attach(tools)  # VERIFIED skills from the registry become live tools
+            if loaded:
+                logger.info(f"registered {loaded} skill(s) from the registry")
         return self.agent
 
     def current_task_id(self) -> Optional[str]:

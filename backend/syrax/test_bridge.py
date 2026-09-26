@@ -712,3 +712,57 @@ def test_agent_researches_and_knowledge_is_queryable(script, monkeypatch):
         ws.send_json({"type": "self_model"})
         sm, _ = recv_until(ws, "self_model")
         assert sm["knowledge_count"] == 2
+
+
+# ——— skill factory over the bridge: build a tool, use it in the same task ———
+
+
+SKILL_CODE = '''
+from app.tool.base import BaseTool, ToolResult
+
+
+class Skill(BaseTool):
+    name: str = "shout"
+    description: str = "Upper-case a text."
+    parameters: dict = {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}
+
+    async def execute(self, text: str) -> ToolResult:
+        return ToolResult(output=text.upper())
+'''
+SKILL_TEST = '''
+import asyncio
+from skills.shout.skill import Skill
+
+
+def test_shout():
+    assert asyncio.run(Skill().execute(text="hi")).output == "HI"
+'''
+
+
+def test_agent_builds_a_skill_and_uses_it_in_the_same_task(script, monkeypatch):
+    script.queue = [
+        call("skill_create", {"name": "shout", "purpose": "upper-case text", "code": SKILL_CODE, "test_code": SKILL_TEST}, "Building a tool."),
+        call("shout", {"text": "syrax"}, "Using it."),
+        reply("SYRAX. The tool works."),
+    ]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello = boot(ws)
+        assert {"skill_create", "skill_list", "skill_test"} <= set(hello["tools"]) and "shout" not in hello["tools"]
+        ws.send_json({"type": "task", "text": "make a shouting tool and shout my name"})
+        r1, seen = recv_until(ws, "tool_result")
+        assert r1["name"] == "skill_create" and r1["ok"] and "VERIFIED" in r1["output"]
+        assert any(e["type"] == "skill" and e["event"] == "verified" and e["skill"] == "shout" for e in seen)
+        r2, _ = recv_until(ws, "tool_result")
+        assert r2["name"] == "shout" and r2["ok"] and "SYRAX" in r2["output"]
+        drain_until_idle(ws)
+        ws.send_json({"type": "skills"})
+        sk, _ = recv_until(ws, "skills")
+        assert sk["skills"][0]["name"] == "shout" and sk["skills"][0]["registered"] is True
+        ws.send_json({"type": "self_model", "section": "structure"})
+        sm, _ = recv_until(ws, "self_model")
+        assert sm["structure"]["skills"][0]["status"] == "VERIFIED"
+    # a new core (restart) re-registers the verified skill from the registry
+    monkeypatch.setattr(core_mod, "_core", None)
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello = boot(ws)
+        assert "shout" in hello["tools"]

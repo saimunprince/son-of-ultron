@@ -76,7 +76,7 @@ EVIDENCE_STATES = ("SUCCESS", "PARTIAL", "FAILED", "BLOCKED", "UNKNOWN", "NOT_VE
 RECOVERY_STATES = ("RESUMABLE", "UNCERTAIN", "BLOCKED", "COMPLETED", "FAILED")
 
 # Event types allowed on a task that is already terminal (read-only attachments).
-TERMINAL_OK = frozenset({"verification.completed", "reflection.created", "knowledge.stored"})
+TERMINAL_OK = frozenset({"verification.completed", "reflection.created", "knowledge.stored", "skill.verified", "skill.failed", "skill.not_tested", "skill.disabled"})
 
 # Tools whose side effects can be verified against the filesystem after a crash.
 CHECKABLE_TOOLS = frozenset({"str_replace_editor"})
@@ -145,7 +145,7 @@ _WIRE = {
     "checkpoint.created": "checkpoint",
     "verification.completed": "verification",
 }
-_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research")
+_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill")
 
 
 @dataclass(frozen=True)
@@ -272,7 +272,25 @@ CREATE TABLE IF NOT EXISTS knowledge (
   uses         INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS knowledge_created ON knowledge(created);
+CREATE TABLE IF NOT EXISTS skills (
+  name              TEXT PRIMARY KEY,
+  version           INTEGER NOT NULL DEFAULT 1,
+  purpose           TEXT NOT NULL,
+  path              TEXT NOT NULL,
+  status            TEXT NOT NULL CHECK (status IN ('NOT_TESTED','VERIFIED','FAILED','DISABLED')),
+  tests_passed      INTEGER NOT NULL DEFAULT 0,
+  tests_failed      INTEGER NOT NULL DEFAULT 0,
+  evidence          TEXT NOT NULL,
+  dependencies      TEXT NOT NULL,
+  known_limitations TEXT NOT NULL,
+  created_task_id   TEXT,
+  created           REAL NOT NULL,
+  updated           REAL NOT NULL,
+  last_verified     REAL
+);
 """
+
+SKILL_STATUSES = ("NOT_TESTED", "VERIFIED", "FAILED", "DISABLED")
 
 KNOWLEDGE_KINDS = ("web", "local", "experiment", "human", "conclusion")
 # Confidence policy: evidence decides, never the author.
@@ -991,6 +1009,80 @@ class Journal:
                 )
         return out
 
+    # ——— skills registry ———
+
+    @staticmethod
+    def _skill_dict(row: sqlite3.Row) -> dict:
+        d = dict(row)
+        d["evidence"] = _loads(d.get("evidence"), {})
+        d["dependencies"] = _loads(d.get("dependencies"), [])
+        d["known_limitations"] = _loads(d.get("known_limitations"), [])
+        return d
+
+    def upsert_skill_sync(
+        self,
+        name: str,
+        purpose: str,
+        path: str,
+        status: str,
+        evidence: Optional[dict] = None,
+        tests_passed: int = 0,
+        tests_failed: int = 0,
+        dependencies: Optional[List[str]] = None,
+        known_limitations: Optional[List[str]] = None,
+        created_task_id: Optional[str] = None,
+        event: Optional[str] = None,
+    ) -> dict:
+        if status not in SKILL_STATUSES:
+            raise JournalError(f"bad skill status {status!r}")
+        ts = _now()
+        with self._txn() as cur:
+            row = cur.execute("SELECT version FROM skills WHERE name=?", (name,)).fetchone()
+            version = (int(row["version"]) + 1) if row else 1
+            cur.execute(
+                "INSERT INTO skills(name, version, purpose, path, status, tests_passed, tests_failed, evidence, "
+                "dependencies, known_limitations, created_task_id, created, updated, last_verified) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET version=excluded.version, "
+                "purpose=excluded.purpose, path=excluded.path, status=excluded.status, tests_passed=excluded.tests_passed, "
+                "tests_failed=excluded.tests_failed, evidence=excluded.evidence, dependencies=excluded.dependencies, "
+                "known_limitations=excluded.known_limitations, updated=excluded.updated, last_verified=excluded.last_verified",
+                (
+                    name, version, purpose, path, status, tests_passed, tests_failed, _dumps(evidence or {}),
+                    _dumps(dependencies or []), _dumps(known_limitations or []), created_task_id, ts, ts,
+                    ts if status == "VERIFIED" else None,
+                ),
+            )
+            self._insert_event(
+                cur, ts, created_task_id, event or f"skill.{status.lower()}",
+                {"skill": name, "version": version, "status": status, "tests_passed": tests_passed, "tests_failed": tests_failed, "purpose": purpose[:160]},
+            )
+        return self.skill(name)
+
+    def set_skill_status_sync(self, name: str, status: str, note: Optional[str] = None, task_id: Optional[str] = None) -> dict:
+        if status not in SKILL_STATUSES:
+            raise JournalError(f"bad skill status {status!r}")
+        ts = _now()
+        with self._txn() as cur:
+            if not cur.execute("SELECT 1 FROM skills WHERE name=?", (name,)).fetchone():
+                raise JournalError(f"unknown skill {name}")
+            cur.execute("UPDATE skills SET status=?, updated=? WHERE name=?", (status, ts, name))
+            self._insert_event(cur, ts, task_id, f"skill.{status.lower()}", {"skill": name, "status": status, "note": note})
+        return self.skill(name)
+
+    def skill(self, name: str) -> Optional[dict]:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM skills WHERE name=?", (name,)).fetchone()
+        return self._skill_dict(row) if row else None
+
+    def skills(self, status: Optional[str] = None) -> List[dict]:
+        sql, params = "SELECT * FROM skills", []
+        if status:
+            sql += " WHERE status=?"; params.append(status)
+        sql += " ORDER BY name"
+        with self._lock:
+            rows = self._db.execute(sql, params).fetchall()
+        return [self._skill_dict(r) for r in rows]
+
     def get_meta(self, key: str, default: Optional[str] = None) -> Optional[str]:
         with self._lock:
             row = self._db.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
@@ -1152,7 +1244,7 @@ class Journal:
         return out
 
     def count(self, table: str) -> int:
-        if table not in ("events", "tasks", "checkpoints", "verifications", "objectives", "knowledge"):
+        if table not in ("events", "tasks", "checkpoints", "verifications", "objectives", "knowledge", "skills"):
             raise ValueError(table)
         with self._lock:
             return int(self._db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])

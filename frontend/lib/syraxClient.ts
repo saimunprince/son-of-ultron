@@ -224,6 +224,24 @@ export interface Knowledge {
   uses: number;
 }
 
+export interface SkillRow {
+  name: string;
+  version: number;
+  purpose: string;
+  path: string;
+  status: "NOT_TESTED" | "VERIFIED" | "FAILED" | "DISABLED";
+  tests_passed: number;
+  tests_failed: number;
+  evidence: Record<string, unknown>;
+  dependencies: string[];
+  known_limitations: string[];
+  created_task_id: string | null;
+  created: number;
+  updated: number;
+  last_verified: number | null;
+  registered: boolean;
+}
+
 /** Fields the journal adds to every event it fanned out. */
 export interface Journaled {
   task_id?: string;
@@ -276,6 +294,8 @@ export type ServerEvent =
   | { type: "verifications"; verifications: Verification[] }
   | ({ type: "task_detail"; task_id: string } & TaskDetail)
   | { type: "replay"; since: number; until: number | null; events: JournalEvent[] }
+  | { type: "skills"; skills: SkillRow[] }
+  | ({ type: "skill"; event: "created" | "verified" | "failed" | "disabled" | "not_tested"; skill: string; version?: number; status?: string; tests_passed?: number; tests_failed?: number; purpose?: string; note?: string | null } & Journaled)
   | { type: "knowledge_list"; query: string; knowledge: Knowledge[] }
   | ({ type: "research"; event: "started" | "completed"; question: string; sources?: number; fetched?: number; stored?: number; failures?: string[]; ms?: number } & Journaled)
   | ({ type: "knowledge"; event: "stored"; knowledge_id: number; kind: Knowledge["kind"]; confidence: number; claim: string; source_url: string | null; tags: string[] } & Journaled)
@@ -319,6 +339,7 @@ export type ClientMessage =
   | { type: "task_detail"; task_id: string }
   | { type: "replay"; since?: number; until?: number }
   | { type: "knowledge"; query?: string; limit?: number }
+  | { type: "skills" }
   | { type: "brains_get" }
   | { type: "brains_save"; providers: Record<string, BrainChange>; order?: string[] }
   | { type: "brain_models"; id: string; api_key?: string }

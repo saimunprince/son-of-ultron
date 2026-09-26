@@ -230,6 +230,16 @@ UNKNOWN and stores nothing. A failed task with a researchable error becomes a
 research objective that only closes once matching knowledge is stored.
 WebSocket `knowledge {query?}`. Details: `docs/RESEARCH.md`.
 
+## Skills SYRAX builds for itself
+
+`skill_create {name, purpose, code, test_code}` writes a tool under
+`backend/skills/<name>/`, compiles it, runs its pytest tests in a subprocess and
+registers it as a live tool only if they pass; a failing skill stays on disk
+with the test output and is never registered. Verified skills come back at the
+next boot from the registry. `skill_list`, `skill_test {name}` and
+`skill_test {name, action: remove}` manage them; WebSocket `skills` lists them.
+Details: `docs/SKILLS.md`.
+
 ## Self-model
 
 SYRAX can inspect itself from evidence, not from a script: identity and the

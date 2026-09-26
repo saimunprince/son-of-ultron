@@ -134,7 +134,7 @@ def test_self_inspect_tool(tmp_path):
     assert r.error and "unavailable" in r.error
     tool.model = SelfModel(journal(tmp_path))
     r = asyncio.run(tool.execute(section="identity"))
-    assert not r.error and '"name": "SYRAX"' in r.output
+    assert not r.error and '"name":"SYRAX"' in r.output
     r = asyncio.run(tool.execute(section="nope"))
     assert r.error and "unknown section" in r.error
     assert render({"x": "y" * 10}, limit=5).endswith("single section]")

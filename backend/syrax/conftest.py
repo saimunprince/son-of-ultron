@@ -26,6 +26,12 @@ def fresh_journal_and_core(tmp_path, monkeypatch):
     monkeypatch.setenv("SYRAX_JOURNAL_FILE", str(tmp_path / "journal.db"))
     monkeypatch.setattr(journal_mod, "_journal", None)
     try:
+        import syrax.skills as skills_mod
+
+        monkeypatch.setattr(skills_mod, "SKILLS_ROOT", tmp_path / "skills")  # never write into backend/skills
+    except Exception:
+        pass
+    try:
         import syrax.core as core_mod
     except Exception:  # core imports the agent stack; journal-only tests don't need it
         core_mod = None

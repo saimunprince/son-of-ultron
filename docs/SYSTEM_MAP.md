@@ -1,6 +1,6 @@
 # SYRAX System Map
 
-Rendered from `docs/system_map.json` (audit of 2026-09-26; self-model, autonomy, observer views and research added the same day). Every entry was checked against the source files it names.
+Rendered from `docs/system_map.json` (audit of 2026-09-26; self-model, autonomy, observer views, research and the skill factory added the same day). Every entry was checked against the source files it names.
 
 ## Frontend HUD
 
@@ -121,6 +121,23 @@ Web research with provenance: search (ddgs, DuckDuckGo lite fallback), fetch pag
 | Tests | backend/syrax/test_research.py; backend/syrax/test_bridge.py (research section); backend/syrax/test_autonomy.py (research objective) |
 | Failure Modes | all engines fail → report UNKNOWN, nothing stored; page fetch fails → snippet only, basis says NOT fetched; engine crash inside the tool → tool error, task continues |
 
+## Skill factory
+
+SYRAX writes its own tools: skill_create takes code + pytest tests, compiles and tests them in a subprocess, registers the tool into the live collection only when the tests pass, records a registry row with evidence, and re-registers VERIFIED skills at boot.
+
+| | |
+|---|---|
+| Dependencies | syrax.journal skills table; pytest in the venv; app.tool.base.BaseTool / ToolCollection |
+| Inputs | skill_create {name, purpose, code, test_code, dependencies?, known_limitations?}; skill_test {name, action?}; skill_list; WS skills |
+| Outputs | backend/skills/<name>/{skill.py,test_skill.py,skill.json}; skill.created / verified / failed / disabled events; live tools in the agent collection |
+| State | loaded skills map in the factory; registry in the journal |
+| Persistence | skills table + files under backend/skills/ |
+| Capabilities | tests decide registration; failures keep evidence and stay out; re-create replaces code and bumps version; remove unregisters; boot re-registers VERIFIED skills, demotes ones that no longer import; self-model lists skills under structure.skills |
+| Limitations | skill code runs in-process (no sandbox), like every tool; dependencies recorded, not installed; no automatic skill generation from objectives; generated skills are not auto-committed (Phase 8) |
+| Code | backend/syrax/skills.py; backend/skills/README.md |
+| Tests | backend/syrax/test_skills.py; backend/syrax/test_bridge.py (skill section) |
+| Failure Modes | compile error → FAILED at stage compile; failing/absent tests → FAILED with pytest tail; loads but wrong Skill.name → FAILED at stage load; test timeout → FAILED |
+
 ## SyraxAgent
 
 Manus subclass that streams think/tool/result events through emit, checkpoints after each tool step, exports/imports working context for resume.
@@ -174,7 +191,7 @@ Long-term facts and recent exchanges injected into every system prompt; remember
 
 ## Tools
 
-python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, terminate, browser_* (MCP).
+python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, terminate, browser_* (MCP).
 
 | | |
 |---|---|

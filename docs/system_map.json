@@ -1,6 +1,6 @@
 {
   "name": "SYRAX",
-  "generated": "2026-09-26 (self-model, autonomy, observer, research added)",
+  "generated": "2026-09-26 (self-model, autonomy, observer, research, skills added)",
   "source": "hand-audited from source code; regenerate when components change",
   "components": [
     {
@@ -311,6 +311,54 @@
       ]
     },
     {
+      "component": "Skill factory",
+      "purpose": "SYRAX writes its own tools: skill_create takes code + pytest tests, compiles and tests them in a subprocess, registers the tool into the live collection only when the tests pass, records a registry row with evidence, and re-registers VERIFIED skills at boot.",
+      "dependencies": [
+        "syrax.journal skills table",
+        "pytest in the venv",
+        "app.tool.base.BaseTool / ToolCollection"
+      ],
+      "inputs": [
+        "skill_create {name, purpose, code, test_code, dependencies?, known_limitations?}",
+        "skill_test {name, action?}",
+        "skill_list",
+        "WS skills"
+      ],
+      "outputs": [
+        "backend/skills/<name>/{skill.py,test_skill.py,skill.json}",
+        "skill.created / verified / failed / disabled events",
+        "live tools in the agent collection"
+      ],
+      "state": "loaded skills map in the factory; registry in the journal",
+      "persistence": "skills table + files under backend/skills/",
+      "capabilities": [
+        "tests decide registration; failures keep evidence and stay out",
+        "re-create replaces code and bumps version",
+        "remove unregisters",
+        "boot re-registers VERIFIED skills, demotes ones that no longer import",
+        "self-model lists skills under structure.skills"
+      ],
+      "limitations": [
+        "skill code runs in-process (no sandbox), like every tool",
+        "dependencies recorded, not installed",
+        "no automatic skill generation from objectives; generated skills are not auto-committed (Phase 8)"
+      ],
+      "code": [
+        "backend/syrax/skills.py",
+        "backend/skills/README.md"
+      ],
+      "tests": [
+        "backend/syrax/test_skills.py",
+        "backend/syrax/test_bridge.py (skill section)"
+      ],
+      "failure_modes": [
+        "compile error → FAILED at stage compile",
+        "failing/absent tests → FAILED with pytest tail",
+        "loads but wrong Skill.name → FAILED at stage load",
+        "test timeout → FAILED"
+      ]
+    },
+    {
       "component": "SyraxAgent",
       "purpose": "Manus subclass that streams think/tool/result events through emit, checkpoints after each tool step, exports/imports working context for resume.",
       "dependencies": [
@@ -422,7 +470,7 @@
     },
     {
       "component": "Tools",
-      "purpose": "python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, terminate, browser_* (MCP).",
+      "purpose": "python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), self_inspect, research/know/learn, skill_create/skill_list/skill_test, terminate, browser_* (MCP).",
       "dependencies": [
         "app.tool.*",
         "browser-use MCP via uvx",

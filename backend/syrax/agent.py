@@ -26,11 +26,13 @@ TOOLS_GUIDE = (
     "weaknesses, call `self_inspect` and answer from its evidence; never guess. "
     "For facts you do not have, check `know` first, then `research` (web, with sources); "
     "store a verified conclusion with `learn`, citing the knowledge_ids. Never present an "
-    "unresearched guess as fact."
+    "unresearched guess as fact. When a job needs a capability you lack and will need again, "
+    "build it with `skill_create` (code + tests); it becomes a tool only if its tests pass."
 )
 from syrax.prompt import SYRAX_PERSONA
 from syrax.research import KnowTool, LearnTool, ResearchTool
 from syrax.selfmodel import SelfInspectTool
+from syrax.skills import SkillCreateTool, SkillListTool, SkillTestTool
 from syrax.tools import AsyncPythonExecute, Emit, WebAskHuman
 
 RESULT_PREVIEW_CHARS = 4000
@@ -84,7 +86,8 @@ class SyraxAgent(Manus):
         default_factory=lambda: ToolCollection(
             AsyncPythonExecute(), StrReplaceEditor(), DesktopControl(),
             RememberTool(), RecallTool(), ForgetTool(), SelfInspectTool(),
-            ResearchTool(), KnowTool(), LearnTool(), Terminate()
+            ResearchTool(), KnowTool(), LearnTool(),
+            SkillCreateTool(), SkillListTool(), SkillTestTool(), Terminate()
         )
     )
 

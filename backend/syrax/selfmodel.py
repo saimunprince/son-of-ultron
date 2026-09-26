@@ -145,6 +145,10 @@ class SelfModel:
                 for c in (smap or {}).get("components", [])
             ],
             "system_map": {"path": str(self.system_map_path), "generated": (smap or {}).get("generated"), "present": smap is not None},
+            "skills": [
+                {k: r.get(k) for k in ("name", "version", "status", "purpose", "tests_passed", "tests_failed", "last_verified")}
+                for r in self.journal.skills()
+            ],
         }
 
     # ——— runtime ———
@@ -360,6 +364,8 @@ class SelfModel:
 def _implementation_of(tool: str) -> str:
     if tool.startswith("browser_"):
         return "browser-use MCP (backend/syrax/browser.py launches Chrome)"
+    if tool.startswith("skill_"):
+        return "backend/syrax/skills.py"
     return {
         "python_execute": "backend/syrax/tools.py AsyncPythonExecute",
         "str_replace_editor": "backend/app/tool/str_replace_editor.py",
@@ -376,8 +382,8 @@ def _implementation_of(tool: str) -> str:
     }.get(tool, "unknown")
 
 
-def render(snapshot: dict, limit: int = 6000) -> str:
-    text = json.dumps(snapshot, ensure_ascii=False, indent=1, default=str)
+def render(snapshot: dict, limit: int = 12000) -> str:
+    text = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"), default=str)
     if len(text) > limit:
         text = text[:limit] + "\n…[truncated; ask for a single section]"
     return text

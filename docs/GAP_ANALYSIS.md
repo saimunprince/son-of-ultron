@@ -23,7 +23,7 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 | Self-understanding engine (§6) | PARTIAL | `self_inspect` tool + WS `self_model` + `/self` answer what/version/tools/failed/weakness from evidence; no natural-language reasoning layer beyond the LLM reading the snapshot |
 | Objectives (§17) | EXISTS (autonomy commit) | `objectives` table, transitions, derivation from self-model weaknesses, human objectives over WS |
 | Research / learning / knowledge store (§7, §8) | EXISTS (research commit) | `syrax/research.py` + `knowledge` table: search → fetch → excerpts → provenance + confidence policy; `learn` capped by evidence; failure → research objective. Knowledge → skill/tool progression not yet |
-| Skill / tool / module factory (§9) | MISSING | — |
+| Skill / tool / module factory (§9) | EXISTS (skills commit) | `syrax/skills.py`: code + tests → subprocess pytest → registry → live tool; metadata (name, purpose, version, dependencies, tests, status, limitations, last_verified); boot re-registration. Module-level generation and auto-commit not yet |
 | Autonomous coding loop with rollback (§10, §41) | MISSING | gate exists; no agent-driven change pipeline |
 | Failure-driven learning (§11) | PARTIAL | objectives retry with a derived lesson, block after 3 attempts; no strategy search or research yet |
 | 24/7 cycle + resource awareness (§16, §19) | PARTIAL | `Autonomy.loop` with interval, CPU/RAM gate, idle when nothing to do; off by default; no GPU/disk/network awareness |
@@ -38,5 +38,5 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 2. ~~Objectives + bounded autonomous loop (Phase 5)~~ — done: `syrax/autonomy.py`, see `docs/AUTONOMY.md`.
 3. ~~LIVE / HISTORY / WHY view (Phase 11)~~ — done: `frontend/components/HistoryView.tsx`, WS `task_detail`, `replay`.
 4. ~~Research + knowledge store (Phase 6)~~ — done: `syrax/research.py`, see `docs/RESEARCH.md`.
-5. **Skill factory / autonomous development (Phases 7–8)** — generated tools with
-   metadata + tests, changes pushed only through the gate.
+5. ~~Skill factory (Phase 7)~~ — done: `syrax/skills.py`, see `docs/SKILLS.md`.
+6. **Autonomous development (Phase 8)** — inspect → modify → gate → commit with rollback, generated skills committed only through `verify.run_gates`.
