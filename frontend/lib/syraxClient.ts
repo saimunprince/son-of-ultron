@@ -263,7 +263,7 @@ export interface SkillRow {
   registered: boolean;
 }
 
-export type PresentationKind = "status" | "card" | "code" | "terminal" | "table" | "list" | "image" | "notification";
+export type PresentationKind = "status" | "card" | "code" | "terminal" | "table" | "list" | "image" | "notification" | "chart";
 
 export interface PresentationElement {
   presentation_id: string;

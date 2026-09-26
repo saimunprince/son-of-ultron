@@ -45,7 +45,7 @@ journalctl --user -u syrax -f    # live logs
 The service opens the UI in your default browser once ready, restarts on
 crashes, and quietly steps aside if SYRAX is already running.
 
-## Memory
+## Memory (facts live in the journal)
 
 SYRAX keeps lasting facts about you and your recent conversations across
 restarts (`backend/config/memory.json`, `history.jsonl`, gitignored, mode 600).

@@ -82,6 +82,39 @@ function Body({ el }: { el: PresentationElement }) {
         </>
       );
     }
+    case "chart": {
+      const series = Array.isArray(d.series) ? (d.series as number[]) : [];
+      const labels = Array.isArray(d.labels) ? (d.labels as string[]) : [];
+      const line = d.chart === "line";
+      const W = 320, H = 110, pad = 18;
+      const max = Math.max(...series, 0) || 1;
+      const min = Math.min(...series, 0);
+      const range = max - min || 1;
+      const x = (i: number) => pad + (series.length > 1 ? (i * (W - 2 * pad)) / (series.length - 1) : (W - 2 * pad) / 2);
+      const y = (v: number) => H - pad - ((v - min) / range) * (H - 2 * pad);
+      const bw = Math.max(4, (W - 2 * pad) / Math.max(1, series.length) - 4);
+      return (
+        <>
+          {typeof d.title === "string" && d.title && <div className="stage-path">{d.title}</div>}
+          <svg className="stage-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={el.purpose}>
+            <line x1={pad} y1={y(0)} x2={W - pad} y2={y(0)} className="chart-axis" />
+            {line ? (
+              <polyline className="chart-line" fill="none" points={series.map((v, i) => `${x(i)},${y(v)}`).join(" ")} />
+            ) : (
+              series.map((v, i) => <rect key={i} className="chart-bar" x={x(i) - bw / 2} y={Math.min(y(v), y(0))} width={bw} height={Math.abs(y(0) - y(v))} />)
+            )}
+            {series.map((v, i) => (
+              <text key={`t${i}`} x={x(i)} y={H - 4} textAnchor="middle" className="chart-label">
+                {labels[i] ?? ""}
+              </text>
+            ))}
+            <text x={W - pad} y={pad - 6} textAnchor="end" className="chart-label">
+              max {max}
+            </text>
+          </svg>
+        </>
+      );
+    }
     case "image":
       return typeof d.image === "string" ? <img className="tool-img" src={`data:image/png;base64,${d.image}`} alt={el.purpose} /> : null;
     case "notification":

@@ -17,7 +17,23 @@ def test_remember_recall_forget_roundtrip(tmp_path):
     assert [f["text"] for f in m.recall("dark theme")][0] == "Prince prefers dark themes."
     assert m.forget("dark themes") == ["Prince prefers dark themes."]
     assert [f["text"] for f in m.facts()] == ["Prince is building SYRAX, son of Ultron."]
-    assert stat.S_IMODE(os.stat(tmp_path / "memory.json").st_mode) == 0o600
+    assert not (tmp_path / "memory.json").exists()  # facts live in the journal now
+    from syrax.journal import get_journal
+    rows = get_journal().human_facts()
+    assert len(rows) == 1 and rows[0]["kind"] == "human" and rows[0]["confidence"] == 1.0 and "remember tool" in rows[0]["basis"]
+    kinds = [e["type"] for e in get_journal().recent_events()]
+    assert kinds.count("knowledge.stored") == 2 and kinds.count("knowledge.forgotten") == 1
+
+
+def test_legacy_memory_json_is_migrated_once(tmp_path):
+    (tmp_path / "memory.json").write_text(json.dumps({"facts": [{"id": "a1", "text": "Prince lives in Dhaka.", "created": 1.0}, {"id": "b2", "text": "Prince codes at night.", "created": 2.0}]}))
+    m = store(tmp_path)
+    assert [f["text"] for f in m.facts()] == ["Prince lives in Dhaka.", "Prince codes at night."]
+    from syrax.journal import get_journal
+    assert all("migrated" in k["basis"] for k in get_journal().human_facts())
+    m.forget("Dhaka")
+    assert [f["text"] for f in m.facts()] == ["Prince codes at night."]  # no re-import after the first migration
+    assert json.loads((tmp_path / "memory.json").read_text())["facts"][0]["text"] == "Prince lives in Dhaka."  # file untouched
 
 
 def test_near_duplicates_update_instead_of_piling_up(tmp_path):

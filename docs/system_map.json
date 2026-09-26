@@ -591,7 +591,7 @@
     },
     {
       "component": "MemoryStore",
-      "purpose": "Long-term facts and recent exchanges injected into every system prompt; remember/recall/forget tools.",
+      "purpose": "Long-term facts as human knowledge rows in the journal (remember/recall/forget tools) and recent conversations read from journal tasks; memory.json is imported once, history.jsonl only a fallback.",
       "dependencies": [
         "stdlib"
       ],
@@ -603,13 +603,15 @@
         "prompt_block()"
       ],
       "state": "in-process lock",
-      "persistence": "backend/config/memory.json, backend/config/history.jsonl (atomic replace, 0600, no fsync)",
+      "persistence": "journal knowledge (kind human) and tasks; legacy backend/config/memory.json read once for migration",
       "capabilities": [
         "secret refusal",
-        "near-duplicate merge"
+        "near-duplicate merge (updates the row)",
+        "forgetting is journaled (knowledge.forgotten)"
       ],
       "limitations": [
-        "flat files; history now duplicates journal.tasks"
+        "keyword recall, no embeddings",
+        "no fact expiry or contradiction handling"
       ],
       "code": [
         "backend/syrax/memory.py"

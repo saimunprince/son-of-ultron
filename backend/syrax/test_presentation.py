@@ -143,3 +143,14 @@ def test_human_feedback_teaches_the_engine_to_be_quiet(tmp_path):
     assert len(fb) == 5 and all(e["payload"]["kind"] == "terminal" and e["payload"]["after_s"] >= 1 for e in fb)
     stats = j.presentation_stats()
     assert stats["terminal"]["shown"] == 7 and stats["terminal"]["human_dismissed"] == 5
+
+
+def test_present_chart(tmp_path):
+    j, engine, t, _ = setup(tmp_path)
+    tool = PresentTool(); tool.engine = engine
+    assert asyncio.run(tool.execute(kind="chart")).error
+    assert asyncio.run(tool.execute(kind="chart", series=["x"])).error
+    out = asyncio.run(tool.execute(kind="chart", title="load", series=[1, 2.5, 3], labels=["a", "b", "c"], chart="line"))
+    assert not out.error and "shown chart" in out.output
+    el = engine.plan()["elements"][0]
+    assert el["kind"] == "chart" and el["data"]["series"] == [1.0, 2.5, 3.0] and el["data"]["chart"] == "line" and el["data"]["labels"] == ["a", "b", "c"]

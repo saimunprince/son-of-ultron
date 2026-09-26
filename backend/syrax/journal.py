@@ -1001,6 +1001,39 @@ class Journal:
             )
         return self.knowledge(kid)
 
+    def human_facts(self, limit: int = 300) -> List[dict]:
+        """Facts the human told SYRAX (kind human), oldest first."""
+        limit = max(1, min(int(limit), 1000))
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM knowledge WHERE kind='human' ORDER BY created DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [self._knowledge_dict(r) for r in reversed(rows)]
+
+    def update_knowledge_claim_sync(self, knowledge_id: int, claim: str, task_id: Optional[str] = None) -> Optional[dict]:
+        ts = _now()
+        with self._txn() as cur:
+            row = cur.execute("SELECT kind FROM knowledge WHERE id=?", (knowledge_id,)).fetchone()
+            if row is None:
+                return None
+            cur.execute("UPDATE knowledge SET claim=?, last_used=? WHERE id=?", (claim[:2000], ts, knowledge_id))
+            self._insert_event(cur, ts, task_id, "knowledge.updated", {"knowledge_id": knowledge_id, "kind": row["kind"], "claim": claim[:160]})
+        return self.knowledge(knowledge_id)
+
+    def forget_knowledge_sync(self, ids: List[int], reason: str = "human asked", task_id: Optional[str] = None) -> List[dict]:
+        """Delete knowledge rows (the human's right to be forgotten); the deletion itself is journaled."""
+        gone = []
+        ts = _now()
+        with self._txn() as cur:
+            for kid in ids:
+                row = cur.execute("SELECT * FROM knowledge WHERE id=?", (int(kid),)).fetchone()
+                if row is None:
+                    continue
+                cur.execute("DELETE FROM knowledge WHERE id=?", (int(kid),))
+                gone.append(self._knowledge_dict(row))
+                self._insert_event(cur, ts, task_id, "knowledge.forgotten", {"knowledge_id": int(kid), "kind": row["kind"], "claim": row["claim"][:160], "reason": reason})
+        return gone
+
     def knowledge(self, knowledge_id: int) -> Optional[dict]:
         with self._lock:
             row = self._db.execute("SELECT * FROM knowledge WHERE id=?", (knowledge_id,)).fetchone()

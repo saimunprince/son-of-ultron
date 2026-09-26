@@ -55,18 +55,45 @@ class MemoryStore:
         self.history_file = history_file
         self._lock = threading.Lock()
 
-    # ——— facts ———
-    def facts(self) -> List[dict]:
+    # ——— facts (journal-backed; memory.json is migrated once, then left alone) ———
+    def _journal(self):
+        from syrax.journal import get_journal
+
+        return get_journal()
+
+    def _file_facts(self) -> List[dict]:
         try:
             data = json.loads(self.memory_file.read_text())
             return [f for f in data.get("facts", []) if isinstance(f, dict) and f.get("text")]
-        except FileNotFoundError:
-            return []
         except Exception:
             return []
 
-    def _save(self, facts: List[dict]) -> None:
-        _atomic_write(self.memory_file, json.dumps({"facts": facts[-MAX_FACTS:]}, indent=2, ensure_ascii=False))
+    def _migrate(self) -> int:
+        """Import legacy memory.json facts into the journal exactly once."""
+        j = self._journal()
+        if j.get_meta(f"facts_migrated:{self.memory_file}") == "1":
+            return 0
+        n = 0
+        if not j.human_facts(limit=1):
+            for f in self._file_facts():
+                try:
+                    j.add_knowledge_sync(f["text"], "human", tags=["memory"], basis="migrated from memory.json (human said)")
+                    n += 1
+                except Exception:
+                    continue
+        j.set_meta(f"facts_migrated:{self.memory_file}", "1")
+        return n
+
+    @staticmethod
+    def _as_fact(k: dict) -> dict:
+        return {"id": str(k["id"]), "text": k["claim"], "created": k["created"], "updated": k.get("last_used")}
+
+    def facts(self) -> List[dict]:
+        try:
+            self._migrate()
+            return [self._as_fact(k) for k in self._journal().human_facts(MAX_FACTS)]
+        except Exception:
+            return [{"id": f.get("id", "?"), "text": f["text"], "created": f.get("created")} for f in self._file_facts()]
 
     def remember(self, text: str) -> str:
         text = " ".join(str(text or "").split())[:400]
@@ -75,16 +102,15 @@ class MemoryStore:
         if _SECRET.search(text):
             return "Refused: that looks like a secret (password/key/token). Secrets are never stored."
         with self._lock:
-            facts = self.facts()
+            j = self._journal()
+            self._migrate()
             new = _words(text)
-            for f in facts:
+            for f in self.facts():
                 old = _words(f["text"])
                 if old and new and len(old & new) / max(1, len(old | new)) > 0.8:
-                    f["text"], f["updated"] = text, time.time()
-                    self._save(facts)
+                    j.update_knowledge_claim_sync(int(f["id"]), text)
                     return f"Updated memory: {text}"
-            facts.append({"id": uuid.uuid4().hex[:8], "text": text, "created": time.time()})
-            self._save(facts)
+            j.add_knowledge_sync(text, "human", tags=["memory"] + sorted(new)[:6], basis="human said (remember tool)")
         return f"Remembered: {text}"
 
     def recall(self, query: str = "", limit: int = 15) -> List[dict]:
@@ -100,17 +126,14 @@ class MemoryStore:
         with self._lock:
             facts = self.facts()
             if q in {"everything", "all", "*"}:
-                removed = [f["text"] for f in facts]
-                self._save([])
-                return removed
-            qw = _words(q)
-            keep, removed = [], []
-            for f in facts:
-                hit = f.get("id") == q or (qw and qw <= _words(f["text"])) or (q and q in f["text"].lower())
-                (removed if hit else keep).append(f)
-            if removed:
-                self._save(keep)
-            return [f["text"] for f in removed]
+                hits = facts
+            else:
+                qw = _words(q)
+                hits = [f for f in facts if f["id"] == q or (qw and qw <= _words(f["text"])) or (q and q in f["text"].lower())]
+            if not hits:
+                return []
+            gone = self._journal().forget_knowledge_sync([int(f["id"]) for f in hits if str(f["id"]).isdigit()])
+            return [g["claim"] for g in gone]
 
     # ——— conversation history ———
     def add_exchange(self, user: str, reply: str) -> None:

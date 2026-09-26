@@ -171,6 +171,10 @@ evidence (`test_verify.py`).
   images are not stored).
 - One agent, one running task at a time; `PENDING` queueing exists in the
   journal but the core does not schedule queued tasks.
+- Long-term facts (`remember` / `recall` / `forget`) are knowledge rows of kind
+  `human` (confidence 1.0, basis "human said"); a legacy `memory.json` is imported
+  once and then left untouched; forgetting deletes the row and journals
+  `knowledge.forgotten`.
 - Conversation history for the prompt comes from `tasks` (kind conversation,
   SUCCESS/PARTIAL); `history.jsonl` is no longer written and is read only as a
   fallback when the journal has no conversations yet.

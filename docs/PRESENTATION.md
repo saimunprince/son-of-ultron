@@ -24,6 +24,7 @@ when their ttl passes). When the plan is empty the Stage renders nothing.
 | list | items, or a research summary |
 | image | a base64 image |
 | notification | error / question / warning with focus attention |
+| chart | bars or a line from a numeric series with labels (inline SVG) |
 
 Element fields: `presentation_id, kind, purpose, data, attention (ambient|notice|focus),
 position (stage|overlay), priority 1-5, ttl_s, replaces, dismiss_on, slot, source
@@ -52,8 +53,8 @@ element in a slot replaces the previous one, so old information does not pile up
 
 ## SYRAX choosing to present
 
-`present {kind: card|code|table|list|notification|none, title?, text?, language?,
-rows?, items?, ttl_s?, attention?}` lets the model put its own element on the
+`present {kind: card|code|table|list|notification|chart|none, title?, text?, language?,
+rows?, items?, series?, labels?, chart?, ttl_s?, attention?}` lets the model put its own element on the
 stage (source = model, slot model) or clear it with `kind: none`.
 
 ## Persistence and observability
@@ -78,4 +79,4 @@ untouched. The self-model reports the stats under `performance.presentation`.
 
 - Rules are hand-written state→decision mappings; learning is limited to the dismissal signal above.
 - Only the `stage` position is rendered; `overlay` is accepted but drawn in the stage.
-- No 3D scenes, maps, charts or video in the vocabulary yet.
+- No 3D scenes, maps or video in the vocabulary yet; charts are simple bar/line SVGs.

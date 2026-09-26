@@ -29,7 +29,7 @@ from app.tool.base import BaseTool, ToolResult
 
 from syrax.journal import Event, Journal
 
-KINDS = ("status", "card", "code", "terminal", "table", "list", "image", "notification")
+KINDS = ("status", "card", "code", "terminal", "table", "list", "image", "notification", "chart")
 ATTENTION = ("ambient", "notice", "focus")
 POSITIONS = ("stage", "overlay")
 TASK_END = ("task.completed", "task.failed", "task.cancelled", "task.interrupted")
@@ -241,12 +241,15 @@ class PresentTool(BaseTool):
     parameters: dict = {
         "type": "object",
         "properties": {
-            "kind": {"type": "string", "enum": ["card", "code", "table", "list", "notification", "none"]},
+            "kind": {"type": "string", "enum": ["card", "code", "table", "list", "notification", "chart", "none"]},
             "title": {"type": "string"},
             "text": {"type": "string", "description": "for card/code/notification"},
             "language": {"type": "string", "description": "for code"},
             "rows": {"type": "array", "items": {"type": "array", "items": {"type": ["string", "number", "boolean", "null"]}}, "description": "for table; first row = header"},
             "items": {"type": "array", "items": {"type": "string"}, "description": "for list"},
+            "series": {"type": "array", "items": {"type": "number"}, "description": "for chart: the values (bars or a line)"},
+            "labels": {"type": "array", "items": {"type": "string"}, "description": "for chart: one label per value"},
+            "chart": {"type": "string", "enum": ["bar", "line"], "description": "for chart, default bar"},
             "ttl_s": {"type": "number", "description": "seconds to stay (default 120)"},
             "attention": {"type": "string", "enum": ["ambient", "notice", "focus"]},
         },
@@ -256,7 +259,8 @@ class PresentTool(BaseTool):
     task_id_provider: Optional[Callable[[], Optional[str]]] = Field(default=None, exclude=True)
 
     async def execute(self, kind: str, title: str = "", text: str = "", language: str = "", rows: Optional[list] = None,
-                      items: Optional[list] = None, ttl_s: float = 120, attention: str = "notice") -> ToolResult:
+                      items: Optional[list] = None, ttl_s: float = 120, attention: str = "notice",
+                      series: Optional[list] = None, labels: Optional[list] = None, chart: str = "bar") -> ToolResult:
         if self.engine is None:
             return ToolResult(error="presentation engine unavailable")
         tid = self.task_id_provider() if self.task_id_provider else None
@@ -280,6 +284,14 @@ class PresentTool(BaseTool):
             if not items:
                 return ToolResult(error="items required")
             data["items"] = [_clip(i, 300) for i in items[:50]]
+        elif kind == "chart":
+            try:
+                values = [float(v) for v in (series or [])][:60]
+            except (TypeError, ValueError):
+                return ToolResult(error="series must be numbers")
+            if not values:
+                return ToolResult(error="series required")
+            data.update({"series": values, "labels": [_clip(l, 24) for l in (labels or [])][:60], "chart": chart if chart in ("bar", "line") else "bar"})
         else:
             return ToolResult(error=f"unknown kind {kind!r}")
         try:

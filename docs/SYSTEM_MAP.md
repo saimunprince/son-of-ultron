@@ -225,7 +225,7 @@ LLM-compatible router over 10 providers with cooldown-based failover; emits brai
 
 ## MemoryStore
 
-Long-term facts and recent exchanges injected into every system prompt; remember/recall/forget tools.
+Long-term facts as human knowledge rows in the journal (remember/recall/forget tools) and recent conversations read from journal tasks; memory.json is imported once, history.jsonl only a fallback.
 
 | | |
 |---|---|
@@ -233,9 +233,9 @@ Long-term facts and recent exchanges injected into every system prompt; remember
 | Inputs | remember/recall/forget tool calls; add_exchange after task.completed |
 | Outputs | prompt_block() |
 | State | in-process lock |
-| Persistence | backend/config/memory.json, backend/config/history.jsonl (atomic replace, 0600, no fsync) |
-| Capabilities | secret refusal; near-duplicate merge |
-| Limitations | flat files; history now duplicates journal.tasks |
+| Persistence | journal knowledge (kind human) and tasks; legacy backend/config/memory.json read once for migration |
+| Capabilities | secret refusal; near-duplicate merge (updates the row); forgetting is journaled (knowledge.forgotten) |
+| Limitations | keyword recall, no embeddings; no fact expiry or contradiction handling |
 | Code | backend/syrax/memory.py |
 | Tests | backend/syrax/test_memory.py |
 | Failure Modes | history write failure is logged, task still SUCCESS |
