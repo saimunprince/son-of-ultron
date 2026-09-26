@@ -4,17 +4,28 @@ Run from the backend directory:
     .venv/bin/python -m syrax.server
 
 Protocol (JSON over ws://HOST:PORT/ws)
-  client -> server: task {text} | answer {text} | stop | reset | ping |
+  client -> server: task {text, voice?} | answer {text} | stop | reset | ping |
+                    history {limit?} | task_events {task_id} | resume {task_id} |
+                    verifications {limit?} |
                     brains_get | brains_save {providers, order} |
                     brain_models {id, api_key?} | brain_test {id}
-  server -> client: hello | state | user | think | tool_start | tool_result |
-                    ask | final | notice | error | pong | brain | brains |
-                    brain_models | brain_test
+  server -> client: hello {name, tools, interrupted, running, recent} | state |
+                    user | think | tool_start | tool_result | ask | final |
+                    task {event} | checkpoint | recovery {event} | verification |
+                    history | task_events | verifications |
+                    notice | error | pong | brain | brains | brain_models | brain_test
+
+Sessions are observers: the task runs in ``syrax.core`` and continues when the
+browser disconnects. Journaled events (think, tool_*, ask, answer, final, brain
+failover/answered, task/checkpoint/recovery/verification) are written to the
+durable journal first and fanned out to every connected session; ``state``,
+``notice``, ``error``, panel replies and the ``user`` echo are direct.
 """
 
 import asyncio
 import json
 import os
+import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -25,10 +36,10 @@ from fastapi.responses import Response
 
 from app.logger import logger
 
-from syrax.agent import SyraxAgent
 from syrax import browser, voice
 from syrax.brains import PROVIDERS, get_router
-from syrax.memory import get_memory
+from syrax.core import get_core
+from syrax.journal import JournalError, get_journal
 
 VOICE_HINT = (
     "\n\n[Spoken aloud by voice. Answer in one or two short spoken English "
@@ -48,12 +59,23 @@ ALLOWED_ORIGINS = {
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    journal = get_journal()  # opens the durable journal and runs crash recovery
+    for r in journal.recovered:
+        logger.warning(
+            f"recovered interrupted task {r['task_id']} at step {r['last_step']} "
+            f"({r['last_stage']}): {r['recovery']['state']}"
+        )
+    core = get_core()
+    for tid in await core.auto_resume():
+        logger.warning(f"auto-resumed task {tid}")
     logger.info(f"SYRAX online at ws://{HOST}:{PORT}/ws")
     # Warm the local ear in the background so the first voice command is fast.
     warm = asyncio.create_task(asyncio.to_thread(_warm_whisper))
     yield
     warm.cancel()
+    await core.shutdown()
     browser.shutdown()
+    journal.close()
 
 
 def _warm_whisper() -> None:
@@ -129,10 +151,12 @@ async def health():
 
 
 class Session:
+    """One WebSocket connection: observes the core, routes commands to it."""
+
     def __init__(self, ws: WebSocket):
         self.ws = ws
-        self.agent: Optional[SyraxAgent] = None
-        self.task: Optional[asyncio.Task] = None
+        self.id = uuid.uuid4().hex[:12]
+        self.core = get_core()
         self.closed = False
         self._lock = asyncio.Lock()
         self.aux: set = set()
@@ -152,68 +176,77 @@ class Session:
             except Exception:
                 self.closed = True
 
-    @property
-    def busy(self) -> bool:
-        return self.task is not None and not self.task.done()
-
     async def boot(self) -> None:
         await self.send({"type": "state", "state": "booting"})
-        self.agent = await SyraxAgent.create(emit=self.send)
+        agent = await self.core.ensure_agent()
+        snap = self.core.snapshot()
+        self.core.subscribe(self.send)
         await self.send(
             {
                 "type": "hello",
                 "name": "SYRAX",
-                "tools": sorted(self.agent.available_tools.tool_map.keys()),
+                "tools": sorted(agent.available_tools.tool_map.keys()),
+                "interrupted": snap["interrupted"],
+                "running": snap["running"],
+                "recent": snap["recent"],
             }
         )
         await self.send({"type": "brains", **get_router().describe()})
-        await self.send({"type": "state", "state": "idle"})
-
-    async def run_task(self, text: str, said: Optional[str] = None) -> None:
-        assert self.agent is not None
-        try:
-            reply = await self.agent.run(text)
-            await self.send({"type": "final", "text": reply})
-            try:
-                get_memory().add_exchange(said or text, reply)
-            except Exception as e:
-                logger.warning(f"could not save history: {e}")
-        except asyncio.CancelledError:
-            self.agent.repair_memory(aborted=True)
-            await self.send({"type": "notice", "text": "Task aborted."})
-            raise
-        except Exception as e:
-            logger.exception("SYRAX task failed")
-            self.agent.repair_memory()
-            await self.send({"type": "error", "message": _explain(e)})
-        finally:
+        if snap["running"]:
+            # Reconnect while a task runs: replay what happened so far, then the live state.
+            tid = snap["running"]["task_id"]
+            events = await asyncio.to_thread(get_journal().events, tid)
+            await self.send({"type": "task_events", "task_id": tid, "events": events})
+            await self.send({"type": "state", **snap["state"]})
+        else:
             await self.send({"type": "state", "state": "idle"})
 
     async def handle(self, msg: dict) -> None:
         kind = msg.get("type")
         text = str(msg.get("text") or "").strip()
+        journal = get_journal()
 
         if kind == "ping":
             await self.send({"type": "pong"})
         elif kind == "task":
             if not text:
                 return
-            if self.busy:
+            if self.core.busy:
                 await self.send(
                     {"type": "notice", "text": "Already executing. Stop it first."}
                 )
                 return
-            await self.send({"type": "user", "text": text, "voice": bool(msg.get("voice"))})
+            await self.core.broadcast({"type": "user", "text": text, "voice": bool(msg.get("voice"))})
             request = text + VOICE_HINT if msg.get("voice") else text
-            self.task = asyncio.create_task(self.run_task(request, said=text))
+            await self.core.submit(request, said=text, session_id=self.id)
         elif kind == "answer":
-            if not (self.agent and self.agent.ask_tool.answer(text)):
+            if not await self.core.answer(text, session_id=self.id):
                 await self.send({"type": "notice", "text": "No pending question."})
-            else:
-                await self.send({"type": "user", "text": text})
         elif kind == "stop":
-            if self.busy:
-                self.task.cancel()
+            await self.core.cancel()
+        elif kind == "reset":
+            await self.core.reset()
+            await self.send({"type": "notice", "text": "Memory wiped."})
+        elif kind == "history":
+            limit = _limit(msg.get("limit"), 20)
+            tasks = await asyncio.to_thread(journal.tasks, limit)
+            await self.send({"type": "history", "tasks": tasks})
+        elif kind == "task_events":
+            tid = str(msg.get("task_id") or "")
+            events = await asyncio.to_thread(journal.events, tid)
+            await self.send({"type": "task_events", "task_id": tid, "events": events})
+        elif kind == "verifications":
+            limit = _limit(msg.get("limit"), 20)
+            rows = await asyncio.to_thread(journal.verifications, limit)
+            await self.send({"type": "verifications", "verifications": rows})
+        elif kind == "resume":
+            tid = str(msg.get("task_id") or "")
+            try:
+                problem = await self.core.resume(tid, session_id=self.id)
+            except JournalError as e:
+                problem = str(e)
+            if problem:
+                await self.send({"type": "notice", "text": problem})
         elif kind == "brains_get":
             await self.send({"type": "brains", **get_router().describe()})
         elif kind == "brains_save":
@@ -229,13 +262,6 @@ class Session:
             pid = str(msg.get("id") or "")
             if pid in PROVIDERS:
                 self.spawn(self._test(pid))
-        elif kind == "reset":
-            if self.busy:
-                self.task.cancel()
-                await asyncio.gather(self.task, return_exceptions=True)
-            if self.agent:
-                self.agent.reset_conversation()
-            await self.send({"type": "notice", "text": "Memory wiped."})
         else:
             await self.send({"type": "error", "message": f"Unknown message: {kind}"})
 
@@ -256,14 +282,18 @@ class Session:
         await self.send({"type": "brains", **router.describe()})
 
     async def close(self) -> None:
+        """Detach. The running task, if any, keeps going in the core."""
+        self.core.unsubscribe(self.send)
         for t in list(self.aux):
             t.cancel()
         self.closed = True
-        if self.busy:
-            self.task.cancel()
-            await asyncio.gather(self.task, return_exceptions=True)
-        if self.agent:
-            await self.agent.shutdown()
+
+
+def _limit(value, default: int) -> int:
+    try:
+        return max(1, min(int(value or default), 200))
+    except (TypeError, ValueError):
+        return default
 
 
 def _explain(e: Exception) -> str:

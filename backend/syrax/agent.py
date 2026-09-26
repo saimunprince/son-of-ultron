@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Any, Optional
+from typing import Any, Awaitable, Callable, List, Optional
 
 from pydantic import Field
 
@@ -66,8 +66,12 @@ class SyraxAgent(Manus):
     system_prompt: str = SYRAX_PERSONA.format(directory=config.workspace_root)
 
     emit: Optional[Emit] = Field(default=None, exclude=True)
+    # Semantic checkpoint hook set by the core: called after each completed tool
+    # step with the stage name. The agent itself stays journal-agnostic.
+    checkpoint: Optional[Callable[..., Awaitable[None]]] = Field(default=None, exclude=True)
     ask_tool: WebAskHuman = Field(default_factory=WebAskHuman, exclude=True)
     last_reply: str = ""
+    step_limit_hit: bool = False
 
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
@@ -98,6 +102,7 @@ class SyraxAgent(Manus):
         self.current_step = 0
         self.state = AgentState.IDLE
         self.last_reply = ""
+        self.step_limit_hit = False
         # Fresh persona + long-term memory for every task.
         base = SYRAX_PERSONA.format(directory=config.workspace_root)
         try:
@@ -110,6 +115,7 @@ class SyraxAgent(Manus):
         await self._send({"type": "state", "state": "thinking"})
         result = await BaseAgent.run(self, request)
         if self.current_step == 0 and "max steps" in result:
+            self.step_limit_hit = True
             await self._send(
                 {"type": "notice", "text": f"Step limit ({self.max_steps}) reached."}
             )
@@ -152,6 +158,7 @@ class SyraxAgent(Manus):
                 "id": command.id,
                 "name": name,
                 "args": _args_of(command),
+                "step": self.current_step,
             }
         )
         await self._send({"type": "state", "state": "acting", "tool": name})
@@ -167,11 +174,45 @@ class SyraxAgent(Manus):
             "ok": _succeeded(result),
             "output": result[:RESULT_PREVIEW_CHARS],
             "truncated": len(result) > RESULT_PREVIEW_CHARS,
+            "step": self.current_step,
         }
         if self._current_base64_image:
             event["image"] = self._current_base64_image
         await self._send(event)
         return result
+
+    async def act(self) -> str:
+        """One tool step, then a semantic checkpoint: the tool results are in
+        memory now, so this is a logical state a resume can start from."""
+        out = await super().act()
+        if self.checkpoint is not None and self.tool_calls:
+            names = ",".join(c.function.name for c in self.tool_calls)
+            await self.checkpoint(f"observed:{names}")
+        return out
+
+    # ——— working context (for durable checkpoints / resume) ———
+    def export_context(self, limit: int = MAX_MEMORY_MESSAGES) -> List[dict]:
+        """Non-system messages as plain dicts, newest ``limit`` without splitting
+        a tool-call/result pair."""
+        rest = [m for m in self.memory.messages if m.role != "system"]
+        if len(rest) > limit:
+            cut = len(rest) - limit
+            while cut < len(rest) and rest[cut].role != "user":
+                cut += 1
+            rest = rest[cut:]
+        return [m.to_dict() for m in rest]
+
+    def import_context(self, messages: List[dict]) -> int:
+        """Replace the conversation with a saved context (system messages kept)."""
+        keep = [m for m in self.memory.messages if m.role == "system"]
+        restored: List[Message] = []
+        for d in messages:
+            try:
+                restored.append(Message(**d))
+            except Exception:
+                continue
+        self.memory.messages = keep + restored
+        return len(restored)
 
     # ——— memory hygiene ———
     def repair_memory(self, aborted: bool = False) -> None:

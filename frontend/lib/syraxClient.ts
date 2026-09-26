@@ -34,8 +34,97 @@ export interface BrainTestResult {
 
 export type BrainChange = { api_key?: string; model?: string; enabled?: boolean };
 
+export type TaskStatus =
+  | "PENDING"
+  | "IN_PROGRESS"
+  | "BLOCKED"
+  | "SUCCESS"
+  | "PARTIAL"
+  | "FAILED"
+  | "CANCELLED"
+  | "INTERRUPTED"
+  | "UNKNOWN";
+
+export type RecoveryState = "RESUMABLE" | "UNCERTAIN" | "BLOCKED" | "COMPLETED" | "FAILED" | "UNKNOWN";
+
+export interface TaskSummary {
+  task_id: string;
+  goal: string;
+  kind: string;
+  status: TaskStatus;
+  stage: string | null;
+  current_step: number;
+  created: number;
+  updated: number;
+  result: string | null;
+  error: string | null;
+  last_checkpoint_id: number | null;
+}
+
+export interface InterruptedTask {
+  task_id: string;
+  goal: string;
+  step: number;
+  stage: string | null;
+  tool: string | null;
+  question: string | null;
+  recovery_state: RecoveryState;
+  operation_state: string | null;
+  when: number | null;
+}
+
+export interface RunningTask {
+  task_id: string;
+  goal: string;
+  stage: string | null;
+  step: number;
+  status: TaskStatus | null;
+}
+
+export interface JournalEvent {
+  id: number;
+  ts: number;
+  task_id: string | null;
+  type: string;
+  seq: number;
+  payload: Record<string, unknown>;
+}
+
+export interface VerificationGate {
+  name: string;
+  required: boolean;
+  status: "PASS" | "FAIL" | "NOT_VERIFIED";
+  exit_code: number | null;
+  duration_ms: number;
+  evidence: string;
+}
+
+export interface Verification {
+  id: number;
+  ts: number;
+  task_id: string | null;
+  git_head: string | null;
+  status: "GREEN" | "BLOCKED";
+  gates: VerificationGate[];
+}
+
+/** Fields the journal adds to every event it fanned out. */
+export interface Journaled {
+  task_id?: string;
+  event_id?: number;
+  ts?: number;
+  unjournaled?: boolean;
+}
+
 export type ServerEvent =
-  | { type: "hello"; name: string; tools: string[] }
+  | {
+      type: "hello";
+      name: string;
+      tools: string[];
+      interrupted: InterruptedTask[];
+      running: RunningTask | null;
+      recent: TaskSummary[];
+    }
   | ({ type: "brains" } & BrainsState)
   | { type: "brain"; event: "answered"; provider: string; label: string; model: string }
   | { type: "brain"; event: "failover"; provider: string; reason: string }
@@ -43,11 +132,31 @@ export type ServerEvent =
   | ({ type: "brain_test" } & BrainTestResult)
   | { type: "state"; state: "booting" | "idle" | "thinking" | "acting"; step?: number; tool?: string }
   | { type: "user"; text: string; voice?: boolean }
-  | { type: "think"; step: number; content: string; tools: { id: string; name: string; args: unknown }[] }
-  | { type: "tool_start"; id: string; name: string; args: unknown }
-  | { type: "tool_result"; id: string; name: string; ok: boolean; output: string; truncated: boolean; image?: string }
-  | { type: "ask"; question: string }
-  | { type: "final"; text: string }
+  | ({ type: "think"; step: number; content: string; tools: { id: string; name: string; args: unknown }[] } & Journaled)
+  | ({ type: "tool_start"; id: string; name: string; args: unknown; step?: number } & Journaled)
+  | ({ type: "tool_result"; id: string; name: string; ok: boolean; output: string; truncated: boolean; image?: string; step?: number } & Journaled)
+  | ({ type: "ask"; question: string } & Journaled)
+  | ({ type: "final"; text: string } & Journaled)
+  | ({
+      type: "task";
+      event: "queued" | "started" | "completed" | "failed" | "cancelled" | "blocked" | "interrupted" | "unknown";
+      goal?: string;
+      status?: TaskStatus;
+      result?: string;
+      error?: string;
+      step?: number;
+      stage?: string | null;
+      tool?: string | null;
+      question?: string | null;
+      recovery_state?: RecoveryState;
+    } & Journaled)
+  | ({ type: "checkpoint"; checkpoint_id: number; seq: number; stage: string; completed_steps: number; evidence_state: string } & Journaled)
+  | ({ type: "recovery"; event: "started" | "verified" | "resumed" | "completed"; count?: number; task_ids?: string[] } & Journaled)
+  | ({ type: "verification"; verification_id: number; status: "GREEN" | "BLOCKED"; git_head: string | null } & Journaled)
+  | ({ type: "stage"; stage: string } & Journaled)
+  | { type: "history"; tasks: TaskSummary[] }
+  | { type: "task_events"; task_id: string; events: JournalEvent[] }
+  | { type: "verifications"; verifications: Verification[] }
   | { type: "notice"; text: string }
   | { type: "error"; message: string }
   | { type: "pong" };
@@ -58,6 +167,10 @@ export type ClientMessage =
   | { type: "stop" }
   | { type: "reset" }
   | { type: "ping" }
+  | { type: "history"; limit?: number }
+  | { type: "task_events"; task_id: string }
+  | { type: "verifications"; limit?: number }
+  | { type: "resume"; task_id: string }
   | { type: "brains_get" }
   | { type: "brains_save"; providers: Record<string, BrainChange>; order?: string[] }
   | { type: "brain_models"; id: string; api_key?: string }

@@ -490,6 +490,12 @@ body {
   letter-spacing: 0.04em;
 }
 
+.entry-notice .entry-action {
+  margin-left: 10px;
+  padding: 2px 8px;
+  font-size: 10px;
+}
+
 .entry-ask {
   color: var(--text-bright);
   padding: 9px 10px;

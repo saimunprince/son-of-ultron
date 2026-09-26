@@ -84,7 +84,8 @@ def test_agent_prompt_includes_memory_and_history_is_saved(tmp_path, monkeypatch
         while ws.receive_json().get("state") != "idle":
             pass
         ws.send_json({"type": "task", "text": "what is my favourite colour?"})
-        while ws.receive_json()["type"] != "final":
+        # history is written after the task is journaled complete, i.e. before idle
+        while ws.receive_json().get("state") != "idle":
             pass
     assert "favourite colour is crimson" in seen[0]
     assert m.recent()[-1] == {**m.recent()[-1], "user": "what is my favourite colour?", "reply": "Crimson. Obviously."}

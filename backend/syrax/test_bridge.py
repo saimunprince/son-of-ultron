@@ -225,3 +225,298 @@ def test_malformed_message_does_not_kill_session(script):
         assert "Malformed" in err["message"]
         ws.send_json({"type": "ping"})
         recv_until(ws, "pong")
+
+
+# ——— durable journal + core (task runs independently of the session) ———
+
+from syrax.journal import Journal, get_journal  # noqa: E402
+import syrax.journal as journal_mod  # noqa: E402
+import syrax.core as core_mod  # noqa: E402
+
+
+def drain_until_idle(ws, limit=80):
+    seen = []
+    for _ in range(limit):
+        e = ws.receive_json()
+        seen.append(e)
+        if e["type"] == "state" and e.get("state") == "idle":
+            return seen
+    raise AssertionError(f"never idle: {seen}")
+
+
+def test_chat_task_is_journaled_as_success_with_final_evidence(script):
+    script.queue = [reply("Ami SYRAX. Bol.")]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello = boot(ws)
+        assert hello["interrupted"] == [] and hello["running"] is None and hello["recent"] == []
+        ws.send_json({"type": "task", "text": "ke tui?"})
+        seen = drain_until_idle(ws)
+    j = get_journal()
+    task = j.tasks()[0]
+    assert task["status"] == "SUCCESS" and task["result"] == "Ami SYRAX. Bol." and task["stage"] == "done"
+    assert [e["type"] for e in j.events(task["task_id"])] == [
+        "task.started", "think", "final", "checkpoint.created", "task.completed",
+    ]
+    started = [e for e in seen if e["type"] == "task" and e["event"] == "started"][0]
+    assert started["task_id"] == task["task_id"]
+    final = [e for e in seen if e["type"] == "final"][0]
+    assert final["task_id"] == task["task_id"] and "event_id" in final
+    assert any(e["type"] == "task" and e["event"] == "completed" and e["status"] == "SUCCESS" for e in seen)
+    # the "user" echo stays direct and unchanged
+    assert {"type": "user", "text": "ke tui?", "voice": False} in seen
+
+
+def test_tool_task_records_steps_operation_and_checkpoints(script):
+    script.queue = [
+        call("python_execute", {"code": "print(6*7)"}, "Hisab kortesi."),
+        call("terminate", {"status": "success"}, "Uttor 42. Done."),
+    ]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "6*7 koto?"})
+        seen = drain_until_idle(ws)
+    j = get_journal()
+    task = j.tasks()[0]
+    kinds = [e["type"] for e in j.events(task["task_id"])]
+    assert kinds[:4] == ["task.started", "think", "tool.started", "tool.completed"]
+    assert kinds.count("checkpoint.created") == 3  # after python_execute, after terminate, at final
+    assert task["status"] == "SUCCESS" and task["current_step"] == 2 and task["operation"] is None
+    cps = j.checkpoints(task["task_id"])
+    assert cps[0]["stage"] == "observed:python_execute"
+    assert cps[0]["completed_steps"] == [{"step": 1, "tool": "python_execute", "id": cps[0]["completed_steps"][0]["id"], "ok": True}]
+    assert any(m.get("role") == "tool" for m in cps[0]["context"])
+    ts = [e for e in seen if e["type"] == "tool_start"][0]
+    assert ts["step"] == 1 and ts["task_id"] == task["task_id"]
+    assert any(e["type"] == "checkpoint" for e in seen)
+
+
+def test_stop_journals_cancelled(script):
+    script.queue = [call("slow", {}, cid="call_slow")]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "wait"})
+        recv_until(ws, "tool_start")
+        ws.send_json({"type": "stop"})
+        seen = drain_until_idle(ws)
+    task = get_journal().tasks()[0]
+    assert task["status"] == "CANCELLED" and task["error"] == "aborted by human"
+    assert any(e["type"] == "task" and e["event"] == "cancelled" for e in seen)
+
+
+def test_llm_error_journals_failed(script):
+    async def boom():
+        raise RuntimeError("brain melted")
+
+    script.queue = [boom]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "x"})
+        seen = drain_until_idle(ws)
+    assert any(e["type"] == "error" and "brain melted" in e["message"] for e in seen)
+    task = get_journal().tasks()[0]
+    assert task["status"] == "FAILED" and "brain melted" in task["error"]
+
+
+def test_tool_error_is_journaled_as_tool_failed_and_task_continues(script):
+    script.queue = [
+        call("python_execute", {"code": "raise ValueError('nope')"}),
+        reply("It failed, as expected."),
+    ]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "break"})
+        drain_until_idle(ws)
+    j = get_journal()
+    task = j.tasks()[0]
+    kinds = [e["type"] for e in j.events(task["task_id"])]
+    assert "tool.failed" in kinds and task["status"] == "SUCCESS"
+    assert j.checkpoints(task["task_id"])[0]["evidence_state"] == "PARTIAL"
+
+
+def test_ask_blocks_then_answer_is_recorded(script):
+    script.queue = [
+        call("ask_human", {"inquire": "Kon folder?"}),
+        call("terminate", {"status": "success"}, "Thik ache."),
+    ]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "file banao"})
+        recv_until(ws, "ask")
+        j = get_journal()
+        assert j.tasks()[0]["status"] == "BLOCKED" and j.tasks()[0]["operation"]["name"] == "ask_human"
+        ws.send_json({"type": "answer", "text": "workspace"})
+        user, _ = recv_until(ws, "user")
+        assert user["text"] == "workspace" and "task_id" in user
+        drain_until_idle(ws)
+    task = get_journal().tasks()[0]
+    kinds = [e["type"] for e in get_journal().events(task["task_id"])]
+    assert "ask" in kinds and "answer" in kinds and task["status"] == "SUCCESS"
+
+
+def test_task_survives_disconnect_and_reconnect_replays_it(script):
+    script.queue = [
+        call("python_execute", {"code": "import time; time.sleep(1.5); print('slow ok')"}, cid="call_py"),
+        reply("Finished while you were away."),
+    ]
+    with TestClient(server.app) as client:  # one event loop for both connections
+        with client.websocket_connect("/ws", headers=ORIGIN) as ws:
+            boot(ws)
+            ws.send_json({"type": "task", "text": "long job"})
+            recv_until(ws, "tool_start")
+        # browser gone; SYRAX keeps working
+        core = core_mod.get_core()
+        assert core.busy
+        with client.websocket_connect("/ws", headers=ORIGIN) as ws2:
+            hello, seen = recv_until(ws2, "hello")
+            assert hello["running"]["goal"] == "long job" and hello["running"]["task_id"] == core.current.task_id
+            replay, _ = recv_until(ws2, "task_events")
+            assert [e["type"] for e in replay["events"]][:3] == ["task.started", "think", "tool.started"]
+            state, _ = recv_until(ws2, "state")
+            assert state["state"] in ("acting", "thinking")
+            final, _ = recv_until(ws2, "final")
+            assert final["text"] == "Finished while you were away."
+            drain_until_idle(ws2)
+        task = get_journal().tasks()[0]
+        assert task["status"] == "SUCCESS" and task["current_step"] == 2
+    # lifespan shutdown closed the journal; reopening sees the same durable truth
+    assert get_journal().tasks()[0]["status"] == "SUCCESS"
+
+
+def test_two_sessions_observe_the_same_task_and_only_one_may_run(script):
+    script.queue = [
+        call("python_execute", {"code": "import time; time.sleep(1); print('shared')"}),
+        reply("Shared done."),
+    ]
+    with TestClient(server.app) as client:
+        with client.websocket_connect("/ws", headers=ORIGIN) as a, client.websocket_connect("/ws", headers=ORIGIN) as b:
+            boot(a)
+            boot(b)
+            a.send_json({"type": "task", "text": "shared job"})
+            recv_until(b, "tool_start")
+            b.send_json({"type": "task", "text": "me too"})
+            notice, _ = recv_until(b, "notice")
+            assert "Already executing" in notice["text"]
+            fa, _ = recv_until(a, "final")
+            fb, _ = recv_until(b, "final")
+            assert fa["text"] == fb["text"] == "Shared done." and fa["event_id"] == fb["event_id"]
+            drain_until_idle(a)
+            drain_until_idle(b)
+    assert len(get_journal().tasks()) == 1
+
+
+def test_history_task_events_and_verifications_over_ws(script):
+    script.queue = [reply("one"), reply("two")]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        for text in ("first", "second"):
+            ws.send_json({"type": "task", "text": text})
+            drain_until_idle(ws)
+        ws.send_json({"type": "history", "limit": 1})
+        hist, _ = recv_until(ws, "history")
+        assert [t["goal"] for t in hist["tasks"]] == ["second"] and hist["tasks"][0]["status"] == "SUCCESS"
+        ws.send_json({"type": "task_events", "task_id": hist["tasks"][0]["task_id"]})
+        ev, _ = recv_until(ws, "task_events")
+        assert [e["type"] for e in ev["events"]][0] == "task.started"
+        get_journal().record_verification_sync({"status": "GREEN", "gates": [{"name": "pytest", "status": "PASS", "required": True}]})
+        ws.send_json({"type": "verifications"})
+        v, _ = recv_until(ws, "verifications")
+        assert v["verifications"][0]["status"] == "GREEN"
+        ws.send_json({"type": "history", "limit": "garbage"})
+        hist2, _ = recv_until(ws, "history")
+        assert len(hist2["tasks"]) == 2
+
+
+def seed_interrupted(tmp_path, target=None):
+    """A previous process died mid str_replace_editor create. Returns task_id."""
+    old = Journal(tmp_path / "journal.db", boot_id="dead-boot", recover=False)
+    t = old.start_task_sync("write greeting file")
+    old.record_sync("think", {"step": 1, "content": "writing"}, task_id=t)
+    old.record_sync("tool.started", {
+        "id": "e1", "name": "str_replace_editor",
+        "args": {"command": "create", "path": str(target or tmp_path / "greeting.txt"), "file_text": "hello"},
+        "step": 1,
+    }, task_id=t)
+    old.close()
+    return t
+
+
+def test_hello_lists_interrupted_task_with_verified_recovery_state(script, tmp_path):
+    target = tmp_path / "greeting.txt"
+    t = seed_interrupted(tmp_path, target)
+    target.write_text("hello")  # the write actually landed before the crash
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello = boot(ws)
+    assert len(hello["interrupted"]) == 1
+    it = hello["interrupted"][0]
+    assert it["task_id"] == t and it["step"] == 1 and it["tool"] == "str_replace_editor"
+    assert it["recovery_state"] == "RESUMABLE" and it["operation_state"] == "COMPLETED"
+    row = get_journal().task(t)
+    assert row["status"] == "INTERRUPTED" and row["recovery"]["checks"]["operation"]["content_matches"] is True
+
+
+def test_resume_continues_interrupted_task_with_restored_context(script, tmp_path):
+    t = seed_interrupted(tmp_path)
+    script.queue = [reply("Greeting file is there. Done.")]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello = boot(ws)
+        assert hello["interrupted"][0]["recovery_state"] == "RESUMABLE"  # file missing → NOT_STARTED, safe to redo
+        ws.send_json({"type": "resume", "task_id": t})
+        resumed, _ = recv_until(ws, "recovery")
+        assert resumed["event"] == "resumed" and resumed["task_id"] == t
+        final, _ = recv_until(ws, "final")
+        assert final["task_id"] == t
+        drain_until_idle(ws)
+        ws.send_json({"type": "resume", "task_id": t})
+        notice, _ = recv_until(ws, "notice")
+        assert "not INTERRUPTED" in notice["text"]
+    row = get_journal().task(t)
+    assert row["status"] == "SUCCESS" and row["result"] == "Greeting file is there. Done."
+    kinds = [e["type"] for e in get_journal().events(t)]
+    assert kinds[-7:] == ["recovery.verified", "task.interrupted", "recovery.resumed", "think", "final", "checkpoint.created", "task.completed"]
+    # the model was told about the interruption and the operation state
+    last_msgs = script.seen[-1]
+    assert any("RESUMED AFTER INTERRUPTION" in (getattr(m, "content", "") or "") and "NOT_STARTED" in m.content for m in last_msgs)
+    assert any("Continue the interrupted task: write greeting file" in (getattr(m, "content", "") or "") for m in last_msgs)
+
+
+def test_resume_refuses_while_busy_and_unknown_task(script):
+    script.queue = [call("slow", {}, cid="call_slow")]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "resume", "task_id": "nope"})
+        n, _ = recv_until(ws, "notice")
+        assert "unknown task" in n["text"]
+        ws.send_json({"type": "task", "text": "wait"})
+        recv_until(ws, "tool_start")
+        ws.send_json({"type": "resume", "task_id": "nope"})
+        n, _ = recv_until(ws, "notice")
+        assert "Already executing" in n["text"]
+        ws.send_json({"type": "stop"})
+        drain_until_idle(ws)
+
+
+def test_journal_write_failure_never_fakes_success(script, monkeypatch):
+    script.queue = [reply("I did answer.")]
+    calls = {"n": 0}
+    orig = Journal.record_sync
+
+    def flaky(self, type_, payload=None, task_id=None, volatile=None, dedupe_key=None):
+        calls["n"] += 1
+        if calls["n"] >= 1:  # task.started goes through start_task_sync; every event write fails
+            raise __import__("sqlite3").OperationalError("disk I/O error")
+        return orig(self, type_, payload, task_id, volatile, dedupe_key)
+
+    monkeypatch.setattr(Journal, "record_sync", flaky)
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "hi"})
+        seen = drain_until_idle(ws)
+        ws.send_json({"type": "ping"})
+        recv_until(ws, "pong")  # session survives
+    think = [e for e in seen if e["type"] == "think"][0]
+    assert think.get("unjournaled") is True
+    assert any(e["type"] == "error" and "Journal unavailable" in e["message"] for e in seen)
+    assert not any(e["type"] == "final" for e in seen)  # reply was never certified
+    monkeypatch.setattr(Journal, "record_sync", orig)
+    task = get_journal().tasks()[0]
+    assert task["status"] == "IN_PROGRESS"  # truthfully unresolved; next boot marks it INTERRUPTED

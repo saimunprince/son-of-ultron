@@ -25,3 +25,8 @@ backend/.syrax-browser/
 backend/config/memory.json
 backend/config/history.jsonl
 backend/config/*.tmp
+
+# durable execution journal (runtime state)
+backend/config/journal.db
+backend/config/journal.db-wal
+backend/config/journal.db-shm

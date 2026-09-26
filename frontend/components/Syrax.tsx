@@ -9,6 +9,7 @@ import {
   type BrainChange,
   type BrainsState,
   type BrainTestResult,
+  type ClientMessage,
   type LinkState,
   type ServerEvent,
 } from "@/lib/syraxClient";
@@ -37,8 +38,13 @@ type Entry =
       image?: string;
     }
   | { kind: "ask"; id: number; text: string }
-  | { kind: "notice"; id: number; text: string }
+  | { kind: "notice"; id: number; text: string; action?: { label: string; msg: ClientMessage } }
   | { kind: "error"; id: number; text: string };
+
+function recoveredText(t: { task_id: string; goal: string; step: number; tool?: string | null; recovery_state: string }) {
+  const where = t.tool ? ` during ${t.tool}` : "";
+  return `RECOVERED · "${t.goal.slice(0, 80)}" was interrupted at step ${t.step}${where} · ${t.recovery_state}`;
+}
 
 const MODE_LABEL: Record<TrackerStatus["mode"], string> = {
   idle: "STANDBY",
@@ -254,7 +260,34 @@ export default function Syrax() {
       switch (e.type) {
         case "hello":
           setToolCount(e.tools.length);
+          for (const t of e.interrupted) {
+            push({
+              kind: "notice",
+              id: nextId++,
+              text: recoveredText(t),
+              action: { label: "RESUME", msg: { type: "resume", task_id: t.task_id } },
+            });
+          }
+          if (e.running) push({ kind: "notice", id: nextId++, text: `RUNNING · "${e.running.goal.slice(0, 80)}" · step ${e.running.step}` });
           break;
+        case "task":
+          if (e.event === "interrupted")
+            push({
+              kind: "notice",
+              id: nextId++,
+              text: recoveredText({ task_id: e.task_id ?? "", goal: e.goal ?? "", step: e.step ?? 0, tool: e.tool, recovery_state: e.recovery_state ?? "UNKNOWN" }),
+            });
+          break;
+        case "recovery":
+          if (e.event === "resumed") push({ kind: "notice", id: nextId++, text: "RESUMING interrupted task." });
+          break;
+        case "checkpoint":
+        case "verification":
+        case "stage":
+        case "history":
+        case "task_events":
+        case "verifications":
+          break; // observed by the journal; nothing to draw yet
         case "brains": {
           const { type: _t, ...rest } = e;
           void _t;
@@ -774,6 +807,15 @@ export default function Syrax() {
                   return (
                     <div key={e.id} className="entry entry-notice">
                       {e.text}
+                      {e.action && (
+                        <button
+                          type="button"
+                          className="hud-btn entry-action"
+                          onClick={() => clientRef.current?.send(e.action!.msg)}
+                        >
+                          {e.action.label}
+                        </button>
+                      )}
                     </div>
                   );
                 case "error":
