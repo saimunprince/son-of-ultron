@@ -88,6 +88,6 @@ def test_agent_prompt_includes_memory_and_history_is_saved(tmp_path, monkeypatch
         while ws.receive_json().get("state") != "idle":
             pass
     assert "favourite colour is crimson" in seen[0]
+    # the exchange is read back from the journal (source of truth); history.jsonl is no longer written
     assert m.recent()[-1] == {**m.recent()[-1], "user": "what is my favourite colour?", "reply": "Crimson. Obviously."}
-    lines = (tmp_path / "history.jsonl").read_text().strip().splitlines()
-    assert json.loads(lines[-1])["reply"] == "Crimson. Obviously."
+    assert not (tmp_path / "history.jsonl").exists()

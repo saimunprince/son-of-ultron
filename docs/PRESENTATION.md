@@ -64,9 +64,18 @@ and hidden from the TODAY replay. `hello` carries the current plan so a
 reconnecting browser sees the same stage; `presentation` over WebSocket
 returns it on demand.
 
+## Learning from the human
+
+Every stage element has a dismiss button. A dismissal is journaled as
+`presentation.feedback {kind, after_s}`. The engine derives per-kind
+preferences from that evidence (`presentation_stats`): once a kind has at
+least 5 human dismissals with a median under 5 seconds it is "quiet" — engine
+elements of that kind get a 20-second ttl and ambient attention. SYRAX's own
+`present` choices are never overridden, and kinds without evidence are
+untouched. The self-model reports the stats under `performance.presentation`.
+
 ## Limits
 
-- Rules are hand-written state→decision mappings; the engine does not learn
-  which presentations work (no measurement of attention or usefulness yet).
+- Rules are hand-written state→decision mappings; learning is limited to the dismissal signal above.
 - Only the `stage` position is rendered; `overlay` is accepted but drawn in the stage.
 - No 3D scenes, maps, charts or video in the vocabulary yet.

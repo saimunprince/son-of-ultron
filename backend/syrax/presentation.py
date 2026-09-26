@@ -43,6 +43,11 @@ def _clip(text: Any, n: int = MAX_TEXT) -> str:
     return s if len(s) <= n else s[:n] + "…"
 
 
+MIN_FEEDBACK = 5          # decisions need evidence: at least this many human dismissals of a kind
+QUICK_DISMISS_S = 5.0     # a median dismissal faster than this means "not wanted"
+SHORT_TTL_S = 20.0
+
+
 class PresentationEngine:
     def __init__(self, journal: Journal, emit: Optional[Emit] = None):
         self.journal = journal
@@ -50,6 +55,37 @@ class PresentationEngine:
         self.active: Dict[str, dict] = {}
         self._seq = itertools.count(1)
         self._by_slot: Dict[str, str] = {}  # slot → presentation_id (one element per slot)
+        self._prefs_cache: Optional[Dict[str, dict]] = None
+        self._prefs_ts = 0.0
+
+    # ——— learning from the human: what gets dismissed fast is not wanted ———
+
+    def preferences(self, refresh: bool = False) -> Dict[str, dict]:
+        """Per kind, derived from journaled feedback: {"quiet": bool, "median_dismiss_after_s", "human_dismissed", "shown"}.
+        A kind is "quiet" when at least MIN_FEEDBACK humans dismissals have a median under QUICK_DISMISS_S."""
+        if not refresh and self._prefs_cache is not None and time.time() - self._prefs_ts < 60:
+            return self._prefs_cache
+        try:
+            stats = self.journal.presentation_stats()
+        except Exception:  # no journal, no evidence, no preference change
+            return self._prefs_cache or {}
+        prefs = {}
+        for kind, st in stats.items():
+            quiet = st["human_dismissed"] >= MIN_FEEDBACK and st["median_dismiss_after_s"] is not None and st["median_dismiss_after_s"] < QUICK_DISMISS_S
+            prefs[kind] = {"quiet": quiet, **st}
+        self._prefs_cache, self._prefs_ts = prefs, time.time()
+        return prefs
+
+    async def feedback(self, pid: str, action: str = "dismiss") -> bool:
+        el = self.active.get(pid)
+        if el is None:
+            return False
+        after_s = round(time.time() - el["created"], 2)
+        await self._journal("presentation.feedback", {"presentation_id": pid, "kind": el["kind"], "action": action, "after_s": after_s, "source": el.get("source")}, el.get("task_id"))
+        self._prefs_cache = None
+        if action == "dismiss":
+            await self.dismiss(pid, "dismissed by human")
+        return True
 
     # ——— element lifecycle ———
 
@@ -64,6 +100,11 @@ class PresentationEngine:
             raise ValueError(f"unknown kind {kind!r}; one of {', '.join(KINDS)}")
         if attention not in ATTENTION or position not in POSITIONS:
             raise ValueError("bad attention or position")
+        if source == "engine":
+            pref = self.preferences().get(kind)
+            if pref and pref["quiet"]:  # evidence says humans do not want this kind lingering
+                ttl_s = min(ttl_s or SHORT_TTL_S, SHORT_TTL_S)
+                attention = "ambient" if attention != "focus" else attention
         replaces = self._by_slot.get(slot) if slot else None
         pid = self._new_id()
         element = {

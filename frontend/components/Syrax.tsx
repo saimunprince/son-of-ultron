@@ -304,7 +304,7 @@ export default function Syrax() {
             void _t;
             void _e;
             setStage((prev) => [...prev.filter((x) => x.presentation_id !== el.presentation_id && x.presentation_id !== el.replaces), el as PresentationElement]);
-          } else {
+          } else if (e.event === "dismissed") {
             const gone = e.presentation_id;
             setStage((prev) => prev.filter((x) => x.presentation_id !== gone));
           }
@@ -931,7 +931,12 @@ export default function Syrax() {
             {replayEvents === null ? <div className="entry entry-notice">Reading the journal…</div> : <ReplayView events={replayEvents} />}
           </div>
         )}
-        {consoleOpen && consoleTab === "live" && <Stage elements={[...stage].sort((a, b) => b.priority - a.priority || a.created - b.created)} />}
+        {consoleOpen && consoleTab === "live" && (
+          <Stage
+            elements={[...stage].sort((a, b) => b.priority - a.priority || a.created - b.created)}
+            onDismiss={(id) => clientRef.current?.send({ type: "presentation_feedback", presentation_id: id, action: "dismiss" })}
+          />
+        )}
         {consoleOpen && consoleTab === "live" && (
           <div className="console-feed" ref={feedRef}>
             {entries.length === 0 && (

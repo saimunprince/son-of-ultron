@@ -6,7 +6,7 @@ import type { PresentationElement } from "@/lib/syraxClient";
 /** The stage draws whatever the presentation engine decided to show.
  *  It never decides anything itself: elements arrive with kind, attention,
  *  ttl and dismissal already chosen by SYRAX. Empty plan → nothing rendered. */
-export default function Stage({ elements }: { elements: PresentationElement[] }) {
+export default function Stage({ elements, onDismiss }: { elements: PresentationElement[]; onDismiss?: (id: string) => void }) {
   const [, tick] = useState(0);
   // client-side expiry so a stale element disappears even if the server is quiet
   useEffect(() => {
@@ -25,6 +25,11 @@ export default function Stage({ elements }: { elements: PresentationElement[] })
             <span className="tag">{e.kind.toUpperCase()}</span>
             {e.purpose}
             {e.source === "model" && <span className="stage-src">· chosen by SYRAX</span>}
+            {onDismiss && (
+              <button type="button" className="stage-x" aria-label="Dismiss" title="Dismiss (SYRAX learns what you close quickly)" onClick={() => onDismiss(e.presentation_id)}>
+                ×
+              </button>
+            )}
           </header>
           <Body el={e} />
         </section>

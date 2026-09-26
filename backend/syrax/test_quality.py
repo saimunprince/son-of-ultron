@@ -48,3 +48,26 @@ def test_quality_runs_table_and_report(tmp_path):
     text = format_report(row2)
     assert text.startswith("QUALITY REGRESSION · 30.0% pass (1/2) · vs #1 -20.0 pp · brain pollinations")
     assert "FAIL python" in text and "✕ final matches 6765: 6766" in text
+
+
+def test_recent_exchanges_come_from_the_journal_and_history_file_is_fallback(tmp_path, monkeypatch):
+    import syrax.journal as journal_mod
+    from syrax.memory import MemoryStore
+
+    m = MemoryStore(tmp_path / "memory.json", tmp_path / "history.jsonl")
+    m.add_exchange("old question", "old answer")
+    j = Journal(tmp_path / "j.db")
+    monkeypatch.setattr(journal_mod, "_journal", j)
+    assert m.recent()[-1]["user"] == "old question"  # journal empty → legacy file
+    t = j.start_task_sync("what is my colour?")
+    j.record_sync("final", {"text": "Crimson."}, task_id=t)
+    j.record_sync("task.completed", {"status": "SUCCESS"}, task_id=t)
+    a = j.start_task_sync("autonomous thing", kind="autonomous")
+    j.record_sync("final", {"text": "done"}, task_id=a)
+    j.record_sync("task.completed", {"status": "SUCCESS"}, task_id=a)
+    f = j.start_task_sync("failed one")
+    j.record_sync("task.failed", {"error": "x"}, task_id=f)
+    rec = m.recent()
+    assert [r["user"] for r in rec] == ["what is my colour?"] and rec[0]["reply"] == "Crimson."
+    assert "what is my colour?" in m.prompt_block() and "old question" not in m.prompt_block()
+    assert j.recent_exchanges(1)[0]["user"] == "what is my colour?"

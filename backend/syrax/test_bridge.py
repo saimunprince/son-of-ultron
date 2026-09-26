@@ -932,3 +932,37 @@ def test_quality_suite_judges_outcomes_and_detects_regression(script, tmp_path):
     assert judge(get_journal(), o, None)[0] == "DONE"
     assert get_journal().recent_events()[-1]["type"] == "quality.completed"
     assert core.selfmodel.performance()["last_quality"]["pass_rate"] == 100.0
+
+
+# ——— brain-preferred quality runs and journal-backed history ———
+
+
+def test_quality_run_with_brain_and_history_from_journal(script, tmp_path):
+    import asyncio as _a
+    import pytest as _pt
+    from syrax.journal import JournalError
+    from syrax.memory import get_memory
+    from syrax.quality import _cases
+
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+    core = core_mod.get_core()
+    core.quality.ws = tmp_path / "ws"
+    subset = [c for c in _cases(tmp_path / "ws") if c["id"] in ("arith", "restraint")]
+    router = core.agent.llm
+    with _pt.raises(JournalError, match="not an enabled"):
+        _a.run(core.quality.run(cases=subset, brain="gemini"))  # no key → not enabled
+    script.queue = [reply("391"), reply("ready"), reply("wrong"), reply("ready")]
+    ra = _a.run(core.quality.run(cases=subset, brain="pollinations"))
+    rb = _a.run(core.quality.run(cases=subset, brain="ollama"))
+    assert ra["brain"] == "pollinations" and rb["brain"] == "ollama" and router.preferred is None
+    assert ra["pass_rate"] == 100.0 and rb["pass_rate"] == 50.0
+    # eval tasks never reach the conversation history; a real conversation does, from the journal
+    assert all("17*23" not in r["user"] for r in get_memory().recent(50))
+    script.queue = [reply("Teal.")]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "my colour?"})
+        drain_until_idle(ws)
+    last = get_memory().recent(1)[0]
+    assert last["user"] == "my colour?" and last["reply"] == "Teal."

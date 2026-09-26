@@ -384,6 +384,7 @@ export type ServerEvent =
   | ({ type: "push"; event: "started" | "completed" | "failed"; ok?: boolean; branch?: string; output?: string } & Journaled)
   | ({ type: "presentation"; event: "created" } & PresentationElement & Journaled)
   | ({ type: "presentation"; event: "dismissed"; presentation_id: string; reason: string; kind: PresentationKind } & Journaled)
+  | ({ type: "presentation"; event: "feedback"; presentation_id: string; kind: PresentationKind; action: string; after_s: number } & Journaled)
   | ({ type: "presentation_plan" } & PresentationPlan)
   | { type: "quality_runs"; runs: QualityRun[] }
   | ({ type: "quality"; event: "started" | "completed"; cases?: string[]; quality_id?: number; status?: QualityRun["status"]; pass_rate?: number; delta?: number | null; failed?: string[]; brain?: string | null } & Journaled)
@@ -440,7 +441,9 @@ export type ClientMessage =
   | { type: "skills" }
   | { type: "presentation" }
   | { type: "benchmarks"; limit?: number }
-  | { type: "quality_run"; only?: string[] }
+  | { type: "quality_run"; only?: string[]; brain?: string }
+  | { type: "compare_brains"; a: string; b: string; only?: string[] }
+  | { type: "presentation_feedback"; presentation_id: string; action?: "dismiss" | "expand" }
   | { type: "quality_runs"; limit?: number }
   | { type: "experiments"; limit?: number }
   | { type: "brains_get" }

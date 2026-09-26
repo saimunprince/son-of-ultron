@@ -130,6 +130,16 @@ class MemoryStore:
             return []
 
     def recent(self, n: int = PROMPT_EXCHANGES) -> List[dict]:
+        """Recent conversations from the durable journal (single source of truth);
+        the legacy history.jsonl is only read when the journal has none yet."""
+        try:
+            from syrax.journal import get_journal
+
+            rows = get_journal().recent_exchanges(n)
+        except Exception:
+            rows = []
+        if rows:
+            return rows
         out = []
         for ln in self._history_lines()[-n:]:
             try:

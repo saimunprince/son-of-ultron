@@ -264,6 +264,7 @@ class SelfModel:
                 if last else None
             ),
             "benchmarks": self.journal.count("benchmarks"),
+            "presentation": self.journal.presentation_stats(),
             "last_quality": (
                 {"id": q[0]["id"], "ts": q[0]["ts"], "status": q[0]["status"], "pass_rate": q[0]["pass_rate"], "delta": q[0]["delta"],
                  "brain": q[0]["brain"], "failed": [r["id"] for r in q[0]["results"] if not r.get("ok")]}

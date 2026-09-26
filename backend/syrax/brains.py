@@ -356,6 +356,7 @@ class BrainRouter(LLM):
         self.total_completion_tokens = 0
         self.max_input_tokens = None
         self.active: Optional[str] = None
+        self.preferred: Optional[str] = None  # set temporarily (e.g. brain comparison) to try this provider first
 
     # ——— introspection for the UI ———
     def describe(self) -> dict:
@@ -492,6 +493,8 @@ class BrainRouter(LLM):
         **kwargs,
     ):
         chain = [p for p in self.store.order if self.store.enabled(p)]
+        if self.preferred in chain:
+            chain = [self.preferred] + [p for p in chain if p != self.preferred]
         if not chain:
             raise BrainError("No brain enabled. Open BRAIN in the UI and add a key.")
 

@@ -171,6 +171,7 @@ evidence (`test_verify.py`).
   images are not stored).
 - One agent, one running task at a time; `PENDING` queueing exists in the
   journal but the core does not schedule queued tasks.
-- `history.jsonl` is still written for prompt injection; it is now derivable
-  from `tasks` and can be retired later.
+- Conversation history for the prompt comes from `tasks` (kind conversation,
+  SUCCESS/PARTIAL); `history.jsonl` is no longer written and is read only as a
+  fallback when the journal has no conversations yet.
 - The frontend only shows recovered/running notices; no LIVE/HISTORY/WHY view yet.

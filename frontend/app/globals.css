@@ -1800,3 +1800,26 @@ body {
   color: var(--text-bright);
   border-bottom: 1px solid rgb(var(--line-rgb) / 0.3);
 }
+
+.stage-el header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stage-x {
+  margin-left: auto;
+  padding: 0 6px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: none;
+  border: 1px solid rgb(var(--line-rgb) / 0.2);
+  cursor: pointer;
+}
+
+.stage-x:hover {
+  color: var(--accent-hot);
+  border-color: rgb(var(--accent-rgb) / 0.6);
+}

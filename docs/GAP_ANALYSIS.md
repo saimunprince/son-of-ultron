@@ -29,7 +29,7 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 | 24/7 cycle + resource awareness (§16, §19) | EXISTS (operations commit) | `syrax/resources.py` gate (CPU, RAM, disk, battery, quiet hours), bounded loop, idle maintenance with 30-day retention; no GPU/network/thermal awareness |
 | Presentation engine / visual runtime (§22–30) | EXISTS (presentation commit) | `syrax/presentation.py` decides elements (kind, attention, ttl, slot, dismissal) from real events + `present` tool; `Stage.tsx` draws the plan, nothing when empty. Self-improving presentation (§30) not yet |
 | LIVE / HISTORY / WHY observer (§31–35) | EXISTS (observer commit) | console tabs LIVE / HISTORY / TODAY; WHY view per task from `task_detail` (events, checkpoints, objective, lesson); TODAY replay generated from `events_between` — no synthesised lines |
-| Memory layers (§37) | NEEDS REFACTOR | flat `memory.json`/`history.jsonl`; history now derivable from `tasks` |
+| Memory layers (§37) | PARTIAL | facts in `memory.json`; conversation history from the journal (`history.jsonl` retired); knowledge/skills/experiments in their own tables |
 | Model interface (§20) | EXISTS | `BrainRouter` already abstracts providers |
 
 ## Roadmap mapped to files (next phases)
@@ -47,6 +47,6 @@ Every row names the code that backs the verdict; nothing is claimed from docs.
 ## What remains beyond the twelve phases
 
 - ~~A task-quality benchmark~~ — `syrax/quality.py` (10 machine-checked tasks, on demand).
-- Presentation engine self-improvement (§30): no measurement of whether a presentation helped.
+- ~~Presentation engine self-improvement~~ — first signal: human dismissals adjust ttl/attention per kind.
 - ~~Experiments over code versions~~ — `syrax/versions.py` (`compare_versions`).
-- Model research and fine-tuning (§20, §51): the router abstracts providers; nothing trains anything.
+- Model research and fine-tuning (§20, §51): the router abstracts providers and `compare_brains` measures them; nothing trains anything.

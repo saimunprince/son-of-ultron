@@ -10,7 +10,8 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     objectives {limit?} | objective_add {goal, reason?, priority?} |
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
                     skills | presentation | benchmarks {limit?} | experiments {limit?} |
-                    quality_run {only?} | quality_runs {limit?} |
+                    quality_run {only?, brain?} | quality_runs {limit?} | compare_brains {a, b, only?} |
+                    presentation_feedback {presentation_id, action?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
                     brain_models {id, api_key?} | brain_test {id}
@@ -266,7 +267,18 @@ class Session:
                 await self.send({"type": "notice", "text": "Already executing. Stop it first."})
                 return
             only = msg.get("only") if isinstance(msg.get("only"), list) else None
-            self.spawn(self._quality(only))
+            self.spawn(self._quality(only, str(msg.get("brain") or "") or None))
+        elif kind == "compare_brains":
+            if self.core.busy:
+                await self.send({"type": "notice", "text": "Already executing. Stop it first."})
+                return
+            a, b = str(msg.get("a") or ""), str(msg.get("b") or "")
+            only = msg.get("only") if isinstance(msg.get("only"), list) else None
+            self.spawn(self._compare_brains(a, b, only))
+        elif kind == "presentation_feedback":
+            pid = str(msg.get("presentation_id") or "")
+            if not await self.core.presentation.feedback(pid, str(msg.get("action") or "dismiss")):
+                await self.send({"type": "notice", "text": "That element is no longer shown."})
         elif kind == "quality_runs":
             await self.send({"type": "quality_runs", "runs": await asyncio.to_thread(journal.quality_runs, _limit(msg.get("limit"), 10))})
         elif kind == "benchmarks":
@@ -365,11 +377,21 @@ class Session:
         else:
             await self.send({"type": "error", "message": f"Unknown message: {kind}"})
 
-    async def _quality(self, only) -> None:
+    async def _compare_brains(self, a: str, b: str, only) -> None:
+        from syrax.experiments import render as render_exp
+
+        try:
+            row = await self.core.quality.compare_brains(a, b, only=only)
+        except JournalError as e:
+            await self.send({"type": "notice", "text": str(e)})
+            return
+        await self.core.broadcast({"type": "notice", "text": render_exp(row)})
+
+    async def _quality(self, only, brain=None) -> None:
         from syrax.quality import format_report
 
         try:
-            row = await self.core.quality.run(only=only)
+            row = await self.core.quality.run(only=only, brain=brain)
         except JournalError as e:
             await self.send({"type": "notice", "text": str(e)})
             return

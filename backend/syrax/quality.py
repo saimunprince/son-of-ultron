@@ -127,9 +127,42 @@ class QualityRunner:
         return {"id": case["id"], "ok": all(c["ok"] for c in checks), "task_id": task_id, "status": task.get("status"),
                 "steps": steps, "ms": int((time.time() - started) * 1000), "checks": checks, "final": (task.get("result") or "")[:300]}
 
-    async def run(self, only: Optional[List[str]] = None, cases: Optional[List[dict]] = None) -> dict:
+    async def run(self, only: Optional[List[str]] = None, cases: Optional[List[dict]] = None, brain: Optional[str] = None) -> dict:
         if self.core.busy:
             raise JournalError("a task is running; the quality run needs an idle core")
+        router = getattr(self.core.agent, "llm", None) if self.core.agent is not None else None
+        if brain:
+            if router is None or not hasattr(router, "store"):
+                raise JournalError("no brain router available")
+            if brain not in router.store.order or not router.store.enabled(brain):
+                raise JournalError(f"brain {brain!r} is not an enabled provider")
+            router.preferred = brain
+        try:
+            return await self._run(only, cases, brain)
+        finally:
+            if brain and router is not None:
+                router.preferred = None
+
+    async def compare_brains(self, a: str, b: str, only: Optional[List[str]] = None) -> dict:
+        """Run the suite once per brain and store an experiment judged on pass rate."""
+        ra = await self.run(only=only, brain=a)
+        rb = await self.run(only=only, brain=b)
+        pa, pb = ra["pass_rate"], rb["pass_rate"]
+        if abs(pa - pb) < 10:
+            verdict, conclusion = "NO_DIFFERENCE", f"pass rates within 10 pp ({a} {pa}%, {b} {pb}%)"
+        elif pb > pa:
+            verdict, conclusion = "CANDIDATE_BETTER", f"{b} passed {pb}% vs {a} {pa}%"
+        else:
+            verdict, conclusion = "BASELINE_BETTER", f"{a} passed {pa}% vs {b} {pb}%"
+        return await self.journal.run(
+            self.journal.add_experiment_sync, f"brain {b} does tasks at least as well as {a}",
+            {"tool": "quality_run", "args": {"brain": a}, "value": pa, "successes": int(pa > 0), "repeats": 1, "samples": [pa], "quality_id": ra["id"]},
+            {"tool": "quality_run", "args": {"brain": b}, "value": pb, "successes": int(pb > 0), "repeats": 1, "samples": [pb], "quality_id": rb["id"]},
+            "pass_rate", {"baseline": pa, "candidate": pb, "unit": "pass_rate", "repeats": 1}, conclusion, verdict,
+            "choose the brain", {"CANDIDATE_BETTER": f"prefer {b}", "BASELINE_BETTER": f"keep {a}", "NO_DIFFERENCE": "either brain; prefer the cheaper", "INCONCLUSIVE": "rerun"}[verdict], None,
+        )
+
+    async def _run(self, only: Optional[List[str]], cases: Optional[List[dict]], brain: Optional[str]) -> dict:
         self.ws.mkdir(parents=True, exist_ok=True)
         env = self.env()
         all_cases = cases if cases is not None else _cases(self.ws)
@@ -148,11 +181,11 @@ class QualityRunner:
             delta = round(rate - prev[0]["pass_rate"], 1)
             status = "REGRESSION" if delta < -REGRESSION_PP else "PASS"
             compared_to = prev[0]["id"]
-        brain = None
-        try:
-            brain = self.core.agent.llm.active if self.core.agent is not None else None
-        except Exception:
-            brain = None
+        if not brain:
+            try:
+                brain = self.core.agent.llm.active if self.core.agent is not None else None
+            except Exception:
+                brain = None
         row = await self.journal.run(
             self.journal.add_quality_run_sync, results, rate, status, compared_to, delta, brain,
         )

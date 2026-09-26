@@ -31,7 +31,6 @@ from syrax.brains import get_router
 from syrax.devloop import REPO_ROOT, DevLoop, ReleaseTool
 from syrax.experiments import ExperimentEngine, ExperimentTool
 from syrax.journal import Event, Journal, JournalError, get_journal
-from syrax.memory import get_memory
 from syrax.presentation import PresentTool, PresentationEngine
 from syrax.research import KnowTool, LearnTool, Researcher, ResearchTool
 from syrax.selfmodel import SelfInspectTool, SelfModel
@@ -260,11 +259,8 @@ class Core:
             await self.journal.record(
                 "task.completed", {"status": status, "result": reply}, task_id=self.current.task_id
             )
-            if self.current.kind == "conversation":  # autonomous work is not a conversation
-                try:
-                    get_memory().add_exchange(said or request, reply)
-                except Exception as e:
-                    logger.warning(f"could not save history: {e}")
+            # conversation history now comes from the journal (tasks of kind
+            # "conversation"); history.jsonl is no longer written.
         except asyncio.CancelledError:
             self.agent.repair_memory(aborted=True)
             await self._mark("task.cancelled", {"error": "aborted by human"})

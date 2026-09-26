@@ -275,7 +275,9 @@ repeated, and computes the verdict from the numbers. Regressions, repeatedly
 blocked strategies and weakly supported knowledge become objectives about
 SYRAX itself. `quality_run` over WebSocket runs ten fixed tasks through the
 real brain and checks the outcomes by machine (pass rate, compared run to run).
-`compare_versions` measures two commits against each other in clean worktrees.
+`compare_versions` measures two commits against each other in clean worktrees;
+`compare_brains {a, b}` runs the quality suite once per brain. Closing a stage
+element teaches the presentation engine which kinds you do not want lingering.
 Details: `docs/EXPERIMENTS.md`.
 
 ## Self-model

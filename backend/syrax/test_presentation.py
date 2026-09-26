@@ -117,3 +117,29 @@ def test_present_tool_validates_and_clears(tmp_path):
     out = asyncio.run(tool.execute(kind="none"))
     assert "cleared (1" in out.output and engine.plan()["minimal"]
     assert asyncio.run(tool.execute(kind="card", text="x", attention="loud")).error
+
+
+def test_human_feedback_teaches_the_engine_to_be_quiet(tmp_path):
+    j, engine, t, _ = setup(tmp_path)
+
+    async def go():
+        assert not await engine.feedback("nope")
+        for i in range(5):
+            el = await engine.show("terminal", "output", {"text": "x"}, ttl_s=90, slot="tool")
+            el["created"] -= 1  # dismissed one second after being shown
+            assert await engine.feedback(el["presentation_id"])
+            assert el["presentation_id"] not in engine.active
+        prefs = engine.preferences(refresh=True)
+        assert prefs["terminal"]["quiet"] and prefs["terminal"]["human_dismissed"] == 5 and prefs["terminal"]["median_dismiss_after_s"] < 5
+        quiet = await engine.show("terminal", "output", {"text": "y"}, ttl_s=90, slot="tool")
+        assert quiet["ttl_s"] == 20.0 and quiet["attention"] == "ambient"  # evidence changed the decision
+        chosen = await engine.show("terminal", "output", {"text": "z"}, ttl_s=90, slot="model", source="model")
+        assert chosen["ttl_s"] == 90  # SYRAX's explicit choices are not overridden
+        card = await engine.show("card", "reply", {"text": "r"}, ttl_s=90, slot="reply")
+        assert card["ttl_s"] == 90  # only the kind with evidence changes
+
+    asyncio.run(go())
+    fb = [e for e in j.recent_events(500) if e["type"] == "presentation.feedback"]
+    assert len(fb) == 5 and all(e["payload"]["kind"] == "terminal" and e["payload"]["after_s"] >= 1 for e in fb)
+    stats = j.presentation_stats()
+    assert stats["terminal"]["shown"] == 7 and stats["terminal"]["human_dismissed"] == 5

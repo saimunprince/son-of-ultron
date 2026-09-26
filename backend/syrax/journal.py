@@ -1358,6 +1358,47 @@ class Journal:
             "objective": self._objective_dict(obj) if obj else None,
         }
 
+    def recent_exchanges(self, n: int = 6) -> List[dict]:
+        """The last finished conversations (goal + reply), oldest first: the
+        journal is the source of truth that history.jsonl used to duplicate."""
+        n = max(1, min(int(n), 50))
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT goal, result, updated FROM tasks WHERE kind='conversation' AND status IN ('SUCCESS','PARTIAL') "
+                "AND result IS NOT NULL AND result<>'' ORDER BY created DESC LIMIT ?", (n,),
+            ).fetchall()
+        return [{"ts": r["updated"], "user": r["goal"], "reply": r["result"]} for r in reversed(rows)]
+
+    def presentation_stats(self, since: Optional[float] = None) -> Dict[str, dict]:
+        """Per kind: how many elements were shown, how many a human dismissed and how fast,
+        how many expired or were replaced. Evidence for the presentation engine's preferences."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT type, payload FROM events WHERE type IN ('presentation.created','presentation.feedback','presentation.dismissed') "
+                + ("AND ts>=? " if since else "") + "ORDER BY id",
+                ((since,) if since else ()),
+            ).fetchall()
+        out: Dict[str, dict] = {}
+        for r in rows:
+            p = _loads(r["payload"], {})
+            kind = p.get("kind") or "?"
+            st = out.setdefault(kind, {"shown": 0, "human_dismissed": 0, "dismiss_after_s": [], "expired": 0, "task_ended": 0})
+            if r["type"] == "presentation.created":
+                st["shown"] += 1
+            elif r["type"] == "presentation.feedback" and p.get("action") == "dismiss":
+                st["human_dismissed"] += 1
+                if isinstance(p.get("after_s"), (int, float)):
+                    st["dismiss_after_s"].append(float(p["after_s"]))
+            elif r["type"] == "presentation.dismissed":
+                if p.get("reason") == "expired":
+                    st["expired"] += 1
+                elif p.get("reason") == "task ended":
+                    st["task_ended"] += 1
+        for st in out.values():
+            xs = sorted(st.pop("dismiss_after_s"))
+            st["median_dismiss_after_s"] = (xs[len(xs) // 2] if xs else None)
+        return out
+
     def recent_events(self, limit: int = 100) -> List[dict]:
         limit = max(1, min(int(limit), 5000))
         with self._lock:
