@@ -174,6 +174,29 @@ Without WebGL the UI falls back to a CSS orb and keeps working.
 - MCP connections (Browser Use) stay alive between tasks.
 - Aborting a task repairs agent memory so the next task does not fail.
 
+## Durable execution (journal, recovery, resume)
+
+Every task is recorded in a SQLite journal (`backend/config/journal.db`, WAL,
+`synchronous=FULL`): task rows with an enforced status lifecycle, every
+think/tool/ask/final event, a semantic checkpoint after each tool step (with
+the agent's working context), and verification records. The task runs in
+`backend/syrax/core.py`, not in the browser session: close the tab and SYRAX
+keeps working; reconnect and the UI replays what happened so far.
+
+On start, tasks left running by a dead process are checked against reality
+(file edits are verified on disk; `python_execute`/browser side effects are
+`UNCERTAIN`) and marked `INTERRUPTED` with a recovery state. The UI shows a
+`RECOVERED …` notice with a RESUME button; `SYRAX_AUTO_RESUME=1` resumes
+`RESUMABLE` tasks automatically at boot (never `UNCERTAIN` ones).
+
+A task can only become `SUCCESS` when a non-empty final reply was journaled.
+Details, schema and limits: `docs/EXECUTION_MODEL.md`. Component map:
+`docs/SYSTEM_MAP.md`. Gap analysis and roadmap: `docs/GAP_ANALYSIS.md`.
+
+WebSocket additions: `history {limit}`, `task_events {task_id}`,
+`verifications {limit}`, `resume {task_id}`; `hello` now carries
+`interrupted`, `running` and `recent`.
+
 ## Configuration
 
 | Env var | Default |
@@ -184,17 +207,25 @@ Without WebGL the UI falls back to a CSS orb and keeps working.
 | `OPENMANUS_DISABLE_BROWSER_USE` | unset (set `1` to skip the browser MCP) |
 | `SYRAX_OLLAMA_URL` | `http://127.0.0.1:11434/v1` |
 | `SYRAX_BRAINS_FILE` | `backend/config/brains.json` |
+| `SYRAX_JOURNAL_FILE` | `backend/config/journal.db` |
+| `SYRAX_AUTO_RESUME` | `0` (set `1` to resume RESUMABLE tasks at boot) |
 | `NEXT_PUBLIC_SYRAX_WS` | `ws://127.0.0.1:8765/ws` |
 
 The agent executes code on this machine. The server binds to localhost only and
 rejects WebSocket connections from other origins. Keep it that way.
 
-## Tests
+## Tests and the release gate
 
 ```bash
-cd backend && .venv/bin/python -m pytest syrax/ -q
-cd frontend && npm test
+cd backend && .venv/bin/python -m pytest syrax/ -q     # includes SIGKILL crash/recovery tests
+cd frontend && npm test && npx tsc --noEmit && npx eslint .
+cd backend && .venv/bin/python -m syrax.verify          # all gates; GREEN or BLOCKED with evidence
 ```
+
+`syrax.verify` runs py_compile, pytest, tsc, eslint, node tests, an isolated
+`next build` (never touches the live `.next`) and a diff scan for secrets and
+debug leftovers, and stores the result in the journal. Nothing is pushed
+unless it reports GREEN.
 
 ## Troubleshooting
 

@@ -1,0 +1,459 @@
+{
+  "name": "SYRAX",
+  "generated": "2026-09-26",
+  "source": "hand-audited from source code; regenerate when components change",
+  "components": [
+    {
+      "component": "Frontend HUD",
+      "purpose": "ULTRON orb UI: Three.js orb, operations log feed, voice pipeline, brain panel, boot sequence.",
+      "dependencies": [
+        "next 16",
+        "react 19",
+        "three",
+        "@mediapipe/tasks-vision",
+        "lib/syraxClient.ts"
+      ],
+      "inputs": [
+        "ServerEvent JSON over WebSocket",
+        "/stt and /tts HTTP",
+        "microphone, camera"
+      ],
+      "outputs": [
+        "ClientMessage JSON over WebSocket",
+        "speech (edge-tts audio or browser voice)"
+      ],
+      "state": "React useState in components/Syrax.tsx (entries[] capped at 300, agent state, brains, voice flags); localStorage syrax.* for preferences",
+      "persistence": "none (observer only)",
+      "capabilities": [
+        "render journaled events as feed entries",
+        "RECOVERED/RUNNING notices with RESUME action",
+        "hands-free voice, wake word, gestures"
+      ],
+      "limitations": [
+        "hardcoded HUD regions; no dynamic presentation engine",
+        "history/task_events/verifications replies are received but not drawn"
+      ],
+      "code": [
+        "frontend/components/Syrax.tsx",
+        "frontend/lib/syraxClient.ts",
+        "frontend/lib/*.ts",
+        "frontend/app/globals.css"
+      ],
+      "tests": [
+        "frontend/lib/wake.test.ts (node --test)",
+        "npx tsc --noEmit",
+        "npx eslint ."
+      ],
+      "failure_modes": [
+        "WebGL missing → CSS fallback orb",
+        "WS offline → exponential reconnect, agent shown as booting",
+        "TTS 502 → browser voice"
+      ]
+    },
+    {
+      "component": "WebSocket server + Session",
+      "purpose": "FastAPI app: /ws sessions (observers + command routers), /stt, /tts, /voice, /health; lifespan opens the journal, runs recovery, optional auto-resume.",
+      "dependencies": [
+        "fastapi",
+        "uvicorn",
+        "syrax.core",
+        "syrax.journal",
+        "syrax.brains",
+        "syrax.voice"
+      ],
+      "inputs": [
+        "task, answer, stop, reset, ping, history, task_events, verifications, resume, brains_*"
+      ],
+      "outputs": [
+        "hello{tools, interrupted, running, recent}, state, user echo, journaled wire events, history, task_events, verifications, notice, error, brains*"
+      ],
+      "state": "per connection: Session(id, closed, aux tasks); the task itself lives in Core",
+      "persistence": "none directly (delegates to journal)",
+      "capabilities": [
+        "multiple sessions observe the same task",
+        "reconnect replays the running task's events",
+        "origin check on WS and voice routes"
+      ],
+      "limitations": [
+        "no auth beyond Origin allow-list; binds 127.0.0.1"
+      ],
+      "code": [
+        "backend/syrax/server.py"
+      ],
+      "tests": [
+        "backend/syrax/test_bridge.py",
+        "backend/syrax/test_voice.py",
+        "backend/syrax/test_memory.py (last test)"
+      ],
+      "failure_modes": [
+        "bad JSON → error event, session survives",
+        "command exception → error event, session survives",
+        "lifespan shutdown closes journal (reopened lazily)"
+      ]
+    },
+    {
+      "component": "Core",
+      "purpose": "The single SYRAX entity: owns the agent and the running task, routes agent events through the journal, fans wire events to observers, resumes interrupted tasks.",
+      "dependencies": [
+        "syrax.agent",
+        "syrax.journal",
+        "syrax.memory"
+      ],
+      "inputs": [
+        "submit(goal), cancel(), answer(text), reset(), resume(task_id), auto_resume()"
+      ],
+      "outputs": [
+        "journal writes",
+        "broadcast(wire events) to sessions"
+      ],
+      "state": "agent, current Running{task_id, goal, session_id, asyncio.Task, steps[], unjournaled}, last state event",
+      "persistence": "via journal (tasks, events, checkpoints)",
+      "capabilities": [
+        "task continues when all browsers disconnect",
+        "checkpoint after each tool step and at final",
+        "journal write failure → unjournaled flag, no fake success",
+        "auto-resume of RESUMABLE tasks when SYRAX_AUTO_RESUME=1"
+      ],
+      "limitations": [
+        "one task at a time; no queue scheduling",
+        "brain events from a running task are journaled only while current is set"
+      ],
+      "code": [
+        "backend/syrax/core.py"
+      ],
+      "tests": [
+        "backend/syrax/test_bridge.py (journal + core section)"
+      ],
+      "failure_modes": [
+        "LLM error → task.failed + error event",
+        "cancel → task.cancelled + notice",
+        "sqlite error → task stays IN_PROGRESS, marked INTERRUPTED next boot"
+      ]
+    },
+    {
+      "component": "Journal",
+      "purpose": "Durable execution journal: tasks, events, semantic checkpoints, verifications; transition table; crash recovery with reality checks; fan-out to subscribers.",
+      "dependencies": [
+        "stdlib only: sqlite3, json, threading, asyncio, subprocess(git)"
+      ],
+      "inputs": [
+        "start_task, record(type,payload,task_id), checkpoint, record_verification, recover, resume_context, mark_resumed"
+      ],
+      "outputs": [
+        "Event objects (wire()) to subscribers",
+        "queries: task, tasks, events, recent_events, checkpoints, verifications"
+      ],
+      "state": "one sqlite connection guarded by a threading.Lock; boot_id; recovered[]",
+      "persistence": "backend/config/journal.db (WAL, synchronous=FULL, 0600); env SYRAX_JOURNAL_FILE",
+      "capabilities": [
+        "atomic event+state writes",
+        "success requires a final event",
+        "idempotent recovery with dedupe keys",
+        "verify_operation for str_replace_editor create/str_replace/insert",
+        "bounded context storage (200 KB)"
+      ],
+      "limitations": [
+        "no retention/compaction",
+        "only file edits are reality-checked; other tools UNCERTAIN",
+        "PENDING tasks are stored but not scheduled"
+      ],
+      "code": [
+        "backend/syrax/journal.py"
+      ],
+      "tests": [
+        "backend/syrax/test_journal.py (SIGKILL crash matrix, transition table, recovery, resume, fan-out)"
+      ],
+      "failure_modes": [
+        "JournalError on invalid transition/unknown task/terminal task → rolled back",
+        "sqlite3.Error propagates to caller (core handles)",
+        "crash inside recovery → whole txn lost, redone next boot"
+      ]
+    },
+    {
+      "component": "SyraxAgent",
+      "purpose": "Manus subclass that streams think/tool/result events through emit, checkpoints after each tool step, exports/imports working context for resume.",
+      "dependencies": [
+        "app.agent.manus.Manus",
+        "syrax.brains.get_router",
+        "syrax.tools",
+        "syrax.memory",
+        "syrax.desktop",
+        "syrax.browser"
+      ],
+      "inputs": [
+        "run(request)",
+        "checkpoint hook (set by Core)",
+        "ask_tool.answer(text)"
+      ],
+      "outputs": [
+        "emit: state, think, tool_start{step}, tool_result{step,image?}, notice"
+      ],
+      "state": "OpenManus Memory (messages, trimmed to ~120), current_step, step_limit_hit, last_reply",
+      "persistence": "none (context is snapshotted by the journal via export_context)",
+      "capabilities": [
+        "chat mode ends turn without tools",
+        "MCP browser tools stay connected between tasks",
+        "repair_memory after abort/interruption"
+      ],
+      "limitations": [
+        "max_steps 20",
+        "tool success is a heuristic on the result text (_succeeded)"
+      ],
+      "code": [
+        "backend/syrax/agent.py"
+      ],
+      "tests": [
+        "backend/syrax/test_bridge.py"
+      ],
+      "failure_modes": [
+        "step limit → step_limit_hit → task PARTIAL",
+        "browser unavailable → tool error string"
+      ]
+    },
+    {
+      "component": "BrainRouter",
+      "purpose": "LLM-compatible router over 10 providers with cooldown-based failover; emits brain failover/answered events.",
+      "dependencies": [
+        "openai AsyncOpenAI",
+        "app.llm.LLM (format_messages)"
+      ],
+      "inputs": [
+        "ask_tool(messages, tools)"
+      ],
+      "outputs": [
+        "ChatCompletionMessage",
+        "brain events via listeners"
+      ],
+      "state": "health/cooldown per provider (process-global), active provider",
+      "persistence": "backend/config/brains.json (keys, models, order; 0600)",
+      "capabilities": [
+        "free/no-key defaults (pollinations, ollama)",
+        "retry on 5xx/empty/OOM step-down",
+        "model listing and test per provider"
+      ],
+      "limitations": [
+        "only ask_tool is implemented (ask/ask_with_images are not)",
+        "listeners are global: all sessions see brain events"
+      ],
+      "code": [
+        "backend/syrax/brains.py"
+      ],
+      "tests": [
+        "backend/syrax/test_brains.py (mock OpenAI server)"
+      ],
+      "failure_modes": [
+        "all providers failing → BrainError → task.failed",
+        "401/403 → 1h cooldown"
+      ]
+    },
+    {
+      "component": "MemoryStore",
+      "purpose": "Long-term facts and recent exchanges injected into every system prompt; remember/recall/forget tools.",
+      "dependencies": [
+        "stdlib"
+      ],
+      "inputs": [
+        "remember/recall/forget tool calls",
+        "add_exchange after task.completed"
+      ],
+      "outputs": [
+        "prompt_block()"
+      ],
+      "state": "in-process lock",
+      "persistence": "backend/config/memory.json, backend/config/history.jsonl (atomic replace, 0600, no fsync)",
+      "capabilities": [
+        "secret refusal",
+        "near-duplicate merge"
+      ],
+      "limitations": [
+        "flat files; history now duplicates journal.tasks"
+      ],
+      "code": [
+        "backend/syrax/memory.py"
+      ],
+      "tests": [
+        "backend/syrax/test_memory.py"
+      ],
+      "failure_modes": [
+        "history write failure is logged, task still SUCCESS"
+      ]
+    },
+    {
+      "component": "Tools",
+      "purpose": "python_execute (non-blocking), str_replace_editor, desktop, remember/recall/forget, ask_human (web), terminate, browser_* (MCP).",
+      "dependencies": [
+        "app.tool.*",
+        "browser-use MCP via uvx",
+        "GNOME session binaries"
+      ],
+      "inputs": [
+        "tool calls from the agent"
+      ],
+      "outputs": [
+        "ToolResult strings, base64 screenshots"
+      ],
+      "state": "ask_human pending Future",
+      "persistence": "workspace/ files and screenshots written by tools",
+      "capabilities": [
+        "cancel kills the python child",
+        "desktop actions on Wayland"
+      ],
+      "limitations": [
+        "python/browser/desktop side effects are not reality-checked after a crash"
+      ],
+      "code": [
+        "backend/syrax/tools.py",
+        "backend/syrax/desktop.py",
+        "backend/syrax/browser.py",
+        "backend/app/tool/*"
+      ],
+      "tests": [
+        "backend/syrax/test_desktop.py",
+        "backend/syrax/test_bridge.py"
+      ],
+      "failure_modes": [
+        "timeouts → error result",
+        "missing binaries → error result"
+      ]
+    },
+    {
+      "component": "Voice",
+      "purpose": "edge-tts TTS with metallic chain on the client; STT via Groq Whisper or local faster-whisper.",
+      "dependencies": [
+        "edge-tts (online)",
+        "faster-whisper (model download)",
+        "httpx"
+      ],
+      "inputs": [
+        "/tts {text}",
+        "/stt audio"
+      ],
+      "outputs": [
+        "mp3 bytes",
+        "{text, engine, ms}"
+      ],
+      "state": "lazy Whisper model",
+      "persistence": "HF model cache",
+      "capabilities": [
+        "hallucination filter"
+      ],
+      "limitations": [
+        "English only in practice"
+      ],
+      "code": [
+        "backend/syrax/voice.py"
+      ],
+      "tests": [
+        "backend/syrax/test_voice.py"
+      ],
+      "failure_modes": [
+        "offline → /tts 502",
+        "Whisper load error → /stt 500"
+      ]
+    },
+    {
+      "component": "Verification gate",
+      "purpose": "Runs real gates (py_compile, pytest, tsc, eslint, node test, isolated next build, diff scan) and records GREEN/BLOCKED with per-gate evidence in the journal.",
+      "dependencies": [
+        "subprocess",
+        "git",
+        "syrax.journal"
+      ],
+      "inputs": [
+        "python -m syrax.verify [--gate ...] [--journal file]"
+      ],
+      "outputs": [
+        "report, exit code 0/1, verifications row + verification.completed event"
+      ],
+      "state": "none",
+      "persistence": "journal verifications table",
+      "capabilities": [
+        "NOT_VERIFIED when a gate cannot run",
+        "next build on a scratch copy so live .next is untouched"
+      ],
+      "limitations": [
+        "performance gate has no benchmark yet (NOT_VERIFIED, optional)",
+        "no independent-review gate; review is done by the operator/agent"
+      ],
+      "code": [
+        "backend/syrax/verify.py"
+      ],
+      "tests": [
+        "backend/syrax/test_verify.py"
+      ],
+      "failure_modes": [
+        "missing venv/node → NOT_VERIFIED → BLOCKED"
+      ]
+    },
+    {
+      "component": "OpenManus core (upstream)",
+      "purpose": "BaseAgent/ReActAgent/ToolCallAgent loop, LLM client, tool collection, config, loguru logging. Untouched since import.",
+      "dependencies": [
+        "pydantic 2",
+        "openai",
+        "tenacity",
+        "tiktoken",
+        "loguru",
+        "mcp"
+      ],
+      "inputs": [
+        "config/config.toml ([llm] dummy, [daytona] required to boot)"
+      ],
+      "outputs": [
+        "logs/<timestamp>.log per process"
+      ],
+      "state": "in-memory Memory, AgentState",
+      "persistence": "none",
+      "capabilities": [
+        "planning tool/flow (unused by SYRAX)"
+      ],
+      "limitations": [
+        "no callbacks; SYRAX hooks by subclassing"
+      ],
+      "code": [
+        "backend/app/**"
+      ],
+      "tests": [
+        "backend/tests/** (sandbox, browser MCP; not run by SYRAX gate)"
+      ],
+      "failure_modes": [
+        "missing [daytona] → config crash at boot"
+      ]
+    },
+    {
+      "component": "Process supervision",
+      "purpose": "syrax.sh starts backend (8765) and Next (3000) in separate process groups; systemd user service restarts on failure and opens the UI.",
+      "dependencies": [
+        "bash",
+        "setsid",
+        "ss",
+        "npx",
+        "systemd --user"
+      ],
+      "inputs": [
+        "--dev, --service, --install-service, --status"
+      ],
+      "outputs": [
+        "two processes; ~/.config/systemd/user/syrax.service"
+      ],
+      "state": "none",
+      "persistence": "systemd unit",
+      "capabilities": [
+        "rebuild .next when sources are newer",
+        "refuse to start on busy ports"
+      ],
+      "limitations": [
+        "one instance per machine"
+      ],
+      "code": [
+        "syrax.sh"
+      ],
+      "tests": [
+        "none (manual)"
+      ],
+      "failure_modes": [
+        "either process exiting stops both; systemd restarts after 5 s"
+      ]
+    }
+  ]
+}
