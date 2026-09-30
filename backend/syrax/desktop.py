@@ -1,8 +1,13 @@
-"""SYRAX desktop control for the human's own Linux session.
+"""SYRAX desktop control for the human's own session (GNOME/Linux or Windows).
 
 One tool, many actions: open websites/files/apps in the human's desktop, volume,
 media, screenshots, notifications, clipboard, file search, system info, lock.
 Nothing destructive (no shutdown, no killing processes, no deleting files).
+
+Linux talks to the session over the usual CLIs (xdg-open, gtk-launch, wpctl,
+playerctl, notify-send, wl-copy, loginctl). Windows uses the shell
+(os.startfile), Start Menu shortcuts, virtual media/volume keys, PIL for
+screenshots and PowerShell for notifications and the clipboard.
 """
 
 from __future__ import annotations
@@ -14,12 +19,18 @@ import glob
 import os
 import re
 import shutil
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from app.config import config
 from app.tool.base import BaseTool, ToolResult
+
+from syrax import sysinfo
+
+WINDOWS = sys.platform == "win32"
 
 APP_DIRS = [
     "/usr/share/applications",
@@ -29,12 +40,22 @@ APP_DIRS = [
     "/var/lib/flatpak/exports/share/applications",
     str(Path.home() / ".local/share/flatpak/exports/share/applications"),
 ]
+WIN_START_MENUS = [
+    os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "Microsoft", "Windows", "Start Menu", "Programs"),
+    os.path.join(os.environ.get("APPDATA", str(Path.home() / "AppData/Roaming")), "Microsoft", "Windows", "Start Menu", "Programs"),
+]
+WIN_SKIP_WORDS = ("uninstall", "readme", "release notes", "help", "documentation", "website")
 SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".cache", ".next", "vendor"}
+
+# Windows virtual-key codes for the media/volume keys (keybd_event).
+VK = {"mute": 0xAD, "vol_down": 0xAE, "vol_up": 0xAF, "next": 0xB0, "prev": 0xB1, "stop": 0xB2, "play_pause": 0xB3}
 
 
 def session_env() -> Dict[str, str]:
     """Environment that reaches the graphical session even from a service."""
     env = dict(os.environ)
+    if WINDOWS:
+        return env
     uid = os.getuid()
     runtime = env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{uid}")
     env.setdefault("DBUS_SESSION_BUS_ADDRESS", f"unix:path={runtime}/bus")
@@ -44,16 +65,22 @@ def session_env() -> Dict[str, str]:
     return env
 
 
-async def _run(*args: str, timeout: float = 15, stdin: Optional[bytes] = None, detach: bool = False) -> tuple:
+async def _run(*args: str, timeout: float = 15, stdin: Optional[bytes] = None, detach: bool = False,
+               extra_env: Optional[Dict[str, str]] = None) -> tuple:
+    env = session_env()
+    if extra_env:
+        env.update(extra_env)
     if detach:
+        kw = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
         await asyncio.create_subprocess_exec(
             *args, stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL, env=session_env(), start_new_session=True,
+            stderr=asyncio.subprocess.DEVNULL, env=env, **kw,
         )
         return 0, "", ""
+    kw = {"creationflags": subprocess.CREATE_NO_WINDOW} if WINDOWS else {}
     proc = await asyncio.create_subprocess_exec(
         *args, stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=session_env(),
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env, **kw,
     )
     try:
         out, err = await asyncio.wait_for(proc.communicate(stdin), timeout)
@@ -63,7 +90,24 @@ async def _run(*args: str, timeout: float = 15, stdin: Optional[bytes] = None, d
     return proc.returncode, out.decode(errors="replace").strip(), err.decode(errors="replace").strip()
 
 
+async def _powershell(script: str, timeout: float = 15, extra_env: Optional[Dict[str, str]] = None) -> tuple:
+    prelude = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; "
+    return await _run("powershell", "-NoProfile", "-NonInteractive", "-Command", prelude + script, timeout=timeout, extra_env=extra_env)
+
+
+def _press_keys(*names: str, times: int = 1) -> None:
+    """Tap virtual keys in the human's session (Windows only)."""
+    import ctypes
+    user32 = ctypes.windll.user32
+    for _ in range(times):
+        for n in names:
+            user32.keybd_event(VK[n], 0, 0, 0)
+            user32.keybd_event(VK[n], 0, 2, 0)  # KEYEVENTF_KEYUP
+
+
 def installed_apps() -> List[dict]:
+    if WINDOWS:
+        return _win_installed_apps()
     apps, seen = [], set()
     for d in APP_DIRS:
         for path in glob.glob(f"{d}/*.desktop"):
@@ -89,11 +133,33 @@ def installed_apps() -> List[dict]:
     return apps
 
 
+def _win_installed_apps() -> List[dict]:
+    """Start Menu shortcuts (.lnk), which is what the Start search shows too."""
+    apps, seen = [], set()
+    for root in WIN_START_MENUS:
+        for path in glob.glob(os.path.join(root, "**", "*.lnk"), recursive=True):
+            name = Path(path).stem
+            key = name.lower()
+            if key in seen or any(w in key for w in WIN_SKIP_WORDS):
+                continue
+            seen.add(key)
+            folder = Path(path).parent.name if Path(path).parent != Path(root) else ""
+            apps.append({"id": path, "name": name, "generic": folder, "keywords": "", "exec": ""})
+    return apps
+
+
 ALIASES = {
     "vs code": "visual studio code", "vscode": "visual studio code", "code": "visual studio code",
     "chrome": "google chrome", "google": "google chrome",
     "file manager": "files", "explorer": "files", "nautilus": "files",
     "whatsapp": "whatsapp web", "settings": "settings", "terminal": "terminal",
+}
+# Windows: things the Start Menu has no shortcut for but every machine can run.
+WIN_BUILTINS = {
+    "files": "explorer.exe", "file manager": "explorer.exe", "explorer": "explorer.exe",
+    "settings": "ms-settings:", "terminal": "wt.exe", "notepad": "notepad.exe", "calculator": "calc.exe",
+    "calc": "calc.exe", "paint": "mspaint.exe", "task manager": "taskmgr.exe", "cmd": "cmd.exe",
+    "powershell": "powershell.exe", "edge": "msedge.exe", "microsoft edge": "msedge.exe", "camera": "microsoft.windows.camera:",
 }
 
 
@@ -132,6 +198,11 @@ def match_app(query: str, apps: Optional[List[dict]] = None) -> Optional[dict]:
     return best
 
 
+def _win_builtin(query: str) -> Optional[str]:
+    q = " ".join(query.lower().split())
+    return WIN_BUILTINS.get(q) or WIN_BUILTINS.get(ALIASES.get(q, ""))
+
+
 def _looks_like_url(t: str) -> bool:
     return bool(re.match(r"^(https?://|www\.)", t) or re.match(r"^[\w-]+(\.[\w-]+)+(/\S*)?$", t))
 
@@ -139,7 +210,7 @@ def _looks_like_url(t: str) -> bool:
 class DesktopControl(BaseTool):
     name: str = "desktop"
     description: str = (
-        "Control the human's own computer (GNOME/Linux). Use this when they want something to happen "
+        "Control the human's own computer (GNOME/Linux or Windows). Use this when they want something to happen "
         "on THEIR screen: open a website in their browser, open a file/folder/app, set volume, "
         "play/pause music, take a screenshot, show a notification, read/write the clipboard, find "
         "files, check battery/CPU/RAM/disk, lock the screen. (Use the browser_* tools only when YOU "
@@ -181,13 +252,18 @@ class DesktopControl(BaseTool):
                 t = "https://" + t
         elif not os.path.exists(t):
             app = match_app(target)
-            if app:
+            if app or (WINDOWS and _win_builtin(target)):
                 return await self._do_launch_app(target=target)
             return ToolResult(error=f"Nothing to open: '{target}' is not a URL, an existing path or an installed app.")
-        await _run("xdg-open", t, detach=True)
+        if WINDOWS:
+            os.startfile(t)  # the shell's own "open" verb
+        else:
+            await _run("xdg-open", t, detach=True)
         return ToolResult(output=f"Opened {t} on the desktop.")
 
     async def _do_launch_app(self, target: str, **_) -> ToolResult:
+        if WINDOWS:
+            return await self._win_launch_app(target)
         app = match_app(target)
         if not app:
             return ToolResult(error=f"No installed app matches '{target}'. Try list_apps.")
@@ -198,6 +274,21 @@ class DesktopControl(BaseTool):
                 return ToolResult(error=f"Could not launch {app['name']}: {err or code}")
             await _run(exe, detach=True)
         return ToolResult(output=f"Launched {app['name']}.")
+
+    async def _win_launch_app(self, target: str) -> ToolResult:
+        builtin = _win_builtin(target)
+        if builtin:
+            os.startfile(builtin)
+            return ToolResult(output=f"Launched {target}.")
+        app = match_app(target)
+        if app:
+            os.startfile(app["id"])
+            return ToolResult(output=f"Launched {app['name']}.")
+        exe = shutil.which(target)
+        if exe:
+            await _run(exe, detach=True)
+            return ToolResult(output=f"Launched {target}.")
+        return ToolResult(error=f"No installed app matches '{target}'. Try list_apps.")
 
     async def _do_list_apps(self, target: str, **_) -> ToolResult:
         apps = installed_apps()
@@ -210,6 +301,8 @@ class DesktopControl(BaseTool):
     async def _do_volume(self, value: str, **_) -> ToolResult:
         sink = "@DEFAULT_AUDIO_SINK@"
         v = value.lower().rstrip("%") or "get"
+        if WINDOWS:
+            return await self._win_volume(v)
         if shutil.which("wpctl"):
             if v == "up":
                 await _run("wpctl", "set-volume", "-l", "1.0", sink, "10%+")
@@ -234,7 +327,54 @@ class DesktopControl(BaseTool):
             return ToolResult(output=f"Volume {m.group(1)}%." if m else out[:200])
         return ToolResult(error="No volume control (wpctl/amixer) found.")
 
+    async def _win_volume(self, v: str) -> ToolResult:
+        # Volume keys move the master level 2 % per tap; that is all Windows
+        # offers without an audio SDK, so an exact level is reached from zero.
+        if v == "up":
+            _press_keys("vol_up", times=5)
+        elif v == "down":
+            _press_keys("vol_down", times=5)
+        elif v in ("mute", "unmute"):
+            muted = self._win_muted()
+            if muted is None or muted != (v == "mute"):
+                _press_keys("mute")
+        elif v.isdigit():
+            _press_keys("vol_down", times=50)
+            _press_keys("vol_up", times=round(min(100, int(v)) / 2))
+        elif v != "get":
+            return ToolResult(error="volume value must be 0-100, up, down, mute, unmute or get.")
+        level = self._win_volume_level()
+        if level is None:
+            return ToolResult(output="Volume set." if v != "get" else "Volume level is not readable on this machine.")
+        return ToolResult(output=f"Volume {level}%.")
+
+    @staticmethod
+    def _win_volume_level() -> Optional[int]:
+        try:  # optional: pycaw gives the exact level when installed
+            from pycaw.pycaw import AudioUtilities  # type: ignore
+            vol = AudioUtilities.GetSpeakers().EndpointVolume
+            return round(vol.GetMasterVolumeLevelScalar() * 100)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _win_muted() -> Optional[bool]:
+        try:
+            from pycaw.pycaw import AudioUtilities  # type: ignore
+            return bool(AudioUtilities.GetSpeakers().EndpointVolume.GetMute())
+        except Exception:
+            return None
+
     async def _do_media(self, value: str, **_) -> ToolResult:
+        if WINDOWS:
+            key = {"play": "play_pause", "pause": "play_pause", "toggle": "play_pause", "next": "next",
+                   "previous": "prev", "prev": "prev", "stop": "stop"}.get(value.lower())
+            if value.lower() in ("status", ""):
+                return ToolResult(output="Media status is not readable on Windows; play, pause, toggle, next and previous work.")
+            if not key:
+                return ToolResult(error="media value must be play, pause, toggle, next, previous or status.")
+            _press_keys(key)
+            return ToolResult(output=f"Media {value.lower()} sent.")
         if not shutil.which("playerctl"):
             return ToolResult(error="playerctl is not installed.")
         cmd = {"play": "play", "pause": "pause", "toggle": "play-pause", "next": "next",
@@ -253,6 +393,11 @@ class DesktopControl(BaseTool):
         shots = Path(config.workspace_root) / "screenshots"
         shots.mkdir(parents=True, exist_ok=True)
         path = shots / f"screen-{time.strftime('%Y%m%d-%H%M%S')}.png"
+        if WINDOWS:
+            from PIL import ImageGrab
+            await asyncio.to_thread(lambda: ImageGrab.grab(all_screens=True).save(path))
+            data = base64.b64encode(path.read_bytes()).decode()
+            return ToolResult(output=f"Screenshot saved to {path}", base64_image=data)
         attempts = []
         if shutil.which("gnome-screenshot"):
             attempts.append(("gnome-screenshot", "-f", str(path)))
@@ -273,10 +418,25 @@ class DesktopControl(BaseTool):
         text = value or target
         if not text:
             return ToolResult(error="notify needs text in value.")
+        if WINDOWS:
+            script = (
+                "Add-Type -AssemblyName System.Windows.Forms; "
+                "$n = New-Object System.Windows.Forms.NotifyIcon; "
+                "$n.Icon = [System.Drawing.SystemIcons]::Information; $n.Visible = $true; "
+                "$n.ShowBalloonTip(8000, 'SYRAX', $env:SYRAX_NOTIFY_TEXT, [System.Windows.Forms.ToolTipIcon]::None); "
+                "Start-Sleep -Seconds 8; $n.Dispose()"
+            )
+            code, _, err = await _powershell(script, timeout=20, extra_env={"SYRAX_NOTIFY_TEXT": text[:250]})
+            return ToolResult(output="Notification shown.") if code == 0 else ToolResult(error=err or "notification failed")
         code, _, err = await _run("notify-send", "-a", "SYRAX", "SYRAX", text)
         return ToolResult(output="Notification shown.") if code == 0 else ToolResult(error=err or "notify-send failed")
 
     async def _do_clipboard_get(self, **_) -> ToolResult:
+        if WINDOWS:
+            code, out, err = await _powershell("Get-Clipboard -Raw")
+            if code != 0:
+                return ToolResult(error=err or "clipboard is unavailable")
+            return ToolResult(output=out[:4000] or "(clipboard is empty)")
         env = session_env()
         cmd = ("wl-paste", "--no-newline") if env.get("WAYLAND_DISPLAY") and shutil.which("wl-paste") else ("xsel", "-ob")
         code, out, err = await _run(*cmd)
@@ -285,6 +445,9 @@ class DesktopControl(BaseTool):
         return ToolResult(output=out[:4000] or "(clipboard is empty)")
 
     async def _do_clipboard_set(self, value: str, **_) -> ToolResult:
+        if WINDOWS:
+            code, _, err = await _powershell("Set-Clipboard -Value $env:SYRAX_CLIP", extra_env={"SYRAX_CLIP": value})
+            return ToolResult(output="Copied to clipboard.") if code == 0 else ToolResult(error=err or "clipboard write failed")
         env = session_env()
         cmd = ("wl-copy",) if env.get("WAYLAND_DISPLAY") and shutil.which("wl-copy") else ("xsel", "-ib")
         code, _, err = await _run(*cmd, stdin=value.encode())
@@ -301,36 +464,26 @@ class DesktopControl(BaseTool):
 
     async def _do_system_info(self, **_) -> ToolResult:
         lines = []
-        try:
-            load = os.getloadavg()
+        load = await asyncio.to_thread(sysinfo.loadavg)
+        if load:
             lines.append(f"CPU load: {load[0]:.2f} {load[1]:.2f} {load[2]:.2f} ({os.cpu_count()} cores)")
-        except OSError:
-            pass
-        mem = {}
-        try:
-            for ln in Path("/proc/meminfo").read_text().splitlines():
-                k, v = ln.split(":", 1)
-                mem[k] = int(v.split()[0]) // 1024
-            lines.append(f"RAM: {mem['MemTotal'] - mem['MemAvailable']} / {mem['MemTotal']} MB used")
-        except Exception:
-            pass
+        mem = sysinfo.meminfo()
+        if mem["total_mb"] and mem["available_mb"] is not None:
+            lines.append(f"RAM: {mem['total_mb'] - mem['available_mb']} / {mem['total_mb']} MB used")
         du = shutil.disk_usage(str(Path.home()))
         lines.append(f"Disk (home): {du.used // 2**30} / {du.total // 2**30} GB used")
-        for bat in glob.glob("/sys/class/power_supply/BAT*"):
-            try:
-                cap = Path(bat, "capacity").read_text().strip()
-                st = Path(bat, "status").read_text().strip()
-                lines.append(f"Battery: {cap}% ({st})")
-            except OSError:
-                pass
-        try:
-            up = float(Path("/proc/uptime").read_text().split()[0])
+        bat = sysinfo.battery()
+        if bat:
+            lines.append(f"Battery: {bat['percent']}% ({bat['status']})")
+        up = sysinfo.uptime_seconds()
+        if up is not None:
             lines.append(f"Uptime: {int(up // 3600)}h {int(up % 3600 // 60)}m")
-        except Exception:
-            pass
         return ToolResult(output="\n".join(lines))
 
     async def _do_lock_screen(self, **_) -> ToolResult:
+        if WINDOWS:
+            code, _, err = await _run("rundll32.exe", "user32.dll,LockWorkStation")
+            return ToolResult(output="Screen locked.") if code == 0 else ToolResult(error=err or "lock failed")
         code, _, err = await _run("loginctl", "lock-session")
         return ToolResult(output="Screen locked.") if code == 0 else ToolResult(error=err or "lock failed")
 

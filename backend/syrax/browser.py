@@ -16,6 +16,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -42,10 +43,31 @@ _proc: Optional[subprocess.Popen] = None
 _lock = asyncio.Lock()
 
 
+WINDOWS = sys.platform == "win32"
+WIN_BROWSERS = (
+    r"Google\Chrome\Application\chrome.exe",
+    r"Microsoft\Edge\Application\msedge.exe",
+    r"BraveSoftware\Brave-Browser\Application\brave.exe",
+    r"Chromium\Application\chrome.exe",
+)
+
+
 def find_chrome() -> Optional[str]:
     explicit = os.getenv("SYRAX_BROWSER_BIN")
     if explicit:
         return explicit
+    if WINDOWS:
+        roots = [os.environ.get(k) for k in ("ProgramFiles", "ProgramFiles(x86)", "LOCALAPPDATA")]
+        for root in filter(None, roots):
+            for rel in WIN_BROWSERS:
+                path = os.path.join(root, rel)
+                if os.path.exists(path):
+                    return path
+        for name in ("chrome", "msedge", "brave", "chromium"):
+            path = shutil.which(name)
+            if path:
+                return path
+        return None
     for name in (
         "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
         "microsoft-edge", "microsoft-edge-stable", "brave-browser",
@@ -96,9 +118,8 @@ async def ensure_browser() -> Optional[str]:
         args.append("about:blank")
         global _proc
         logger.info(f"Starting SYRAX browser: {chrome} (port {PORT})")
-        _proc = subprocess.Popen(
-            args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
-        )
+        group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
+        _proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **group)
         for _ in range(60):
             if await _alive():
                 return None
@@ -112,14 +133,17 @@ def shutdown() -> None:
     """Close the SYRAX browser and all its helper processes."""
     global _proc
     if _proc and _proc.poll() is None:
-        try:
-            os.killpg(_proc.pid, signal.SIGTERM)  # own session => own group
-            _proc.wait(timeout=5)
-        except (ProcessLookupError, subprocess.TimeoutExpired):
+        if WINDOWS:  # taskkill /T takes the renderer and GPU helpers down with the browser
+            subprocess.run(["taskkill", "/PID", str(_proc.pid), "/T", "/F"], capture_output=True, timeout=15)
+        else:
             try:
-                os.killpg(_proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+                os.killpg(_proc.pid, signal.SIGTERM)  # own session => own group
+                _proc.wait(timeout=5)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(_proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
     _proc = None
 
 

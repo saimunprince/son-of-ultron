@@ -1,6 +1,6 @@
 {
   "name": "SYRAX",
-  "generated": "2026-09-26 (all 12 phases have a first real implementation)",
+  "generated": "2026-09-30 (all 12 phases have a first real implementation; runs on Linux and Windows)",
   "source": "hand-audited from source code; regenerate when components change",
   "components": [
     {
@@ -255,12 +255,14 @@
       ],
       "code": [
         "backend/syrax/autonomy.py",
-        "backend/syrax/resources.py"
+        "backend/syrax/resources.py",
+        "backend/syrax/sysinfo.py"
       ],
       "tests": [
         "backend/syrax/test_autonomy.py",
         "backend/syrax/test_bridge.py (autonomy section)",
-        "backend/syrax/test_resources.py"
+        "backend/syrax/test_resources.py",
+        "backend/syrax/test_sysinfo.py"
       ],
       "failure_modes": [
         "derivation error → logged, cycle continues",

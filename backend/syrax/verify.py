@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import re
 import subprocess
 import sys
@@ -30,6 +31,7 @@ from syrax.journal import BACKEND_ROOT, Journal, _git_head
 REPO_ROOT = BACKEND_ROOT.parent
 FRONTEND_ROOT = REPO_ROOT / "frontend"
 TAIL_LINES = 40
+WINDOWS = sys.platform == "win32"
 
 GateFn = Callable[[], Tuple[bool, str]]
 
@@ -210,9 +212,10 @@ def diff_scan(root: Path = REPO_ROOT) -> Tuple[bool, str]:
 
 
 def isolated_next_build(frontend: Path = FRONTEND_ROOT, timeout: float = 1200.0) -> Tuple[bool, str]:
-    """Run ``next build`` on a scratch copy (sources rsynced, node_modules
-    hard-linked) so a live ``next start`` serving frontend/.next is never
-    disturbed. Same compiler, same config; only the output directory differs."""
+    """Run ``next build`` on a scratch copy (sources copied, node_modules
+    hard-linked on Linux or junctioned on Windows) so a live ``next start``
+    serving frontend/.next is never disturbed. Same compiler, same config;
+    only the output directory differs."""
     import shutil
     import tempfile
 
@@ -220,22 +223,54 @@ def isolated_next_build(frontend: Path = FRONTEND_ROOT, timeout: float = 1200.0)
         raise RuntimeError("frontend/node_modules missing; run npm install")
     scratch = Path(tempfile.mkdtemp(prefix="syrax-next-build-"))
     try:
-        subprocess.run(
-            ["rsync", "-a", "--exclude", "node_modules", "--exclude", ".next", f"{frontend}/", f"{scratch}/"],
-            check=True, capture_output=True, text=True, timeout=120,
-        )
-        link = subprocess.run(["cp", "-al", str(frontend / "node_modules"), str(scratch / "node_modules")], capture_output=True, text=True, timeout=300)
-        if link.returncode != 0:  # different filesystem: fall back to a real copy
-            shutil.copytree(frontend / "node_modules", scratch / "node_modules", symlinks=True)
+        shutil.copytree(frontend, scratch, dirs_exist_ok=True, symlinks=True,
+                        ignore=shutil.ignore_patterns("node_modules", ".next"))
+        _link_tree(frontend / "node_modules", scratch / "node_modules")
         cache = frontend / ".next" / "cache"
         if cache.is_dir():  # reuse the local build cache (Google Fonts are fetched at build time; the cache makes the gate offline-safe)
             (scratch / ".next").mkdir(exist_ok=True)
-            subprocess.run(["cp", "-al", str(cache), str(scratch / ".next" / "cache")], capture_output=True, text=True, timeout=300)
-        proc = subprocess.run(["npx", "next", "build"], cwd=str(scratch), capture_output=True, text=True, timeout=timeout)
+            _link_tree(cache, scratch / ".next" / "cache")
+        proc = subprocess.run([_npx(), "next", "build"], cwd=str(scratch), capture_output=True, text=True, timeout=timeout)
         out = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
         return proc.returncode == 0, out
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _link_tree(src: Path, dst: Path) -> None:
+    """Make ``dst`` share ``src``'s files without a full copy: ``cp -al`` on
+    Linux, per-file hard links on Windows (Turbopack refuses a junction or
+    symlink that points outside the project), a real copy when linking fails
+    (different filesystem)."""
+    import shutil
+
+    if not WINDOWS:
+        link = subprocess.run(["cp", "-al", str(src), str(dst)], capture_output=True, text=True, timeout=300)
+        if link.returncode == 0:
+            return
+
+    def link_or_copy(a: str, b: str) -> None:
+        try:
+            os.link(a, b)
+        except OSError:
+            shutil.copy2(a, b)
+
+    shutil.copytree(src, dst, symlinks=True, dirs_exist_ok=True, copy_function=link_or_copy)
+
+
+def _npx() -> str:
+    return shutil.which("npx") or "npx"
+
+
+def _npm() -> str:
+    return shutil.which("npm") or "npm"
+
+
+def venv_python(backend: Path = BACKEND_ROOT) -> str:
+    """The backend's own interpreter: ``.venv/bin/python`` on Linux,
+    ``.venv/Scripts/python.exe`` on Windows, the running one as a fallback."""
+    candidate = backend / ".venv" / ("Scripts/python.exe" if WINDOWS else "bin/python")
+    return str(candidate) if candidate.exists() else sys.executable
 
 
 def performance_gate(journal_path: Optional[str] = None) -> Tuple[bool, str]:
@@ -258,19 +293,19 @@ def performance_gate(journal_path: Optional[str] = None) -> Tuple[bool, str]:
 
 
 def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None) -> List[Gate]:
-    py = str(BACKEND_ROOT / ".venv" / "bin" / "python")
+    py = venv_python()
     test_env = {
         "OPENMANUS_DISABLE_BROWSER_USE": "1",
         "SYRAX_DISABLE_WHISPER_WARMUP": "1",
         "SYRAX_BROWSER": "0",
     }
-    npx = "npx"
+    npx = _npx()
     return [
         Gate("py_compile", [py, "-m", "compileall", "-q", "syrax"], cwd=BACKEND_ROOT),
         Gate("pytest", [py, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider"], cwd=BACKEND_ROOT, env=test_env),
         Gate("tsc", [npx, "tsc", "--noEmit"], cwd=FRONTEND_ROOT),
         Gate("eslint", [npx, "eslint", "."], cwd=FRONTEND_ROOT),
-        Gate("node_test", ["npm", "test", "--silent"], cwd=FRONTEND_ROOT),
+        Gate("node_test", [_npm(), "test", "--silent"], cwd=FRONTEND_ROOT),
         Gate("next_build", isolated_next_build),
         Gate("diff_scan", lambda: diff_scan(root)),
         Gate("performance", lambda: performance_gate(journal_path), required=False, timeout=600),

@@ -43,7 +43,8 @@ def test_open_sets_wal_full_sync_and_private_mode(tmp_path):
     j = new(tmp_path)
     assert j.pragma("journal_mode") == "wal"
     assert j.pragma("synchronous") == 2  # FULL
-    assert oct(os.stat(tmp_path / "journal.db").st_mode & 0o777) == "0o600"
+    if os.name != "nt":  # Windows has no POSIX mode bits; chmod only toggles read-only there
+        assert oct(os.stat(tmp_path / "journal.db").st_mode & 0o777) == "0o600"
     j.close()
 
 
@@ -246,7 +247,7 @@ j = Journal(db, boot_id="child", recover=False)
 t = j.start_task_sync("crash test", session_id="s")
 print(t, flush=True)
 def die():
-    os.kill(os.getpid(), signal.SIGKILL)
+    os.kill(os.getpid(), 9)  # SIGKILL on Linux; TerminateProcess(exit 9) on Windows — no cleanup either way
 if point == "after_start":
     die()
 for i in range(1, 6):
@@ -281,7 +282,7 @@ def crash(tmp_path, point: str, op: dict | None = None) -> str:
         [sys.executable, "-c", CHILD, str(tmp_path / "journal.db"), point],
         cwd=str(BACKEND), env=env, capture_output=True, text=True, timeout=60,
     )
-    assert proc.returncode == -signal.SIGKILL, proc.stderr
+    assert proc.returncode == (9 if os.name == "nt" else -signal.SIGKILL), proc.stderr
     return proc.stdout.split()[0]
 
 
@@ -552,7 +553,7 @@ def test_events_between_and_task_detail(tmp_path):
     window = j.events_between(t0)
     assert [e["type"] for e in window][:2] == ["task.started", "tool.started"]
     assert any(e["task_id"] is None and e["type"] == "objective.created" for e in window)
-    assert j.events_between(t0, t0) == [] and j.events_between(__import__("time").time() + 10) == []
+    assert j.events_between(t0 - 1, t0 - 1) == [] and j.events_between(__import__("time").time() + 10) == []
     d = j.task_detail(t)
     assert d["task"]["status"] == "SUCCESS"
     assert [e["type"] for e in d["events"]][0] == "task.started"

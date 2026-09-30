@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional
 
 from app.tool.base import BaseTool, ToolResult
 
+from syrax import sysinfo
 from syrax.journal import BACKEND_ROOT, Journal
 
 REPO_ROOT = BACKEND_ROOT.parent
@@ -66,14 +67,7 @@ def _count_lines(path: Path) -> int:
 
 
 def _meminfo() -> Dict[str, Optional[int]]:
-    try:
-        mem = {}
-        for ln in Path("/proc/meminfo").read_text().splitlines():
-            k, v = ln.split(":", 1)
-            mem[k] = int(v.split()[0]) // 1024
-        return {"total_mb": mem.get("MemTotal"), "available_mb": mem.get("MemAvailable")}
-    except Exception:
-        return {"total_mb": None, "available_mb": None}
+    return sysinfo.meminfo()
 
 
 class SelfModel:
@@ -154,11 +148,7 @@ class SelfModel:
     # ——— runtime ———
 
     def runtime(self) -> dict:
-        try:
-            load = os.getloadavg()
-            load_out: Optional[List[float]] = [round(x, 2) for x in load]
-        except OSError:
-            load_out = None
+        load_out: Optional[List[float]] = sysinfo.loadavg()
         du = shutil.disk_usage(str(self.repo_root))
         journal_size = None
         try:

@@ -9,13 +9,13 @@ Thresholds are conservative for a laptop that the owner is also using.
 
 from __future__ import annotations
 
-import glob
 import os
 import shutil
 import time
 from pathlib import Path
 from typing import Optional, Tuple
 
+from syrax import sysinfo
 from syrax.journal import BACKEND_ROOT
 
 LOAD_PER_CORE_MAX = 1.5
@@ -51,31 +51,14 @@ def in_quiet_hours(hour: Optional[int] = None) -> bool:
 
 
 def battery() -> Optional[dict]:
-    for bat in sorted(glob.glob("/sys/class/power_supply/BAT*")):
-        try:
-            pct = int(Path(bat, "capacity").read_text().strip())
-            status = Path(bat, "status").read_text().strip()
-        except (OSError, ValueError):
-            continue
-        return {"percent": pct, "status": status, "discharging": status.lower() == "discharging"}
-    return None
+    return sysinfo.battery()
 
 
 def snapshot(root: Path = BACKEND_ROOT) -> dict:
-    try:
-        load = [round(x, 2) for x in os.getloadavg()]
-    except OSError:
-        load = None
+    load = sysinfo.loadavg()
     cores = os.cpu_count() or 1
-    total_mb = avail_mb = None
-    try:
-        for ln in open("/proc/meminfo"):
-            if ln.startswith("MemTotal:"):
-                total_mb = int(ln.split()[1]) // 1024
-            elif ln.startswith("MemAvailable:"):
-                avail_mb = int(ln.split()[1]) // 1024
-    except OSError:
-        pass
+    mem = sysinfo.meminfo()
+    total_mb, avail_mb = mem["total_mb"], mem["available_mb"]
     try:
         du = shutil.disk_usage(str(root))
         disk = {"free_gb": round(du.free / 2**30, 2), "total_gb": round(du.total / 2**30, 1)}

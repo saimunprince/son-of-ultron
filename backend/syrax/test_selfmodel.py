@@ -62,8 +62,8 @@ def test_runtime_matches_the_machine(tmp_path):
     m.brains_provider = lambda: {"active": "ollama", "providers": [{"id": "ollama", "status": "ready"}, {"id": "gemini", "status": "no-key"}]}
     m.running_provider = lambda: {"task_id": "t1", "goal": "x"}
     r = m.runtime()
-    mem = {ln.split(":")[0]: int(ln.split()[1]) // 1024 for ln in Path("/proc/meminfo").read_text().splitlines()}
-    assert r["memory_mb"]["total_mb"] == mem["MemTotal"]
+    from syrax import sysinfo
+    assert r["memory_mb"]["total_mb"] == sysinfo.meminfo()["total_mb"] and r["memory_mb"]["total_mb"] > 0
     assert r["cpu"]["cores"] == __import__("os").cpu_count() and len(r["cpu"]["load_1_5_15"]) == 3
     assert r["journal"]["path"] == str(j.path) and r["journal"]["bytes"] > 0
     assert r["brains"] == {"active": "ollama", "ready": ["ollama"], "cooldown": [], "needs_key": ["gemini"]}

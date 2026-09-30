@@ -226,7 +226,8 @@ def test_store_persists_without_leaking_keys(router):
     router.update({"alpha": {"api_key": "sk-secret-9999", "model": "alpha-2"}}, ["beta", "alpha"])
     data = json.loads(brains.BRAINS_FILE.read_text())
     assert data["order"][:2] == ["beta", "alpha"]
-    assert oct(brains.BRAINS_FILE.stat().st_mode & 0o777) == "0o600"
+    if os.name != "nt":  # Windows has no POSIX mode bits
+        assert oct(brains.BRAINS_FILE.stat().st_mode & 0o777) == "0o600"
     desc = router.describe()
     assert "sk-secret-9999" not in json.dumps(desc)
     assert desc["providers"][1]["model"] == "alpha-2"

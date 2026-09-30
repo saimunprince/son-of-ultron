@@ -1,9 +1,21 @@
-# SYRAX — Status and Handover (2026-09-26)
+# SYRAX — Status and Handover (2026-09-26, Windows port 2026-09-30)
 
 Read this first on a fresh machine. It says what exists, what is verified, what
 is left, how to set the machine up again, and what to back up before wiping an
 OS. Everything here is backed by commits on `main` and by tests; nothing is
 planned-only unless it sits under "Remaining".
+
+**2026-09-30 — moved to Windows 11.** The OS was wiped; the repo now runs
+natively on Windows (no WSL). What changed: `syrax/sysinfo.py` answers RAM,
+load, battery and uptime on both platforms; `desktop.py` has a Windows backend
+(Start Menu apps, `os.startfile`, media/volume keys, PIL screenshots,
+PowerShell clipboard and tray notifications, `LockWorkStation`); `browser.py`
+finds Chrome/Edge/Brave under Program Files and kills the tree with
+`taskkill`; `verify.py` copies the scratch build with `shutil` and a junction
+instead of `rsync`/`cp -al`, and resolves `.venv/Scripts/python.exe`;
+`syrax.ps1` is the Windows launcher with a Task Scheduler login task. Linux
+paths are untouched. The journal, brain keys and skills from the old laptop
+were **not** carried over (see §5): SYRAX starts here with an empty history.
 
 ## 1. What SYRAX is now
 
@@ -60,6 +72,11 @@ Measured state at the end of the day:
 
 ## 3. Remaining work (honest, in priority order)
 
+0. **Windows: not yet exercised live.** Tests and the gate are green on
+   Windows, but no supervised autonomous run has happened here yet. Unknowns:
+   Whisper/edge-tts on this machine, the Task Scheduler login task, and the
+   `desktop` tool's volume/media keys against real hardware. Exact volume
+   levels need `pycaw` (optional); media status is unreadable on Windows.
 1. **Prompt size.** The system prompt (persona + tool guide + memory block + 20+ tool schemas) is too large for Groq's on-demand limit (HTTP 413) and expensive everywhere. Objective: measure tokens per request, shorten tool descriptions, bound the memory block, re-measure. Good candidate for SYRAX's own `release`.
 2. **Brain quotas.** Gemini free tier rate-limits after heavy use; failover works, but quality runs then measure the fallback brain (now reported truthfully). Consider a paid key or lower cycle frequency.
 3. **Voice quality of finals.** SYRAX released a prompt line against narrated reasoning; the `no_narration` quality check now measures it. Watch the next Gemini-answered run.
@@ -73,9 +90,12 @@ Full gap table: [GAP_ANALYSIS.md](GAP_ANALYSIS.md).
 
 ## 4. Setting up on a new machine
 
-Prerequisites: Linux with a GNOME/Wayland session (desktop tool), Python 3.12,
-Node 22, `uv` (optional, used to build the venv), Chrome/Chromium (browser
-tool), git, `rsync` (isolated build in the gate).
+Prerequisites: Linux with a GNOME/Wayland session or Windows 11 (desktop
+tool), Python 3.12, Node 22+, `uv` (optional, used to build the venv),
+Chrome/Chromium/Edge (browser tool), git. On Windows use
+`.venv\Scripts\python.exe` wherever the commands below say `.venv/bin/python`,
+and `.\syrax.ps1` instead of `./syrax.sh` (`-Dev`, `-InstallService`,
+`-Status`, `-UninstallService`).
 
 ```bash
 git clone git@github.com:saimunprince/son-of-ultron.git
