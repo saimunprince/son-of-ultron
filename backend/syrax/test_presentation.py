@@ -119,6 +119,19 @@ def test_present_tool_validates_and_clears(tmp_path):
     assert asyncio.run(tool.execute(kind="card", text="x", attention="loud")).error
 
 
+def test_present_tool_accepts_common_synonyms_instead_of_crashing(tmp_path):
+    """Live quality run: the model called present(kind='table', content=[...]) and
+    the step died on "unexpected keyword argument 'content'"."""
+    j, engine, t, _ = setup(tmp_path)
+    tool = PresentTool(); tool.engine = engine; tool.task_id_provider = lambda: t
+    out = asyncio.run(tool.execute(kind="table", title="T", content=[["name", "value"], ["a", 1], ["b", 2]]))
+    assert not out.error and engine.plan()["elements"][0]["data"]["rows"][2] == ["b", "2"]
+    out = asyncio.run(tool.execute(kind="card", content="hello"))
+    assert not out.error and engine.plan()["elements"][0]["data"]["text"] == "hello"
+    out = asyncio.run(tool.execute(kind="card", text="x", colour="red"))
+    assert out.error and "colour" in out.error  # a real unknown argument is a clear error, not a crash
+
+
 def test_human_feedback_teaches_the_engine_to_be_quiet(tmp_path):
     j, engine, t, _ = setup(tmp_path)
 

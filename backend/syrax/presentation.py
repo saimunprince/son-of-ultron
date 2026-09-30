@@ -260,9 +260,19 @@ class PresentTool(BaseTool):
 
     async def execute(self, kind: str, title: str = "", text: str = "", language: str = "", rows: Optional[list] = None,
                       items: Optional[list] = None, ttl_s: float = 120, attention: str = "notice",
-                      series: Optional[list] = None, labels: Optional[list] = None, chart: str = "bar") -> ToolResult:
+                      series: Optional[list] = None, labels: Optional[list] = None, chart: str = "bar", **extra: Any) -> ToolResult:
         if self.engine is None:
             return ToolResult(error="presentation engine unavailable")
+        # Models often say `content` / `body` / `data` for what this tool calls
+        # text / rows; map the obvious synonyms instead of crashing the step.
+        for alias in ("content", "body", "message"):
+            if not text and isinstance(extra.get(alias), str):
+                text = extra.pop(alias)
+        for alias in ("data", "table", "content"):
+            if rows is None and kind == "table" and isinstance(extra.get(alias), list):
+                rows = extra.pop(alias)
+        if extra:
+            return ToolResult(error=f"unknown argument(s) {sorted(extra)}; use kind, title, text, rows, items, series, labels")
         tid = self.task_id_provider() if self.task_id_provider else None
         if kind == "none":
             n = await self.engine.dismiss_where(lambda el: el.get("source") == "model", "cleared by SYRAX")

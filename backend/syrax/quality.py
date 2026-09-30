@@ -35,6 +35,7 @@ def _cases(ws: Path) -> List[dict]:
         {"id": "python", "prompt": "Use python to compute the 20th Fibonacci number (fib(1)=1, fib(2)=1) and tell me the number.",
          "checks": [{"kind": "tool_used", "tool": "python_execute"}, {"kind": "final_regex", "pattern": r"\b6765\b"}]},
         {"id": "file_create", "prompt": f"Create a file at {ws / 'hello.txt'} whose entire content is exactly: HELLO SYRAX",
+         "prepare": {"remove": [str(ws / "hello.txt")]},  # a file left by an earlier run must not change the task
          "checks": [{"kind": "file_equals", "path": str(ws / "hello.txt"), "text": "HELLO SYRAX"}]},
         {"id": "file_edit", "prompt": f"In the file {ws / 'counter.py'} change the line `count = 1` to `count = 2`. Change nothing else.",
          "prepare": {"write": {str(ws / "counter.py"): "count = 1\nname = 'x'\n"}},
@@ -114,6 +115,8 @@ class QualityRunner:
         return {"git_short": ident.get("version") or "unknown", "cpu_count": str(os.cpu_count() or 1)}
 
     async def run_case(self, case: dict, env: Dict[str, str]) -> dict:
+        for path in case.get("prepare", {}).get("remove") or []:
+            Path(path).unlink(missing_ok=True)
         for path, text in (case.get("prepare", {}).get("write") or {}).items():
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             Path(path).write_text(text)
