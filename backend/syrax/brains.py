@@ -186,12 +186,22 @@ PROVIDERS: Dict[str, Provider] = {
             label="Google Gemini",
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             tier="free",
-            # gemini-2.5-flash allows only 20 requests a day on a free key (measured
-            # 2026-09-30: RESOURCE_EXHAUSTED, limit 20); flash-lite has a far larger quota
-            default_model="gemini-2.5-flash-lite",
+            # Free keys get a small request quota per model (measured 2026-09-30:
+            # gemini-2.5-flash and 2.5-flash-lite both "limit: 20"), so the newest
+            # lite model is the default; pick another model in BRAIN when one runs out.
+            default_model="gemini-3.5-flash-lite",
             vision=True,
             signup_url="https://aistudio.google.com/apikey",
-            note="Free tier. Strong tool use. Best free pick. flash-lite by default: 2.5-flash is capped at 20 requests a day on free keys.",
+            note="Free tier. Strong tool use. Each model has its own small free quota (20 requests on 2.5 models); switch model in BRAIN when one is exhausted.",
+        ),
+        Provider(
+            id="upstage",
+            label="Upstage Solar",
+            base_url="https://api.upstage.ai/v1",
+            tier="free",
+            default_model="solar-pro3",  # tool calls verified 2026-09-30 (solar-pro2 too)
+            signup_url="https://console.upstage.ai/api-keys",
+            note="Free trial credits. OpenAI-compatible, tool calling works on solar-pro models.",
         ),
         Provider(
             id="groq",
@@ -294,7 +304,7 @@ PROVIDERS: Dict[str, Provider] = {
 }
 
 DEFAULT_ORDER = [
-    "gemini", "groq", "cerebras", "openrouter", "mistral", "github",
+    "gemini", "upstage", "groq", "cerebras", "openrouter", "mistral", "github",
     "anthropic", "openai", "pollinations", "ollama",
 ]
 
