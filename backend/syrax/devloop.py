@@ -26,7 +26,7 @@ import re
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 from pydantic import Field
 
@@ -60,6 +60,28 @@ def changed_files(root: Path) -> Dict[str, str]:
             path = path.split(" -> ", 1)[1]
         files[path] = status
     return files
+
+
+# Tools that can write files anywhere in the repository (paths unknown), and
+# the editor, whose edits are journaled path by path (code.changed).
+WRITER_TOOLS = frozenset({"python_execute", "skill_create"})
+EDITOR_TOOL = "str_replace_editor"
+
+
+def owned_files(files: Dict[str, str], tools_used: Iterable[str], edited_paths: Iterable[str]) -> Dict[str, str]:
+    """Which of the not-baseline changes a task is responsible for, judged from
+    what it actually ran. A task that never ran a file-writing tool owns
+    nothing (a human editing the tree while it ran is not its doing); a task
+    that only used the editor owns exactly the paths it edited; a task that
+    ran python or built a skill may have written anywhere, so it owns every
+    change that was not there when it started."""
+    used = set(tools_used)
+    if not used & (WRITER_TOOLS | {EDITOR_TOOL}):
+        return {}
+    if used & WRITER_TOOLS:
+        return dict(files)
+    edited = {p.replace("\\", "/") for p in edited_paths}
+    return {p: st for p, st in files.items() if p.replace("\\", "/") in edited}
 
 
 def scope_problems(files: Dict[str, str]) -> List[str]:

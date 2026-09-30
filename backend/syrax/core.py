@@ -312,9 +312,14 @@ class Core:
             logger.error(f"rollback after task failed: {e}")
 
     def _dirty_repo_info(self) -> Optional[dict]:
-        from syrax.devloop import _git, changed_files
+        from syrax.devloop import _git, changed_files, owned_files
 
+        assert self.current is not None
         files = self.devloop.task_files(changed_files(self.devloop.root))
+        if files:  # only what this task's own tools could have written (a human may edit while it runs)
+            tools = [s.get("tool") or "" for s in self.current.steps]
+            edited = [e["payload"].get("path", "") for e in self.journal.events(self.current.task_id) if e["type"] == "code.changed"]
+            files = owned_files(files, tools, edited)
         if not files:
             return None
         tracked = [p for p, st in files.items() if st != "??"]

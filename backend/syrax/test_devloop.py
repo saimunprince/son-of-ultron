@@ -143,6 +143,17 @@ def test_release_refuses_python_that_does_not_compile_before_running_the_gate(tm
     assert (root / "backend" / "syrax" / "mod.py").read_text() == "VALUE = (1\n"  # refusal does not touch the tree
 
 
+def test_owned_files_follow_what_the_task_actually_ran():
+    from syrax.devloop import owned_files
+    changed = {"backend/syrax/brains.py": "M", "backend/syrax/mod.py": "M", "docs/x.md": "??"}
+    # a browser/desktop verification task that touched no file owns nothing, even if the tree changed meanwhile
+    assert owned_files(changed, ["browser_exec", "self_inspect"], []) == {}
+    # editor only: exactly the journaled paths (Windows separators normalised)
+    assert owned_files(changed, ["str_replace_editor"], ["backend\\syrax\\mod.py"]) == {"backend/syrax/mod.py": "M"}
+    # python may write anywhere: every non-baseline change is the task's
+    assert owned_files(changed, ["python_execute"], []) == changed
+
+
 def test_release_and_rollback_never_touch_a_humans_uncommitted_work(tmp_path):
     root = repo(tmp_path)
     (root / "README.md").write_text("# repo\nhuman edit in progress\n")  # dirty before the task

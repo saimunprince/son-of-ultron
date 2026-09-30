@@ -81,7 +81,7 @@ Measured state at the end of the day:
    `desktop` tool's volume/media keys against real hardware. Exact volume
    levels need `pycaw` (optional); media status is unreadable on Windows.
 1. **Prompt size.** The system prompt (persona + tool guide + memory block + 20+ tool schemas) is too large for Groq's on-demand limit (HTTP 413) and expensive everywhere. Objective: measure tokens per request, shorten tool descriptions, bound the memory block, re-measure. Good candidate for SYRAX's own `release`.
-2. **Brain quotas.** Gemini free tier rate-limits after heavy use; failover works, but quality runs then measure the fallback brain (now reported truthfully). Consider a paid key or lower cycle frequency.
+2. **Brain quotas / no-key tier.** Gemini free tier rate-limits after heavy use; failover works, but quality runs then measure the fallback brain (now reported truthfully). Since 2026-09 the key-less Pollinations tier returns HTTP 402 for any request with tools or reasoning params: SYRAX now degrades to plain chat there (it talks, it cannot act). For a working agent add a free key in BRAIN (Gemini, Groq) or a free Pollinations token. Consider a paid key or lower cycle frequency.
 3. **Voice quality of finals.** SYRAX released a prompt line against narrated reasoning; the `no_narration` quality check now measures it. Watch the next Gemini-answered run.
 4. **Recovery of non-file operations.** After a crash only `str_replace_editor` edits are verified against reality; python/browser/desktop side effects stay UNCERTAIN.
 5. **Presentation vocabulary.** No maps, 3D, video; learning limited to the dismissal signal.
@@ -152,7 +152,7 @@ verify-capability objectives and rebuild its evidence within a few cycles.
 ## 6. Operating rules that proved necessary
 
 - Nothing is pushed without a GREEN gate; a failed gate is BLOCKED, not "probably fine".
-- Never leave uncommitted work in the tree while SYRAX may run `release`: a task only touches its own files now, but commit or stash first anyway.
+- Never leave uncommitted work in the tree while SYRAX may run `release`: commit or stash first anyway. Post-task cleanup now rolls back only files the task's own tools could have written (editor paths from `code.changed`; any non-baseline change after `python_execute`/`skill_create`; nothing after a task that wrote no files). Lesson of 2026-09-30: a human edit made *while* an autonomous task ran was reverted; the patch survived in `backend/config/rollback/`.
 - Never run `next build` inside `frontend/` while the login service serves `frontend/.next`; the gate builds from a scratch copy.
 - Smoke-test changes on `SYRAX_PORT=8766` with a temporary `SYRAX_JOURNAL_FILE`, not on the live instance.
 - Ollama (7B on CPU) plus Whisper can thrash a 14 GB laptop; do not run brain comparisons with Ollama while the owner is working.
