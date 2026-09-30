@@ -82,6 +82,9 @@ async def chat(pid: str, request: Request):
         if "reasoning_effort" in body:
             return JSONResponse({"error": {"message": "Unrecognized request argument: reasoning_effort"}}, status_code=400)
         return completion(content="plain ok")
+    if mode == "413-once":  # Groq-style: prompt + max_tokens over the per-minute limit
+        BEHAVIOR[pid] = "ok"
+        return JSONResponse({"error": {"message": "Request too large for model. Limit 8000, Requested 12000"}}, status_code=413)
     if mode == "anon-402":  # Pollinations anonymous tier: plain chat only
         if "tools" in body or "reasoning_effort" in body:
             return JSONResponse({}, status_code=402)
@@ -167,6 +170,50 @@ def test_key_less_tier_answers_plain_chat_when_tools_get_402(router, monkeypatch
     assert "tools" in bodies[0] and bodies[0]["reasoning_effort"] == "low"
     assert "tools" not in bodies[1] and "reasoning_effort" not in bodies[1]
     assert router.health["gamma"].until <= time.time()  # a degraded answer is not a failure
+
+
+def long_history(turns: int):
+    msgs = []
+    for i in range(turns):
+        msgs.append(Message.user_message(f"question {i}: " + "lorem ipsum " * 60))
+        msgs.append(Message.assistant_message(f"answer {i}: " + "dolor sit amet " * 60))
+    msgs.append(Message.user_message("final question"))
+    return msgs
+
+
+def test_fit_request_keeps_system_and_latest_turn_and_caps_completion():
+    from syrax.brains import BrainError, count_tokens, fit_request
+    system = [{"role": "system", "content": "persona " * 50}]
+    convo = []
+    for i in range(10):
+        convo += [{"role": "user", "content": f"q{i} " + "x " * 200}, {"role": "assistant", "content": f"a{i} " + "y " * 200}]
+    convo.append({"role": "user", "content": "last"})
+    msgs, completion = fit_request(system + convo, TOOLS, budget=1500, max_tokens=8192)
+    assert msgs[0]["role"] == "system" and msgs[-1]["content"] == "last"
+    assert len(msgs) < len(system + convo) and msgs[1]["role"] == "user"  # cut at a user boundary
+    assert completion == 1500 // 4
+    assert count_tokens(msgs) + count_tokens(TOOLS) + completion <= 1500
+    with pytest.raises(BrainError, match="too large"):
+        fit_request(system + [{"role": "user", "content": "z " * 2000}], TOOLS, budget=400, max_tokens=8192)
+
+
+def test_budgeted_provider_trims_history_before_sending(router, monkeypatch):
+    alpha = dataclasses.replace(brains.PROVIDERS["alpha"], max_request_tokens=2000)
+    monkeypatch.setattr(brains, "PROVIDERS", {**brains.PROVIDERS, "alpha": alpha})
+    msg = ask(router, messages=long_history(20))
+    assert msg.content == "alpha says hi"
+    body = SEEN[-1][1]
+    assert len(body["messages"]) < 41 and body["messages"][-1]["content"] == "final question"
+    assert body["max_tokens"] == 500
+
+
+def test_413_is_retried_once_with_a_smaller_request(router):
+    BEHAVIOR["alpha"] = "413-once"
+    msg = ask(router, messages=long_history(20))
+    assert msg.content == "alpha says hi"
+    first, second = [b for pid, b, _ in SEEN if pid == "alpha"][-2:]
+    assert len(second["messages"]) < len(first["messages"]) and second["max_tokens"] <= 1000
+    assert router.health["alpha"].until <= time.time()  # no cooldown: it answered
 
 
 def test_first_healthy_provider_answers(router):

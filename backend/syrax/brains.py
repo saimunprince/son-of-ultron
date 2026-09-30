@@ -41,6 +41,56 @@ from app.schema import Message
 BRAINS_FILE = Path(os.getenv("SYRAX_BRAINS_FILE", PROJECT_ROOT / "config" / "brains.json"))
 
 
+_ENC = None
+
+
+def count_tokens(obj: Any) -> int:
+    """Rough token count of a message list / tool list / string (o200k, the
+    tokenizer of the current OpenAI-family models; close enough for budgets)."""
+    global _ENC
+    text = obj if isinstance(obj, str) else json.dumps(obj, ensure_ascii=False, default=str)
+    if _ENC is None:
+        try:
+            import tiktoken
+            _ENC = tiktoken.get_encoding("o200k_base")
+        except Exception:
+            _ENC = False
+    if not _ENC:
+        return len(text) // 4 + 1
+    return len(_ENC.encode(text, disallowed_special=()))
+
+
+def fit_request(messages: List[dict], tools: Optional[List[dict]], budget: int, max_tokens: int) -> tuple:
+    """Make ``messages`` + ``tools`` + completion fit ``budget`` tokens.
+    Returns (messages, max_tokens). System messages always stay; the oldest
+    conversation turns go first, and never a tool call without its result
+    (cuts happen at user-message boundaries). Raises BrainError when even the
+    system prompt, the tools and the latest turn do not fit."""
+    completion = max(256, min(max_tokens, budget // 4))
+    fixed = count_tokens(tools or []) + completion + 64
+    system = [m for m in messages if m.get("role") == "system"]
+    rest = [m for m in messages if m.get("role") != "system"]
+    fixed += count_tokens(system)
+    while rest and fixed + count_tokens(rest) > budget:
+        cut = 1
+        while cut < len(rest) and rest[cut].get("role") != "user":
+            cut += 1
+        if cut >= len(rest):  # only the latest turn is left
+            break
+        rest = rest[cut:]
+    if fixed + count_tokens(rest) > budget:
+        raise BrainError(
+            f"request too large for this brain even after trimming: system prompt + tools + latest turn ≈ "
+            f"{fixed + count_tokens(rest)} tokens, limit {budget}"
+        )
+    return system + rest, completion
+
+
+def _limit_from_413(e: Exception) -> Optional[int]:
+    m = re.search(r"[Ll]imit[^0-9]{0,4}(\d{3,7})", str(e))
+    return int(m.group(1)) if m else None
+
+
 @dataclass(frozen=True)
 class Provider:
     id: str
@@ -64,6 +114,9 @@ class Provider:
     fallback_models: tuple = ()
     # extra request params for the key-less endpoint (e.g. reasoning budget)
     free_params: tuple = ()
+    # hard cap on prompt + completion tokens per request (free-tier TPM limits,
+    # local context windows); None = the model's own context is the limit
+    max_request_tokens: Optional[int] = None
 
 
 PROVIDERS: Dict[str, Provider] = {
@@ -86,7 +139,8 @@ PROVIDERS: Dict[str, Provider] = {
             tier="free",
             default_model="openai/gpt-oss-120b",  # llama-3.3-70b was retired by Groq (2026-09)
             signup_url="https://console.groq.com/keys",
-            note="Free tier. Extremely fast.",
+            note="Free tier. Extremely fast, but 8k tokens per request: history is trimmed to fit.",
+            max_request_tokens=8000,  # free-tier TPM; Groq counts prompt + max_tokens (HTTP 413 otherwise)
         ),
         Provider(
             id="cerebras",
@@ -173,6 +227,7 @@ PROVIDERS: Dict[str, Provider] = {
             note="Runs on this machine. Offline, private, slow on CPU. Steps down to a smaller installed model when RAM is short.",
             timeout=600.0,
             fallback_models=("qwen2.5:3b", "qwen2.5:1.5b", "llama3.2:3b", "llama3.2:1b"),
+            max_request_tokens=8192,  # default num_ctx of the small local models
         ),
     ]
 }
@@ -589,6 +644,11 @@ class BrainRouter(LLM):
         if tools:
             params["tools"] = tools
             params["tool_choice"] = tool_choice.value if hasattr(tool_choice, "value") else tool_choice
+        if p.max_request_tokens:
+            before = len(messages)
+            params["messages"], params["max_tokens"] = fit_request(messages, tools, p.max_request_tokens, self.max_tokens)
+            if len(params["messages"]) < before:
+                logger.info(f"brain {pid}: trimmed {before - len(params['messages'])} old messages to fit {p.max_request_tokens} tokens")
         client = self._client(pid)
         try:
             try:
@@ -598,12 +658,21 @@ class BrainRouter(LLM):
                 # return 402 for tools or reasoning params. Talking beats
                 # silence: retry as plain chat; the caller gets text, no tool call.
                 stripped = [k for k in ("tools", "tool_choice", *dict(p.free_params)) if k in params]
-                if e.status_code != 402 or self.store.key(pid) or not stripped:
+                if e.status_code == 402 and not self.store.key(pid) and stripped:
+                    logger.info(f"brain {pid} answers without {', '.join(stripped)} on the key-less tier (HTTP 402)")
+                    for k in stripped:
+                        params.pop(k)
+                    resp = await client.chat.completions.create(**params)
+                elif e.status_code == 413:
+                    # Request too large: trim to half of what the provider says (or
+                    # half of our own budget) and try once more.
+                    budget = (_limit_from_413(e) or p.max_request_tokens or 8000) // 2
+                    before = len(params["messages"])
+                    params["messages"], params["max_tokens"] = fit_request(params["messages"], tools, budget, params["max_tokens"])
+                    logger.info(f"brain {pid} HTTP 413: retrying with {before - len(params['messages'])} fewer messages, budget {budget}")
+                    resp = await client.chat.completions.create(**params)
+                else:
                     raise
-                logger.info(f"brain {pid} answers without {', '.join(stripped)} on the key-less tier (HTTP 402)")
-                for k in stripped:
-                    params.pop(k)
-                resp = await client.chat.completions.create(**params)
         except BadRequestError as e:
             # Some models reject images or temperature; retry once stripped down.
             if images and _has_images(messages):
