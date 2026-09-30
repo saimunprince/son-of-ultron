@@ -237,6 +237,32 @@ def test_bound_context_never_orphans_tool_results():
     assert len(json.dumps(out)) <= 200_000 + 20_000
 
 
+def test_a_second_live_process_cannot_recover_the_journal(tmp_path):
+    """Live bug: a Core() started inside python_execute recovered the running
+    journal and marked SYRAX's own live task INTERRUPTED."""
+    j = new(tmp_path)  # this process owns the journal now
+    t = j.start_task_sync("live work")
+    probe = (
+        "import sys\n"
+        "from syrax.journal import Journal, JournalError\n"
+        "try:\n"
+        "    Journal(sys.argv[1], boot_id='intruder')\n"
+        "    print('RECOVERED')\n"
+        "except JournalError as e:\n"
+        "    print('REFUSED', e)\n"
+        "r = Journal(sys.argv[1], boot_id='reader', recover=False)\n"
+        "print('READ', len(r.tasks(limit=5)))\n"
+    )
+    out = subprocess.run([sys.executable, "-c", probe, str(tmp_path / "journal.db")], cwd=str(BACKEND),
+                         env={**os.environ, "PYTHONPATH": str(BACKEND)}, capture_output=True, text=True, timeout=60).stdout
+    assert "REFUSED" in out and "another running SYRAX" in out and "READ 1" in out
+    assert j.task(t)["status"] == "IN_PROGRESS"  # untouched
+    j.close()  # the owner lets go; the next boot may recover
+    out = subprocess.run([sys.executable, "-c", probe, str(tmp_path / "journal.db")], cwd=str(BACKEND),
+                         env={**os.environ, "PYTHONPATH": str(BACKEND)}, capture_output=True, text=True, timeout=60).stdout
+    assert "RECOVERED" in out
+
+
 # ——— crash matrix ———
 
 CHILD = r"""

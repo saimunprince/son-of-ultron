@@ -85,6 +85,55 @@ MAX_CONTEXT_CHARS = 200_000
 MAX_MESSAGE_CHARS = 8_000
 
 
+# ——— one live owner per journal ———
+# Crash recovery marks every unfinished task of an older boot INTERRUPTED. Run
+# by a second process while the first is alive, it "recovers" live work (seen
+# 2026-09-30: SYRAX ran `Core()` inside python_execute and its own running task
+# was marked INTERRUPTED, then could not complete). The process that recovers
+# holds an OS lock on <journal>.owner for as long as the journal is open; the
+# OS drops it when the process dies, so real crash recovery still happens.
+_OWNED: Dict[str, Any] = {}
+
+
+def _lock_owner(db_path: Path) -> bool:
+    """Take the owner lock for this journal. True when this process owns it
+    (already or now), False when another live process holds it."""
+    key = str(Path(db_path).resolve())
+    if key in _OWNED:
+        return True
+    f = open(key + ".owner", "a+b")
+    try:
+        if os.name == "nt":
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        f.close()
+        return False
+    _OWNED[key] = f
+    return True
+
+
+def _unlock_owner(db_path: Path) -> None:
+    f = _OWNED.pop(str(Path(db_path).resolve()), None)
+    if f is None:
+        return
+    try:
+        if os.name == "nt":
+            import msvcrt
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+    f.close()
+
+
 class JournalError(RuntimeError):
     """A write was refused because it would make the journal lie."""
 
@@ -384,7 +433,16 @@ class Journal:
             os.chmod(self.path, 0o600)
         except OSError:
             pass
+        self._owner = False
         if recover:
+            if not _lock_owner(self.path):
+                self._db.close()
+                raise JournalError(
+                    f"journal {self.path} is owned by another running SYRAX process; "
+                    "a second core must not recover (it would mark live tasks INTERRUPTED). "
+                    "Talk to the running SYRAX, or open the journal with recover=False to read it."
+                )
+            self._owner = True
             self.recovered = self.recover_interrupted()
 
     # ——— helpers ———
@@ -1519,6 +1577,9 @@ class Journal:
                 self._db.close()
             except sqlite3.Error:
                 pass
+        if self._owner:
+            _unlock_owner(self.path)
+            self._owner = False
         if _journal is self:
             _journal = None  # a later get_journal() reopens instead of using a dead handle
 
