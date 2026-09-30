@@ -1,5 +1,11 @@
 # SYRAX — Son of Ultron
 
+**An open-source personal AI whose job is to improve itself and to help its human.**
+SYRAX learns from its own mistakes, knows and understands itself from the evidence
+it keeps, and when asked for something it cannot do yet, it learns it, builds it
+into itself, verifies it, and then helps. Everything it claims is backed by its
+journal; everything it changes in its own code passes its release gate first.
+
 Personal AI operator. The **ULTRON orb UI** (Next.js + Three.js + MediaPipe) is
 the face; the **OpenManus** agent engine is the brain. They talk over a local
 WebSocket.
