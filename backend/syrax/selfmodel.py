@@ -46,6 +46,10 @@ PRINCIPLES = [
 ]
 SECTIONS = ("summary", "identity", "structure", "runtime", "behavior", "capabilities", "performance", "weaknesses", "all")
 _PROCESS_STARTED = time.time()
+# The commit this process loaded, per repository root, captured the first time
+# it is asked (at boot for the real repo). After a `release` HEAD moves on but
+# the running code does not until a restart.
+_LOADED_HEAD: Dict[str, Optional[str]] = {}
 
 
 def _git(args: List[str], cwd: Path = REPO_ROOT) -> Optional[str]:
@@ -83,9 +87,12 @@ class SelfModel:
 
     def identity(self) -> dict:
         head = _git(["rev-parse", "--short", "HEAD"], self.repo_root)
+        loaded = _LOADED_HEAD.setdefault(str(self.repo_root), head)
         return {
             "name": NAME,
-            "version": head,  # the code that is actually running; None if git is unavailable
+            "version": loaded,  # the code this process is running; None if git is unavailable
+            "repo_head": head,  # the newest commit on disk
+            "restart_pending": bool(loaded and head and loaded != head),
             "stage": STAGE,
             "principles": PRINCIPLES,
             "boot_id": self.journal.boot_id,
@@ -453,3 +460,7 @@ class SelfInspectTool(BaseTool):
         except ValueError as e:
             return ToolResult(error=str(e))
         return ToolResult(output=render(snap))
+
+
+# capture the loaded commit at import (process start) for the real repository
+_LOADED_HEAD.setdefault(str(REPO_ROOT), _git(["rev-parse", "--short", "HEAD"], REPO_ROOT))
