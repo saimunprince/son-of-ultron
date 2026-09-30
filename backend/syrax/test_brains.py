@@ -59,6 +59,8 @@ async def chat(pid: str, request: Request):
     body = await request.json()
     SEEN.append((pid, body, request.headers.get("authorization")))
     mode = BEHAVIOR.get(pid, "ok")
+    if mode == "429-long":  # a cooldown that cannot expire while the test runs on a busy machine
+        return JSONResponse({"error": {"message": "slow down"}}, status_code=429, headers={"retry-after": "60"})
     if mode == "429":
         return JSONResponse({"error": {"message": "slow down"}}, status_code=429, headers={"retry-after": "1"})
     if mode == "401":
@@ -218,6 +220,19 @@ def test_fit_request_clips_a_huge_turn_instead_of_failing():
     assert ids <= calls  # never a tool result without its call
 
 
+def test_fit_request_clips_extra_system_manuals_but_never_the_persona():
+    """Live case: persona + a 2.6k-token MCP manual + 3.9k of tools left no room
+    on Groq's 8k before the conversation even started."""
+    from syrax.brains import count_tokens, fit_request
+    persona = {"role": "system", "content": "I am SYRAX. " * 300}
+    manual = {"role": "system", "content": "browser-use manual line\n" * 900}
+    msgs, completion = fit_request([persona, manual, {"role": "user", "content": "17*23?"}], TOOLS, budget=3000, max_tokens=8192)
+    head = msgs[0]["content"].split("\n\n=====\n\n")
+    assert head[0] == persona["content"] and "cut to fit" in head[1] and msgs[1]["role"] == "user"
+    assert msgs[-1]["content"] == "17*23?"
+    assert count_tokens(msgs) + count_tokens(TOOLS) + completion <= 3000
+
+
 def test_budgeted_provider_trims_history_before_sending(router, monkeypatch):
     alpha = dataclasses.replace(brains.PROVIDERS["alpha"], max_request_tokens=2000)
     monkeypatch.setattr(brains, "PROVIDERS", {**brains.PROVIDERS, "alpha": alpha})
@@ -245,7 +260,7 @@ def test_first_healthy_provider_answers(router):
 
 
 def test_failover_on_rate_limit_then_cooldown(router):
-    BEHAVIOR["alpha"] = "429"
+    BEHAVIOR["alpha"] = "429-long"
     assert ask(router).content == "beta says hi"
     SEEN.clear()
     assert ask(router).content == "beta says hi"

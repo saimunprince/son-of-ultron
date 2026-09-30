@@ -62,6 +62,7 @@ def count_tokens(obj: Any) -> int:
 
 
 MIN_COMPLETION = 1024
+SYSTEM_JOIN = "\n\n=====\n\n"  # between merged system messages; fit_request splits on it
 CLIP_TO = 1200  # characters kept of a clipped message (head + tail)
 
 
@@ -113,6 +114,19 @@ def fit_request(messages: List[dict], tools: Optional[List[dict]], budget: int, 
                         break
             if not over():
                 break
+    if over() and system:
+        # Extra system parts (MCP server manuals, resume notes) come after the
+        # persona and are reference material: clip them too, the persona never.
+        # They arrive either as separate messages or merged by _normalize_messages.
+        parts = [m.get("content") or "" for m in system]
+        parts = parts[0].split(SYSTEM_JOIN) + parts[1:] if len(parts) == 1 else parts
+        if len(parts) > 1:
+            for keep in (CLIP_TO * 2, CLIP_TO // 2, CLIP_TO // 8):
+                parts = [parts[0]] + [_clip_text(x, keep) if len(x) > keep + 80 else x for x in parts[1:]]
+                system = [{"role": "system", "content": SYSTEM_JOIN.join(parts)}]
+                base = count_tokens(tools or []) + count_tokens(system) + 64
+                if not over():
+                    break
     if over():
         raise BrainError(
             f"request too large for this brain even after trimming: system prompt + tools + latest turn ≈ "
@@ -411,7 +425,7 @@ def _normalize_messages(messages: List[dict]) -> List[dict]:
         if m.get("role") == "tool" and m.get("name"):
             m["name"] = _clean_tool_name(m["name"])
         rest.append(m)
-    head = [{"role": "system", "content": "\n\n".join(map(str, systems))}] if systems else []
+    head = [{"role": "system", "content": SYSTEM_JOIN.join(map(str, systems))}] if systems else []
     return head + rest
 
 
