@@ -8,6 +8,7 @@ from app.agent.base import BaseAgent
 from app.agent.manus import Manus
 from app.agent.toolcall import ToolCallAgent
 from app.config import config
+from app.logger import logger
 from app.schema import AgentState, Message, ToolCall, ToolChoice
 from app.tool import Terminate, ToolCollection
 from app.tool.str_replace_editor import StrReplaceEditor
@@ -19,6 +20,11 @@ from syrax.devloop import ReleaseTool
 from syrax.experiments import ExperimentTool
 from syrax.memory import ForgetTool, RecallTool, RememberTool, get_memory
 
+FINAL_ASK = (
+    "You finished using tools but gave the human no answer. Reply now with the final answer only: "
+    "the result itself (number, name, year, output), taken from the observations above, and the source "
+    "URL for any researched fact. No narration, no tool calls."
+)
 TOOLS_GUIDE = (
     "TOOL GUIDE: When the human wants something on THEIR computer (open a site or app, "
     "play music, volume, screenshot of their screen, notifications, clipboard, find their "
@@ -148,7 +154,29 @@ class SyraxAgent(Manus):
             await self._send(
                 {"type": "notice", "text": f"Step limit ({self.max_steps}) reached."}
             )
+        if not self.last_reply and any(m.role == "tool" for m in self.memory.messages):
+            await self._final_answer()
         return self.last_reply or "Done."
+
+    async def _final_answer(self) -> None:
+        """Some models run the right tools and then terminate without a word
+        (live: gemini-3.5-flash-lite answered five quality cases with "Done.").
+        The work happened; ask once, without tools, for the answer it produced."""
+        try:
+            msg = await self.llm.ask_tool(
+                messages=self.memory.messages + [Message.user_message(FINAL_ASK)],
+                system_msgs=[Message.system_message(self.system_prompt)] if self.system_prompt else None,
+                tools=None,
+                tool_choice=ToolChoice.NONE,
+            )
+        except Exception as e:
+            logger.warning(f"final-answer wrap-up failed: {e}")
+            return
+        text = (getattr(msg, "content", None) or "").strip()
+        if text:
+            self.last_reply = text
+            self.memory.add_message(Message.assistant_message(text))
+            await self._send({"type": "think", "step": self.current_step, "content": text, "tools": []})
 
     async def think(self) -> bool:
         await self._send(

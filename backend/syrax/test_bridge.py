@@ -961,6 +961,23 @@ def test_core_jobs_outlive_the_session_that_started_them():
     assert _a.run(scenario()) == ["core"]
 
 
+def test_silent_terminate_gets_a_real_final_answer(script, tmp_path):
+    """Live: gemini-3.5-flash-lite ran python, then terminated with no text, and
+    five quality cases ended in "Done." SYRAX now asks once, without tools."""
+    import asyncio as _a
+    from syrax.quality import _cases
+
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+    core = core_mod.get_core()
+    core.quality.ws = tmp_path / "ws"
+    subset = [c for c in _cases(tmp_path / "ws") if c["id"] == "python"]
+    script.queue = [call("python_execute", {"code": "print(6765)"}), call("terminate", {"status": "success"}), reply("6765")]
+    row = _a.run(core.quality.run(cases=subset))
+    assert row["pass_rate"] == 100.0 and row["results"][0]["final"] == "6765"
+    assert "no answer" in script.seen[-1][-1].content  # the wrap-up asked for the answer
+
+
 # ——— brain-preferred quality runs and journal-backed history ———
 
 
