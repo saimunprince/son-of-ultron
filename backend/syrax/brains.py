@@ -42,6 +42,7 @@ BRAINS_FILE = Path(os.getenv("SYRAX_BRAINS_FILE", PROJECT_ROOT / "config" / "bra
 
 
 _ENC = None
+KEYLESS_MAX_TOKENS = 1500  # anonymous Pollinations caps replies around here and 402s above it
 
 
 def count_tokens(obj: Any) -> int:
@@ -657,11 +658,14 @@ class BrainRouter(LLM):
                 # Key-less tiers (Pollinations anonymous) answer plain chat but
                 # return 402 for tools or reasoning params. Talking beats
                 # silence: retry as plain chat; the caller gets text, no tool call.
-                stripped = [k for k in ("tools", "tool_choice", *dict(p.free_params)) if k in params]
-                if e.status_code == 402 and not self.store.key(pid) and stripped:
-                    logger.info(f"brain {pid} answers without {', '.join(stripped)} on the key-less tier (HTTP 402)")
+                # The anonymous tier also rejects temperature and a large max_tokens
+                # (measured 2026-09-30: temperature=0 → 402, max_tokens 8192 → 402, 1500 → 200).
+                stripped = [k for k in ("tools", "tool_choice", "temperature", *dict(p.free_params)) if k in params]
+                if e.status_code == 402 and not self.store.key(pid) and (stripped or params.get("max_tokens", 0) > KEYLESS_MAX_TOKENS):
+                    logger.info(f"brain {pid} answers as plain chat on the key-less tier (HTTP 402; dropped {', '.join(stripped) or 'nothing'})")
                     for k in stripped:
                         params.pop(k)
+                    params["max_tokens"] = min(params.get("max_tokens") or KEYLESS_MAX_TOKENS, KEYLESS_MAX_TOKENS)
                     resp = await client.chat.completions.create(**params)
                 elif e.status_code == 413:
                     # Request too large: trim to half of what the provider says (or

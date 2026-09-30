@@ -86,7 +86,7 @@ async def chat(pid: str, request: Request):
         BEHAVIOR[pid] = "ok"
         return JSONResponse({"error": {"message": "Request too large for model. Limit 8000, Requested 12000"}}, status_code=413)
     if mode == "anon-402":  # Pollinations anonymous tier: plain chat only
-        if "tools" in body or "reasoning_effort" in body:
+        if "tools" in body or "reasoning_effort" in body or "temperature" in body or body.get("max_tokens", 0) > 1500:
             return JSONResponse({}, status_code=402)
         return completion(content="plain ok")
     if mode == "502-once":
@@ -169,6 +169,7 @@ def test_key_less_tier_answers_plain_chat_when_tools_get_402(router, monkeypatch
     assert len(bodies) == 2
     assert "tools" in bodies[0] and bodies[0]["reasoning_effort"] == "low"
     assert "tools" not in bodies[1] and "reasoning_effort" not in bodies[1]
+    assert "temperature" not in bodies[1] and bodies[1]["max_tokens"] <= 1500
     assert router.health["gamma"].until <= time.time()  # a degraded answer is not a failure
 
 
