@@ -41,14 +41,18 @@ Self-model → weakness → failure (editor / desktop / …) → research → fi
 |---|---|---|
 | Release gate GREEN on the current machine | DONE | Windows port 2026-09-30, `python syrax.py --gate` |
 | Runs anywhere with one command | DONE | `syrax.py` (Windows, Linux, macOS) |
-| Brain reachable without a key | PARTIAL | Pollinations anonymous: plain chat only (402 on tools) — `brains.py` |
-| Request fits free-tier limits (Groq 413) | PARTIAL | per-provider `max_request_tokens`, trimming, 413 retry — `brains.py`; fixed prompt still ≈ 5k tokens |
+| Brains that answer on free tiers | DONE | Gemini `3.5-flash-lite` (free keys get ~20 requests per model), Upstage `solar-pro3`, Groq with per-request token budget, clipping of big turns and MCP manuals, 402/413/parse-failure retries — `brains.py` |
+| Brain reachable without any key | PARTIAL | Pollinations anonymous rejects tools, temperature, large `max_tokens` and prompts over ~1000 words: plain chat only |
 | Rollback touches only the task's own files | DONE | `devloop.owned_files` |
-| Capabilities VERIFIED from evidence on this machine | TODO | journal was reset by the OS wipe; needs a key and supervised cycles |
-| `str_replace_editor` reliability | TODO | measure failure rate from `tool_stats`, then fix |
-| desktop / CPU failures | TODO | re-check on Windows once cycles run |
-| Quality benchmark clean | TODO | `quality.py`, 10 cases, per brain |
-| Autonomous cycle reliability, resource usage, regressions | TODO | `autonomy_status`, `bench.py` |
+| One live owner per journal | DONE | OS lock on `journal.db.owner`; a second core cannot recover live tasks |
+| Core jobs survive a closed tab | DONE | quality runs, brain comparisons and forced cycles are detached jobs |
+| SYRAX can find itself | DONE | `self_inspect(task_id=…)`, `repo_root` in identity, absolute paths in the autonomous brief |
+| Capabilities VERIFIED from evidence on this machine | DONE | 14 tools used successfully; `release`, `skill_*`, `experiment` await real use |
+| Final replies carry the answer | DONE | own step prompt (no undo loops); wrap-up call when a model terminates silently |
+| Quality benchmark clean | DONE | 20 → 30 → 70 → 80 → 50 → 90 → 90 % (runs 1–8; run 6 came from a stray second core and is not a real baseline) |
+| `str_replace_editor` reliability | TODO | 22 ok / 11 failed so far: relative paths (brief fixed), missing `path`, wrong indentation in `old_str`, `create` on an existing file, bad `view_range` |
+| `research` when explicitly asked | TODO | research_cite answers correctly from `know` but skips `research`; left for SYRAX's own objective loop |
+| Autonomous cycle reliability | PARTIAL | 22 cycles ran, 2 skipped for RAM, no crash; 19 objectives DONE, 3 OPEN |
 
 **Exit criterion:** every non-exempt capability VERIFIED or explained, gate
 GREEN, one quality run ≥ 90 % on the primary brain, 20 autonomous cycles with

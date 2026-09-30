@@ -75,11 +75,7 @@ Measured state at the end of the day:
 
 ## 3. Remaining work (honest, in priority order)
 
-0. **Windows: not yet exercised live.** Tests and the gate are green on
-   Windows, but no supervised autonomous run has happened here yet. Unknowns:
-   Whisper/edge-tts on this machine, the Task Scheduler login task, and the
-   `desktop` tool's volume/media keys against real hardware. Exact volume
-   levels need `pycaw` (optional); media status is unreadable on Windows.
+0. **Phase 0 status (2026-09-30 evening).** Exercised live on Windows with Gemini, Groq and Upstage keys: quality 90 % twice in a row, 22 autonomous cycles without a crash, 14 tools verified. Remaining Phase 0 items and the full evidence table are in [ROADMAP.md](ROADMAP.md).
 1. **Prompt size.** Measured 2026-09-30: persona 0.9k + tool guide 0.3k + memory 0.2k + 19 tool schemas 3.6k ≈ 5k tokens before any conversation. The Groq 413 was mostly `max_tokens=8192` counted against its 8k free-tier limit; brains now carry `max_request_tokens` (Groq 8000, Ollama 8192), cap the completion to a quarter of it, trim old turns at user boundaries, and retry a 413 once at half budget. Still open: with 5k of fixed prompt, Groq free leaves ~1k for the conversation, so it is a fallback, not a primary brain; shortening tool descriptions (str_replace_editor alone is 632 tokens, from OpenManus) is the next step.
 2. **Brain quotas / no-key tier.** Gemini free tier rate-limits after heavy use; failover works, but quality runs then measure the fallback brain (now reported truthfully). Since 2026-09 the key-less Pollinations tier returns HTTP 402 for any request with tools or reasoning params: SYRAX now degrades to plain chat there (it talks, it cannot act). For a working agent add a free key in BRAIN (Gemini, Groq) or a free Pollinations token. Consider a paid key or lower cycle frequency.
 3. **Voice quality of finals.** SYRAX released a prompt line against narrated reasoning; the `no_narration` quality check now measures it. Watch the next Gemini-answered run.
