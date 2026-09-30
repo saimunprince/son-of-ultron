@@ -61,28 +61,62 @@ def count_tokens(obj: Any) -> int:
     return len(_ENC.encode(text, disallowed_special=()))
 
 
+MIN_COMPLETION = 1024
+CLIP_TO = 1200  # characters kept of a clipped message (head + tail)
+
+
+def _clip_text(text: str, keep: int = CLIP_TO) -> str:
+    if len(text) <= keep:
+        return text
+    head, tail = keep * 2 // 3, keep // 3
+    return f"{text[:head]}\n…[{len(text) - head - tail} characters cut to fit this brain]…\n{text[-tail:]}"
+
+
 def fit_request(messages: List[dict], tools: Optional[List[dict]], budget: int, max_tokens: int) -> tuple:
     """Make ``messages`` + ``tools`` + completion fit ``budget`` tokens.
-    Returns (messages, max_tokens). System messages always stay; the oldest
-    conversation turns go first, and never a tool call without its result
-    (cuts happen at user-message boundaries). Raises BrainError when even the
-    system prompt, the tools and the latest turn do not fit."""
+    Returns (messages, max_tokens). System messages always stay. Turns start at
+    user messages that are real requests; a user text that repeats (the agent's
+    per-step prompt) is not a turn start, so a task's own request is never cut
+    away from its steps. In order, until it fits: drop the oldest turns; shrink
+    the completion to MIN_COMPLETION; clip long contents oldest first (head and
+    tail kept, the newest message last). Raises BrainError when even that does
+    not fit."""
     completion = max(256, min(max_tokens, budget // 4))
-    fixed = count_tokens(tools or []) + completion + 64
     system = [m for m in messages if m.get("role") == "system"]
     rest = [m for m in messages if m.get("role") != "system"]
-    fixed += count_tokens(system)
-    while rest and fixed + count_tokens(rest) > budget:
+    base = count_tokens(tools or []) + count_tokens(system) + 64
+    texts = [m.get("content") for m in rest if m.get("role") == "user" and isinstance(m.get("content"), str)]
+    repeated = {t for t in texts if texts.count(t) > 1}
+
+    def starts_turn(m: dict) -> bool:
+        return m.get("role") == "user" and m.get("content") not in repeated
+
+    def over() -> bool:
+        return base + completion + count_tokens(rest) > budget
+
+    while rest and over():
         cut = 1
-        while cut < len(rest) and rest[cut].get("role") != "user":
+        while cut < len(rest) and not starts_turn(rest[cut]):
             cut += 1
         if cut >= len(rest):  # only the latest turn is left
             break
         rest = rest[cut:]
-    if fixed + count_tokens(rest) > budget:
+    if over():
+        completion = min(completion, MIN_COMPLETION)
+    if over():
+        rest = [dict(m) for m in rest]
+        for keep in (CLIP_TO, CLIP_TO // 3, CLIP_TO // 8):  # gentle first, harder only if needed
+            for m in rest:  # oldest first, the newest last
+                if isinstance(m.get("content"), str) and len(m["content"]) > keep + 80:
+                    m["content"] = _clip_text(m["content"], keep)
+                    if not over():
+                        break
+            if not over():
+                break
+    if over():
         raise BrainError(
             f"request too large for this brain even after trimming: system prompt + tools + latest turn ≈ "
-            f"{fixed + count_tokens(rest)} tokens, limit {budget}"
+            f"{base + completion + count_tokens(rest)} tokens, limit {budget}"
         )
     return system + rest, completion
 

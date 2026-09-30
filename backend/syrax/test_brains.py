@@ -198,6 +198,26 @@ def test_fit_request_keeps_system_and_latest_turn_and_caps_completion():
         fit_request(system + [{"role": "user", "content": "z " * 2000}], TOOLS, budget=400, max_tokens=8192)
 
 
+def test_fit_request_clips_a_huge_turn_instead_of_failing():
+    """One turn with big tool outputs (a quality task after earlier tasks) no
+    longer fails the brain: long contents are clipped, the newest stays whole."""
+    from syrax.brains import count_tokens, fit_request
+    system = [{"role": "system", "content": "persona " * 400}]
+    turn = [{"role": "user", "content": "edit counter.py"}]
+    for i in range(6):
+        turn += [{"role": "assistant", "content": "", "tool_calls": [{"id": f"c{i}", "type": "function", "function": {"name": "python_execute", "arguments": "{}"}}]},
+                 {"role": "tool", "tool_call_id": f"c{i}", "content": f"out{i} " + "z " * 3000},
+                 {"role": "user", "content": "next step prompt"}]
+    msgs, completion = fit_request(system + turn, TOOLS, budget=4000, max_tokens=8192)
+    assert msgs[0] == system[0] and msgs[-1]["content"] == "next step prompt"
+    assert any(m.get("content") == "edit counter.py" for m in msgs)  # the task's request survives
+    assert count_tokens(msgs) + count_tokens(TOOLS) + completion <= 4000
+    assert completion >= 256
+    ids = {m.get("tool_call_id") for m in msgs if m.get("role") == "tool"}
+    calls = {c["id"] for m in msgs for c in m.get("tool_calls") or []}
+    assert ids <= calls  # never a tool result without its call
+
+
 def test_budgeted_provider_trims_history_before_sending(router, monkeypatch):
     alpha = dataclasses.replace(brains.PROVIDERS["alpha"], max_request_tokens=2000)
     monkeypatch.setattr(brains, "PROVIDERS", {**brains.PROVIDERS, "alpha": alpha})
