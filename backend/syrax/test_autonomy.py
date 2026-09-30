@@ -191,6 +191,8 @@ def test_cycle_runs_one_objective_and_marks_done_from_evidence(tmp_path, monkeyp
     assert rep.outcome == "RAN" and rep.verdict == "DONE" and rep.task_status == "SUCCESS"
     tid, goal, kind = core.submitted[0]
     assert kind == "autonomous" and "[AUTONOMOUS OBJECTIVE]" in goal and "`desktop`" in goal
+    from syrax.devloop import REPO_ROOT
+    assert f"repository root is {REPO_ROOT}" in goal  # absolute: relative paths failed live
     assert "one call of the `desktop` tool" in goal and "Be economical" in goal  # the brief steers the model to the minimum
     o = j.objective(rep.objective_id)
     assert o["status"] == "DONE" and o["attempts"] == 1 and o["last_task_id"] == tid

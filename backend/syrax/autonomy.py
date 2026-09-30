@@ -50,6 +50,9 @@ MAINTENANCE_EVERY_S = 86400.0
 AUTONOMOUS_BRIEF = (
     "[AUTONOMOUS OBJECTIVE] You are working on your own objective, not a human request.\n"
     "Goal: {goal}\nReason: {reason}\n"
+    "Your repository root is {repo_root}; paths in the goal are relative to it. Use absolute paths "
+    "with every tool (python_execute runs elsewhere; str_replace_editor requires them). "
+    "Read journaled tasks with `self_inspect` task_id, never the database.\n"
     "Do the work with your tools. Your completion is judged from the journal evidence "
     "(which tools ran and whether they succeeded), not from what you say. Do not claim "
     "success you did not produce. Be economical: every step costs a model call; take the "
@@ -423,7 +426,9 @@ class Autonomy:
         )
         spec = objective.get("check_spec") or {}
         hint = BRIEF_HINTS.get(spec.get("kind", ""), "").format(**{k: v for k, v in spec.items() if isinstance(v, str)})
-        brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-", hint=hint)
+        from syrax.devloop import REPO_ROOT
+
+        brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-", hint=hint, repo_root=REPO_ROOT)
         task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous")
         if task_id is None:
             await self.journal.update_objective(objective["id"], status="OPEN", note="core busy")
