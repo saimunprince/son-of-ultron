@@ -20,6 +20,16 @@ from syrax.devloop import ReleaseTool
 from syrax.experiments import ExperimentTool
 from syrax.memory import ForgetTool, RecallTool, RememberTool, get_memory
 
+# Replaces OpenManus' per-step prompt ("proactively select the most appropriate
+# tool ... suggest the next steps"), which weaker models read as a fresh request:
+# live, a model changed `count = 1` to 2, then back to 1, then to 2 again, and
+# its final said "the user now says: based on user needs, proactively select...".
+STEP_PROMPT = (
+    "[SYRAX step check, not a new request] Look at the original request and the observations so far. "
+    "If the request is fully done, do not call any more tools: reply with the final answer for the human "
+    "and finish. If it is not done, take the one next step that moves it forward. Never undo work that "
+    "already satisfies the request."
+)
 FINAL_ASK = (
     "You finished using tools but gave the human no answer. Reply now with the final answer only: "
     "the result itself (number, name, year, output), taken from the observations above, and the source "
@@ -142,7 +152,7 @@ class SyraxAgent(Manus):
         except Exception:
             block = ""
         self.system_prompt = "\n\n".join(x for x in (base, TOOLS_GUIDE, block) if x)
-        self.next_step_prompt = Manus.model_fields["next_step_prompt"].default
+        self.next_step_prompt = STEP_PROMPT
         if self.next_step_prompt:
             from syrax.brains import STEP_PROMPTS
             STEP_PROMPTS.add(self.next_step_prompt)
