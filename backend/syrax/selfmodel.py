@@ -93,6 +93,8 @@ class SelfModel:
             "version": loaded,  # the code this process is running; None if git is unavailable
             "repo_head": head,  # the newest commit on disk
             "restart_pending": bool(loaded and head and loaded != head),
+            "repo_root": str(self.repo_root),  # absolute: your own code lives here
+            "journal_path": str(self.journal.path),
             "stage": STAGE,
             "principles": PRINCIPLES,
             "boot_id": self.journal.boot_id,
@@ -438,7 +440,9 @@ class SelfInspectTool(BaseTool):
         "Inspect yourself: identity and version, architecture and code layout, runtime "
         "resources, task history and failures from the journal, the capability registry with "
         "evidence, and derived weaknesses. Use it to answer questions about what you are, what "
-        "you can do, what failed, or what to improve. Never guess these; call this."
+        "you can do, what failed, or what to improve. Never guess these; call this. "
+        "Pass task_id to read one journaled task (goal, status, events, checkpoints, objective); "
+        "never query the journal database directly."
     )
     parameters: dict = {
         "type": "object",
@@ -447,19 +451,43 @@ class SelfInspectTool(BaseTool):
                 "type": "string",
                 "enum": list(SECTIONS),
                 "description": "Which part to read. 'summary' is compact; 'all' is everything.",
-            }
+            },
+            "task_id": {"type": "string", "description": "Read this one journaled task instead of a section."},
         },
     }
     model: Optional[Any] = None  # SelfModel, set by the core
 
-    async def execute(self, section: str = "summary") -> ToolResult:
+    async def execute(self, section: str = "summary", task_id: str = "") -> ToolResult:
         if self.model is None:
             return ToolResult(error="self-model unavailable (core not started)")
+        if task_id:
+            return ToolResult(output=render_task(self.model.journal, task_id.strip()))
         try:
             snap = self.model.snapshot(section)
         except ValueError as e:
             return ToolResult(error=str(e))
         return ToolResult(output=render(snap))
+
+
+def render_task(journal: Journal, task_id: str, max_events: int = 60) -> str:
+    """One journaled task, compact enough for a model: the last events with
+    their payloads clipped, checkpoints without their context."""
+    d = journal.task_detail(task_id)
+    if d is None:
+        return f"No task {task_id!r} in the journal."
+    events = [e for e in d["events"] if not e["type"].startswith("presentation.")]
+    shown = events[-max_events:]
+    lines = [json.dumps({k: d["task"].get(k) for k in ("task_id", "kind", "goal", "status", "stage", "result", "error")}, default=str)[:1500]]
+    if len(events) > len(shown):
+        lines.append(f"({len(events) - len(shown)} earlier events omitted)")
+    for e in shown:
+        lines.append(f"{e['type']}: {json.dumps(e['payload'], default=str)[:400]}")
+    for cp in d["checkpoints"][-3:]:
+        lines.append(f"checkpoint: {json.dumps(cp, default=str)[:300]}")
+    if d.get("objective"):
+        o = d["objective"]
+        lines.append(f"objective #{o.get('id')}: {o.get('status')} {str(o.get('goal'))[:300]}")
+    return "\n".join(lines)
 
 
 # capture the loaded commit at import (process start) for the real repository

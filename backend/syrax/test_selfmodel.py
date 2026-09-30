@@ -37,6 +37,22 @@ def test_identity_version_is_the_real_git_head(tmp_path):
     assert ident["principles"] and ident["process_uptime_s"] >= 0
 
 
+def test_self_inspect_reads_one_task_and_says_where_the_code_is(tmp_path):
+    import asyncio
+    from syrax.selfmodel import SelfInspectTool
+    j = journal(tmp_path)
+    m = SelfModel(j)
+    t = j.start_task_sync("fix research_cite", kind="autonomous")
+    j.record_sync("tool.started", {"id": "c1", "name": "python_execute", "args": {"code": "x"}, "step": 1}, task_id=t)
+    j.record_sync("tool.failed", {"id": "c1", "name": "python_execute", "ok": False, "output": "no such table: journal"}, task_id=t)
+    tool = SelfInspectTool(); tool.model = m
+    out = asyncio.run(tool.execute(task_id=t)).output
+    assert "fix research_cite" in out and "no such table: journal" in out and "tool.failed" in out
+    assert "No task" in asyncio.run(tool.execute(task_id="nope")).output
+    ident = m.identity()
+    assert Path(ident["repo_root"]).is_absolute() and ident["journal_path"] == str(j.path)
+
+
 def test_version_is_the_loaded_code_not_a_newer_head(tmp_path, monkeypatch):
     from syrax import selfmodel as sm
     m = SelfModel(journal(tmp_path))

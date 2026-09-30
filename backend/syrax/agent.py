@@ -26,6 +26,8 @@ TOOLS_GUIDE = (
     "must read or operate a web page. Use python_execute for calculations and scripts. "
     "When asked what you are, what you can do, what failed, your version, your code or your "
     "weaknesses, call `self_inspect` and answer from its evidence; never guess. "
+    "To read a past task, call `self_inspect` with its task_id; never query the journal database "
+    "yourself. Your own code lives under the repo_root that `self_inspect` reports; use absolute paths there. "
     "For facts you do not have, check `know` first, then `research` (web, with sources); "
     "when the human explicitly says research, look up or search, call `research` even if `know` has something. "
     "store a verified conclusion with `learn`, citing the knowledge_ids. Never present an "
