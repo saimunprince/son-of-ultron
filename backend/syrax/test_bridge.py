@@ -870,7 +870,7 @@ def test_presentation_events_follow_the_task_and_reconnect_gets_the_plan(script)
 def test_agent_runs_an_experiment_and_benchmarks_are_queryable(script):
     script.queue = [
         call("experiment", {"hypothesis": "a short loop is faster than a long one", "metric": "ms", "repeats": 2,
-                            "baseline": {"tool": "python_execute", "args": {"code": "sum(range(2_000_000))"}},
+                            "baseline": {"tool": "python_execute", "args": {"code": "sum(range(20_000_000))"}},
                             "candidate": {"tool": "python_execute", "args": {"code": "sum(range(10))"}}}, "Measuring."),
         reply("Measured. The short loop wins."),
     ]
@@ -932,6 +932,33 @@ def test_quality_suite_judges_outcomes_and_detects_regression(script, tmp_path):
     assert judge(get_journal(), o, None)[0] == "DONE"
     assert get_journal().recent_events()[-1]["type"] == "quality.completed"
     assert core.selfmodel.performance()["last_quality"]["pass_rate"] == 100.0
+
+
+def test_core_jobs_outlive_the_session_that_started_them():
+    """A quality run started from a tab that then closes must finish (it was
+    silently cancelled before: session close cancelled every spawned job)."""
+    import asyncio as _a
+    import types
+
+    async def scenario():
+        s = server.Session.__new__(server.Session)
+        s.aux, s.closed = set(), False
+        s.core = types.SimpleNamespace(unsubscribe=lambda fn: None)
+        gate, done = _a.Event(), []
+
+        async def job(tag):
+            await gate.wait()
+            done.append(tag)
+
+        s.spawn(job("core"), detached=True)
+        s.spawn(job("session"))
+        await s.close()
+        gate.set()
+        for _ in range(5):
+            await _a.sleep(0)
+        return done
+
+    assert _a.run(scenario()) == ["core"]
 
 
 # ——— brain-preferred quality runs and journal-backed history ———

@@ -175,6 +175,12 @@ async def health():
     return {"name": "SYRAX", "status": "online", "brain": router.active}
 
 
+# Jobs that belong to the core, not to the browser tab that asked for them
+# (quality runs, brain comparisons, a forced cycle). Closing a session must not
+# kill them: the UI observes, the core keeps working.
+DETACHED: set = set()
+
+
 class Session:
     """One WebSocket connection: observes the core, routes commands to it."""
 
@@ -186,11 +192,13 @@ class Session:
         self._lock = asyncio.Lock()
         self.aux: set = set()
 
-    def spawn(self, coro) -> None:
-        """Run slow side jobs (model lists, brain tests) off the receive loop."""
+    def spawn(self, coro, detached: bool = False) -> None:
+        """Run slow side jobs off the receive loop. Session jobs (model lists,
+        brain tests) die with the session; detached jobs outlive it."""
         t = asyncio.create_task(coro)
-        self.aux.add(t)
-        t.add_done_callback(self.aux.discard)
+        owner = DETACHED if detached else self.aux
+        owner.add(t)
+        t.add_done_callback(owner.discard)
 
     async def send(self, event: dict) -> None:
         if self.closed:
@@ -267,14 +275,14 @@ class Session:
                 await self.send({"type": "notice", "text": "Already executing. Stop it first."})
                 return
             only = msg.get("only") if isinstance(msg.get("only"), list) else None
-            self.spawn(self._quality(only, str(msg.get("brain") or "") or None))
+            self.spawn(self._quality(only, str(msg.get("brain") or "") or None), detached=True)
         elif kind == "compare_brains":
             if self.core.busy:
                 await self.send({"type": "notice", "text": "Already executing. Stop it first."})
                 return
             a, b = str(msg.get("a") or ""), str(msg.get("b") or "")
             only = msg.get("only") if isinstance(msg.get("only"), list) else None
-            self.spawn(self._compare_brains(a, b, only))
+            self.spawn(self._compare_brains(a, b, only), detached=True)
         elif kind == "presentation_feedback":
             pid = str(msg.get("presentation_id") or "")
             if not await self.core.presentation.feedback(pid, str(msg.get("action") or "dismiss")):
@@ -350,7 +358,7 @@ class Session:
             if self.core.busy:
                 await self.send({"type": "notice", "text": "Already executing. Stop it first."})
                 return
-            self.spawn(self._cycle())
+            self.spawn(self._cycle(), detached=True)
         elif kind == "resume":
             tid = str(msg.get("task_id") or "")
             try:

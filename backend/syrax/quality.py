@@ -181,8 +181,14 @@ class QualityRunner:
             all_cases = [c for c in all_cases if c["id"] in set(only)]
         await self.journal.record("quality.started", {"cases": [c["id"] for c in all_cases]})
         results = []
-        for case in all_cases:
-            results.append(await self.run_case(case, env))
+        try:
+            for case in all_cases:
+                results.append(await self.run_case(case, env))
+        except asyncio.CancelledError:
+            # never leave a started run without an outcome in the journal
+            done = [r["id"] for r in results]
+            await self.journal.record("quality.cancelled", {"completed": done, "pending": [c["id"] for c in all_cases if c["id"] not in done]})
+            raise
         passed = sum(1 for r in results if r["ok"])
         rate = round(100.0 * passed / len(results), 1) if results else 0.0
         prev = self.journal.quality_runs(limit=1)
