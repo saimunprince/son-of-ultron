@@ -73,12 +73,18 @@ def _clip_text(text: str, keep: int = CLIP_TO) -> str:
     return f"{text[:head]}\n…[{len(text) - head - tail} characters cut to fit this brain]…\n{text[-tail:]}"
 
 
+# The agent's per-step prompts (OpenManus adds one as a user message on every
+# step). The agent registers them; they are never turn starts in fit_request.
+STEP_PROMPTS: set = set()
+
+
 def fit_request(messages: List[dict], tools: Optional[List[dict]], budget: int, max_tokens: int) -> tuple:
     """Make ``messages`` + ``tools`` + completion fit ``budget`` tokens.
     Returns (messages, max_tokens). System messages always stay. Turns start at
-    user messages that are real requests; a user text that repeats (the agent's
-    per-step prompt) is not a turn start, so a task's own request is never cut
-    away from its steps. In order, until it fits: drop the oldest turns; shrink
+    user messages that are real requests; the agent's registered per-step
+    prompts (STEP_PROMPTS) are not turn starts, so a task's own request is
+    never cut away from its steps. The same request asked twice is still two
+    turns. In order, until it fits: drop the oldest turns; shrink
     the completion to MIN_COMPLETION; clip long contents oldest first (head and
     tail kept, the newest message last). Raises BrainError when even that does
     not fit."""
@@ -86,8 +92,7 @@ def fit_request(messages: List[dict], tools: Optional[List[dict]], budget: int, 
     system = [m for m in messages if m.get("role") == "system"]
     rest = [m for m in messages if m.get("role") != "system"]
     base = count_tokens(tools or []) + count_tokens(system) + 64
-    texts = [m.get("content") for m in rest if m.get("role") == "user" and isinstance(m.get("content"), str)]
-    repeated = {t for t in texts if texts.count(t) > 1}
+    repeated = STEP_PROMPTS
 
     def starts_turn(m: dict) -> bool:
         return m.get("role") == "user" and m.get("content") not in repeated
@@ -135,6 +140,11 @@ def fit_request(messages: List[dict], tools: Optional[List[dict]], budget: int, 
     return system + rest, completion
 
 
+def _malformed_generation(e: Exception) -> bool:
+    text = str(e).lower()
+    return "parsing failed" in text or "failed_generation" in text or "tool_use_failed" in text
+
+
 def _limit_from_413(e: Exception) -> Optional[int]:
     m = re.search(r"[Ll]imit[^0-9]{0,4}(\d{3,7})", str(e))
     return int(m.group(1)) if m else None
@@ -176,10 +186,12 @@ PROVIDERS: Dict[str, Provider] = {
             label="Google Gemini",
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
             tier="free",
-            default_model="gemini-2.5-flash",
+            # gemini-2.5-flash allows only 20 requests a day on a free key (measured
+            # 2026-09-30: RESOURCE_EXHAUSTED, limit 20); flash-lite has a far larger quota
+            default_model="gemini-2.5-flash-lite",
             vision=True,
             signup_url="https://aistudio.google.com/apikey",
-            note="Free tier. Strong tool use. Best free pick.",
+            note="Free tier. Strong tool use. Best free pick. flash-lite by default: 2.5-flash is capped at 20 requests a day on free keys.",
         ),
         Provider(
             id="groq",
@@ -738,6 +750,11 @@ class BrainRouter(LLM):
             elif "reasoning" in str(e).lower() and "reasoning_effort" in params:
                 params.pop("reasoning_effort")
                 resp = await client.chat.completions.create(**params)
+            elif _malformed_generation(e):
+                # the model produced an unparsable tool call (Groq gpt-oss); a
+                # fresh sample usually parses
+                logger.info(f"brain {pid}: model output could not be parsed, sampling once more")
+                resp = await client.chat.completions.create(**params)
             else:
                 raise
         finally:
@@ -791,7 +808,7 @@ class BrainRouter(LLM):
         elif isinstance(e, APIConnectionError) and not isinstance(e, APITimeoutError):
             cooldown = 60.0
         elif isinstance(e, BadRequestError):
-            cooldown = 120.0
+            cooldown = 15.0 if _malformed_generation(e) else 120.0  # a bad sample is not a broken provider
         elif isinstance(e, APIStatusError) and e.status_code >= 500:
             cooldown = 15.0  # short, so "all busy, wait and retry" can kick in
         self.health[pid] = Health(until=time.time() + cooldown, reason=reason)

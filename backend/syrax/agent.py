@@ -132,6 +132,9 @@ class SyraxAgent(Manus):
             block = ""
         self.system_prompt = "\n\n".join(x for x in (base, TOOLS_GUIDE, block) if x)
         self.next_step_prompt = Manus.model_fields["next_step_prompt"].default
+        if self.next_step_prompt:
+            from syrax.brains import STEP_PROMPTS
+            STEP_PROMPTS.add(self.next_step_prompt)
         self._trim_memory()
         await self._send({"type": "state", "state": "thinking"})
         result = await BaseAgent.run(self, request)

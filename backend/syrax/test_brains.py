@@ -59,6 +59,9 @@ async def chat(pid: str, request: Request):
     body = await request.json()
     SEEN.append((pid, body, request.headers.get("authorization")))
     mode = BEHAVIOR.get(pid, "ok")
+    if mode == "parse-fail-once":  # Groq gpt-oss: unparsable tool call in the sample
+        BEHAVIOR[pid] = "ok"
+        return JSONResponse({"error": {"message": "Parsing failed. The model generated output that could not be parsed.", "code": "tool_use_failed", "failed_generation": "<|call|>"}}, status_code=400)
     if mode == "429-long":  # a cooldown that cannot expire while the test runs on a busy machine
         return JSONResponse({"error": {"message": "slow down"}}, status_code=429, headers={"retry-after": "60"})
     if mode == "429":
@@ -210,6 +213,7 @@ def test_fit_request_clips_a_huge_turn_instead_of_failing():
         turn += [{"role": "assistant", "content": "", "tool_calls": [{"id": f"c{i}", "type": "function", "function": {"name": "python_execute", "arguments": "{}"}}]},
                  {"role": "tool", "tool_call_id": f"c{i}", "content": f"out{i} " + "z " * 3000},
                  {"role": "user", "content": "next step prompt"}]
+    brains.STEP_PROMPTS.add("next step prompt")
     msgs, completion = fit_request(system + turn, TOOLS, budget=4000, max_tokens=8192)
     assert msgs[0] == system[0] and msgs[-1]["content"] == "next step prompt"
     assert any(m.get("content") == "edit counter.py" for m in msgs)  # the task's request survives
@@ -231,6 +235,25 @@ def test_fit_request_clips_extra_system_manuals_but_never_the_persona():
     assert head[0] == persona["content"] and "cut to fit" in head[1] and msgs[1]["role"] == "user"
     assert msgs[-1]["content"] == "17*23?"
     assert count_tokens(msgs) + count_tokens(TOOLS) + completion <= 3000
+
+
+def test_same_request_twice_is_two_turns_and_keeps_the_newest():
+    """Live case: a quality case repeated from the previous run was mistaken for
+    a step prompt, and the model answered "clarify the task"."""
+    from syrax.brains import fit_request
+    big = "y " * 1500
+    msgs = [{"role": "system", "content": "persona"},
+            {"role": "user", "content": "What is 17*23?"}, {"role": "assistant", "content": "391 " + big},
+            {"role": "user", "content": "other task"}, {"role": "assistant", "content": big},
+            {"role": "user", "content": "What is 17*23?"}]
+    out, _ = fit_request(msgs, TOOLS, budget=1200, max_tokens=8192)
+    assert out[-1]["content"] == "What is 17*23?" and len(out) == 2  # older turns dropped, the new ask kept
+
+
+def test_malformed_tool_call_is_sampled_again_not_a_long_cooldown(router):
+    BEHAVIOR["alpha"] = "parse-fail-once"
+    assert ask(router).content == "alpha says hi"
+    assert [p for p, _, _ in SEEN] == ["alpha", "alpha"]
 
 
 def test_budgeted_provider_trims_history_before_sending(router, monkeypatch):

@@ -242,6 +242,11 @@ class Core:
         await asyncio.to_thread(self.devloop.begin_task)  # a task owns only the changes it makes
         task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)
         self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind)
+        if kind in ("eval", "autonomous") and self.agent is not None:
+            # Self-contained work: earlier tasks' messages only cost tokens and
+            # confuse the model (a quality case once answered "clarify the task"
+            # after the previous run's history). System messages stay.
+            self.agent.reset_conversation()
         self.current.task = asyncio.create_task(self._run(goal, said))
         return task_id
 
