@@ -13,8 +13,11 @@ PowerShell clipboard and tray notifications, `LockWorkStation`); `browser.py`
 finds Chrome/Edge/Brave under Program Files and kills the tree with
 `taskkill`; `verify.py` copies the scratch build with `shutil` and a junction
 instead of `rsync`/`cp -al`, and resolves `.venv/Scripts/python.exe`;
-`syrax.ps1` is the Windows launcher with a Task Scheduler login task. Linux
-paths are untouched. The journal, brain keys and skills from the old laptop
+`syrax.py` is the one launcher for Windows, Linux and macOS (it also installs
+what is missing; `syrax.sh` / `syrax.ps1` just call it), with a login service
+on each OS (systemd / launchd / Task Scheduler). macOS backends exist in
+`sysinfo.py`, `desktop.py` and `browser.py` but have not been run on a Mac.
+Linux paths are untouched. The journal, brain keys and skills from the old laptop
 were **not** carried over (see §5): SYRAX starts here with an empty history.
 
 ## 1. What SYRAX is now
@@ -90,12 +93,11 @@ Full gap table: [GAP_ANALYSIS.md](GAP_ANALYSIS.md).
 
 ## 4. Setting up on a new machine
 
-Prerequisites: Linux with a GNOME/Wayland session or Windows 11 (desktop
-tool), Python 3.12, Node 22+, `uv` (optional, used to build the venv),
-Chrome/Chromium/Edge (browser tool), git. On Windows use
-`.venv\Scripts\python.exe` wherever the commands below say `.venv/bin/python`,
-and `.\syrax.ps1` instead of `./syrax.sh` (`-Dev`, `-InstallService`,
-`-Status`, `-UninstallService`).
+Prerequisites: Linux with a GNOME/Wayland session, Windows 11 or macOS
+(desktop tool), Python 3.12 or `uv`, Node 22+, Chrome/Chromium/Edge (browser
+tool), git. `python syrax.py` does the whole setup below by itself; the manual
+steps remain for reference. On Windows use `.venv\Scripts\python.exe`
+wherever the commands say `.venv/bin/python`.
 
 ```bash
 git clone git@github.com:saimunprince/son-of-ultron.git

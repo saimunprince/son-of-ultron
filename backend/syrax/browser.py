@@ -44,6 +44,13 @@ _lock = asyncio.Lock()
 
 
 WINDOWS = sys.platform == "win32"
+MACOS = sys.platform == "darwin"
+MAC_BROWSERS = (
+    "Google Chrome.app/Contents/MacOS/Google Chrome",
+    "Chromium.app/Contents/MacOS/Chromium",
+    "Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    "Brave Browser.app/Contents/MacOS/Brave Browser",
+)
 WIN_BROWSERS = (
     r"Google\Chrome\Application\chrome.exe",
     r"Microsoft\Edge\Application\msedge.exe",
@@ -67,6 +74,13 @@ def find_chrome() -> Optional[str]:
             path = shutil.which(name)
             if path:
                 return path
+        return None
+    if MACOS:
+        for root in ("/Applications", str(Path.home() / "Applications")):
+            for rel in MAC_BROWSERS:
+                path = os.path.join(root, rel)
+                if os.path.exists(path):
+                    return path
         return None
     for name in (
         "google-chrome", "google-chrome-stable", "chromium", "chromium-browser",

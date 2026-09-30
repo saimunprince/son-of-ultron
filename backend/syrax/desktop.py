@@ -7,7 +7,9 @@ Nothing destructive (no shutdown, no killing processes, no deleting files).
 Linux talks to the session over the usual CLIs (xdg-open, gtk-launch, wpctl,
 playerctl, notify-send, wl-copy, loginctl). Windows uses the shell
 (os.startfile), Start Menu shortcuts, virtual media/volume keys, PIL for
-screenshots and PowerShell for notifications and the clipboard.
+screenshots and PowerShell for notifications and the clipboard. macOS uses
+`open`, /Applications, osascript (volume, Music, notifications, lock),
+screencapture and pbcopy/pbpaste.
 """
 
 from __future__ import annotations
@@ -31,6 +33,8 @@ from app.tool.base import BaseTool, ToolResult
 from syrax import sysinfo
 
 WINDOWS = sys.platform == "win32"
+MACOS = sys.platform == "darwin"
+MAC_APP_DIRS = ["/Applications", "/System/Applications", "/System/Applications/Utilities", str(Path.home() / "Applications")]
 
 APP_DIRS = [
     "/usr/share/applications",
@@ -105,9 +109,35 @@ def _press_keys(*names: str, times: int = 1) -> None:
             user32.keybd_event(VK[n], 0, 2, 0)  # KEYEVENTF_KEYUP
 
 
+async def _osascript(*lines: str, timeout: float = 15) -> tuple:
+    args: List[str] = []
+    for ln in lines:
+        args += ["-e", ln]
+    return await _run("osascript", *args, timeout=timeout)
+
+
+def _as_str(text: str) -> str:
+    """Quote text for AppleScript."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _mac_installed_apps() -> List[dict]:
+    apps, seen = [], set()
+    for d in MAC_APP_DIRS:
+        for path in glob.glob(os.path.join(d, "*.app")):
+            name = Path(path).stem
+            if name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            apps.append({"id": path, "name": name, "generic": "", "keywords": "", "exec": ""})
+    return apps
+
+
 def installed_apps() -> List[dict]:
     if WINDOWS:
         return _win_installed_apps()
+    if MACOS:
+        return _mac_installed_apps()
     apps, seen = [], set()
     for d in APP_DIRS:
         for path in glob.glob(f"{d}/*.desktop"):
@@ -210,7 +240,7 @@ def _looks_like_url(t: str) -> bool:
 class DesktopControl(BaseTool):
     name: str = "desktop"
     description: str = (
-        "Control the human's own computer (GNOME/Linux or Windows). Use this when they want something to happen "
+        "Control the human's own computer (GNOME/Linux, Windows or macOS). Use this when they want something to happen "
         "on THEIR screen: open a website in their browser, open a file/folder/app, set volume, "
         "play/pause music, take a screenshot, show a notification, read/write the clipboard, find "
         "files, check battery/CPU/RAM/disk, lock the screen. (Use the browser_* tools only when YOU "
@@ -257,6 +287,8 @@ class DesktopControl(BaseTool):
             return ToolResult(error=f"Nothing to open: '{target}' is not a URL, an existing path or an installed app.")
         if WINDOWS:
             os.startfile(t)  # the shell's own "open" verb
+        elif MACOS:
+            await _run("open", t)
         else:
             await _run("xdg-open", t, detach=True)
         return ToolResult(output=f"Opened {t} on the desktop.")
@@ -264,6 +296,13 @@ class DesktopControl(BaseTool):
     async def _do_launch_app(self, target: str, **_) -> ToolResult:
         if WINDOWS:
             return await self._win_launch_app(target)
+        if MACOS:
+            app = match_app(target)
+            if app:
+                code, _, err = await _run("open", "-a", app["id"])
+                return ToolResult(output=f"Launched {app['name']}.") if code == 0 else ToolResult(error=err or "launch failed")
+            code, _, err = await _run("open", "-a", target)  # let LaunchServices try the raw name
+            return ToolResult(output=f"Launched {target}.") if code == 0 else ToolResult(error=f"No installed app matches '{target}'. Try list_apps.")
         app = match_app(target)
         if not app:
             return ToolResult(error=f"No installed app matches '{target}'. Try list_apps.")
@@ -303,6 +342,8 @@ class DesktopControl(BaseTool):
         v = value.lower().rstrip("%") or "get"
         if WINDOWS:
             return await self._win_volume(v)
+        if MACOS:
+            return await self._mac_volume(v)
         if shutil.which("wpctl"):
             if v == "up":
                 await _run("wpctl", "set-volume", "-l", "1.0", sink, "10%+")
@@ -348,6 +389,22 @@ class DesktopControl(BaseTool):
             return ToolResult(output="Volume set." if v != "get" else "Volume level is not readable on this machine.")
         return ToolResult(output=f"Volume {level}%.")
 
+    async def _mac_volume(self, v: str) -> ToolResult:
+        if v in ("up", "down"):
+            _, cur, _ = await _osascript("output volume of (get volume settings)")
+            level = max(0, min(100, int(cur or 50) + (10 if v == "up" else -10)))
+            await _osascript(f"set volume output volume {level}")
+        elif v in ("mute", "unmute"):
+            await _osascript(f"set volume {'with' if v == 'mute' else 'without'} output muted")
+        elif v.isdigit():
+            await _osascript(f"set volume output volume {min(100, int(v))}")
+        elif v != "get":
+            return ToolResult(error="volume value must be 0-100, up, down, mute, unmute or get.")
+        _, out, _ = await _osascript("get volume settings")
+        m = re.search(r"output volume:(\d+)", out)
+        muted = "output muted:true" in out
+        return ToolResult(output=f"Volume {m.group(1) if m else '?'}%{' (muted)' if muted else ''}.")
+
     @staticmethod
     def _win_volume_level() -> Optional[int]:
         try:  # optional: pycaw gives the exact level when installed
@@ -375,6 +432,16 @@ class DesktopControl(BaseTool):
                 return ToolResult(error="media value must be play, pause, toggle, next, previous or status.")
             _press_keys(key)
             return ToolResult(output=f"Media {value.lower()} sent.")
+        if MACOS:  # the Music app; other players do not expose a scriptable transport
+            cmd = {"play": "play", "pause": "pause", "toggle": "playpause", "next": "next track",
+                   "previous": "previous track", "prev": "previous track", "status": None, "": None}
+            if value.lower() not in cmd:
+                return ToolResult(error="media value must be play, pause, toggle, next, previous or status.")
+            if cmd[value.lower()] is None:
+                _, out, err = await _osascript('tell application "Music" to (player state as string) & ": " & (artist of current track) & " - " & (name of current track)')
+                return ToolResult(output=out) if out else ToolResult(error=err or "Music is not playing.")
+            code, _, err = await _osascript(f'tell application "Music" to {cmd[value.lower()]}')
+            return ToolResult(output=f"Media {value.lower()} sent to Music.") if code == 0 else ToolResult(error=err or "Music did not respond.")
         if not shutil.which("playerctl"):
             return ToolResult(error="playerctl is not installed.")
         cmd = {"play": "play", "pause": "pause", "toggle": "play-pause", "next": "next",
@@ -399,6 +466,8 @@ class DesktopControl(BaseTool):
             data = base64.b64encode(path.read_bytes()).decode()
             return ToolResult(output=f"Screenshot saved to {path}", base64_image=data)
         attempts = []
+        if MACOS:
+            attempts.append(("screencapture", "-x", str(path)))
         if shutil.which("gnome-screenshot"):
             attempts.append(("gnome-screenshot", "-f", str(path)))
         if shutil.which("grim"):
@@ -428,6 +497,9 @@ class DesktopControl(BaseTool):
             )
             code, _, err = await _powershell(script, timeout=20, extra_env={"SYRAX_NOTIFY_TEXT": text[:250]})
             return ToolResult(output="Notification shown.") if code == 0 else ToolResult(error=err or "notification failed")
+        if MACOS:
+            code, _, err = await _osascript(f'display notification {_as_str(text[:250])} with title "SYRAX"')
+            return ToolResult(output="Notification shown.") if code == 0 else ToolResult(error=err or "notification failed")
         code, _, err = await _run("notify-send", "-a", "SYRAX", "SYRAX", text)
         return ToolResult(output="Notification shown.") if code == 0 else ToolResult(error=err or "notify-send failed")
 
@@ -438,7 +510,10 @@ class DesktopControl(BaseTool):
                 return ToolResult(error=err or "clipboard is unavailable")
             return ToolResult(output=out[:4000] or "(clipboard is empty)")
         env = session_env()
-        cmd = ("wl-paste", "--no-newline") if env.get("WAYLAND_DISPLAY") and shutil.which("wl-paste") else ("xsel", "-ob")
+        if MACOS:
+            cmd = ("pbpaste",)
+        else:
+            cmd = ("wl-paste", "--no-newline") if env.get("WAYLAND_DISPLAY") and shutil.which("wl-paste") else ("xsel", "-ob")
         code, out, err = await _run(*cmd)
         if code != 0:
             return ToolResult(error=err or "clipboard is empty or unavailable")
@@ -449,7 +524,10 @@ class DesktopControl(BaseTool):
             code, _, err = await _powershell("Set-Clipboard -Value $env:SYRAX_CLIP", extra_env={"SYRAX_CLIP": value})
             return ToolResult(output="Copied to clipboard.") if code == 0 else ToolResult(error=err or "clipboard write failed")
         env = session_env()
-        cmd = ("wl-copy",) if env.get("WAYLAND_DISPLAY") and shutil.which("wl-copy") else ("xsel", "-ib")
+        if MACOS:
+            cmd = ("pbcopy",)
+        else:
+            cmd = ("wl-copy",) if env.get("WAYLAND_DISPLAY") and shutil.which("wl-copy") else ("xsel", "-ib")
         code, _, err = await _run(*cmd, stdin=value.encode())
         return ToolResult(output="Copied to clipboard.") if code == 0 else ToolResult(error=err or "clipboard write failed")
 
@@ -483,6 +561,9 @@ class DesktopControl(BaseTool):
     async def _do_lock_screen(self, **_) -> ToolResult:
         if WINDOWS:
             code, _, err = await _run("rundll32.exe", "user32.dll,LockWorkStation")
+            return ToolResult(output="Screen locked.") if code == 0 else ToolResult(error=err or "lock failed")
+        if MACOS:  # Ctrl+Cmd+Q, the system lock shortcut
+            code, _, err = await _osascript('tell application "System Events" to keystroke "q" using {command down, control down}')
             return ToolResult(output="Screen locked.") if code == 0 else ToolResult(error=err or "lock failed")
         code, _, err = await _run("loginctl", "lock-session")
         return ToolResult(output="Screen locked.") if code == 0 else ToolResult(error=err or "lock failed")

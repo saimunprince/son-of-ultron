@@ -10,18 +10,23 @@ from __future__ import annotations
 import ctypes
 import glob
 import os
+import re
+import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
 WINDOWS = sys.platform == "win32"
+MACOS = sys.platform == "darwin"
 
 
 def meminfo() -> Dict[str, Optional[int]]:
     """Total and available RAM in MB."""
     if WINDOWS:
         return _win_meminfo()
+    if MACOS:
+        return _mac_meminfo()
     try:
         mem = {}
         for ln in Path("/proc/meminfo").read_text().splitlines():
@@ -52,6 +57,8 @@ def battery() -> Optional[dict]:
     """{"percent", "status", "discharging"} or None on a machine without one."""
     if WINDOWS:
         return _win_battery()
+    if MACOS:
+        return _mac_battery()
     for bat in sorted(glob.glob("/sys/class/power_supply/BAT*")):
         try:
             pct = int(Path(bat, "capacity").read_text().strip())
@@ -68,10 +75,43 @@ def uptime_seconds() -> Optional[float]:
             return ctypes.windll.kernel32.GetTickCount64() / 1000.0
         except Exception:
             return None
+    if MACOS:
+        m = re.search(r"sec = (\d+)", _sh("sysctl", "-n", "kern.boottime"))
+        return time.time() - int(m.group(1)) if m else None
     try:
         return float(Path("/proc/uptime").read_text().split()[0])
     except Exception:
         return None
+
+
+# ——— macOS, via sysctl / vm_stat / pmset ———
+
+def _sh(*cmd: str) -> str:
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        return ""
+
+
+def _mac_meminfo() -> Dict[str, Optional[int]]:
+    try:
+        total = int(_sh("sysctl", "-n", "hw.memsize").strip())
+        vm = _sh("vm_stat")
+        page = int(re.search(r"page size of (\d+) bytes", vm).group(1))
+        pages = {k.strip(): int(v.strip(" .")) for k, v in (ln.split(":", 1) for ln in vm.splitlines() if ":" in ln and "page size" not in ln)}
+        free = sum(pages.get(k, 0) for k in ("Pages free", "Pages inactive", "Pages speculative")) * page
+        return {"total_mb": total // 2**20, "available_mb": free // 2**20}
+    except Exception:
+        return {"total_mb": None, "available_mb": None}
+
+
+def _mac_battery() -> Optional[dict]:
+    out = _sh("pmset", "-g", "batt")
+    m = re.search(r"(\d+)%;\s*([\w ]+?);", out)
+    if not m:
+        return None
+    pct, state = int(m.group(1)), m.group(2).strip()
+    return {"percent": pct, "status": state.capitalize(), "discharging": state == "discharging"}
 
 
 # ——— Windows, via kernel32 only (no extra packages) ———

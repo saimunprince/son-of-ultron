@@ -7,62 +7,50 @@ WebSocket.
 ```
 frontend/   ULTRON orb UI, rebranded + command console, voice, live agent state
 backend/    OpenManus (core untouched in app/) + SYRAX layer in syrax/
-syrax.sh    starts both (Linux)
-syrax.ps1   starts both (Windows)
+syrax.py    one command for everything (Windows, Linux, macOS)
+syrax.sh    thin wrapper for bash · syrax.ps1  thin wrapper for PowerShell
 ```
 
-Runs on Linux (GNOME) and Windows 11. Platform differences live in
+Runs on Linux (GNOME), Windows 11 and macOS. Platform differences live in
 `backend/syrax/desktop.py`, `browser.py`, `sysinfo.py` and `verify.py`; the
-rest of the code is the same on both.
+rest of the code is the same everywhere.
 
-## Setup
+## Run (one command)
 
 ```bash
-# backend
-cd backend
-uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python -r requirements-syrax.txt        # Linux
-uv pip install --python .venv/Scripts/python.exe -r requirements-syrax.txt  # Windows
-cp config/config.syrax.example.toml config/config.toml
-# no key needed: SYRAX boots on a free no-key brain
-
-# frontend
-cd ../frontend && npm install
+python syrax.py            # Linux / macOS / Windows — installs what is missing, then starts
+./syrax.sh                 # same, bash
+.\syrax.ps1                # same, PowerShell
 ```
 
-## Run
+The first run creates `backend/.venv` (uv if present, else venv), installs
+the Python requirements and `frontend/node_modules`, and copies
+`config.syrax.example.toml` to `config.toml`. No key is needed: SYRAX boots on
+a free no-key brain. Prerequisites: Python 3.12 (or `uv`), Node 22+, git,
+and a Chromium-based browser for the browser tool.
 
 ```bash
-./syrax.sh          # Linux: production UI, rebuilt automatically when sources change
-./syrax.sh --dev    # Linux: hot-reloading UI for development
-.\syrax.ps1         # Windows: production UI
-.\syrax.ps1 -Dev    # Windows: hot-reloading UI
+python syrax.py --dev              # hot-reloading UI for development
+python syrax.py --setup            # install only, do not start
+python syrax.py --gate             # run the release gate
 ```
 
 Open http://localhost:3000. Ctrl+C stops everything, including SYRAX's browser.
-Both servers listen on 127.0.0.1 only.
+Both servers listen on 127.0.0.1 only. `SYRAX_PORT` / `SYRAX_UI_PORT` move
+the ports; `SYRAX_OPEN_UI=1` opens the browser once both answer.
 
 ## Start at login
 
-Linux (systemd --user, starts after GNOME login):
-
 ```bash
-./syrax.sh --install-service     # enable
-./syrax.sh --status              # is it running?
-journalctl --user -u syrax -f    # live logs
-./syrax.sh --uninstall-service   # remove
+python syrax.py --install-service     # systemd --user (Linux), launchd (macOS), Task Scheduler (Windows)
+python syrax.py --status              # is it running?
+python syrax.py --uninstall-service   # remove
 ```
 
-Windows (Task Scheduler, at logon):
-
-```powershell
-.\syrax.ps1 -InstallService      # enable
-.\syrax.ps1 -Status              # is it running?
-.\syrax.ps1 -UninstallService    # remove
-```
-
-The service opens the UI in your default browser once ready, restarts on
-crashes, and quietly steps aside if SYRAX is already running.
+Logs: `journalctl --user -u syrax -f` on Linux, `syrax.log` in the repo root
+on macOS and Windows. The service opens the UI in your default browser once
+ready, restarts on crashes, and quietly steps aside if SYRAX is already
+running.
 
 ## Memory (facts live in the journal)
 
@@ -74,15 +62,17 @@ Passwords, keys and tokens are refused.
 
 ## Desktop control
 
-The `desktop` tool acts on your own session (GNOME on Linux, the Windows shell
-on Windows): open sites/files/apps in your browser or file manager, volume,
-play/pause/next, screenshots, notifications, clipboard, file search,
-battery/CPU/RAM/disk, lock screen. Nothing destructive (no shutdown, no killing
-apps, no deleting files).
+The `desktop` tool acts on your own session (GNOME on Linux, the Windows
+shell, Finder/LaunchServices on macOS): open sites/files/apps in your browser
+or file manager, volume, play/pause/next, screenshots, notifications,
+clipboard, file search, battery/CPU/RAM/disk, lock screen. Nothing destructive
+(no shutdown, no killing apps, no deleting files).
 
 On Windows, apps come from the Start Menu, volume and media go through the
 keyboard's media keys (exact volume levels need the optional `pycaw` package;
-media *status* is not readable), and notifications are tray balloons.
+media *status* is not readable), and notifications are tray balloons. On
+macOS, apps come from /Applications, volume and notifications go through
+osascript, and media control targets the Music app.
 
 Try: "open YouTube", "open VS Code", "volume 40", "next song", "what's playing",
 "find my resume", "how much RAM am I using", "lock the screen".
