@@ -82,6 +82,10 @@ async def chat(pid: str, request: Request):
         if "reasoning_effort" in body:
             return JSONResponse({"error": {"message": "Unrecognized request argument: reasoning_effort"}}, status_code=400)
         return completion(content="plain ok")
+    if mode == "anon-402":  # Pollinations anonymous tier: plain chat only
+        if "tools" in body or "reasoning_effort" in body:
+            return JSONResponse({}, status_code=402)
+        return completion(content="plain ok")
     if mode == "502-once":
         BEHAVIOR[pid] = "ok"
         return JSONResponse({"error": {"message": "bad gateway"}}, status_code=502)
@@ -149,6 +153,20 @@ def run(coro):
 def ask(router, messages=None, system=None, tools=TOOLS):
     messages = messages or [Message.user_message("hi")]
     return run(router.ask_tool(messages=messages, system_msgs=system, tools=tools))
+
+
+def test_key_less_tier_answers_plain_chat_when_tools_get_402(router, monkeypatch):
+    gamma = dataclasses.replace(brains.PROVIDERS["gamma"], free_params=(("reasoning_effort", "low"),))
+    monkeypatch.setattr(brains, "PROVIDERS", {**brains.PROVIDERS, "gamma": gamma})
+    router.preferred = "gamma"
+    BEHAVIOR["gamma"] = "anon-402"
+    msg = ask(router)
+    assert msg.content == "plain ok" and not msg.tool_calls
+    bodies = [b for pid, b, _ in SEEN if pid == "gamma"]
+    assert len(bodies) == 2
+    assert "tools" in bodies[0] and bodies[0]["reasoning_effort"] == "low"
+    assert "tools" not in bodies[1] and "reasoning_effort" not in bodies[1]
+    assert router.health["gamma"].until <= time.time()  # a degraded answer is not a failure
 
 
 def test_first_healthy_provider_answers(router):

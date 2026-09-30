@@ -154,15 +154,13 @@ PROVIDERS: Dict[str, Provider] = {
             tier="no-key",
             default_model="openai-fast",
             key_required=False,
-            note="Works with no key (slow, rate limited). A free token from enter.pollinations.ai unlocks faster, stronger models.",
+            note="No key: plain replies only (HTTP 402 on tool calls since 2026-09), so SYRAX can talk but not act. A free token from enter.pollinations.ai unlocks tools and stronger models.",
             signup_url="https://enter.pollinations.ai",
             timeout=90.0,
             static_models=("openai-fast", "openai"),
             keyed_base_url="https://gen.pollinations.ai/v1",
             keyed_default_model="openai",
-            # anonymous replies are capped at ~1500 tokens; a reasoning model
-            # would spend them all thinking and answer nothing
-            free_params=(("reasoning_effort", "low"),),
+            # the anonymous tier rejects every extra parameter (reasoning_effort, tools) with 402
         ),
         Provider(
             id="ollama",
@@ -593,7 +591,19 @@ class BrainRouter(LLM):
             params["tool_choice"] = tool_choice.value if hasattr(tool_choice, "value") else tool_choice
         client = self._client(pid)
         try:
-            resp = await client.chat.completions.create(**params)
+            try:
+                resp = await client.chat.completions.create(**params)
+            except APIStatusError as e:
+                # Key-less tiers (Pollinations anonymous) answer plain chat but
+                # return 402 for tools or reasoning params. Talking beats
+                # silence: retry as plain chat; the caller gets text, no tool call.
+                stripped = [k for k in ("tools", "tool_choice", *dict(p.free_params)) if k in params]
+                if e.status_code != 402 or self.store.key(pid) or not stripped:
+                    raise
+                logger.info(f"brain {pid} answers without {', '.join(stripped)} on the key-less tier (HTTP 402)")
+                for k in stripped:
+                    params.pop(k)
+                resp = await client.chat.completions.create(**params)
         except BadRequestError as e:
             # Some models reject images or temperature; retry once stripped down.
             if images and _has_images(messages):
