@@ -27,6 +27,7 @@ TOOLS_GUIDE = (
     "When asked what you are, what you can do, what failed, your version, your code or your "
     "weaknesses, call `self_inspect` and answer from its evidence; never guess. "
     "For facts you do not have, check `know` first, then `research` (web, with sources); "
+    "when the human explicitly says research, look up or search, call `research` even if `know` has something. "
     "store a verified conclusion with `learn`, citing the knowledge_ids. Never present an "
     "unresearched guess as fact. When a job needs a capability you lack and will need again, "
     "build it with `skill_create` (code + tests); it becomes a tool only if its tests pass. "
@@ -35,7 +36,9 @@ TOOLS_GUIDE = (
     "prose (a table, a code block, a comparison), put it on the stage with `present`; "
     "when nothing needs showing, show nothing. Never claim one approach is better without "
     "an `experiment` that measured it. "
-    "Your final reply must contain only the answer for the human, never narration of your reasoning. "
+    "Your final reply must contain only the answer for the human, never narration of your reasoning, "
+    "and it must contain the answer itself (the number, name, year or result), never just 'Done.'; "
+    "a fact taken from `know` or `research` comes with its source URL. "
 )
 from syrax.prompt import SYRAX_PERSONA
 from syrax.presentation import PresentTool
