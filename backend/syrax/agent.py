@@ -91,6 +91,26 @@ def _succeeded(result: str) -> bool:
     )
 
 
+# A final reply that announces an answer instead of giving it. Live: "SYRAX: The
+# request is fully satisfied. I have researched ... I will now present the answer
+# and terminate." — and no year, no URL.
+PROMISE = re.compile(
+    r"\b(i will now|i'll now|let me now|i am going to|i'm going to|the request is (fully )?(satisfied|complete)|"
+    r"i will (now )?(present|provide|give))\b", re.I,
+)
+REPEATED_CALL = (
+    "Not run again: you already called {name} with exactly these arguments at step {step}; the result is above. "
+    "Use it. If the request is done, reply with the final answer now."
+)
+
+
+READ_ONLY_TOOLS = {"self_inspect", "know", "recall", "skill_list"}
+
+
+def _call_key(command: ToolCall) -> str:
+    return f"{command.function.name}:{json.dumps(_args_of(command), sort_keys=True, default=str)}"
+
+
 class SyraxAgent(Manus):
     """Manus agent that streams every step to the UI and keeps a live session.
 
@@ -111,6 +131,7 @@ class SyraxAgent(Manus):
     checkpoint: Optional[Callable[..., Awaitable[None]]] = Field(default=None, exclude=True)
     ask_tool: WebAskHuman = Field(default_factory=WebAskHuman, exclude=True)
     last_reply: str = ""
+    seen_calls: dict = Field(default_factory=dict)  # tool+args already run this turn
     step_limit_hit: bool = False
 
     available_tools: ToolCollection = Field(
@@ -144,6 +165,7 @@ class SyraxAgent(Manus):
         self.current_step = 0
         self.state = AgentState.IDLE
         self.last_reply = ""
+        self.seen_calls = {}
         self.step_limit_hit = False
         # Fresh persona + long-term memory for every task.
         base = SYRAX_PERSONA.format(directory=config.workspace_root)
@@ -164,7 +186,9 @@ class SyraxAgent(Manus):
             await self._send(
                 {"type": "notice", "text": f"Step limit ({self.max_steps}) reached."}
             )
-        if not self.last_reply and any(m.role == "tool" for m in self.memory.messages):
+        if self.last_reply.startswith("SYRAX:"):
+            self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+        if (not self.last_reply or PROMISE.search(self.last_reply)) and any(m.role == "tool" for m in self.memory.messages):
             await self._final_answer()
         return self.last_reply or "Done."
 
@@ -229,11 +253,19 @@ class SyraxAgent(Manus):
             }
         )
         await self._send({"type": "state", "state": "acting", "tool": name})
+        key = _call_key(command)
+        seen = self.seen_calls
         problem = await browser.ensure_browser() if name.startswith("browser_") else None
-        if problem:
+        if name not in ("terminate", "ask_human") and key in seen:
+            # the same call again (live: self_inspect(summary) six times in a row) is a loop, not progress
+            result = REPEATED_CALL.format(name=name, step=seen[key])
+        elif problem:
             result = f"Error: {problem}"
         else:
             result = await ToolCallAgent.execute_tool(self, command)
+            if name not in READ_ONLY_TOOLS:
+                seen.clear()  # the world may have changed: re-reading it is legitimate again
+            seen[key] = self.current_step
         event = {
             "type": "tool_result",
             "id": command.id,

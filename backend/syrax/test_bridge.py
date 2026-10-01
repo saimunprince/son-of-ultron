@@ -969,6 +969,26 @@ def test_core_jobs_outlive_the_session_that_started_them():
     assert _a.run(scenario()) == ["core"]
 
 
+def test_repeated_identical_calls_are_not_rerun_and_promises_get_the_answer(script, tmp_path):
+    """Live (quality run 15): self_inspect(summary) six times in a row, then a
+    final that only promised the answer."""
+    import asyncio as _a
+    from syrax.quality import _cases
+
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+    core = core_mod.get_core()
+    core.quality.ws = tmp_path / "ws"
+    subset = [c for c in _cases(tmp_path / "ws") if c["id"] == "python"]
+    same = {"code": "print(6765)"}
+    script.queue = [call("python_execute", same, cid="a"), call("python_execute", same, cid="b"),
+                    reply("SYRAX: The request is fully satisfied. I will now present the answer."), reply("6765")]
+    row = _a.run(core.quality.run(cases=subset))
+    assert row["results"][0]["final"] == "6765" and row["pass_rate"] == 100.0
+    tool_msgs = [m for m in script.seen[-1] if getattr(m, "role", None) == "tool"]
+    assert any("Not run again" in (m.content or "") for m in tool_msgs)
+
+
 def test_silent_terminate_gets_a_real_final_answer(script, tmp_path):
     """Live: gemini-3.5-flash-lite ran python, then terminated with no text, and
     five quality cases ended in "Done." SYRAX now asks once, without tools."""
