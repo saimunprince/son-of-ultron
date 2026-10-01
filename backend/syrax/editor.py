@@ -102,6 +102,27 @@ def list_directory(path: Path, depth: int = 2, limit: int = 400) -> str:
 
 
 class SyraxEditor(StrReplaceEditor):
+    # OpenManus' description and schema cost 632 tokens on every model call;
+    # this says the same in about a third (measured with brains.count_tokens).
+    description: str = (
+        "View, create and edit files. view: a file (cat -n) or a directory (2 levels). create: write file_text "
+        "(overwrites; undo_edit restores). str_replace: replace old_str, which must match once (indentation-tolerant), "
+        "with new_str. insert: new_str after line insert_line. undo_edit: revert the last edit. Use absolute paths."
+    )
+    parameters: dict = {
+        "type": "object",
+        "properties": {
+            "command": {"type": "string", "enum": ["view", "create", "str_replace", "insert", "undo_edit"]},
+            "path": {"type": "string", "description": "absolute path"},
+            "file_text": {"type": "string", "description": "create: full content"},
+            "old_str": {"type": "string", "description": "str_replace: text to replace"},
+            "new_str": {"type": "string", "description": "str_replace/insert: new text"},
+            "insert_line": {"type": "integer", "description": "insert: after this line"},
+            "view_range": {"type": "array", "items": {"type": "integer"}, "description": "view: [start, end], end -1 = to the end"},
+        },
+        "required": ["command", "path"],
+    }
+
     async def execute(self, *, command: Any = None, path: Any = None, **kwargs: Any) -> str:  # type: ignore[override]
         if not command:
             raise ToolError("Parameter `command` is required: view, create, str_replace, insert or undo_edit.")

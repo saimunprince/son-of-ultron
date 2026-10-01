@@ -94,3 +94,11 @@ def test_view_on_a_directory_lists_it_without_unix_find(tool, tmp_path):
     (d / "__pycache__").mkdir()
     out = run(tool.execute(command="view", path=str(d)))
     assert "a.py" in out and "b.py" in out and "__pycache__" not in out and "FIND" not in out
+
+
+def test_editor_schema_is_compact_and_complete():
+    from syrax.brains import count_tokens
+    t = SyraxEditor()
+    spec = t.to_param()
+    assert count_tokens(spec) < 330  # was 632 from OpenManus
+    assert set(spec["function"]["parameters"]["properties"]) == {"command", "path", "file_text", "old_str", "new_str", "insert_line", "view_range"}
