@@ -23,6 +23,7 @@ import {
 type ConsoleTab = "live" | "history" | "today";
 import BrainPanel from "@/components/BrainPanel";
 import SelfPanel from "@/components/SelfPanel";
+import MindPanel, { mindRequest, type MindData, type MindTab } from "@/components/MindPanel";
 import { HistoryList, ReplayView, WhyView } from "@/components/HistoryView";
 import Stage from "@/components/Stage";
 import BootSequence from "@/components/BootSequence";
@@ -129,6 +130,8 @@ export default function Syrax() {
   const [brainTests, setBrainTests] = useState<Record<string, BrainTestResult | "running">>({});
   const [brainOpen, setBrainOpen] = useState(false);
   const [selfOpen, setSelfOpen] = useState(false);
+  const [mindTab, setMindTab] = useState<MindTab | null>(null);
+  const [mind, setMind] = useState<MindData>({ briefing: null, objectives: null, proposals: null, skills: null, scorecard: null });
   const [autonomy, setAutonomy] = useState<AutonomyStatus | null>(null);
   const [consoleTab, setConsoleTab] = useState<ConsoleTab>("live");
   const [historyTasks, setHistoryTasks] = useState<TaskSummary[] | null>(null);
@@ -374,8 +377,18 @@ export default function Syrax() {
           push({ kind: "notice", id: nextId++, text: `MAINTENANCE · pruned ${e.events_pruned} events · trimmed ${e.checkpoint_contexts_trimmed} contexts` });
           break;
         case "skills":
-        case "knowledge_list":
+          setMind((m) => ({ ...m, skills: e.skills }));
+          break;
         case "objectives":
+          setMind((m) => ({ ...m, objectives: e.objectives }));
+          break;
+        case "briefing":
+          setMind((m) => ({ ...m, briefing: e.text }));
+          break;
+        case "proposals":
+          setMind((m) => ({ ...m, proposals: e.proposals }));
+          break;
+        case "knowledge_list":
           break;
         case "history":
           setHistoryTasks(e.tasks);
@@ -405,7 +418,10 @@ export default function Syrax() {
           if (e.event === "resumed") push({ kind: "notice", id: nextId++, text: "RESUMING interrupted task." });
           break;
         case "self_model":
-          if (e.section === "summary") {
+          if (e.section === "brains") {
+            const card = (e as { brains?: { scorecard?: MindData["scorecard"] } }).brains?.scorecard ?? {};
+            setMind((m) => ({ ...m, scorecard: card }));
+          } else if (e.section === "summary") {
             const { type: _t, section: _s, ...rest } = e;
             void _t;
             void _s;
@@ -598,6 +614,11 @@ export default function Syrax() {
     clientRef.current?.send({ type: "self_model" });
   }, []);
 
+  const openMind = useCallback((tab: MindTab) => {
+    setMindTab(tab);
+    clientRef.current?.send(mindRequest(tab));
+  }, []);
+
   const openBrain = useCallback(() => {
     clientRef.current?.send({ type: "brains_get" });
     setBrainOpen(true);
@@ -760,7 +781,7 @@ export default function Syrax() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (brainOpen || selfOpen || booting) return; // the panel / boot screen own the keyboard
+      if (brainOpen || selfOpen || mindTab || booting) return; // the panel / boot screen own the keyboard
       if (isTypingTarget(e.target)) {
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
@@ -795,6 +816,10 @@ export default function Syrax() {
         case "B":
           openBrain();
           break;
+        case "o":
+        case "O":
+          openMind("objectives");
+          break;
         case "m":
         case "M":
           toggleHandsFree();
@@ -810,7 +835,7 @@ export default function Syrax() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [booting, brainOpen, selfOpen, openBrain, openSelf, stopTask, toggleGestures, toggleHandsFree]);
+  }, [booting, brainOpen, selfOpen, mindTab, openBrain, openMind, openSelf, stopTask, toggleGestures, toggleHandsFree]);
 
   const cameraOn = camera === "on";
 
@@ -1155,6 +1180,9 @@ export default function Syrax() {
           <button type="button" className="hud-btn" onClick={openSelf} title="Self model (S)">
             SELF
           </button>
+          <button type="button" className="hud-btn" onClick={() => openMind("objectives")} title="Objectives, proposals, skills, briefing (O)">
+            MIND
+          </button>
           <button
             type="button"
             className="hud-btn"
@@ -1202,6 +1230,7 @@ export default function Syrax() {
             ["M", "voice"],
             ["B", "brain"],
             ["S", "self"],
+            ["O", "mind"],
             ["C", "log"],
             ["ESC", "abort"],
           ].map(([k, label]) => (
@@ -1230,6 +1259,16 @@ export default function Syrax() {
           model={selfModel}
           onRefresh={() => clientRef.current?.send({ type: "self_model" })}
           onClose={() => setSelfOpen(false)}
+        />
+      )}
+
+      {mindTab && (
+        <MindPanel
+          tab={mindTab}
+          data={mind}
+          onTab={openMind}
+          send={(msg) => clientRef.current?.send(msg)}
+          onClose={() => setMindTab(null)}
         />
       )}
 

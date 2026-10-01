@@ -245,6 +245,25 @@ export interface Knowledge {
   uses: number;
 }
 
+/** A change SYRAX's research suggests to the human (journal: proposal.created). */
+export interface Proposal {
+  kind?: string;
+  limitation?: string;
+  proposal: string;
+  sources?: string[];
+  objective_id?: number;
+  ts: number;
+}
+
+/** One brain's measured record (self_model section "brains"). */
+export interface BrainScore {
+  tasks: number;
+  success_rate: number | null;
+  avg_steps: number | null;
+  graded: number;
+  quality: number;
+}
+
 export interface SkillRow {
   name: string;
   version: number;
@@ -399,6 +418,8 @@ export type ServerEvent =
   | ({ type: "research"; event: "started" | "completed"; question: string; sources?: number; fetched?: number; stored?: number; failures?: string[]; ms?: number } & Journaled)
   | ({ type: "knowledge"; event: "stored"; knowledge_id: number; kind: Knowledge["kind"]; confidence: number; claim: string; source_url: string | null; tags: string[] } & Journaled)
   | { type: "objectives"; objectives: Objective[] }
+  | { type: "briefing"; text: string }
+  | { type: "proposals"; proposals: Proposal[] }
   | ({ type: "autonomy_status" } & AutonomyStatus)
   | ({ type: "autonomy"; event: "toggled"; enabled: boolean } & Journaled)
   | ({
@@ -433,6 +454,9 @@ export type ClientMessage =
   | { type: "self_model"; section?: string }
   | { type: "objectives"; limit?: number }
   | { type: "objective_add"; goal: string; reason?: string; priority?: number }
+  | { type: "objective_update"; id: number; status: "OPEN" | "DONE" | "BLOCKED" | "DROPPED"; note: string }
+  | { type: "briefing"; hours?: number }
+  | { type: "proposals"; limit?: number }
   | { type: "autonomy"; enabled?: boolean }
   | { type: "cycle_now" }
   | { type: "task_detail"; task_id: string }
