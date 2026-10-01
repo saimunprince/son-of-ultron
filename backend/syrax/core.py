@@ -460,6 +460,12 @@ def _repo_edit(steps: List[dict], args: dict) -> Optional[dict]:
     raw = str(args.get("path") or "")
     if not raw:
         return None
+    if not os.path.isabs(raw.strip().strip('"').strip("'")):
+        from syrax.editor import resolve_path
+        try:
+            raw = str(resolve_path(raw, cmd)[0])  # the editor resolves relative paths the same way
+        except Exception:
+            return None
     try:
         rel = os.path.relpath(os.path.realpath(raw), os.path.realpath(str(REPO_ROOT)))
     except ValueError:

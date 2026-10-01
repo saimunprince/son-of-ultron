@@ -11,11 +11,11 @@ from app.config import config
 from app.logger import logger
 from app.schema import AgentState, Message, ToolCall, ToolChoice
 from app.tool import Terminate, ToolCollection
-from app.tool.str_replace_editor import StrReplaceEditor
 
 from syrax import browser  # noqa: F401  (sets BU_CDP_URL before MCP starts)
 from syrax.brains import get_router
 from syrax.desktop import DesktopControl
+from syrax.editor import SyraxEditor
 from syrax.devloop import ReleaseTool
 from syrax.experiments import ExperimentTool
 from syrax.memory import ForgetTool, RecallTool, RememberTool, get_memory
@@ -115,7 +115,7 @@ class SyraxAgent(Manus):
 
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
-            AsyncPythonExecute(), StrReplaceEditor(), DesktopControl(),
+            AsyncPythonExecute(), SyraxEditor(), DesktopControl(),
             RememberTool(), RecallTool(), ForgetTool(), SelfInspectTool(),
             ResearchTool(), KnowTool(), LearnTool(),
             SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), PresentTool(), ExperimentTool(), CompareVersionsTool(), Terminate()
