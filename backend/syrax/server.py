@@ -9,6 +9,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     verifications {limit?} | self_model {section?} |
                     objectives {limit?} | objective_add {goal, reason?, priority?} |
                     objective_update {id, status, note} (a human reopens, drops or closes) |
+                    dismiss {task_id, note} (cancel an INTERRUPTED task instead of resuming it) |
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
                     skills | presentation | benchmarks {limit?} | experiments {limit?} |
                     quality_run {only?, brain?} | quality_runs {limit?} | compare_brains {a, b, only?} |
@@ -380,6 +381,19 @@ class Session:
                 await self.send({"type": "notice", "text": "Already executing. Stop it first."})
                 return
             self.spawn(self._cycle(), detached=True)
+        elif kind == "dismiss":
+            # An interrupted task whose in-flight operation is UNCERTAIN waits for
+            # a person: resume it, or dismiss it here (journaled as cancelled).
+            tid = str(msg.get("task_id") or "")
+            note = str(msg.get("note") or "").strip()
+            task = journal.task(tid) if tid else None
+            if not task or task.get("status") != "INTERRUPTED" or not note:
+                await self.send({"type": "notice", "text": "dismiss needs the task_id of an INTERRUPTED task and a note."})
+                return
+            await journal.record("task.cancelled", {"error": f"dismissed by human: {note}"}, task_id=tid)
+            for o in await asyncio.to_thread(journal.objectives, 500, ["OPEN", "ACTIVE", "BLOCKED"]):
+                if o.get("key") == f"uncertain-task:{tid}":
+                    await journal.update_objective(o["id"], status="DROPPED", note=f"human dismissed task {tid}: {note}")
         elif kind == "resume":
             tid = str(msg.get("task_id") or "")
             try:

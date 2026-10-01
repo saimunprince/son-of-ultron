@@ -220,11 +220,36 @@ def _uptime_s() -> float:
     return 1e9
 
 
+def _cancel_running_task() -> None:
+    """Ask the core to cancel its task first, so a restart leaves a cleanly
+    cancelled task instead of an INTERRUPTED one with an UNCERTAIN operation
+    (each of those waits for a human)."""
+    try:
+        import asyncio
+        import json as _json
+
+        import websockets  # in the backend venv, which runs this launcher
+
+        async def go():
+            async with websockets.connect(f"ws://127.0.0.1:{BACKEND_PORT}/ws", max_size=None, open_timeout=5) as ws:
+                await ws.send(_json.dumps({"type": "stop"}))
+                deadline = time.time() + 10
+                while time.time() < deadline:
+                    m = _json.loads(await asyncio.wait_for(ws.recv(), max(0.5, deadline - time.time())))
+                    if m.get("type") == "state" and m.get("state") == "idle":
+                        return
+
+        asyncio.run(go())
+    except Exception:
+        pass  # not running, no websockets here, or slow: the kill below still happens
+
+
 def stop() -> int:
     """Stop the running SYRAX (launcher, core, UI) through its pid file."""
     if not PID_FILE.exists():
         say("not running (no pid file).")
         return 0
+    _cancel_running_task()
     pid = PID_FILE.read_text().strip()
     if WINDOWS:
         subprocess.run(["taskkill", "/PID", pid, "/T", "/F"], capture_output=True)

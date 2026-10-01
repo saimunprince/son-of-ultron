@@ -986,6 +986,22 @@ def test_silent_terminate_gets_a_real_final_answer(script, tmp_path):
     assert "no answer" in script.seen[-1][-1].content  # the wrap-up asked for the answer
 
 
+def test_dismiss_cancels_an_interrupted_task_and_its_uncertain_objective(script):
+    j = get_journal()
+    t = j.start_task_sync("killed mid-operation", kind="autonomous")
+    j.record_sync("task.interrupted", {"error": "restart", "recovery": {"state": "UNCERTAIN"}}, task_id=t)
+    o = j.add_objective_sync("decide about it", source="selfmodel", check={"kind": "human"}, key=f"uncertain-task:{t}", status="BLOCKED")
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "dismiss", "task_id": t})
+        assert "needs the task_id" in recv_until(ws, "notice")[0]["text"]
+        ws.send_json({"type": "dismiss", "task_id": t, "note": "it was a restart, nothing to resume"})
+        upd, _ = recv_until(ws, "objective")
+        assert upd["status"] == "DROPPED"
+    assert j.task(t)["status"] == "CANCELLED" and "dismissed by human" in j.task(t)["error"]
+    assert [x for x in j.objectives(limit=200) if x["id"] == o["id"]][0]["status"] == "DROPPED"
+
+
 # ——— brain-preferred quality runs and journal-backed history ———
 
 
