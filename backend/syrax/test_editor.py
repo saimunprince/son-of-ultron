@@ -83,3 +83,14 @@ def test_loose_helpers():
     assert find_loose("x\n  y\n  z\n", "y\nz") == [1]
     assert find_loose("y\ny\n", "y") == [0, 1]
     assert reindent("a\n  b", "a", "    a") == "    a\n      b"
+
+
+def test_view_on_a_directory_lists_it_without_unix_find(tool, tmp_path):
+    """Live on Windows: 'FIND: Parameter format not correct'."""
+    d = tmp_path / "repo" / "backend" / "syrax"
+    (d / "sub").mkdir()
+    (d / "a.py").write_text("x")
+    (d / "sub" / "b.py").write_text("y")
+    (d / "__pycache__").mkdir()
+    out = run(tool.execute(command="view", path=str(d)))
+    assert "a.py" in out and "b.py" in out and "__pycache__" not in out and "FIND" not in out

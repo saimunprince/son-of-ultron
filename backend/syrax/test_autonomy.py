@@ -497,3 +497,12 @@ def test_a_human_can_reopen_a_done_objective_with_a_note(tmp_path):
     assert ev["previous_evidence"] == {"quality": 13} and "edited case" in ev["note"]
     with pytest.raises(JournalError, match="not DONE"):
         j.reopen_objective_sync(o["id"], "again")
+
+
+def test_brief_carries_the_objective_evidence():
+    from syrax.autonomy import brief_evidence
+    o = {"evidence": {"plan": ["x"], "stats": {"uses": 50, "failures": 11},
+                      "recent_failures": [{"task_id": "t1", "output": "Error: The path syrax\\prompt.py is not an absolute path"}]}}
+    text = brief_evidence(o)
+    assert "t1" in text and "not an absolute path" in text and '"failures": 11' in text and "plan" not in text
+    assert brief_evidence({"evidence": {}}) == ""

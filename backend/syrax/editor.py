@@ -79,6 +79,28 @@ def reindent(new: str, old: str, actual_first: str) -> str:
     return "\n".join(out)
 
 
+SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".next", ".cache"}
+
+
+def list_directory(path: Path, depth: int = 2, limit: int = 400) -> str:
+    """What `view` shows for a directory, in Python: OpenManus shells out to
+    Unix `find`, which on Windows is a different program ("FIND: Parameter
+    format not correct", seen live)."""
+    rows: List[str] = []
+    base_depth = len(path.parts)
+    for root, dirs, files in __import__("os").walk(path):
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS)
+        here = Path(root)
+        level = len(here.parts) - base_depth
+        if level >= depth:
+            dirs[:] = []
+        for name in dirs + sorted(f for f in files if not f.startswith(".")):
+            rows.append(str(here / name) + ("/" if name in dirs else ""))
+            if len(rows) >= limit:
+                return "\n".join(rows) + f"\n… (stopped at {limit} entries)"
+    return "\n".join(rows)
+
+
 class SyraxEditor(StrReplaceEditor):
     async def execute(self, *, command: Any = None, path: Any = None, **kwargs: Any) -> str:  # type: ignore[override]
         if not command:
@@ -96,6 +118,9 @@ class SyraxEditor(StrReplaceEditor):
             return self._noted(f"File overwritten at: {resolved} (the previous content can be restored with undo_edit)", note)
         if command == "create" and not resolved.parent.exists():
             resolved.parent.mkdir(parents=True, exist_ok=True)
+        if command == "view" and resolved.is_dir():
+            listing = list_directory(resolved)
+            return self._noted(f"Here's the files and directories up to 2 levels deep in {resolved}, excluding hidden items:\n{listing}\n", note)
         if command == "view" and kwargs.get("view_range"):
             kwargs["view_range"] = await self._clamp_range(resolved, kwargs["view_range"], operator)
         if command == "str_replace" and kwargs.get("old_str") is not None:

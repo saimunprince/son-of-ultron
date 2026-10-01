@@ -24,6 +24,7 @@ Objective checks (machine-evaluable, evidence from the journal):
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import time
@@ -53,7 +54,7 @@ MAINTENANCE_EVERY_S = 86400.0
 
 AUTONOMOUS_BRIEF = (
     "[AUTONOMOUS OBJECTIVE] You are working on your own objective, not a human request.\n"
-    "Goal: {goal}\nReason: {reason}\n"
+    "Goal: {goal}\nReason: {reason}\n{evidence}"
     "Your repository root is {repo_root}; paths in the goal are relative to it. Use absolute paths "
     "with every tool (python_execute runs elsewhere; str_replace_editor requires them). "
     "Read journaled tasks with `self_inspect` task_id, never the database.\n"
@@ -88,6 +89,23 @@ class CycleReport:
 
     def to_dict(self) -> dict:
         return {k: getattr(self, k) for k in ("started", "outcome", "reason", "objective_id", "task_id", "task_status", "verdict", "derived")}
+
+
+def brief_evidence(objective: dict, budget: int = 1800) -> str:
+    """The evidence the objective was created from, compact, for the task.
+    Live: SYRAX was told to "read the failures listed in the evidence" but the
+    brief carried only the goal, so it guessed journal tables in raw SQL
+    ("no such table: tool_calls", "no such column: id") instead."""
+    ev = dict(objective.get("evidence") or {})
+    ev.pop("plan", None)  # already in the goal
+    if not ev:
+        return ""
+    lines = []
+    for f in ev.pop("recent_failures", []) or []:
+        lines.append(f"- task {f.get('task_id')}: {str(f.get('output') or '').strip()[-220:]}")
+    head = json.dumps(ev, default=str, ensure_ascii=False)
+    text = "Evidence: " + head[: budget // 2] + ("\nRecent failures (read more with self_inspect task_id):\n" + "\n".join(lines) if lines else "")
+    return text[:budget] + "\n"
 
 
 def resource_pressure() -> Optional[str]:
@@ -457,7 +475,8 @@ class Autonomy:
         hint = BRIEF_HINTS.get(spec.get("kind", ""), "").format(**{k: v for k, v in spec.items() if isinstance(v, str)})
         from syrax.devloop import REPO_ROOT
 
-        brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-", hint=hint, repo_root=REPO_ROOT)
+        brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-", hint=hint, repo_root=REPO_ROOT,
+                                        evidence=brief_evidence(objective))
         task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous")
         if task_id is None:
             await self.journal.update_objective(objective["id"], status="OPEN", note="core busy")
