@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional
 from app.logger import logger
 
 from syrax import resources
-from syrax import plan
+from syrax import followup, plan
 from syrax.journal import BACKEND_ROOT, Journal, JournalError
 
 REPO_ROOT_PATH = BACKEND_ROOT.parent
@@ -626,7 +626,8 @@ class Autonomy:
 
         steps_before = await asyncio.to_thread(plan.status, self.journal, objective, plan.task_ids_of(objective))
         brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-", hint=hint, repo_root=REPO_ROOT,
-                                        evidence=plan.render(steps_before) + brief_evidence(objective) + past_experience(self.journal, objective))
+                                        evidence=plan.render(steps_before) + followup.learned_brief(self.journal, objective)
+                                        + brief_evidence(objective) + past_experience(self.journal, objective))
         task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous")
         if task_id is None:
             await self.journal.update_objective(objective["id"], status="OPEN", note="core busy")
@@ -679,6 +680,9 @@ class Autonomy:
                 last_task_id=task_id, bump_attempts=True,
                 next_action="needs a different strategy or a human", note=lesson,
             )
+            # Phase 1: what this attempt taught decides the next objective
+            blocked = await asyncio.to_thread(self.journal.objective, objective["id"])
+            await asyncio.to_thread(followup.derive, self.journal, blocked or objective)
         else:
             await self.journal.update_objective(
                 objective["id"], status="OPEN",

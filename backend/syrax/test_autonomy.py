@@ -237,8 +237,11 @@ def test_repeated_failure_blocks_after_max_attempts(tmp_path, monkeypatch):
     objs = j.objectives(status="BLOCKED")
     assert len(objs) == 1 and objs[0]["attempts"] == auto.MAX_ATTEMPTS and "different strategy" in objs[0]["next_action"]
     assert "failed again" in objs[0]["progress"]["lesson"]
-    assert asyncio.run(a.run_once()).outcome == "IDLE"  # blocked objectives are not retried blindly
-    assert len(core.submitted) == auto.MAX_ATTEMPTS
+    nxt = asyncio.run(a.run_once())  # blocked objectives are not retried blindly: the next cycle learns how first (followup.py)
+    learn = j.objective(nxt.objective_id)
+    assert nxt.objective_id != objs[0]["id"] and learn["evidence"]["followup_of"] == objs[0]["id"]
+    assert learn["check_spec"]["kind"] == "knowledge_stored"
+    assert len(core.submitted) == auto.MAX_ATTEMPTS + 1
 
 
 def test_human_objective_uses_task_success_and_priority_order(tmp_path, monkeypatch):

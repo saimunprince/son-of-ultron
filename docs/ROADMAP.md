@@ -73,7 +73,7 @@ SYRAX manages its own development agenda, not single tasks.
 - DONE: Verify step — a quality objective with an attempt behind it is measured by the cycle itself; BLOCKED objectives with a machine check close when later evidence satisfies them.
 - DONE: the brief carries the objective's evidence (recent failures, counts), so SYRAX reads them instead of guessing journal tables.
 - DONE (2026-10-01): plans with per-step checks (`syrax/plan.py`). Each doing step of a limitation plan carries a machine check (`tool_ok`, `released`, `learned`) proven from the journal across the objective's attempts. The brief shows DONE / NEXT / TODO, a retry resumes at the first unproven step (`next_action`), `plan.progressed` is journaled, and an attempt that proves new steps is progress, not a blind repeat.
-- TODO: the next objective derived from what the last one taught.
+- DONE (2026-10-01): the next objective comes from what the last one taught (`syrax/followup.py`). A BLOCKED objective that released a change gets a follow-up told which commits missed and which failures came after them. One that neither released nor learned anything first gets a learning objective (research → learn), then a retry that depends on it and is briefed with what was learned. Depth-capped, once per objective, journaled as `followup.derived`.
 
 - DONE: SYRAX restarts itself (idle, launched by syrax.py) when a commit it has not loaded is on disk, so a released fix takes effect without a human.
 - DONE: limitation priority = score × confidence ÷ cost, each measured per kind from the journal.
