@@ -87,6 +87,27 @@ def test_a_fixed_tool_stops_ranking_on_its_old_failures(tmp_path):
     assert all(r["subject"] != "str_replace_editor" for r in limits.rank(j, FakeSelf()))
 
 
+def test_value_weighs_past_success_and_cost(tmp_path):
+    """Phase 1: priority = impact x confidence / cost, all from the journal."""
+    j = Journal(tmp_path / "j.db")
+    t = j.start_task_sync("work")
+    use(j, t, "str_replace_editor", True, 30)
+    use(j, t, "str_replace_editor", False, 10)  # 25 % failing, ranks by score alone
+    for i, status in enumerate(("BLOCKED", "BLOCKED", "BLOCKED")):  # tool fixes never worked and were expensive
+        ti = j.start_task_sync(f"attempt {i}")
+        for _ in range(30):
+            j.record_sync("brain.answered", {"provider": "gemini"}, task_id=ti)
+        o = j.add_objective_sync(f"fix tool {i}", source="selfmodel", key=f"k{i}",
+                                 evidence={"limitation": {"kind": "tool_reliability", "detail": "x", "score": 0.3}})
+        j.update_objective_sync(o["id"], status=status, last_task_id=ti, note="tried")
+    me = FakeSelf([{"kind": "known_limitation", "detail": "no embeddings", "evidence": "docs"}])
+    ranked = limits.rank(j, me)
+    tool = [r for r in ranked if r["kind"] == "tool_reliability"][0]
+    known = [r for r in ranked if r["kind"] == "known_limitation"][0]
+    assert tool["confidence"] == 0.2 and tool["cost"] == 30.0 and known["confidence"] == 0.5
+    assert tool["score"] > known["score"] and known["value"] > tool["value"] and ranked[0]["kind"] == "known_limitation"
+
+
 def test_nothing_measurable_means_nothing_chosen(tmp_path):
     j = Journal(tmp_path / "j.db")
     assert limits.rank(j, FakeSelf()) == [] and limits.choose(j, FakeSelf()) is None

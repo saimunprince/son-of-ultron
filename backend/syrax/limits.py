@@ -142,8 +142,37 @@ def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[
                 "Say what change to SYRAX it suggests and what it would cost; build nothing yet.",
             ],
         })
-    out.sort(key=lambda x: -x["score"])
+    stats = kind_stats(journal)
+    for x in out:
+        st = stats.get(x["kind"], {"done": 0, "total": 0, "calls": None})
+        x["confidence"] = round((st["done"] + 1) / (st["total"] + 2), 2)  # Laplace: a new kind starts at 0.5
+        x["cost"] = st["calls"] if st["calls"] is not None else DEFAULT_COST
+        x["value"] = round(x["score"] * x["confidence"] / (1 + x["cost"] / 20), 4)
+    out.sort(key=lambda x: (-x["value"], -x["score"]))
     return out
+
+
+DEFAULT_COST = 10.0  # brain calls, until a kind has history
+
+
+def kind_stats(journal: Journal) -> Dict[str, dict]:
+    """Per limitation kind: how many objectives closed DONE out of those that
+    ended (DONE/BLOCKED/DROPPED), and the average brain calls they spent."""
+    out: Dict[str, dict] = {}
+    for o in journal.objectives(limit=500, status=["DONE", "BLOCKED", "DROPPED"]):
+        kind = (((o.get("evidence") or {}).get("limitation")) or {}).get("kind")
+        if not kind:
+            continue
+        st = out.setdefault(kind, {"done": 0, "total": 0, "calls_sum": 0, "calls_n": 0})
+        st["total"] += 1
+        st["done"] += o["status"] == "DONE"
+        tasks = {a.get("task_id") for a in ((o.get("progress") or {}).get("attempts_log") or [])} | {o.get("last_task_id")}
+        calls = sum(1 for t in tasks if t for e in journal.events(t) if e["type"] == "brain.answered")
+        if calls:
+            st["calls_sum"] += calls
+            st["calls_n"] += 1
+    return {k: {"done": v["done"], "total": v["total"], "calls": round(v["calls_sum"] / v["calls_n"], 1) if v["calls_n"] else None}
+            for k, v in out.items()}
 
 
 def choose(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> Optional[dict]:
@@ -168,7 +197,7 @@ def choose(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> Opt
             chosen = {**lim, "objective_id": obj["id"], "key": key}
             break
     journal.record_sync("limitation.ranked", {
-        "ranked": [{k: x[k] for k in ("kind", "subject", "score", "detail")} for x in ranked[:8]],
+        "ranked": [{k: x.get(k) for k in ("kind", "subject", "score", "confidence", "cost", "value", "detail")} for x in ranked[:8]],
         "chosen": {k: chosen[k] for k in ("kind", "subject", "score", "objective_id")} if chosen else None,
     })
     return chosen
