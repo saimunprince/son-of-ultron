@@ -72,7 +72,8 @@ SYRAX manages its own development agenda, not single tasks.
 - DONE (2026-10-01): when nothing is open, `syrax/limits.py` ranks SYRAX's limitations from journal counts (tool failure rate × volume, brain failover share, known limitations) and turns the strongest into an objective with a four-step plan and a measurable check (`tool_reliability`: new uses only). The ranking is journaled (`limitation.ranked`). First live loops closed: python_execute reliability (#27) DONE; brain failover research (#24) DONE.
 - DONE: Verify step — a quality objective with an attempt behind it is measured by the cycle itself; BLOCKED objectives with a machine check close when later evidence satisfies them.
 - DONE: the brief carries the objective's evidence (recent failures, counts), so SYRAX reads them instead of guessing journal tables.
-- TODO: priority from impact × confidence × cost instead of a fixed score per kind; plans with per-step checks; the next objective derived from what the last one taught.
+- DONE (2026-10-01): plans with per-step checks (`syrax/plan.py`). Each doing step of a limitation plan carries a machine check (`tool_ok`, `released`, `learned`) proven from the journal across the objective's attempts. The brief shows DONE / NEXT / TODO, a retry resumes at the first unproven step (`next_action`), `plan.progressed` is journaled, and an attempt that proves new steps is progress, not a blind repeat.
+- TODO: the next objective derived from what the last one taught.
 
 - DONE: SYRAX restarts itself (idle, launched by syrax.py) when a commit it has not loaded is on disk, so a released fix takes effect without a human.
 - DONE: limitation priority = score × confidence ÷ cost, each measured per kind from the journal.

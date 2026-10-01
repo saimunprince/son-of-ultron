@@ -95,6 +95,7 @@ def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[
                 "Fix that cause in SYRAX's own code or prompts (never in tests or in the files that judge you), add a new test, and `release`.",
                 f"Then use `{tool}` {MIN_USES} times with harmless, realistic calls inside the workspace so the new failure rate is measured (target ≤ {target:.0%}).",
             ],
+            "plan_checks": [{"kind": "tool_ok", "tools": ["self_inspect", "journal_query"]}, None, {"kind": "released"}, {"kind": "tool_ok", "tools": [tool], "min": MIN_USES}],
         })
     answered = failed = 0
     for e in journal.events_between(now - BRAIN_WINDOW_S, now, limit=10000):
@@ -118,6 +119,7 @@ def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[
                 "`learn` one verified conclusion with sources: which provider order or model choice would cut failovers.",
                 "Report the proposal; changing keys or providers is the human's decision.",
             ],
+            "plan_checks": [{"kind": "tool_ok", "tools": ["self_inspect", "journal_query"]}, {"kind": "tool_ok", "tools": ["research"]}, {"kind": "learned"}, None],
         })
     try:
         weaknesses = selfmodel.weaknesses()
@@ -141,6 +143,7 @@ def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[
                 "`learn` one verified conclusion with sources.",
                 "Say what change to SYRAX it suggests and what it would cost; build nothing yet.",
             ],
+            "plan_checks": [{"kind": "tool_ok", "tools": ["research"]}, {"kind": "learned"}, None],
         })
     stats = kind_stats(journal)
     for x in out:
@@ -190,7 +193,8 @@ def choose(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> Opt
             source="selfmodel",
             check=lim["check"],
             key=key,
-            evidence={"limitation": {k: lim[k] for k in ("kind", "subject", "score", "detail")}, "plan": lim["plan"], **lim["evidence"]},
+            evidence={"limitation": {k: lim[k] for k in ("kind", "subject", "score", "detail")}, "plan": lim["plan"],
+                      "plan_checks": lim.get("plan_checks") or [], **lim["evidence"]},
             next_action=lim["plan"][0],
         )
         if obj:

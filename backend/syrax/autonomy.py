@@ -35,6 +35,7 @@ from typing import Any, Dict, List, Optional
 from app.logger import logger
 
 from syrax import resources
+from syrax import plan
 from syrax.journal import BACKEND_ROOT, Journal, JournalError
 
 REPO_ROOT_PATH = BACKEND_ROOT.parent
@@ -171,6 +172,7 @@ def brief_evidence(objective: dict, budget: int = 1800) -> str:
     ("no such table: tool_calls", "no such column: id") instead."""
     ev = dict(objective.get("evidence") or {})
     ev.pop("plan", None)  # already in the goal
+    ev.pop("plan_checks", None)  # shown as plan progress
     log = ((objective.get("progress") or {}).get("attempts_log")) or []
     tried = ""
     if log:
@@ -622,8 +624,9 @@ class Autonomy:
         hint = BRIEF_HINTS.get(spec.get("kind", ""), "").format(**{k: v for k, v in spec.items() if isinstance(v, str)})
         from syrax.devloop import REPO_ROOT
 
+        steps_before = await asyncio.to_thread(plan.status, self.journal, objective, plan.task_ids_of(objective))
         brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-", hint=hint, repo_root=REPO_ROOT,
-                                        evidence=brief_evidence(objective) + past_experience(self.journal, objective))
+                                        evidence=plan.render(steps_before) + brief_evidence(objective) + past_experience(self.journal, objective))
         task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous")
         if task_id is None:
             await self.journal.update_objective(objective["id"], status="OPEN", note="core busy")
@@ -643,10 +646,20 @@ class Autonomy:
         # already failed is not tried again (no blind retry)
         strategy = strategy_of(self.journal.events(task_id))
         log = list(((objective.get("progress") or {}).get("attempts_log")) or [])
-        repeated = verdict != "DONE" and any(a.get("strategy") == strategy and a.get("verdict") != "DONE" for a in log)
+        # Phase 1: which plan steps the journal now proves, across all attempts
+        steps = await asyncio.to_thread(plan.status, self.journal, objective, plan.task_ids_of(objective, task_id))
+        advanced = plan.proven(steps) > plan.proven(steps_before)
+        nxt = plan.next_step(steps)
+        if steps and verdict != "DONE":
+            lesson = f"{lesson} Plan: {plan.proven(steps)}/{len(steps)} steps proven" + (f"; resume at step {nxt['step']}" if nxt else "") + "."
+        if advanced:
+            await self.journal.record("plan.progressed", {"objective_id": objective["id"], "task_id": task_id, **plan.summary(steps)})  # the task is closed
+        # a repeated strategy is blind only when it proved nothing new
+        repeated = verdict != "DONE" and not advanced and any(a.get("strategy") == strategy and a.get("verdict") != "DONE" for a in log)
         if repeated:
             lesson = f"repeated the strategy of an earlier failed attempt ({', '.join(strategy[:4]) or 'no tools'}); {lesson}"
-        log.append({"attempt": attempts, "task_id": task_id, "verdict": verdict, "strategy": strategy, "lesson": lesson[:300]})
+        log.append({"attempt": attempts, "task_id": task_id, "verdict": verdict, "strategy": strategy, "lesson": lesson[:300],
+                    **({"steps_proven": plan.proven(steps)} if steps else {})})
         if repeated:
             verdict = "BLOCKED"
         if verdict == "DONE":
@@ -669,9 +682,10 @@ class Autonomy:
         else:
             await self.journal.update_objective(
                 objective["id"], status="OPEN",
-                progress={"lesson": lesson, "attempts_log": log[-6:]}, evidence={"judged": evidence, "task_id": task_id},
+                progress={"lesson": lesson, "attempts_log": log[-6:], **({"plan": plan.summary(steps)} if steps else {})},
+                evidence={"judged": evidence, "task_id": task_id},
                 last_task_id=task_id, bump_attempts=True,
-                next_action="retry with a changed approach", note=lesson,
+                next_action=(f"step {nxt['step']}: {nxt['do']}" if nxt else "retry with a changed approach"), note=lesson,
             )
         await self.journal.record(
             "reflection.created",
