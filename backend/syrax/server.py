@@ -7,7 +7,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
   client -> server: task {text, voice?} | answer {text} | stop | reset | ping |
                     history {limit?} | task_events {task_id} | resume {task_id} |
                     verifications {limit?} | self_model {section?} |
-                    objectives {limit?} | objective_add {goal, reason?, priority?, check?} |
+                    objectives {limit?} | objective_add {goal, reason?, priority?, check?} | briefing {hours?} |
                     objective_update {id, status, note} (a human reopens, drops or closes) | proposals {limit?} |
                     dismiss {task_id, note} (cancel an INTERRUPTED task instead of resuming it) |
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
@@ -229,6 +229,7 @@ class Session:
             }
         )
         await self.send({"type": "brains", **get_router().describe()})
+        await self._daily_briefing()
         if snap["running"]:
             # Reconnect while a task runs: replay what happened so far, then the live state.
             tid = snap["running"]["task_id"]
@@ -289,6 +290,12 @@ class Session:
             pid = str(msg.get("presentation_id") or "")
             if not await self.core.presentation.feedback(pid, str(msg.get("action") or "dismiss")):
                 await self.send({"type": "notice", "text": "That element is no longer shown."})
+        elif kind == "briefing":
+            from syrax import briefing
+
+            hours = max(1, min(int(msg.get("hours") or 24), 24 * 14))
+            text = await asyncio.to_thread(briefing.compose, journal, time.time() - hours * 3600)
+            await self.send({"type": "briefing", "text": text})
         elif kind == "proposals":
             await self.send({"type": "proposals", "proposals": await asyncio.to_thread(self.core.selfmodel.proposals, _limit(msg.get("limit"), 10))})
         elif kind == "quality_runs":
@@ -445,6 +452,28 @@ class Session:
             await self.send({"type": "notice", "text": str(e)})
             return
         await self.core.broadcast({"type": "notice", "text": format_report(row)})
+
+    async def _daily_briefing(self) -> None:
+        """Once a day, the first session that opens gets what SYRAX did,
+        learned and proposes, composed from the journal (no model call)."""
+        from syrax import briefing
+
+        journal = self.core.journal
+        try:
+            if not await asyncio.to_thread(briefing.due, journal):
+                return
+            last = float(journal.get_meta(briefing.META_KEY) or 0) or None
+            text = await asyncio.to_thread(briefing.compose, journal, last)
+            await asyncio.to_thread(briefing.mark_shown, journal)
+        except Exception as e:  # a briefing must never break a session
+            logger.warning(f"daily briefing failed: {e}")
+            return
+        await self.send({"type": "briefing", "text": text})
+        try:
+            await self.core.presentation.show("card", "daily briefing", {"title": "Daily briefing", "text": text},
+                                              attention="focus", ttl_s=900, slot="briefing")
+        except Exception as e:
+            logger.warning(f"briefing card failed: {e}")
 
     async def _cycle(self) -> None:
         rep = await self.core.autonomy.run_once(force=True)
