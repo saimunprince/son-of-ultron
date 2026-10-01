@@ -16,6 +16,7 @@ from syrax import browser  # noqa: F401  (sets BU_CDP_URL before MCP starts)
 from syrax.brains import get_router
 from syrax.desktop import DesktopControl
 from syrax.editor import SyraxEditor
+from syrax.journal_query import JournalQueryTool
 from syrax.devloop import ReleaseTool
 from syrax.experiments import ExperimentTool
 from syrax.memory import ForgetTool, RecallTool, RememberTool, get_memory
@@ -42,8 +43,8 @@ TOOLS_GUIDE = (
     "must read or operate a web page. Use python_execute for calculations and scripts. "
     "When asked what you are, what you can do, what failed, your version, your code or your "
     "weaknesses, call `self_inspect` and answer from its evidence; never guess. "
-    "To read a past task, call `self_inspect` with its task_id; never query the journal database "
-    "yourself. Your own code lives under the repo_root that `self_inspect` reports; use absolute paths there. "
+    "To read a past task, call `self_inspect` with its task_id; for anything else in your journal use "
+    "`journal_query` (read-only SQL), never python or sqlite3. Your own code lives under the repo_root that `self_inspect` reports; use absolute paths there. "
     "For facts you do not have, check `know` first, then `research` (web, with sources); "
     "when the human explicitly says research, look up or search, call `research` even if `know` has something. "
     "store a verified conclusion with `learn`, citing the knowledge_ids. Never present an "
@@ -137,7 +138,7 @@ class SyraxAgent(Manus):
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
             AsyncPythonExecute(), SyraxEditor(), DesktopControl(),
-            RememberTool(), RecallTool(), ForgetTool(), SelfInspectTool(),
+            RememberTool(), RecallTool(), ForgetTool(), SelfInspectTool(), JournalQueryTool(),
             ResearchTool(), KnowTool(), LearnTool(),
             SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), PresentTool(), ExperimentTool(), CompareVersionsTool(), Terminate()
         )

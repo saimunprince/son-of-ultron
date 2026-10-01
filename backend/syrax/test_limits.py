@@ -35,7 +35,7 @@ def test_the_most_unreliable_busy_tool_ranks_first(tmp_path):
     use(j, t, "present", False, 2)  # too few uses to judge
     ranked = limits.rank(j, FakeSelf([{"kind": "known_limitation", "detail": "no embeddings", "evidence": "docs"}]))
     assert ranked[0]["subject"] == "str_replace_editor"
-    assert ranked[0]["kind"] == "tool_reliability" and "11 of 33" in ranked[0]["detail"]
+    assert ranked[0]["kind"] == "tool_reliability" and "11 of its last 33" in ranked[0]["detail"]
     assert all(r["subject"] != "present" for r in ranked)
     assert all(r["subject"] != "python_execute" for r in ranked)  # 11 % is under the bar
     assert ranked[-1]["kind"] == "known_limitation"
@@ -77,6 +77,14 @@ def test_known_limitations_are_capped_per_day(tmp_path):
     me = FakeSelf([{"kind": "known_limitation", "detail": f"limitation {i}", "evidence": "docs"} for i in range(6)])
     made = [limits.choose(j, me) for _ in range(6)]
     assert sum(1 for m in made if m) == limits.KNOWN_PER_DAY
+
+
+def test_a_fixed_tool_stops_ranking_on_its_old_failures(tmp_path):
+    j = Journal(tmp_path / "j.db")
+    t = j.start_task_sync("work")
+    use(j, t, "str_replace_editor", False, 30)   # long ago
+    use(j, t, "str_replace_editor", True, 40)    # after the fix: the latest 40 are clean
+    assert all(r["subject"] != "str_replace_editor" for r in limits.rank(j, FakeSelf()))
 
 
 def test_nothing_measurable_means_nothing_chosen(tmp_path):

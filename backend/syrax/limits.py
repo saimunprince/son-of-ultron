@@ -29,6 +29,7 @@ from typing import Any, Dict, List, Optional
 from syrax.journal import Journal
 
 MIN_USES = 5
+RECENT_USES = 40  # judge a tool on its latest uses: a fixed problem must stop ranking high
 MIN_FAIL_RATE = 0.15
 BRAIN_WINDOW_S = 86400.0
 MIN_BRAIN_CALLS = 10
@@ -53,11 +54,26 @@ def tool_failures(journal: Journal, tool: str, limit: int = 5) -> List[dict]:
     return rows
 
 
+def recent_tool_stats(journal: Journal, per_tool: int = RECENT_USES) -> Dict[str, dict]:
+    """successes/failures over each tool's latest ``per_tool`` outcomes.
+    Live: str_replace_editor was 5 % in the last 4 h after its fix but still
+    ranked first on its all-time 20 %."""
+    outcomes: Dict[str, List[bool]] = {}
+    for e in reversed(journal.recent_events(5000)):
+        if e["type"] not in ("tool.completed", "tool.failed"):
+            continue
+        name = e["payload"].get("name")
+        lst = outcomes.setdefault(name, [])
+        if len(lst) < per_tool:
+            lst.append(e["type"] == "tool.completed")
+    return {n: {"successes": sum(v), "failures": len(v) - sum(v), "window": per_tool} for n, v in outcomes.items() if n}
+
+
 def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[dict]:
     """Every measurable limitation, strongest first."""
     now = now or time.time()
     out: List[dict] = []
-    for tool, st in journal.tool_stats().items():
+    for tool, st in recent_tool_stats(journal).items():
         done = st["successes"] + st["failures"]
         if tool in SKIP_TOOLS or done < MIN_USES:
             continue
@@ -70,7 +86,7 @@ def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[
             "kind": "tool_reliability",
             "subject": tool,
             "score": round(rate * volume, 3),
-            "detail": f"`{tool}` failed {st['failures']} of {done} uses ({rate:.0%})",
+            "detail": f"`{tool}` failed {st['failures']} of its last {done} uses ({rate:.0%})",
             "evidence": {"stats": st, "recent_failures": tool_failures(journal, tool)},
             "check": {"kind": "tool_reliability", "tool": tool, "max_rate": target, "min_uses": MIN_USES},
             "plan": [

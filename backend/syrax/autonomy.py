@@ -57,7 +57,7 @@ AUTONOMOUS_BRIEF = (
     "Goal: {goal}\nReason: {reason}\n{evidence}"
     "Your repository root is {repo_root}; paths in the goal are relative to it. Use absolute paths "
     "with every tool (python_execute runs elsewhere; str_replace_editor requires them). "
-    "Read journaled tasks with `self_inspect` task_id, never the database.\n"
+    "Read journaled tasks with `self_inspect` task_id and anything else with `journal_query` (read-only SQL), never python/sqlite3.\n"
     "Never weaken a check, test, benchmark or quality case to make it pass: fix the behaviour it measures. "
     "The files that judge or guard you (quality, verify, bench, autonomy, experiments, versions, devloop, "
     "limits, journal, guard, tools) and existing tests are changed only by a human; `release` refuses them here.\n"
