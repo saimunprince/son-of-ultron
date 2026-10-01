@@ -575,6 +575,18 @@ def test_idle_cycle_restarts_into_new_code_only_when_launched(tmp_path, monkeypa
     assert _a.run(a.run_once(force=True)).outcome != "RESTARTING"
 
 
+def test_skill_objective_closes_only_when_its_skill_is_verified(tmp_path):
+    from syrax.autonomy import judge
+    j = Journal(tmp_path / "j.db")
+    o = j.add_objective_sync("build make_docx", source="human", check={"kind": "skill_verified", "name": "make_docx"})
+    assert judge(j, o, {"status": "SUCCESS"})[0] == "RETRY"  # a successful task is not a skill
+    j.upsert_skill_sync("make_docx", "write a Word document", "skills/make_docx", "VERIFIED")
+    verdict, ev = judge(j, o, None)
+    assert verdict == "DONE" and ev["status"] == "VERIFIED"
+    j.set_skill_status_sync("make_docx", "FAILED")
+    assert judge(j, o, None)[0] == "RETRY"
+
+
 def test_brief_carries_the_objective_evidence():
     from syrax.autonomy import brief_evidence
     o = {"evidence": {"plan": ["x"], "stats": {"uses": 50, "failures": 11},

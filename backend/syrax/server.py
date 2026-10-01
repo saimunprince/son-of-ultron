@@ -7,7 +7,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
   client -> server: task {text, voice?} | answer {text} | stop | reset | ping |
                     history {limit?} | task_events {task_id} | resume {task_id} |
                     verifications {limit?} | self_model {section?} |
-                    objectives {limit?} | objective_add {goal, reason?, priority?} |
+                    objectives {limit?} | objective_add {goal, reason?, priority?, check?} |
                     objective_update {id, status, note} (a human reopens, drops or closes) | proposals {limit?} |
                     dismiss {task_id, note} (cancel an INTERRUPTED task instead of resuming it) |
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
@@ -348,7 +348,11 @@ class Session:
                 priority = max(1, min(int(msg.get("priority") or 3), 9))
             except (TypeError, ValueError):
                 priority = 3
-            await journal.add_objective(goal, str(msg.get("reason") or "") or None, priority, "human")
+            check = msg.get("check") if isinstance(msg.get("check"), dict) else None
+            if check and check.get("kind") not in ("task_success", "skill_verified", "tool_verified", "knowledge_stored"):
+                await self.send({"type": "notice", "text": "objective_add check kind must be task_success, skill_verified, tool_verified or knowledge_stored."})
+                return
+            await journal.run(journal.add_objective_sync, goal, str(msg.get("reason") or "") or None, priority, "human", check)
         elif kind == "objective_update":
             # The human's override, e.g. reopening an objective that closed on
             # evidence SYRAX fabricated (2026-10-01). Always journaled with a note.

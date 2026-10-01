@@ -72,6 +72,7 @@ AUTONOMOUS_BRIEF = (
     "plain sentence stating exactly what you observed.{hint}"
 )
 BRIEF_HINTS = {
+    "skill_verified": " Build it with `skill_create` (code + pytest tests, dependencies listed); the objective closes only when the skill `{name}` is VERIFIED by its own tests. Write files only inside the workspace.",
     "tool_verified": " For this objective one call of the `{tool}` tool with a harmless read-only action is enough; report its output and finish.",
     "knowledge_stored": " Use `research` once on the stated topic, then `learn` one verified conclusion citing the knowledge_ids, then finish.",
     "tool_reliability": " Follow the plan in the goal step by step. The objective closes only when new uses of `{tool}` show the lower failure rate, so finish by using it as the plan says.",
@@ -382,6 +383,12 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         ok = bool(st and st["last_outcome"] == "ok")
         ev = {"tool": spec.get("tool"), "used_after_objective": used_after, "last_outcome": st["last_outcome"] if st else None, "stats": st}
         return ("DONE" if used_after and ok else "RETRY"), ev
+    if kind == "skill_verified":
+        # Phase 3: a capability SYRAX built for itself counts only when its own
+        # tests made it a VERIFIED tool after the objective was set
+        sk = journal.skill(str(spec.get("name") or ""))
+        ok = bool(sk and sk.get("status") == "VERIFIED" and (sk.get("last_verified") or 0) >= objective["created"])
+        return ("DONE" if ok else "RETRY"), {"skill": spec.get("name"), "status": (sk or {}).get("status"), "last_verified": (sk or {}).get("last_verified")}
     if kind == "tool_reliability":
         from syrax.limits import judge_tool_reliability
         return judge_tool_reliability(journal, objective)
