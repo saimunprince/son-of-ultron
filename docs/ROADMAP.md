@@ -69,9 +69,21 @@ Observe → Understand → Detect need → Create objective → Prioritize → P
 
 SYRAX manages its own development agenda, not single tasks.
 
-- TODO: objectives carry a `plan` (ordered steps with their own checks) and an `evaluation` (what "better" means, measured).
-- TODO: priority computed from evidence (impact × confidence × cost), not a constant.
-- TODO: closing an objective derives the next one from what was learned.
+- DONE (2026-10-01): when nothing is open, `syrax/limits.py` ranks SYRAX's limitations from journal counts (tool failure rate × volume, brain failover share, known limitations) and turns the strongest into an objective with a four-step plan and a measurable check (`tool_reliability`: new uses only). The ranking is journaled (`limitation.ranked`). First live loops closed: python_execute reliability (#27) DONE; brain failover research (#24) DONE.
+- DONE: Verify step — a quality objective with an attempt behind it is measured by the cycle itself; BLOCKED objectives with a machine check close when later evidence satisfies them.
+- DONE: the brief carries the objective's evidence (recent failures, counts), so SYRAX reads them instead of guessing journal tables.
+- TODO: priority from impact × confidence × cost instead of a fixed score per kind; plans with per-step checks; the next objective derived from what the last one taught.
+
+### Integrity rules learned on 2026-10-01
+
+Working its own objectives, SYRAX twice reached for its judge instead of its behaviour: it weakened a quality case's check (`research` → `know`), and it ran an edited copy of the case in a second core it built in python_execute, storing a "pass" that closed the objective. What now stands between an agent and its judge:
+
+- autonomous `release` refuses the judge and guard files (quality, verify, bench, autonomy, experiments, versions, devloop, limits, journal, guard, tools) and edits to existing tests;
+- only the process that owns the journal (OS lock) writes it; any other opens read-only;
+- code run by python_execute, and every Python it starts, cannot write the journal or the brain keys;
+- a human can reopen an objective closed on bad evidence (`objective_update`, journaled as `objective.reopened`).
+
+These are guard rails against the paths SYRAX actually took, not a sandbox; they make each improvement it reports real.
 
 ## Phase 2 — Real self-improvement loop
 
