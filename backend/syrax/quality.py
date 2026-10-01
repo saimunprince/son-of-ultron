@@ -52,6 +52,20 @@ def _cases(ws: Path) -> List[dict]:
          "checks": [{"kind": "tool_used", "tool": "know"}, {"kind": "no_narration"}]},
         {"id": "research_cite", "prompt": "Research in what year SQLite was first released and answer with the year and one source URL.",
          "checks": [{"kind": "tool_used", "tool": "research"}, {"kind": "final_regex", "pattern": r"\b2000\b"}, {"kind": "final_regex", "pattern": r"https?://"}]},
+        # act, don't talk (Prince, 2026-10-01: "kothar box na, real intelligence"): the work is
+        # done and provable on disk, nothing is promised, no permission is asked for a clear task
+        {"id": "act_not_promise", "prompt": f"Make a file {ws / 'act' / 'todo.md'} that lists milk, eggs and bread, one per line, each line starting with '- '.",
+         "prepare": {"remove": [str(ws / "act" / "todo.md")]},
+         "checks": [{"kind": "file_regex", "path": str(ws / "act" / "todo.md"), "pattern": r"(?m)^- milk\s*\n- eggs\s*\n- bread\s*$"},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}, {"kind": "final_max_len", "n": 300}]},
+        {"id": "act_delete", "prompt": f"Delete the file {ws / 'old.log'}.",
+         "prepare": {"write": {str(ws / "old.log"): "stale\n"}},
+         "checks": [{"kind": "file_absent", "path": str(ws / "old.log")}, {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        {"id": "act_concise", "prompt": "What is the capital of Japan?",
+         "checks": [{"kind": "final_regex", "pattern": r"(?i)\btokyo\b"}, {"kind": "no_tools"}, {"kind": "final_max_len", "n": 120}, {"kind": "no_narration"}]},
+        {"id": "act_measure", "prompt": f"How many lines does the file {ws / 'lines.txt'} have?",
+         "prepare": {"write": {str(ws / "lines.txt"): "".join(f"line {i}\n" for i in range(1, 38))}},
+         "checks": [{"kind": "final_regex", "pattern": r"\b37\b"}, {"kind": "no_ask"}, {"kind": "no_promise"}, {"kind": "final_max_len", "n": 200}]},
     ]
 
 
@@ -62,6 +76,8 @@ def _fill(pattern: str, env: Dict[str, str]) -> str:
 
 
 NARRATION = re.compile(r"^\s*(we need to|i need to|the tool already|let me|first,? i|i will now)\b", re.I)
+# a final answer that still promises work means the work was not done
+PROMISE = re.compile(r"\b(i will|i'll|i am going to|i'm going to|let me|i can (?:now )?(?:create|make|delete|count|check))\b", re.I)
 
 
 def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) -> List[dict]:
@@ -84,6 +100,22 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
         elif k == "no_narration":
             ok = NARRATION.search(final) is None
             out.append({"check": "final does not narrate reasoning", "ok": ok, "detail": final[:120]})
+        elif k == "no_promise":
+            m = PROMISE.search(final)
+            out.append({"check": "final promises nothing", "ok": m is None, "detail": final[max(0, (m.start() if m else 0) - 30):][:120]})
+        elif k == "no_ask":
+            asked = [t for t in tools if t == "ask_human"] or [e for e in events if e["type"] == "ask"]
+            out.append({"check": "did not ask the human", "ok": not asked, "detail": f"tools: {tools}"})
+        elif k == "file_regex":
+            try:
+                text = Path(c["path"]).read_text()
+                ok, detail = re.search(c["pattern"], text) is not None, text[:120]
+            except OSError as e:
+                ok, detail = False, str(e)
+            out.append({"check": f"file {Path(c['path']).name} matches {c['pattern']}", "ok": ok, "detail": detail})
+        elif k == "file_absent":
+            gone = not Path(c["path"]).exists()
+            out.append({"check": f"file {Path(c['path']).name} removed", "ok": gone, "detail": "absent" if gone else "still there"})
         elif k == "final_max_len":
             out.append({"check": f"final ≤ {c['n']} chars", "ok": len(final.strip()) <= c["n"], "detail": f"{len(final.strip())} chars"})
         elif k == "file_equals":
