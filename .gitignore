@@ -34,3 +34,7 @@ backend/config/journal.db.owner
 backend/config/rollback/
 syrax.pid
 syrax.log
+# skills SYRAX builds are verified by the skill factory (their own pytest), live outside git,
+# and must never be removed by the post-task rollback of uncommitted work
+backend/skills/*
+!backend/skills/README.md
