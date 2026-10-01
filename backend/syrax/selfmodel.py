@@ -44,7 +44,7 @@ PRINCIPLES = [
     "Unknown is a valid state; say it.",
     "The UI observes; the core is the brain.",
 ]
-SECTIONS = ("summary", "identity", "structure", "runtime", "behavior", "capabilities", "performance", "weaknesses", "proposals", "all")
+SECTIONS = ("summary", "identity", "structure", "runtime", "behavior", "capabilities", "performance", "weaknesses", "proposals", "brains", "all")
 _PROCESS_STARTED = time.time()
 # The commit this process loaded, per repository root, captured the first time
 # it is asked (at boot for the real repo). After a `release` HEAD moves on but
@@ -375,6 +375,11 @@ class SelfModel:
             return {"performance": self.performance()}
         if section == "proposals":
             return {"proposals": self.proposals()}
+        if section == "brains":
+            from syrax import scorecard
+
+            card = scorecard.compute(self.journal)
+            return {"brains": {"scorecard": card, "summary": scorecard.render(card)}}
         identity = self.identity()
         behavior = self.behavior()
         caps = self.capabilities()

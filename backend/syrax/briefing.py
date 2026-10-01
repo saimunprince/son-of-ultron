@@ -65,6 +65,15 @@ def compose(journal: Journal, since: Optional[float] = None, now: Optional[float
     answered, failovers = kinds.get("brain.answered", 0), kinds.get("brain.failover", 0)
     if answered + failovers:
         lines.append(f"- brains: {answered} answers, {failovers} failovers")
+    try:
+        from syrax import scorecard
+
+        card = scorecard.compute(journal)
+        best = sorted((p for p in card if card[p]["graded"] >= 5), key=lambda p: -card[p]["quality"])
+        if best:
+            lines.append("- brain quality (graded tasks): " + ", ".join(f"{p} {card[p]['quality']:.0%}" for p in best[:4]))
+    except Exception:
+        pass
     restarts = kinds.get("restart.requested", 0)
     if restarts:
         lines.append(f"- restarted itself into new code {restarts} time(s)")

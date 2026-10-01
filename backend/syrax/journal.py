@@ -1532,6 +1532,19 @@ class Journal:
             st["median_dismiss_after_s"] = (xs[len(xs) // 2] if xs else None)
         return out
 
+    def answered_by(self) -> Dict[str, Dict[str, int]]:
+        """{task_id: {provider: answers}} over the whole journal (brain scorecard)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT task_id, json_extract(payload, '$.provider') AS p, COUNT(*) AS n FROM events "
+                "WHERE type='brain.answered' AND task_id IS NOT NULL GROUP BY task_id, p"
+            ).fetchall()
+        out: Dict[str, Dict[str, int]] = {}
+        for r in rows:
+            if r["p"]:
+                out.setdefault(r["task_id"], {})[r["p"]] = int(r["n"])
+        return out
+
     def recent_events(self, limit: int = 100) -> List[dict]:
         limit = max(1, min(int(limit), 5000))
         with self._lock:

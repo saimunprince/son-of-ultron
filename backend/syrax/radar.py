@@ -79,4 +79,12 @@ async def scan(router: Any, journal: Journal, now: Optional[float] = None, max_t
                                 f"a quality run with it would show whether it is better.",
                     "sources": [],
                 })
+    try:  # the daily pass also checks whether the brain order matches measured quality
+        from syrax import scorecard
+
+        prop = scorecard.daily_proposal(journal, list(router.store.order))
+        if prop:
+            report["order_proposal"] = prop["limitation"]
+    except Exception:
+        pass
     return report
