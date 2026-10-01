@@ -32,3 +32,5 @@ backend/config/journal.db-wal
 backend/config/journal.db-shm
 backend/config/journal.db.owner
 backend/config/rollback/
+syrax.pid
+syrax.log

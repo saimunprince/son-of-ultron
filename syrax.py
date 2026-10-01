@@ -40,6 +40,7 @@ VENV = BACKEND / ".venv"
 CONFIG = BACKEND / "config" / "config.toml"
 CONFIG_EXAMPLE = BACKEND / "config" / "config.syrax.example.toml"
 LOG = ROOT / "syrax.log"
+PID_FILE = ROOT / "syrax.pid"  # the launcher of the running SYRAX; --stop kills its process tree
 
 WINDOWS = sys.platform == "win32"
 MACOS = sys.platform == "darwin"
@@ -49,6 +50,12 @@ BACKEND_PORT = int(os.getenv("SYRAX_PORT", "8765"))
 UI_PORT = int(os.getenv("SYRAX_UI_PORT", "3000"))
 SERVICE_NAME = "syrax"
 LAUNCHD_LABEL = "com.syrax.agent"
+
+
+if sys.stdout is None or sys.stderr is None:  # pythonw (the Windows login task) has no console
+    _log = open(LOG, "a", encoding="utf-8", buffering=1)
+    sys.stdout = sys.stdout or _log
+    sys.stderr = sys.stderr or _log
 
 
 def say(msg: str) -> None:
@@ -201,6 +208,56 @@ def both_answer() -> bool:
     return True
 
 
+def _uptime_s() -> float:
+    try:
+        if WINDOWS:
+            import ctypes
+            return ctypes.windll.kernel32.GetTickCount64() / 1000.0
+        if LINUX:
+            return float(Path("/proc/uptime").read_text().split()[0])
+    except Exception:
+        pass
+    return 1e9
+
+
+def stop() -> int:
+    """Stop the running SYRAX (launcher, core, UI) through its pid file."""
+    if not PID_FILE.exists():
+        say("not running (no pid file).")
+        return 0
+    pid = PID_FILE.read_text().strip()
+    if WINDOWS:
+        subprocess.run(["taskkill", "/PID", pid, "/T", "/F"], capture_output=True)
+    else:
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except (ProcessLookupError, ValueError):
+            pass
+    for _ in range(30):
+        if not port_in_use(BACKEND_PORT) and not port_in_use(UI_PORT):
+            break
+        time.sleep(0.5)
+    PID_FILE.unlink(missing_ok=True)
+    say("stopped.")
+    return 0
+
+
+def start_detached() -> int:
+    """Start SYRAX in the background (service mode), independent of this shell."""
+    if WINDOWS and subprocess.run(["schtasks", "/Query", "/TN", SERVICE_NAME.upper()], capture_output=True).returncode == 0:
+        subprocess.run(["schtasks", "/Run", "/TN", SERVICE_NAME.upper()], capture_output=True)
+    else:
+        kw = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
+        subprocess.Popen(launcher_cmd(hidden=True), cwd=str(ROOT), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
+    for _ in range(120):
+        if both_answer():
+            say("running.")
+            return 0
+        time.sleep(1)
+    say(f"did not answer within 120 s; see {LOG}")
+    return 1
+
+
 def launch(dev: bool, service: bool) -> int:
     setup(verbose=False)
     check_config()
@@ -235,7 +292,9 @@ def launch(dev: bool, service: bool) -> int:
         comps.append(Component("ui", [npx, "next", "dev" if dev else "start", *env_ui], FRONTEND, log))
         say(f"core  : ws://127.0.0.1:{BACKEND_PORT}/ws")
         say(f"orb UI: http://localhost:{UI_PORT}")
-        open_ui = service or os.getenv("SYRAX_OPEN_UI") == "1"
+        PID_FILE.write_text(str(os.getpid()))
+        # a login start opens the UI; a restart minutes or hours later does not
+        open_ui = os.getenv("SYRAX_OPEN_UI") == "1" or (service and os.getenv("SYRAX_OPEN_UI") != "0" and _uptime_s() < 600)
         started = time.time()
         while not stopping:
             time.sleep(1)
@@ -249,6 +308,8 @@ def launch(dev: bool, service: bool) -> int:
                 open_ui = False
     finally:
         shutdown()
+        if PID_FILE.exists() and PID_FILE.read_text().strip() == str(os.getpid()):
+            PID_FILE.unlink(missing_ok=True)
         if log:
             log.close()
     return 0
@@ -356,6 +417,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--uninstall-service", action="store_true")
     ap.add_argument("--status", action="store_true", help="login service status")
     ap.add_argument("--gate", action="store_true", help="run the release gate and exit")
+    ap.add_argument("--stop", action="store_true", help="stop the running SYRAX")
+    ap.add_argument("--restart", action="store_true", help="stop, then start in the background")
     ap.add_argument("--service", action="store_true", help=argparse.SUPPRESS)  # set by the login service
     a = ap.parse_args(argv)
     if a.setup:
@@ -369,6 +432,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     if a.status:
         return service_status()
+    if a.stop:
+        return stop()
+    if a.restart:
+        stop()
+        return start_detached()
     if a.gate:
         setup(verbose=False)
         return subprocess.run([str(venv_python()), "-m", "syrax.verify"], cwd=str(BACKEND)).returncode
