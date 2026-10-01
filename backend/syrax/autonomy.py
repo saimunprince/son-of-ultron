@@ -53,6 +53,9 @@ AUTONOMOUS_BRIEF = (
     "Your repository root is {repo_root}; paths in the goal are relative to it. Use absolute paths "
     "with every tool (python_execute runs elsewhere; str_replace_editor requires them). "
     "Read journaled tasks with `self_inspect` task_id, never the database.\n"
+    "Never weaken a check, test, benchmark or quality case to make it pass: fix the behaviour it measures. "
+    "The files that judge you (quality.py, verify.py, bench.py, autonomy.py, experiments.py, versions.py, "
+    "devloop.py) and existing tests are changed only by a human; `release` refuses them here.\n"
     "Do the work with your tools. Your completion is judged from the journal evidence "
     "(which tools ran and whether they succeeded), not from what you say. Do not claim "
     "success you did not produce. Be economical: every step costs a model call; take the "
@@ -101,7 +104,7 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
         tool = e["payload"].get("name") or "?"
         path, line = m.group(1), m.group(2)
         ok = journal.add_objective_sync(
-            goal=f"The `{tool}` tool raised inside SYRAX's own code at {path} line {line}: {out.strip().splitlines()[-1][:120]!r}. Read that code, fix the bug, add or adjust a test in backend/syrax if one is missing, and `release`. Then call `{tool}` again the same way to confirm.",
+            goal=f"The `{tool}` tool raised inside SYRAX's own code at {path} line {line}: {out.strip().splitlines()[-1][:120]!r}. Read that code, fix the bug, add a new test in backend/syrax if one is missing, and `release`. Then call `{tool}` again the same way to confirm.",
             reason="a traceback in our own code is a defect with a known location",
             priority=2, source="selfmodel",
             check={"kind": "tool_verified", "tool": tool},
@@ -208,7 +211,7 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
             r = failed_now[cid]
             why = "; ".join(c["check"] + " → " + str(c.get("detail", ""))[:80] for c in r.get("checks", []) if not c.get("ok"))
             ok = journal.add_objective_sync(
-                goal=f"Quality case `{cid}` failed in the last two runs ({why}). Read the case in backend/syrax/quality.py and the journaled task {r.get('task_id')}, find the cause in SYRAX's own code or prompts, fix it and `release`; the objective closes when a newer quality run passes `{cid}`.",
+                goal=f"Quality case `{cid}` failed in the last two runs ({why}). Read the case in backend/syrax/quality.py and the journaled task {r.get('task_id')}, find the cause in SYRAX's own behaviour (code or prompts, never the case or its checks), fix it and `release`; the objective closes when a newer quality run passes `{cid}`.",
                 reason="a repeatable failure on a fixed task is a defect in SYRAX, not noise",
                 priority=2, source="selfmodel",
                 check={"kind": "quality_case_passes", "case": cid},

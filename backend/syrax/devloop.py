@@ -84,6 +84,31 @@ def owned_files(files: Dict[str, str], tools_used: Iterable[str], edited_paths: 
     return {p: st for p, st in files.items() if p.replace("\\", "/") in edited}
 
 
+# The code that decides whether SYRAX succeeded. Live 2026-10-01: working its own
+# objective "make quality case research_cite pass", SYRAX changed the case's
+# check from `research` to `know` and called release ("fix the check to expect
+# the tool that is actually invoked"). An agent that edits its judge can pass
+# anything. Autonomous work fixes behaviour; a human changes the judge.
+JUDGES = (
+    "backend/syrax/quality.py", "backend/syrax/verify.py", "backend/syrax/bench.py",
+    "backend/syrax/autonomy.py", "backend/syrax/experiments.py", "backend/syrax/versions.py",
+    "backend/syrax/devloop.py",
+)
+
+
+def judge_problems(files: Dict[str, str]) -> List[str]:
+    """Changes an autonomous task may not release: the judges, and any edit or
+    deletion of an existing test (new tests are welcome)."""
+    problems = []
+    for path, st in files.items():
+        name = path.rsplit("/", 1)[-1]
+        if path in JUDGES:
+            problems.append(f"{path}: this file judges SYRAX's own work; only a human changes it")
+        elif (name.startswith("test_") or name.endswith(".test.ts")) and st != "??":
+            problems.append(f"{path}: existing tests are the contract; add a new test instead of changing this one")
+    return problems
+
+
 def scope_problems(files: Dict[str, str]) -> List[str]:
     problems = []
     for path in files:
@@ -131,6 +156,10 @@ class DevLoop:
                                  + ", ".join(sorted(all_files)) + ")")
             raise ValueError("nothing to release: the working tree has no changes")
         problems = scope_problems(files)
+        task_id = self.task_id_provider()
+        task = self.journal.task(task_id) if task_id else None
+        if task and task.get("kind") in ("autonomous", "eval"):
+            problems += judge_problems(files)
         if problems:
             raise ValueError("refused: " + "; ".join(problems))
         diff = _git(["diff", "HEAD", "--", *[p for p, st in files.items() if st != "??"]], self.root).stdout if any(st != "??" for st in files.values()) else ""

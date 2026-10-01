@@ -51,7 +51,7 @@ def _cases(ws: Path) -> List[dict]:
         {"id": "know_honest", "prompt": "Use the `know` tool to check your stored knowledge for the word zorbulon, then tell me honestly whether you know anything about it.",
          "checks": [{"kind": "tool_used", "tool": "know"}, {"kind": "no_narration"}]},
         {"id": "research_cite", "prompt": "Research in what year SQLite was first released and answer with the year and one source URL.",
-         "checks": [{"kind": "tool_used", "tool": "know"}, {"kind": "final_regex", "pattern": r"\b2000\b"}, {"kind": "final_regex", "pattern": r"https?://"}]},
+         "checks": [{"kind": "tool_used", "tool": "research"}, {"kind": "final_regex", "pattern": r"\b2000\b"}, {"kind": "final_regex", "pattern": r"https?://"}]},
     ]
 
 

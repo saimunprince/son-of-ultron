@@ -143,6 +143,35 @@ def test_release_refuses_python_that_does_not_compile_before_running_the_gate(tm
     assert (root / "backend" / "syrax" / "mod.py").read_text() == "VALUE = (1\n"  # refusal does not touch the tree
 
 
+def test_autonomous_work_cannot_release_changes_to_its_judges(tmp_path):
+    """Live 2026-10-01: SYRAX weakened its own quality case to make it pass."""
+    from syrax.devloop import judge_problems
+    root = repo(tmp_path)
+    (root / "backend" / "syrax" / "quality.py").write_text("CHECK = 'research'\n")
+    (root / "backend" / "syrax" / "test_mod.py").write_text("def test_v(): assert True\n")
+    git(root, "add", "-A"); git(root, "commit", "-q", "-m", "judges")
+    j = Journal(tmp_path / "j.db")
+    auto = j.start_task_sync("make research_cite pass", kind="autonomous")
+    dl = DevLoop(j, root=root, gates=lambda: PASS, task_id_provider=lambda: auto, snapshot_dir=tmp_path / "rb")
+    (root / "backend" / "syrax" / "quality.py").write_text("CHECK = 'know'\n")
+    with pytest.raises(ValueError, match="judges SYRAX's own work"):
+        asyncio.run(dl.release("expect the tool that ran"))
+    git(root, "checkout", "--", ".")
+    (root / "backend" / "syrax" / "test_mod.py").write_text("def test_v(): pass\n")
+    with pytest.raises(ValueError, match="existing tests are the contract"):
+        asyncio.run(dl.release("loosen the test"))
+    git(root, "checkout", "--", ".")
+    (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 3\n")
+    (root / "backend" / "syrax" / "test_new.py").write_text("def test_n(): assert True\n")
+    assert asyncio.run(dl.release("fix behaviour, add a test"))["outcome"] == "COMMITTED"
+    human = j.start_task_sync("human asks to change the case", kind="conversation")
+    dl.task_id_provider = lambda: human
+    dl.begin_task()
+    (root / "backend" / "syrax" / "quality.py").write_text("CHECK = 'research or know'\n")
+    assert asyncio.run(dl.release("human-approved case change"))["outcome"] == "COMMITTED"
+    assert judge_problems({"docs/x.md": "M", "backend/syrax/test_x.py": "??"}) == []
+
+
 def test_owned_files_follow_what_the_task_actually_ran():
     from syrax.devloop import owned_files
     changed = {"backend/syrax/brains.py": "M", "backend/syrax/mod.py": "M", "docs/x.md": "??"}
