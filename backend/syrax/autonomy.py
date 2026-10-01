@@ -91,6 +91,31 @@ class CycleReport:
         return {k: getattr(self, k) for k in ("started", "outcome", "reason", "objective_id", "task_id", "task_status", "verdict", "derived")}
 
 
+def strategy_of(events: List[dict]) -> List[str]:
+    """How a task went about it: the distinct tool calls it made, each with
+    its most telling argument, in order. Equal lists = the same strategy."""
+    out: List[str] = []
+    for e in events:
+        if e["type"] != "tool.started":
+            continue
+        p = e["payload"]
+        name = p.get("name") or "?"
+        if name in ("terminate", "ask_human"):
+            continue
+        args = p.get("args") or {}
+        if name == "python_execute":
+            hint = " ".join(str(args.get("code") or "").split())[:40]
+        elif name == "str_replace_editor":
+            hint = f"{args.get('command')} {str(args.get('path') or '').replace(chr(92), '/').rsplit('/', 1)[-1]}"
+        else:
+            first = next(iter(args.values()), "") if args else ""
+            hint = " ".join(str(first).split())[:40]
+        sig = f"{name}({hint})"
+        if sig not in out:
+            out.append(sig)
+    return out[:12]
+
+
 def brief_evidence(objective: dict, budget: int = 1800) -> str:
     """The evidence the objective was created from, compact, for the task.
     Live: SYRAX was told to "read the failures listed in the evidence" but the
@@ -98,14 +123,21 @@ def brief_evidence(objective: dict, budget: int = 1800) -> str:
     ("no such table: tool_calls", "no such column: id") instead."""
     ev = dict(objective.get("evidence") or {})
     ev.pop("plan", None)  # already in the goal
+    log = ((objective.get("progress") or {}).get("attempts_log")) or []
+    tried = ""
+    if log:
+        tried = "Earlier attempts (do not repeat a failed strategy; change the approach):\n" + "\n".join(
+            f"- attempt {a.get('attempt')} {a.get('verdict')}: {'; '.join(a.get('strategy') or ['no tools'])[:240]} — {a.get('lesson', '')[:160]}"
+            for a in log[-4:]
+        ) + "\n"
     if not ev:
-        return ""
+        return tried
     lines = []
     for f in ev.pop("recent_failures", []) or []:
         lines.append(f"- task {f.get('task_id')}: {str(f.get('output') or '').strip()[-220:]}")
     head = json.dumps(ev, default=str, ensure_ascii=False)
     text = "Evidence: " + head[: budget // 2] + ("\nRecent failures (read more with self_inspect task_id):\n" + "\n".join(lines) if lines else "")
-    return text[:budget] + "\n"
+    return text[:budget] + "\n" + tried
 
 
 def resource_pressure() -> Optional[str]:
@@ -514,24 +546,34 @@ class Autonomy:
         rep.verdict = verdict
         attempts = objective["attempts"] + 1
         lesson = _lesson(objective, task, verdict, evidence)
+        # Phase 2: remember how this attempt went about it; a strategy that
+        # already failed is not tried again (no blind retry)
+        strategy = strategy_of(self.journal.events(task_id))
+        log = list(((objective.get("progress") or {}).get("attempts_log")) or [])
+        repeated = verdict != "DONE" and any(a.get("strategy") == strategy and a.get("verdict") != "DONE" for a in log)
+        if repeated:
+            lesson = f"repeated the strategy of an earlier failed attempt ({', '.join(strategy[:4]) or 'no tools'}); {lesson}"
+        log.append({"attempt": attempts, "task_id": task_id, "verdict": verdict, "strategy": strategy, "lesson": lesson[:300]})
+        if repeated:
+            verdict = "BLOCKED"
         if verdict == "DONE":
             await self.journal.update_objective(
                 objective["id"], status="DONE",
-                progress={"lesson": lesson}, evidence={"judged": evidence, "task_id": task_id},
+                progress={"lesson": lesson, "attempts_log": log[-6:]}, evidence={"judged": evidence, "task_id": task_id},
                 last_task_id=task_id, bump_attempts=True, note=lesson,
             )
         elif verdict == "BLOCKED" or attempts >= MAX_ATTEMPTS:
             rep.verdict = "BLOCKED"
             await self.journal.update_objective(
                 objective["id"], status="BLOCKED",
-                progress={"lesson": lesson}, evidence={"judged": evidence, "task_id": task_id},
+                progress={"lesson": lesson, "attempts_log": log[-6:]}, evidence={"judged": evidence, "task_id": task_id},
                 last_task_id=task_id, bump_attempts=True,
                 next_action="needs a different strategy or a human", note=lesson,
             )
         else:
             await self.journal.update_objective(
                 objective["id"], status="OPEN",
-                progress={"lesson": lesson}, evidence={"judged": evidence, "task_id": task_id},
+                progress={"lesson": lesson, "attempts_log": log[-6:]}, evidence={"judged": evidence, "task_id": task_id},
                 last_task_id=task_id, bump_attempts=True,
                 next_action="retry with a changed approach", note=lesson,
             )

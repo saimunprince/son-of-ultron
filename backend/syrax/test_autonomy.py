@@ -225,7 +225,13 @@ def test_repeated_failure_blocks_after_max_attempts(tmp_path, monkeypatch):
     j, core, a = make(tmp_path, tools=["desktop", "terminate"])
     monkeypatch.setattr(auto, "resource_pressure", lambda: None)
     a.set_enabled(True)
-    core.script = [lambda tid: (use_tool("desktop", ok=False)(tid, j), "it failed")[1] for _ in range(5)]
+    def differently(i):  # a new approach each time, so only the attempt cap can block it
+        def step(tid):
+            j.record_sync("tool.started", {"id": f"c{i}", "name": "desktop", "args": {"action": f"approach-{i}"}}, task_id=tid)
+            j.record_sync("tool.failed", {"id": f"c{i}", "name": "desktop", "ok": False, "output": "x"}, task_id=tid)
+            return "it failed"
+        return step
+    core.script = [differently(i) for i in range(5)]
     verdicts = [asyncio.run(a.run_once()).verdict for _ in range(auto.MAX_ATTEMPTS)]
     assert verdicts == ["RETRY", "RETRY", "BLOCKED"]
     objs = j.objectives(status="BLOCKED")
@@ -511,6 +517,27 @@ def test_blocked_objectives_close_when_later_evidence_satisfies_them(tmp_path):
     assert rejudge_blocked(j) == 1
     st = {o["id"]: o["status"] for o in j.objectives(limit=10)}
     assert st[q["id"]] == "DONE" and st[h["id"]] == "BLOCKED"
+
+
+def test_the_same_failed_strategy_is_not_tried_again(tmp_path, monkeypatch):
+    """Phase 2: no blind retry. Attempt 2 doing exactly what attempt 1 did
+    blocks the objective at once and says why."""
+    import asyncio as _a
+    from syrax.autonomy import brief_evidence, strategy_of
+    j, core, a = make(tmp_path)
+    monkeypatch.setattr("syrax.autonomy.resource_pressure", lambda: None)
+    same = lambda t: (use_tool("python_execute", ok=False)(t, j), "tried python again")[1]  # same call, fails both times
+    core.script = [same, same]
+    o = j.add_objective_sync("verify desktop", source="selfmodel", check={"kind": "tool_verified", "tool": "desktop"}, key="d")
+    r1 = _a.run(a.run_once(force=True))
+    assert r1.verdict == "RETRY"
+    obj = [x for x in j.objectives(limit=50) if x["id"] == o["id"]][0]
+    assert len(obj["progress"]["attempts_log"]) == 1 and obj["progress"]["attempts_log"][0]["strategy"]
+    assert "Earlier attempts" in brief_evidence(obj)
+    r2 = _a.run(a.run_once(force=True))
+    obj = [x for x in j.objectives(limit=50) if x["id"] == o["id"]][0]
+    assert r2.verdict == "BLOCKED" and obj["status"] == "BLOCKED" and "repeated the strategy" in obj["progress"]["lesson"]
+    assert strategy_of([{"type": "tool.started", "payload": {"name": "str_replace_editor", "args": {"command": "view", "path": "C:\\x\\quality.py"}}}]) == ["str_replace_editor(view quality.py)"]
 
 
 def test_brief_carries_the_objective_evidence():
