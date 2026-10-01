@@ -322,6 +322,10 @@ def launcher_cmd(hidden: bool = False) -> List[str]:
     return [str(py), str(ROOT / "syrax.py"), "--service"]
 
 
+def _startup_script() -> Path:
+    return Path(os.environ.get("APPDATA", str(Path.home() / "AppData/Roaming"))) / "Microsoft/Windows/Start Menu/Programs/Startup/SYRAX.vbs"
+
+
 def install_service() -> None:
     setup(verbose=False)
     if LINUX:
@@ -378,9 +382,16 @@ WantedBy=graphical-session.target
         say(f"start now: launchctl start {LAUNCHD_LABEL}    logs: tail -f {LOG}")
     else:
         tr = " ".join(f'"{a}"' for a in launcher_cmd(hidden=True))
-        run(["schtasks", "/Create", "/F", "/SC", "ONLOGON", "/TN", SERVICE_NAME.upper(), "/TR", tr, "/RL", "LIMITED"])
-        say("will start automatically at your next login (Task Scheduler).")
-        say(f"start now: schtasks /Run /TN {SERVICE_NAME.upper()}    logs: {LOG}")
+        made = subprocess.run(["schtasks", "/Create", "/F", "/SC", "ONLOGON", "/TN", SERVICE_NAME.upper(), "/TR", tr, "/RL", "LIMITED"],
+                              capture_output=True, text=True)
+        if made.returncode == 0:
+            say("will start automatically at your next login (Task Scheduler).")
+        else:  # an ONLOGON trigger needs admin; the user's Startup folder does not
+            vbs = _startup_script()
+            args = " ".join(f'""{a}""' for a in launcher_cmd(hidden=True))
+            vbs.write_text(f'CreateObject("WScript.Shell").Run "{args}", 0, False\r\n', encoding="utf-8")
+            say(f"will start automatically at your next login (Startup folder: {vbs.name}; Task Scheduler needs admin).")
+        say(f"start now: python syrax.py --restart    logs: {LOG}")
 
 
 def uninstall_service() -> None:
@@ -396,6 +407,7 @@ def uninstall_service() -> None:
     else:
         subprocess.run(["schtasks", "/End", "/TN", SERVICE_NAME.upper()], capture_output=True)
         subprocess.run(["schtasks", "/Delete", "/F", "/TN", SERVICE_NAME.upper()], capture_output=True)
+        _startup_script().unlink(missing_ok=True)
     say("login service removed.")
 
 
@@ -404,7 +416,10 @@ def service_status() -> int:
         return subprocess.run(["systemctl", "--user", "status", f"{SERVICE_NAME}.service", "--no-pager"]).returncode
     if MACOS:
         return subprocess.run(["launchctl", "list", LAUNCHD_LABEL]).returncode
-    return subprocess.run(["schtasks", "/Query", "/TN", SERVICE_NAME.upper(), "/V", "/FO", "LIST"]).returncode
+    if _startup_script().exists():
+        say(f"login start: Startup folder ({_startup_script()})")
+    say("running" if PID_FILE.exists() and both_answer() else "not running")
+    return subprocess.run(["schtasks", "/Query", "/TN", SERVICE_NAME.upper(), "/V", "/FO", "LIST"], capture_output=True).returncode
 
 
 # ——— main ———
