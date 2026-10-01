@@ -83,6 +83,18 @@ class AsyncPythonExecute(PythonExecute):
         "required": ["code"],
     }
 
+    def _guarded_run(self, code: str, result_dict: dict, safe_globals: dict, paths: list) -> None:
+        """Runs in the child: guard the journal and keys, for this process and
+        every Python it starts, then run the code."""
+        from syrax import guard
+
+        guard.child_env(paths)
+        guard.install(paths)
+        import builtins
+
+        safe_globals["__builtins__"] = builtins.__dict__.copy()  # the copy made before the guard holds the unguarded open
+        self._run_code(code, result_dict, safe_globals)
+
     async def execute(self, code: str, timeout: int = 60) -> Dict:
         timeout = max(1, min(int(timeout or 60), 600))
         with multiprocessing.Manager() as manager:
@@ -91,8 +103,10 @@ class AsyncPythonExecute(PythonExecute):
                 safe_globals = {"__builtins__": __builtins__}
             else:
                 safe_globals = {"__builtins__": __builtins__.__dict__.copy()}
+            from syrax.guard import protected_paths
+
             proc = multiprocessing.Process(
-                target=self._run_code, args=(code, result, safe_globals), daemon=True
+                target=self._guarded_run, args=(code, result, safe_globals, protected_paths()), daemon=True
             )
             proc.start()
             deadline = time.monotonic() + timeout
