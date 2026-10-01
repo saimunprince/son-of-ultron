@@ -34,7 +34,9 @@ from typing import Any, Dict, List, Optional
 from app.logger import logger
 
 from syrax import resources
-from syrax.journal import Journal, JournalError
+from syrax.journal import BACKEND_ROOT, Journal, JournalError
+
+REPO_ROOT_PATH = BACKEND_ROOT.parent
 
 MAX_ATTEMPTS = 3
 # Tools that cannot be exercised "harmlessly" without a real need: verifying them
@@ -153,6 +155,21 @@ def brief_evidence(objective: dict, budget: int = 1800) -> str:
     head = json.dumps(ev, default=str, ensure_ascii=False)
     text = "Evidence: " + head[: budget // 2] + ("\nRecent failures (read more with self_inspect task_id):\n" + "\n".join(lines) if lines else "")
     return text[:budget] + "\n" + tried
+
+
+LAUNCHER_PID_FILE = REPO_ROOT_PATH / "syrax.pid"
+
+
+def spawn_restart() -> None:
+    """Start `syrax.py --respawn`, which starts the real restarter and exits:
+    the restarter is then nobody's child, so stopping SYRAX's process tree
+    does not kill it."""
+    import subprocess
+    import sys
+
+    kw = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    subprocess.Popen([sys.executable, str(REPO_ROOT_PATH / "syrax.py"), "--respawn"], cwd=str(REPO_ROOT_PATH),
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
 
 
 def resource_pressure() -> Optional[str]:
@@ -490,6 +507,8 @@ class Autonomy:
         if pressure and not force:
             rep.outcome, rep.reason = "SKIPPED", pressure
             return await self._finish(rep)
+        if await self._restart_if_pending(rep):
+            return await self._finish(rep)
         await self.journal.record("cycle.started", {"forced": force})
         try:
             rep.derived = await self.journal.run(derive_objectives, self.journal, self.core.selfmodel)
@@ -602,6 +621,25 @@ class Autonomy:
             task_id=task_id,
         )
         return await self._finish(rep)
+
+    async def _restart_if_pending(self, rep: CycleReport) -> bool:
+        """Close the self-modification loop: a release committed new code, but
+        the running process still runs the old one until a restart. When idle
+        and launched by syrax.py, restart cleanly into the new commit."""
+        if os.getenv("SYRAX_SELF_RESTART", "1") == "0" or getattr(self.core, "busy", False):
+            return False
+        if not LAUNCHER_PID_FILE.exists():
+            return False  # not started by syrax.py (tests, a bare server): nobody would bring it back
+        try:
+            ident = self.core.selfmodel.identity()
+        except Exception:
+            return False
+        if not ident.get("restart_pending"):
+            return False
+        await self.journal.record("restart.requested", {"running": ident.get("version"), "on_disk": ident.get("newer_on_disk_not_running")})
+        spawn_restart()
+        rep.outcome, rep.reason = "RESTARTING", f"new code on disk ({ident.get('newer_on_disk_not_running')}); restarting into it"
+        return True
 
     async def _measure_quality(self, objective: dict, rep: CycleReport) -> bool:
         """Verify step for quality objectives: after an attempt, the cycle runs

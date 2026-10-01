@@ -459,6 +459,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--gate", action="store_true", help="run the release gate and exit")
     ap.add_argument("--stop", action="store_true", help="stop the running SYRAX")
     ap.add_argument("--restart", action="store_true", help="stop, then start in the background")
+    ap.add_argument("--respawn", action="store_true", help=argparse.SUPPRESS)  # SYRAX restarting itself
     ap.add_argument("--service", action="store_true", help=argparse.SUPPRESS)  # set by the login service
     a = ap.parse_args(argv)
     if a.setup:
@@ -477,6 +478,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if a.restart:
         stop()
         return start_detached()
+    if a.respawn:  # detach once more so the restarter outlives SYRAX's process tree
+        kw = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
+        subprocess.Popen([sys.executable, str(ROOT / "syrax.py"), "--restart"], cwd=str(ROOT),
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
+        return 0
     if a.gate:
         setup(verbose=False)
         return subprocess.run([str(venv_python()), "-m", "syrax.verify"], cwd=str(BACKEND)).returncode

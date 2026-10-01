@@ -555,6 +555,26 @@ def test_a_researched_limitation_becomes_a_proposal(tmp_path, monkeypatch):
     assert props[0]["sources"] == ["https://learn.microsoft.com/x", "https://arxiv.org/abs/1"]
 
 
+def test_idle_cycle_restarts_into_new_code_only_when_launched(tmp_path, monkeypatch):
+    import asyncio as _a
+    from syrax import autonomy as au
+    j, core, a = make(tmp_path)
+    monkeypatch.setattr(au, "resource_pressure", lambda: None)
+    spawned = []
+    monkeypatch.setattr(au, "spawn_restart", lambda: spawned.append(1))
+    core.selfmodel.identity = lambda: {"version": "aaa1111", "restart_pending": True, "newer_on_disk_not_running": "bbb2222"}
+    monkeypatch.setattr(au, "LAUNCHER_PID_FILE", tmp_path / "missing.pid")
+    assert _a.run(a.run_once(force=True)).outcome != "RESTARTING" and not spawned  # bare server: nobody brings it back
+    pid = tmp_path / "syrax.pid"
+    pid.write_text("1")
+    monkeypatch.setattr(au, "LAUNCHER_PID_FILE", pid)
+    rep = _a.run(a.run_once(force=True))
+    assert rep.outcome == "RESTARTING" and spawned == [1] and "bbb2222" in rep.reason
+    assert [e for e in j.recent_events() if e["type"] == "restart.requested"][-1]["payload"]["on_disk"] == "bbb2222"
+    monkeypatch.setenv("SYRAX_SELF_RESTART", "0")
+    assert _a.run(a.run_once(force=True)).outcome != "RESTARTING"
+
+
 def test_brief_carries_the_objective_evidence():
     from syrax.autonomy import brief_evidence
     o = {"evidence": {"plan": ["x"], "stats": {"uses": 50, "failures": 11},
