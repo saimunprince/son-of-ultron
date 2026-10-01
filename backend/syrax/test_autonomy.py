@@ -499,6 +499,20 @@ def test_a_human_can_reopen_a_done_objective_with_a_note(tmp_path):
         j.reopen_objective_sync(o["id"], "again")
 
 
+def test_blocked_objectives_close_when_later_evidence_satisfies_them(tmp_path):
+    from syrax.autonomy import rejudge_blocked
+    j = Journal(tmp_path / "j.db")
+    q = j.add_objective_sync("make self_version pass", source="selfmodel", check={"kind": "quality_case_passes", "case": "self_version"}, key="q")
+    h = j.add_objective_sync("a human decides", source="selfmodel", check={"kind": "human"}, key="h")
+    for o in (q, h):
+        j.update_objective_sync(o["id"], status="BLOCKED", note="three attempts")
+    assert rejudge_blocked(j) == 0  # no newer evidence yet
+    j.add_quality_run_sync([{"id": "self_version", "ok": True}], 100.0, "PASS", brain="gemini")
+    assert rejudge_blocked(j) == 1
+    st = {o["id"]: o["status"] for o in j.objectives(limit=10)}
+    assert st[q["id"]] == "DONE" and st[h["id"]] == "BLOCKED"
+
+
 def test_brief_carries_the_objective_evidence():
     from syrax.autonomy import brief_evidence
     o = {"evidence": {"plan": ["x"], "stats": {"uses": 50, "failures": 11},

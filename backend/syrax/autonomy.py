@@ -288,6 +288,24 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
     return created
 
 
+def rejudge_blocked(journal: Journal) -> int:
+    """BLOCKED objectives with a machine check are judged again on every cycle:
+    evidence that arrives later (a quality run, a release, new tool uses) can
+    satisfy them. Human checks and plain task_success stay blocked."""
+    closed = 0
+    for o in journal.objectives(limit=200, status="BLOCKED"):
+        kind = (o.get("check_spec") or {}).get("kind", "task_success")
+        if kind in ("human", "task_success"):
+            continue
+        verdict, evidence = judge(journal, o, None)
+        if verdict == "DONE":
+            journal.update_objective_sync(o["id"], status="DONE", evidence={"judged": evidence, "task_id": None},
+                                          progress={"lesson": "evidence that arrived after it was blocked satisfied it"},
+                                          note="closed from newer evidence while blocked")
+            closed += 1
+    return closed
+
+
 def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str, dict]:
     """Decide DONE / RETRY from journal evidence only. Returns (verdict, evidence)."""
     spec = objective.get("check_spec") or {}
@@ -430,6 +448,10 @@ class Autonomy:
             rep.derived = await self.journal.run(derive_objectives, self.journal, self.core.selfmodel)
         except Exception as e:  # deriving must never kill the cycle
             logger.warning(f"objective derivation failed: {e}")
+        try:
+            await self.journal.run(rejudge_blocked, self.journal)
+        except Exception as e:
+            logger.warning(f"re-judging blocked objectives failed: {e}")
         objective = self._pick()
         if objective is None and self.reflect:
             # Phase 1: nothing is failing loudly, so ask what limits SYRAX most
