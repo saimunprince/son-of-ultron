@@ -46,6 +46,23 @@ NAME_RE = re.compile(r"^[a-z][a-z0-9_]{2,30}$")
 TEST_TIMEOUT_S = 120.0
 MAX_CODE_CHARS = 60_000
 
+# Live 2026-10-01: asked to "make yourself better", SYRAX wrote a skill that
+# terminated every process above 20 % memory, and its test ran it for real on
+# the owner's machine. A skill's tests execute its code on the host, so code
+# that can hurt the machine is refused before anything runs. A human who wants
+# such a capability writes it by hand.
+UNSAFE = (
+    (re.compile(r"\.(terminate|kill)\s*\(|\bos\.kill\b|\bos\.killpg\b|\btaskkill\b|\bpkill\b|\bkillall\b|Stop-Process", re.I), "kills processes"),
+    (re.compile(r"\b(shutdown|reboot|poweroff|hibernate)\b|ExitWindowsEx|InitiateSystemShutdown|Restart-Computer|Stop-Computer", re.I), "powers the machine off or restarts it"),
+    (re.compile(r"\bshutil\.rmtree\b|\brm\s+-rf?\b|\brmdir\s+/s\b|\bdel\s+/[sfq]\b|Remove-Item[^\n]*-Recurse|\bformat\s+[a-z]:", re.I), "deletes directory trees or disks"),
+    (re.compile(r"\bwinreg\.(Delete|Set)|\breg(\.exe)?\s+(delete|add)\b|\b(bcdedit|vssadmin|diskpart|netsh|schtasks|sc\s+(delete|config|stop))\b", re.I), "changes system configuration"),
+)
+
+
+def unsafe_reasons(*sources: str) -> List[str]:
+    text = "\n".join(sources)
+    return [why for rx, why in UNSAFE if rx.search(text)]
+
 
 def _atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -161,6 +178,10 @@ class SkillFactory:
         n = 0
         for row in self.journal.skills(status="VERIFIED"):
             try:
+                src = self.root / row["name"] / "skill.py"
+                unsafe = unsafe_reasons(src.read_text(encoding="utf-8", errors="replace")) if src.is_file() else []
+                if unsafe:
+                    raise ValueError("unsafe code: " + "; ".join(unsafe))
                 self._register(row["name"])
                 n += 1
             except Exception as e:  # a skill that no longer loads is not VERIFIED
@@ -219,7 +240,14 @@ class SkillFactory:
             raise ValueError(f"no skill named {name!r}")
         existing = self.journal.skill(name)
         purpose = purpose or (existing or {}).get("purpose") or name
-        result = await asyncio.to_thread(run_skill_tests, skill_dir)
+        sources = [(skill_dir / f).read_text(encoding="utf-8", errors="replace") for f in ("skill.py", "test_skill.py") if (skill_dir / f).is_file()]
+        unsafe = unsafe_reasons(*sources)
+        if unsafe:  # never run it, not even its tests
+            result = {"status": "FAILED", "passed": 0, "failed": 0, "stage": "safety",
+                      "evidence": "refused before running: the code " + "; ".join(unsafe)
+                                  + ". Skills must not harm the host; a human adds such capabilities by hand."}
+        else:
+            result = await asyncio.to_thread(run_skill_tests, skill_dir)
         status = result["status"]
         if status == "VERIFIED":
             try:

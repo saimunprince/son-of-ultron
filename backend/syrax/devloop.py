@@ -93,7 +93,7 @@ def owned_files(files: Dict[str, str], tools_used: Iterable[str], edited_paths: 
 JUDGES = (
     "backend/syrax/quality.py", "backend/syrax/verify.py", "backend/syrax/bench.py",
     "backend/syrax/autonomy.py", "backend/syrax/experiments.py", "backend/syrax/versions.py",
-    "backend/syrax/devloop.py", "backend/syrax/limits.py", "backend/syrax/plan.py", "backend/syrax/followup.py",
+    "backend/syrax/devloop.py", "backend/syrax/limits.py", "backend/syrax/plan.py", "backend/syrax/followup.py", "backend/syrax/skills.py",
     # and what guards the evidence: the journal's owner/read-only rules and the
     # python_execute guard (an agent must not take down its own guard rails)
     "backend/syrax/journal.py", "backend/syrax/guard.py", "backend/syrax/_guard_site/sitecustomize.py",
