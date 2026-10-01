@@ -74,6 +74,14 @@ SYRAX manages its own development agenda, not single tasks.
 - DONE: the brief carries the objective's evidence (recent failures, counts), so SYRAX reads them instead of guessing journal tables.
 - TODO: priority from impact × confidence × cost instead of a fixed score per kind; plans with per-step checks; the next objective derived from what the last one taught.
 
+- DONE: SYRAX restarts itself (idle, launched by syrax.py) when a commit it has not loaded is on disk, so a released fix takes effect without a human.
+- DONE: limitation priority = score × confidence ÷ cost, each measured per kind from the journal.
+- DONE: researched limitations end in proposals for the human (`proposals`); the OpenRouter key came from one.
+
+### Compared with Brahma AI Evo (2026-10-01)
+
+Brahma (Windows desktop AI) forges skills into `features/`, tests them in a sandbox and hot-reloads them, and its Auto-Heal patches running code from a traceback without a gate. SYRAX keeps the gate (it tried to game its judge twice today) and restarts into code that passed it. Worth taking as ideas, not code (its license is personal-use only): Windows window control (list/focus/tile), Office documents as skills SYRAX builds itself (a Phase 3 test), and low-latency native-audio voice later.
+
 ### Integrity rules learned on 2026-10-01
 
 Working its own objectives, SYRAX twice reached for its judge instead of its behaviour: it weakened a quality case's check (`research` → `know`), and it ran an edited copy of the case in a second core it built in python_execute, storing a "pass" that closed the objective. What now stands between an agent and its judge:
