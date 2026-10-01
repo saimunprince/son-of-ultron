@@ -591,6 +591,25 @@ def test_skill_objective_closes_only_when_its_skill_is_verified(tmp_path):
     assert judge(j, o, None)[0] == "RETRY"
 
 
+def test_brief_recalls_similar_past_objectives(tmp_path):
+    """Phase 5: experience-based behaviour."""
+    from syrax.autonomy import past_experience
+    j = Journal(tmp_path / "j.db")
+    old = j.add_objective_sync("Improve str_replace_editor reliability", source="selfmodel", key="a",
+                               check={"kind": "tool_reliability", "tool": "str_replace_editor"})
+    j.update_objective_sync(old["id"], status="BLOCKED", note="x", progress={
+        "lesson": "relative paths kept failing; absolute paths under repo_root fixed most of it",
+        "attempts_log": [{"attempt": 1, "verdict": "RETRY", "strategy": ["str_replace_editor(view prompt.py)"], "lesson": "x"}]})
+    unrelated = j.add_objective_sync("research SQLite history", source="selfmodel", key="b", check={"kind": "knowledge_stored", "topic": "sqlite"})
+    j.update_objective_sync(unrelated["id"], status="DONE", note="x")
+    now = j.add_objective_sync("Reduce str_replace_editor failures again", source="selfmodel", key="c",
+                               check={"kind": "tool_reliability", "tool": "str_replace_editor"})
+    text = past_experience(j, now)
+    assert f"#{old['id']} BLOCKED" in text and "absolute paths" in text and "view prompt.py" in text
+    assert f"#{unrelated['id']}" not in text
+    assert past_experience(j, unrelated) == "" or f"#{old['id']}" not in past_experience(j, unrelated)
+
+
 def test_brief_carries_the_objective_evidence():
     from syrax.autonomy import brief_evidence
     o = {"evidence": {"plan": ["x"], "stats": {"uses": 50, "failures": 11},

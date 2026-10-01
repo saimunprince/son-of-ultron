@@ -135,6 +135,35 @@ def strategy_of(events: List[dict]) -> List[str]:
     return out[:12]
 
 
+def past_experience(journal: Journal, objective: dict, limit: int = 3, budget: int = 900) -> str:
+    """Phase 5: "last time this approach did badly because X, so this time Y".
+    The closed objectives most like this one (same check and subject first,
+    then shared goal keywords), with what worked or why they failed."""
+    spec = objective.get("check_spec") or {}
+    subject = spec.get("tool") or spec.get("case") or spec.get("name") or spec.get("topic")
+    words = set(auto_keywords(objective.get("goal") or ""))
+    scored = []
+    for o in journal.objectives(limit=300, status=["DONE", "BLOCKED", "DROPPED"]):
+        if o["id"] == objective.get("id"):
+            continue
+        ospec = o.get("check_spec") or {}
+        osubject = ospec.get("tool") or ospec.get("case") or ospec.get("name") or ospec.get("topic")
+        score = (3 if ospec.get("kind") == spec.get("kind") else 0) + (4 if subject and osubject == subject else 0)
+        score += len(words & set(auto_keywords(o.get("goal") or "")))
+        if score >= 3:
+            scored.append((score, o))
+    if not scored:
+        return ""
+    lines = []
+    for _, o in sorted(scored, key=lambda x: (-x[0], -x[1]["updated"]))[:limit]:
+        prog = o.get("progress") or {}
+        log = prog.get("attempts_log") or []
+        how = "; ".join((log[-1].get("strategy") or [])[:4]) if log else ""
+        lines.append(f"- #{o['id']} {o['status']} after {o.get('attempts', 0)} attempt(s): {str(o['goal'])[:110]} — "
+                     f"{str(prog.get('lesson') or '')[:150]}" + (f" (how: {how[:160]})" if how else ""))
+    return ("Past experience with similar objectives (repeat what worked, avoid what failed):\n" + "\n".join(lines))[:budget] + "\n"
+
+
 def brief_evidence(objective: dict, budget: int = 1800) -> str:
     """The evidence the objective was created from, compact, for the task.
     Live: SYRAX was told to "read the failures listed in the evidence" but the
@@ -574,7 +603,7 @@ class Autonomy:
         from syrax.devloop import REPO_ROOT
 
         brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-", hint=hint, repo_root=REPO_ROOT,
-                                        evidence=brief_evidence(objective))
+                                        evidence=brief_evidence(objective) + past_experience(self.journal, objective))
         task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous")
         if task_id is None:
             await self.journal.update_objective(objective["id"], status="OPEN", note="core busy")
