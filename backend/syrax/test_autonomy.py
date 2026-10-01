@@ -580,9 +580,13 @@ def test_skill_objective_closes_only_when_its_skill_is_verified(tmp_path):
     j = Journal(tmp_path / "j.db")
     o = j.add_objective_sync("build make_docx", source="human", check={"kind": "skill_verified", "name": "make_docx"})
     assert judge(j, o, {"status": "SUCCESS"})[0] == "RETRY"  # a successful task is not a skill
-    j.upsert_skill_sync("make_docx", "write a Word document", "skills/make_docx", "VERIFIED")
+    skill_dir = tmp_path / "skills" / "make_docx"
+    j.upsert_skill_sync("make_docx", "write a Word document", str(skill_dir), "VERIFIED")
+    assert judge(j, o, None)[0] == "RETRY"  # registry says VERIFIED but the files are gone
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "skill.py").write_text("x")
     verdict, ev = judge(j, o, None)
-    assert verdict == "DONE" and ev["status"] == "VERIFIED"
+    assert verdict == "DONE" and ev["status"] == "VERIFIED" and ev["files_present"]
     j.set_skill_status_sync("make_docx", "FAILED")
     assert judge(j, o, None)[0] == "RETRY"
 

@@ -28,6 +28,7 @@ import json
 import os
 import re
 import time
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
@@ -387,8 +388,10 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         # Phase 3: a capability SYRAX built for itself counts only when its own
         # tests made it a VERIFIED tool after the objective was set
         sk = journal.skill(str(spec.get("name") or ""))
-        ok = bool(sk and sk.get("status") == "VERIFIED" and (sk.get("last_verified") or 0) >= objective["created"])
-        return ("DONE" if ok else "RETRY"), {"skill": spec.get("name"), "status": (sk or {}).get("status"), "last_verified": (sk or {}).get("last_verified")}
+        present = bool(sk and sk.get("path") and (Path(sk["path"]) / "skill.py").exists())  # live: VERIFIED in the registry, files deleted
+        ok = bool(sk and sk.get("status") == "VERIFIED" and present and (sk.get("last_verified") or 0) >= objective["created"])
+        return ("DONE" if ok else "RETRY"), {"skill": spec.get("name"), "status": (sk or {}).get("status"), "files_present": present,
+                                            "last_verified": (sk or {}).get("last_verified")}
     if kind == "tool_reliability":
         from syrax.limits import judge_tool_reliability
         return judge_tool_reliability(journal, objective)
