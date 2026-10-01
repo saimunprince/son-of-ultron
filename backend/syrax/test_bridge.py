@@ -803,9 +803,9 @@ def test_agent_edits_its_code_and_release_commits_only_on_green(script, tmp_path
     gates = {"list": [Gate("tests", [sys.executable, "-c", "import sys; print('boom'); sys.exit(1)"])]}
     script.queue = [
         call("str_replace_editor", {"command": "str_replace", "path": str(target), "old_str": "VALUE = 1", "new_str": "VALUE = 2"}, "Editing."),
-        call("release", {"summary": "set VALUE to 2"}, "Releasing."),
+        call("release", {"summary": "set VALUE to 2", "why": "the objective asks for it", "risk": "mod users", "tests": "existing suite"}, "Releasing."),
         call("str_replace_editor", {"command": "str_replace", "path": str(target), "old_str": "VALUE = 1", "new_str": "VALUE = 3"}, "Trying differently."),
-        call("release", {"summary": "set VALUE to 3"}, "Releasing again."),
+        call("release", {"summary": "set VALUE to 3", "why": "the objective asks for it", "risk": "mod users", "tests": "existing suite"}, "Releasing again."),
         reply("Second attempt committed."),
     ]
     with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:

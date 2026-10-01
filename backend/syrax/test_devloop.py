@@ -1,6 +1,7 @@
 """Autonomous development loop tests on a throwaway git repository with fake gates."""
 
 import asyncio
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -53,7 +54,7 @@ def test_green_change_is_committed_and_journaled(tmp_path):
     assert msg.startswith("syrax: bump VALUE") and f"Verified-By: syrax.verify #{rep['verification_id']}" in msg
     assert changed_files(root) == {}  # tree clean after commit
     kinds = [e["type"] for e in j.events(t)]
-    assert kinds == ["task.started", "code.changed", "verification.completed", "commit.created"]
+    assert kinds == ["task.started", "release.planned", "code.changed", "verification.completed", "commit.created"]
     assert rep["push"]["ok"] is None and "SYRAX_AUTOPUSH" in rep["push"]["output"]
     assert j.verifications()[0]["status"] == "GREEN" and j.verifications()[0]["task_id"] == t
     assert "Committed" in render(rep)
@@ -74,7 +75,7 @@ def test_blocked_change_is_rolled_back_with_evidence(tmp_path):
     assert rep["rollback"] == {"restored": ["backend/syrax/mod.py"], "removed": ["backend/syrax/new.py"], "clean": True}
     assert rep["failing"][0]["name"] == "tests" and "VALUE should be 1" in rep["failing"][0]["evidence"]
     kinds = [e["type"] for e in j.events(t)]
-    assert kinds == ["task.started", "code.changed", "verification.completed", "rollback.created"]
+    assert kinds == ["task.started", "release.planned", "code.changed", "verification.completed", "rollback.created"]
     snap = Path(rep["snapshot"]).read_text()
     assert "VALUE = 3" in snap and "# untracked: backend/syrax/new.py" in snap  # the attempt is preserved for study
     text = render(rep)
@@ -163,7 +164,7 @@ def test_autonomous_work_cannot_release_changes_to_its_judges(tmp_path):
     git(root, "checkout", "--", ".")
     (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 3\n")
     (root / "backend" / "syrax" / "test_new.py").write_text("def test_n(): assert True\n")
-    assert asyncio.run(dl.release("fix behaviour, add a test"))["outcome"] == "COMMITTED"
+    assert asyncio.run(dl.release("fix behaviour, add a test", {"why": "objective evidence", "risk": "callers of mod", "tests": "test_mod.py"}))["outcome"] == "COMMITTED"
     human = j.start_task_sync("human asks to change the case", kind="conversation")
     dl.task_id_provider = lambda: human
     dl.begin_task()
@@ -187,7 +188,7 @@ def test_an_autonomous_release_needs_another_brain_to_approve(tmp_path):
     dl = DevLoop(j, root=root, gates=lambda: PASS, task_id_provider=lambda: t, snapshot_dir=tmp_path / "rb")
     dl.reviewer = reject
     (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 9\n")
-    rep = asyncio.run(dl.release("fix VALUE"))
+    rep = asyncio.run(dl.release("fix VALUE", {"why": "objective evidence", "risk": "callers of mod", "tests": "test_mod.py"}))
     assert rep["outcome"] == "REVIEW_REJECTED" and seen["authors"] == ["gemini"]
     assert (root / "backend" / "syrax" / "mod.py").read_text() == "VALUE = 1\n"  # rolled back
     assert any(e["type"] == "review.completed" and e["payload"]["approve"] is False for e in j.events(t))
@@ -197,7 +198,7 @@ def test_an_autonomous_release_needs_another_brain_to_approve(tmp_path):
 
     dl.reviewer = approve
     (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 9\n")
-    assert asyncio.run(dl.release("fix VALUE"))["outcome"] == "COMMITTED"
+    assert asyncio.run(dl.release("fix VALUE", {"why": "objective evidence", "risk": "callers of mod", "tests": "test_mod.py"}))["outcome"] == "COMMITTED"
 
 
 def test_review_parsing_and_reviewer_choice():
@@ -219,6 +220,24 @@ def test_review_parsing_and_reviewer_choice():
         store = S()
 
     assert reviewers(R(), ["gemini"]) == ["upstage"]
+
+
+def test_autonomous_release_needs_a_change_plan_and_journals_its_impact(tmp_path):
+    """Phase 4: evidence-driven engineering, not random rewriting."""
+    root = repo(tmp_path)
+    (root / "docs" / "system_map.json").write_text(json.dumps({"components": [
+        {"component": "Mod", "code": ["backend/syrax/mod.py"], "tests": ["backend/syrax/test_mod.py (unit)"]}]}))
+    git(root, "add", "-A"); git(root, "commit", "-q", "-m", "map")
+    j = Journal(tmp_path / "j.db")
+    t = j.start_task_sync("improve mod", kind="autonomous")
+    dl = DevLoop(j, root=root, gates=lambda: PASS, task_id_provider=lambda: t, snapshot_dir=tmp_path / "rb")
+    (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 4\n")
+    with pytest.raises(ValueError, match="missing: why, risk, tests"):
+        asyncio.run(dl.release("bump VALUE"))
+    plan = {"why": "objective 7: VALUE must be 4", "risk": "callers reading VALUE", "tests": "test_mod.py"}
+    assert asyncio.run(dl.release("bump VALUE", plan))["outcome"] == "COMMITTED"
+    ev = [e for e in j.events(t) if e["type"] == "release.planned"][-1]["payload"]
+    assert ev["plan"] == plan and ev["components"] == ["Mod"] and ev["component_tests"] == ["backend/syrax/test_mod.py"]
 
 
 def test_owned_files_follow_what_the_task_actually_ran():

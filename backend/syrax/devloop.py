@@ -21,6 +21,7 @@ Every claim in the report comes from a command's exit code or from git.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import subprocess
@@ -111,6 +112,25 @@ def judge_problems(files: Dict[str, str]) -> List[str]:
         elif (name.startswith("test_") or name.endswith(".test.ts")) and st != "??":
             problems.append(f"{path}: existing tests are the contract; add a new test instead of changing this one")
     return problems
+
+
+PLAN_FIELDS = ("why", "risk", "tests")
+
+
+def impact_of(files: Dict[str, str], root: Path) -> Dict[str, Any]:
+    """Which system-map components a change touches and the tests that cover
+    them (Phase 4: know what depends on the module before changing it)."""
+    try:
+        smap = json.loads((root / "docs" / "system_map.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"components": [], "component_tests": []}
+    touched, tests = [], []
+    for c in smap.get("components", []):
+        code = [str(x).split(" ")[0] for x in c.get("code") or []]
+        if any(f in code for f in files):
+            touched.append(c.get("component"))
+            tests += [str(t).split(" ")[0] for t in c.get("tests") or []]
+    return {"components": touched, "component_tests": sorted(set(tests))}
 
 
 def scope_problems(files: Dict[str, str]) -> List[str]:
@@ -243,11 +263,22 @@ class DevLoop:
 
     # ——— the loop ———
 
-    async def release(self, summary: str) -> Dict[str, Any]:
+    async def release(self, summary: str, plan: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         if not (summary or "").strip():
             raise ValueError("summary required")
         task_id = self.task_id_provider()
-        info = await asyncio.to_thread(self.inspect)
+        task = self.journal.task(task_id) if task_id else None
+        plan = {k: str(v).strip() for k, v in (plan or {}).items() if v and str(v).strip()}
+        info = await asyncio.to_thread(self.inspect)  # scope and judge refusals come first
+        if task and task.get("kind") == "autonomous":
+            missing = [k for k in PLAN_FIELDS if not plan.get(k)]
+            if missing:
+                raise ValueError(
+                    "an autonomous release needs a change plan; missing: " + ", ".join(missing)
+                    + ". why = the evidence or objective it answers; risk = what could break; tests = which tests prove it"
+                )
+        impact = impact_of(info["files"], self.root)
+        await self.journal.record("release.planned", {"summary": summary, "plan": plan, **impact}, task_id=task_id)
         snap = await asyncio.to_thread(self.snapshot, info)
         await self.journal.record(
             "code.changed", {"files": info["files"], "stat": info["stat"], "head": info["head"], "snapshot": str(snap)}, task_id=task_id,
@@ -270,7 +301,10 @@ class DevLoop:
         task = self.journal.task(task_id) if task_id else None
         if self.reviewer is not None and task and task.get("kind") in ("autonomous", "eval"):
             authors = sorted({e["payload"].get("provider") for e in self.journal.events(task_id) if e["type"] == "brain.answered"} - {None})
-            verdict = await self.reviewer(info, summary, authors)
+            told = summary + "".join(f"\n{k.capitalize()}: {v}" for k, v in plan.items())
+            if impact["components"]:
+                told += f"\nComponents touched: {', '.join(impact['components'])}"
+            verdict = await self.reviewer(info, told, authors)
             await self.journal.record("review.completed", {"authors": authors, **verdict}, task_id=task_id)
             report["review"] = verdict
             if not verdict.get("skipped") and not verdict.get("approve"):
@@ -320,23 +354,29 @@ class ReleaseTool(BaseTool):
         "str_replace_editor or skill_create) and commit them if it is GREEN, otherwise roll them "
         "back. The gate runs the real test suite, type checks, lint, build and a secret/debug scan; "
         "it takes a minute or two. Nothing outside backend/syrax, backend/skills, frontend, docs "
-        "and README can be released this way. Give a one-line summary for the commit message. "
+        "and README can be released this way. Give a one-line summary for the commit message, and for "
+        "your own objectives a plan: why (the evidence), risk (what could break), tests (what proves it). "
         "Before calling it, re-read the edited region with str_replace_editor view and make sure "
         "Python still compiles; a release that fails costs two minutes and is rolled back. "
         "If a task ends without a COMMITTED release, all its repository edits are rolled back."
     )
     parameters: dict = {
         "type": "object",
-        "properties": {"summary": {"type": "string", "description": "One line: what changed and why."}},
+        "properties": {
+            "summary": {"type": "string", "description": "One line: what changed."},
+            "why": {"type": "string", "description": "the evidence or objective this answers"},
+            "risk": {"type": "string", "description": "what could break and how you checked"},
+            "tests": {"type": "string", "description": "which tests prove it (new or existing)"},
+        },
         "required": ["summary"],
     }
     loop: Optional[Any] = Field(default=None, exclude=True)
 
-    async def execute(self, summary: str) -> ToolResult:
+    async def execute(self, summary: str, why: str = "", risk: str = "", tests: str = "") -> ToolResult:
         if self.loop is None:
             return ToolResult(error="release loop unavailable")
         try:
-            report = await self.loop.release(summary)
+            report = await self.loop.release(summary, {"why": why, "risk": risk, "tests": tests})
         except (ValueError, JournalError, RuntimeError) as e:
             return ToolResult(error=f"release refused: {e}")
         return ToolResult(output=render(report))
