@@ -8,7 +8,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     history {limit?} | task_events {task_id} | resume {task_id} |
                     verifications {limit?} | self_model {section?} |
                     objectives {limit?} | objective_add {goal, reason?, priority?} |
-                    objective_update {id, status, note} (a human reopens, drops or closes) |
+                    objective_update {id, status, note} (a human reopens, drops or closes) | proposals {limit?} |
                     dismiss {task_id, note} (cancel an INTERRUPTED task instead of resuming it) |
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
                     skills | presentation | benchmarks {limit?} | experiments {limit?} |
@@ -289,6 +289,8 @@ class Session:
             pid = str(msg.get("presentation_id") or "")
             if not await self.core.presentation.feedback(pid, str(msg.get("action") or "dismiss")):
                 await self.send({"type": "notice", "text": "That element is no longer shown."})
+        elif kind == "proposals":
+            await self.send({"type": "proposals", "proposals": await asyncio.to_thread(self.core.selfmodel.proposals, _limit(msg.get("limit"), 10))})
         elif kind == "quality_runs":
             await self.send({"type": "quality_runs", "runs": await asyncio.to_thread(journal.quality_runs, _limit(msg.get("limit"), 10))})
         elif kind == "benchmarks":

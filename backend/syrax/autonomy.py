@@ -91,6 +91,21 @@ class CycleReport:
         return {k: getattr(self, k) for k in ("started", "outcome", "reason", "objective_id", "task_id", "task_status", "verdict", "derived")}
 
 
+PROPOSAL_KINDS = ("known_limitation", "brain_availability")
+
+
+def proposal_from(objective: dict, task: Optional[dict]) -> Optional[dict]:
+    """Phase 1, "next from what was learned": a researched limitation ends in
+    a proposal for the human (what was found, what it would change, sources)
+    instead of only a knowledge row nobody reads. SYRAX builds nothing here."""
+    lim = ((objective.get("evidence") or {}).get("limitation")) or {}
+    text = ((task or {}).get("result") or "").strip()
+    if lim.get("kind") not in PROPOSAL_KINDS or not text:
+        return None
+    return {"objective_id": objective["id"], "limitation": lim.get("detail"), "kind": lim.get("kind"),
+            "proposal": text[:1500], "sources": [u.rstrip(".,;:") for u in re.findall(r"https?://[^\s)\]]+", text)][:6]}
+
+
 def strategy_of(events: List[dict]) -> List[str]:
     """How a task went about it: the distinct tool calls it made, each with
     its most telling argument, in order. Equal lists = the same strategy."""
@@ -562,6 +577,9 @@ class Autonomy:
                 progress={"lesson": lesson, "attempts_log": log[-6:]}, evidence={"judged": evidence, "task_id": task_id},
                 last_task_id=task_id, bump_attempts=True, note=lesson,
             )
+            proposal = proposal_from(objective, task)
+            if proposal:
+                await self.journal.record("proposal.created", {**proposal, "task_id": task_id})  # the task is closed; the event stands alone
         elif verdict == "BLOCKED" or attempts >= MAX_ATTEMPTS:
             rep.verdict = "BLOCKED"
             await self.journal.update_objective(

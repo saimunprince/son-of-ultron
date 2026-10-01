@@ -44,7 +44,7 @@ PRINCIPLES = [
     "Unknown is a valid state; say it.",
     "The UI observes; the core is the brain.",
 ]
-SECTIONS = ("summary", "identity", "structure", "runtime", "behavior", "capabilities", "performance", "weaknesses", "all")
+SECTIONS = ("summary", "identity", "structure", "runtime", "behavior", "capabilities", "performance", "weaknesses", "proposals", "all")
 _PROCESS_STARTED = time.time()
 # The commit this process loaded, per repository root, captured the first time
 # it is asked (at boot for the real repo). After a `release` HEAD moves on but
@@ -349,6 +349,11 @@ class SelfModel:
                 out.append({"kind": "known_limitation", "detail": f"{c.get('component')}: {lim}", "evidence": "docs/system_map.json"})
         return out
 
+    def proposals(self, limit: int = 10) -> List[dict]:
+        """What SYRAX's research suggests changing, newest first (for the human)."""
+        rows = [e for e in reversed(self.journal.recent_events(3000)) if e["type"] == "proposal.created"]
+        return [{**e["payload"], "ts": e["ts"]} for e in rows[:limit]]
+
     # ——— assembly ———
 
     def snapshot(self, section: str = "all") -> dict:
@@ -368,6 +373,8 @@ class SelfModel:
             return {"weaknesses": self.weaknesses()}
         if section == "performance":
             return {"performance": self.performance()}
+        if section == "proposals":
+            return {"proposals": self.proposals()}
         identity = self.identity()
         behavior = self.behavior()
         caps = self.capabilities()

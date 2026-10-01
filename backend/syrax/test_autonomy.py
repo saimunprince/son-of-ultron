@@ -540,6 +540,21 @@ def test_the_same_failed_strategy_is_not_tried_again(tmp_path, monkeypatch):
     assert strategy_of([{"type": "tool.started", "payload": {"name": "str_replace_editor", "args": {"command": "view", "path": "C:\\x\\quality.py"}}}]) == ["str_replace_editor(view quality.py)"]
 
 
+def test_a_researched_limitation_becomes_a_proposal(tmp_path, monkeypatch):
+    import asyncio as _a
+    j, core, a = make(tmp_path)
+    monkeypatch.setattr("syrax.autonomy.resource_pressure", lambda: None)
+    o = j.add_objective_sync("research the task queue limitation", source="selfmodel", key="limit:known_limitation:queue:2026-W40",
+                             check={"kind": "task_success"},
+                             evidence={"limitation": {"kind": "known_limitation", "detail": "Core: one task at a time", "score": 0.15}})
+    core.script = [lambda t: "Use a persistent task queue with a concurrency limit. Sources: https://learn.microsoft.com/x, https://arxiv.org/abs/1"]
+    rep = _a.run(a.run_once(force=True))
+    assert rep.objective_id == o["id"] and rep.verdict == "DONE"
+    props = core.selfmodel.proposals()
+    assert props and props[0]["limitation"] == "Core: one task at a time" and "task queue" in props[0]["proposal"]
+    assert props[0]["sources"] == ["https://learn.microsoft.com/x", "https://arxiv.org/abs/1"]
+
+
 def test_brief_carries_the_objective_evidence():
     from syrax.autonomy import brief_evidence
     o = {"evidence": {"plan": ["x"], "stats": {"uses": 50, "failures": 11},
