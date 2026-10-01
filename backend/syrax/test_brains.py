@@ -275,6 +275,16 @@ def test_413_is_retried_once_with_a_smaller_request(router):
     assert router.health["alpha"].until <= time.time()  # no cooldown: it answered
 
 
+def test_provider_without_a_model_picks_the_largest_listed_one(router, monkeypatch):
+    omega = brains.PROVIDERS["omega"]  # lists a:free and b-paid, filter :free
+    monkeypatch.setattr(brains, "PROVIDERS", {**brains.PROVIDERS, "omega": dataclasses.replace(omega, default_model="")})
+    router.store.get("omega")["api_key"] = "key-omega"
+    router.preferred = "omega"
+    msg = ask(router)
+    assert msg.content == "omega says hi"
+    assert router.store.model("omega") == "a:free" and SEEN[-1][1]["model"] == "a:free"
+
+
 def test_first_healthy_provider_answers(router):
     msg = ask(router)
     assert msg.content == "alpha says hi"

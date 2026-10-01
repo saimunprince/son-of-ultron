@@ -552,6 +552,30 @@ class BrainRouter(LLM):
             max_retries=0,  # the router does its own failover
         )
 
+    async def _auto_model(self, pid: str) -> str:
+        """A provider with a key but no chosen model (OpenRouter's free list
+        rotates, so it has no fixed default): take the largest listed model,
+        remember it, and say so. Live 2026-10-01: "no model selected"."""
+        try:
+            models = await self.list_models(pid)
+        except Exception as e:
+            raise BrainError(f"no model selected and the model list failed: {self._reason(e)}")
+        if not models:
+            raise BrainError("no model selected and the provider lists none")
+
+        def size(m: str) -> float:
+            nums = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)b\b", m.lower())]
+            return max(nums) if nums else 0.0
+
+        choice = sorted(models, key=lambda m: (-size(m), m))[0]
+        self.store.get(pid)["model"] = choice
+        try:
+            self.store.save()
+        except OSError:
+            pass
+        logger.info(f"brain {pid}: no model chosen, using {choice} (largest of {len(models)} listed)")
+        return choice
+
     async def list_models(self, pid: str, key: Optional[str] = None) -> List[str]:
         p = PROVIDERS[pid]
         api_key = key if key is not None else self.store.key(pid)
@@ -711,7 +735,7 @@ class BrainRouter(LLM):
         if extra:
             params.update(extra)
         if not params["model"]:
-            raise BrainError("no model selected")
+            params["model"] = await self._auto_model(pid)
         if tools:
             params["tools"] = tools
             params["tool_choice"] = tool_choice.value if hasattr(tool_choice, "value") else tool_choice
