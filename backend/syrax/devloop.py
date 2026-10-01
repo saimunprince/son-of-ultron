@@ -96,7 +96,7 @@ JUDGES = (
     # and what guards the evidence: the journal's owner/read-only rules and the
     # python_execute guard (an agent must not take down its own guard rails)
     "backend/syrax/journal.py", "backend/syrax/guard.py", "backend/syrax/_guard_site/sitecustomize.py",
-    "backend/syrax/tools.py",
+    "backend/syrax/tools.py", "backend/syrax/review.py",
 )
 
 
@@ -128,6 +128,9 @@ class DevLoop:
                  task_id_provider: Optional[Callable[[], Optional[str]]] = None, snapshot_dir: Optional[Path] = None):
         self.journal = journal
         self.root = Path(root)
+        # async (info, summary, author_brains) -> {approve, reasons, reviewer} | {skipped};
+        # set by the core: a different brain must approve an autonomous change
+        self.reviewer: Optional[Callable[..., Any]] = None
         self.gates = gates or (lambda: default_gates(self.root))
         self.task_id_provider = task_id_provider or (lambda: None)
         self.snapshot_dir = Path(snapshot_dir or SNAPSHOT_DIR)
@@ -264,6 +267,17 @@ class DevLoop:
             await self.journal.record("rollback.created", {"reason": "verification BLOCKED", "verification_id": vid, **rb, "snapshot": str(snap)}, task_id=task_id)
             report.update({"outcome": "ROLLED_BACK", "rollback": rb, "snapshot": str(snap)})
             return report
+        task = self.journal.task(task_id) if task_id else None
+        if self.reviewer is not None and task and task.get("kind") in ("autonomous", "eval"):
+            authors = sorted({e["payload"].get("provider") for e in self.journal.events(task_id) if e["type"] == "brain.answered"} - {None})
+            verdict = await self.reviewer(info, summary, authors)
+            await self.journal.record("review.completed", {"authors": authors, **verdict}, task_id=task_id)
+            report["review"] = verdict
+            if not verdict.get("skipped") and not verdict.get("approve"):
+                rb = await asyncio.to_thread(self.rollback, info)
+                await self.journal.record("rollback.created", {"reason": "review rejected the change", "reasons": verdict.get("reasons"), **rb, "snapshot": str(snap)}, task_id=task_id)
+                report.update({"outcome": "REVIEW_REJECTED", "rollback": rb, "snapshot": str(snap)})
+                return report
         try:
             c = await asyncio.to_thread(self.commit, info, summary, vid)
         except RuntimeError as e:

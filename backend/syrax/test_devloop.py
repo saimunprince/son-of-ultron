@@ -172,6 +172,55 @@ def test_autonomous_work_cannot_release_changes_to_its_judges(tmp_path):
     assert judge_problems({"docs/x.md": "M", "backend/syrax/test_x.py": "??"}) == []
 
 
+def test_an_autonomous_release_needs_another_brain_to_approve(tmp_path):
+    """OpenRig's dev-check seat: the gate proves it runs, a second brain checks it is what it claims."""
+    root = repo(tmp_path)
+    j = Journal(tmp_path / "j.db")
+    t = j.start_task_sync("improve mod", kind="autonomous")
+    j.record_sync("brain.answered", {"provider": "gemini"}, task_id=t)
+    seen = {}
+
+    async def reject(info, summary, authors):
+        seen["authors"] = authors
+        return {"approve": False, "reasons": ["the summary says fix but the diff deletes a check"], "reviewer": "upstage"}
+
+    dl = DevLoop(j, root=root, gates=lambda: PASS, task_id_provider=lambda: t, snapshot_dir=tmp_path / "rb")
+    dl.reviewer = reject
+    (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 9\n")
+    rep = asyncio.run(dl.release("fix VALUE"))
+    assert rep["outcome"] == "REVIEW_REJECTED" and seen["authors"] == ["gemini"]
+    assert (root / "backend" / "syrax" / "mod.py").read_text() == "VALUE = 1\n"  # rolled back
+    assert any(e["type"] == "review.completed" and e["payload"]["approve"] is False for e in j.events(t))
+
+    async def approve(info, summary, authors):
+        return {"approve": True, "reasons": ["matches the summary"], "reviewer": "upstage"}
+
+    dl.reviewer = approve
+    (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 9\n")
+    assert asyncio.run(dl.release("fix VALUE"))["outcome"] == "COMMITTED"
+
+
+def test_review_parsing_and_reviewer_choice():
+    from syrax.review import parse, reviewers
+
+    ok = parse('{"weakens_checks": false, "clear_bug": false, "secret": false, "matches_summary": true, "reasons": []}')
+    assert ok["approve"] is True and ok["problems"] == []
+    sneaky = parse('{"weakens_checks": true, "clear_bug": false, "secret": false, "matches_summary": true, "approve": true}')
+    assert sneaky["approve"] is False and sneaky["problems"] == ["weakens_checks"]  # the model's own "approve" is ignored
+    assert parse("looks good to me") is None and parse('{"weakens_checks": "no"}') is None
+
+    class S:
+        order = ["gemini", "upstage", "groq"]
+
+        def enabled(self, p):
+            return p != "groq"
+
+    class R:
+        store = S()
+
+    assert reviewers(R(), ["gemini"]) == ["upstage"]
+
+
 def test_owned_files_follow_what_the_task_actually_ran():
     from syrax.devloop import owned_files
     changed = {"backend/syrax/brains.py": "M", "backend/syrax/mod.py": "M", "docs/x.md": "??"}

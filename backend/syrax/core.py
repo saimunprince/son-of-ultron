@@ -90,6 +90,7 @@ class Core:
         self.researcher = Researcher(self.journal, task_id_provider=self.current_task_id)
         self.skills = SkillFactory(self.journal, task_id_provider=self.current_task_id)
         self.devloop = DevLoop(self.journal, task_id_provider=self.current_task_id)
+        self.devloop.reviewer = _cross_review
         self.versions = VersionComparer(self.journal, task_id_provider=self.current_task_id)
         self.presentation = PresentationEngine(self.journal, emit=self.broadcast)
         from syrax.quality import QualityRunner
@@ -450,6 +451,15 @@ class Core:
             self.agent = None
         self.journal.unsubscribe(self._on_journal_event)
         self.journal.unsubscribe(self.presentation.on_event)
+
+
+async def _cross_review(info: dict, summary: str, authors: List[str]) -> dict:
+    if os.getenv("SYRAX_REVIEW", "1") == "0":
+        return {"skipped": "SYRAX_REVIEW=0"}
+    from syrax.brains import get_router
+    from syrax.review import review
+
+    return await review(get_router(), info, summary, authors)
 
 
 def _repo_edit(steps: List[dict], args: dict) -> Optional[dict]:
