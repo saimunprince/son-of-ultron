@@ -1,4 +1,4 @@
-# SYRAX — Status and Handover (2026-09-26, Windows port 2026-09-30)
+# SYRAX — Status and Handover (2026-09-26; Windows 2026-09-30; autonomy and integrity 2026-10-01)
 
 Read this first on a fresh machine. It says what exists, what is verified, what
 is left, how to set the machine up again, and what to back up before wiping an
@@ -19,6 +19,41 @@ on each OS (systemd / launchd / Task Scheduler). macOS backends exist in
 `sysinfo.py`, `desktop.py` and `browser.py` but have not been run on a Mac.
 Linux paths are untouched. The journal, brain keys and skills from the old laptop
 were **not** carried over (see §5): SYRAX starts here with an empty history.
+
+## 0. Where things stand (2026-10-01 evening)
+
+SYRAX runs natively on Windows in the background (`python syrax.py --restart`;
+login start through a hidden `SYRAX.vbs` in the Startup folder; logs in
+`syrax.log`). It restarts itself into new commits when idle. Brains, in
+order: Gemini (`gemini-3.5-flash-lite`), Upstage (`solar-pro3`), OpenRouter
+(`nemotron-3-ultra-550b:free`), Groq. Real quality runs: 90 %.
+
+What the autonomy does now, in one cycle (`autonomy.py`):
+restart into new code if pending → derive objectives from failures →
+re-judge BLOCKED objectives against newer evidence → pick an objective, or
+rank its own limitations (`limits.py`, value = score × confidence ÷ cost) →
+brief with the objective's evidence, earlier attempts and similar past
+objectives → run → judge from evidence, fingerprint the strategy (a failed
+strategy is never repeated) → proposals for the human from research; when
+idle once a day, the technology radar (`radar.py`) and the brain scorecard
+(`scorecard.py`).
+
+Integrity, learned the hard way on 2026-10-01 (SYRAX weakened a quality
+check, then manufactured a passing run in a second core it built):
+autonomous `release` refuses the judge and guard files and edits to existing
+tests; a different brain must clear every autonomous change (`review.py`,
+four yes/no answers, verdict computed in code); only the journal's owner
+process writes it; python_execute and its child Pythons cannot write the
+journal or the keys (`guard.py`); a human can reopen an objective closed on
+bad evidence (`objective_update`).
+
+SYRAX built four skills itself (Word, Excel, PowerPoint, PDF), each verified
+by its own tests and by hand. Skills live in `backend/skills/`, outside git.
+
+Day-to-day for a human: the UI's daily briefing card; `proposals` over the
+WebSocket (or ask SYRAX "what do you propose?"); `objective_add` with an
+optional check to ask for a capability. Phase-by-phase progress and what is
+left: [ROADMAP.md](ROADMAP.md).
 
 ## 1. What SYRAX is now
 
@@ -75,15 +110,14 @@ Measured state at the end of the day:
 
 ## 3. Remaining work (honest, in priority order)
 
-0. **Phase 0 status (2026-09-30 evening).** Exercised live on Windows with Gemini, Groq and Upstage keys: quality 90 % twice in a row, 22 autonomous cycles without a crash, 14 tools verified. Remaining Phase 0 items and the full evidence table are in [ROADMAP.md](ROADMAP.md).
-1. **Prompt size.** Measured 2026-09-30: persona 0.9k + tool guide 0.3k + memory 0.2k + 19 tool schemas 3.6k ≈ 5k tokens before any conversation. The Groq 413 was mostly `max_tokens=8192` counted against its 8k free-tier limit; brains now carry `max_request_tokens` (Groq 8000, Ollama 8192), cap the completion to a quarter of it, trim old turns at user boundaries, and retry a 413 once at half budget. Still open: with 5k of fixed prompt, Groq free leaves ~1k for the conversation, so it is a fallback, not a primary brain; shortening tool descriptions (str_replace_editor alone is 632 tokens, from OpenManus) is the next step.
-2. **Brain quotas / no-key tier.** Gemini free tier rate-limits after heavy use; failover works, but quality runs then measure the fallback brain (now reported truthfully). Since 2026-09 the key-less Pollinations tier returns HTTP 402 for any request with tools or reasoning params: SYRAX now degrades to plain chat there (it talks, it cannot act). For a working agent add a free key in BRAIN (Gemini, Groq) or a free Pollinations token. Consider a paid key or lower cycle frequency.
-3. **Voice quality of finals.** SYRAX released a prompt line against narrated reasoning; the `no_narration` quality check now measures it. Watch the next Gemini-answered run.
-4. **Recovery of non-file operations.** After a crash only `str_replace_editor` edits are verified against reality; python/browser/desktop side effects stay UNCERTAIN.
-5. **Presentation vocabulary.** No maps, 3D, video; learning limited to the dismissal signal.
-6. **Model research / training.** Nothing trains anything; `compare_brains` measures providers only.
-7. **Facts memory** is keyword recall (no embeddings); no contradiction handling.
-8. **Disk.** The laptop ran at 98–100 % full (owner's data); the gate needs ~1 GB free and the resource gate skips cycles under 2 GB.
+The phase plan in [ROADMAP.md](ROADMAP.md) is the order of work. Beyond it:
+
+1. **Quality is 90 %, not 100 %.** The remaining misses are brain quirks (Upstage reaching for tools on a trivial ask; flash-lite ending silently, now wrapped up) rather than missing capability. The scorecard will show whether routing by task kind helps once there is variety.
+2. **Free quotas.** Gemini free keys allow ~20 requests per model per day; Groq's 8k tokens per request leaves little room after the ~6k fixed prompt; OpenRouter free models have daily caps. The radar finds new models; a paid key would remove most of the friction.
+3. **Prompt size.** ~6k tokens before any conversation (persona, tool guide, 25+ tool schemas, the Browser Use MCP manual). Clipping makes small brains fit; shorter tool descriptions would help every brain.
+4. **Recovery of non-file operations.** After a crash only editor edits are verified against reality; python/browser/desktop side effects stay UNCERTAIN (a human dismisses or resumes them).
+5. **Voice.** Local Whisper + edge-tts works but is slow; real-time native audio is possible but the free quota is tiny.
+6. **The Upstage key was pasted in chat on 2026-10-01** — rotate it.
 
 Full gap table: [GAP_ANALYSIS.md](GAP_ANALYSIS.md). The owner's phase plan and its order: [ROADMAP.md](ROADMAP.md).
 
