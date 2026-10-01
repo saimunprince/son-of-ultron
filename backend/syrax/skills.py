@@ -51,11 +51,10 @@ MAX_CODE_CHARS = 60_000
 # the owner's machine. A skill's tests execute its code on the host, so code
 # that can hurt the machine is refused before anything runs. A human who wants
 # such a capability writes it by hand.
-UNSAFE = (
-    (re.compile(r"\.(terminate|kill)\s*\(|\bos\.kill\b|\bos\.killpg\b|\btaskkill\b|\bpkill\b|\bkillall\b|Stop-Process", re.I), "kills processes"),
-    (re.compile(r"\b(shutdown|reboot|poweroff|hibernate)\b|ExitWindowsEx|InitiateSystemShutdown|Restart-Computer|Stop-Computer", re.I), "powers the machine off or restarts it"),
+from syrax.guard import HOST_HARM  # noqa: E402  (one list for skills and python_execute)
+
+UNSAFE = HOST_HARM + (
     (re.compile(r"\bshutil\.rmtree\b|\brm\s+-rf?\b|\brmdir\s+/s\b|\bdel\s+/[sfq]\b|Remove-Item[^\n]*-Recurse|\bformat\s+[a-z]:", re.I), "deletes directory trees or disks"),
-    (re.compile(r"\bwinreg\.(Delete|Set)|\breg(\.exe)?\s+(delete|add)\b|\b(bcdedit|vssadmin|diskpart|netsh|schtasks|sc\s+(delete|config|stop))\b", re.I), "changes system configuration"),
 )
 
 

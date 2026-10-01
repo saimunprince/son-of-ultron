@@ -23,6 +23,31 @@ import os
 from pathlib import Path
 from typing import Iterable, List
 
+import re
+
+# Live 2026-10-01: SYRAX wrote code that terminated every process above 20 %
+# memory on the owner's machine. Code SYRAX runs may not kill processes it did
+# not start, power the machine off, or change system configuration.
+HOST_HARM = (
+    (re.compile(r"\.(terminate|kill)\s*\(|\bos\.kill\b|\bos\.killpg\b|\btaskkill\b|\bpkill\b|\bkillall\b|Stop-Process", re.I), "kills processes"),
+    (re.compile(r"\b(shutdown|reboot|poweroff|hibernate)\b|ExitWindowsEx|InitiateSystemShutdown|Restart-Computer|Stop-Computer", re.I), "powers the machine off or restarts it"),
+    (re.compile(r"\bwinreg\.(Delete|Set)|\breg(\.exe)?\s+(delete|add)\b|\b(bcdedit|vssadmin|diskpart|netsh|schtasks|sc\s+(delete|config|stop))\b", re.I), "changes system configuration"),
+)
+COMMAND_KILL = re.compile(r"\btaskkill\b|\bpkill\b|\bkillall\b|\bkill\s+-|Stop-Process|\bwmic\b[^\n]*\bdelete\b", re.I)
+
+
+def host_harm(text: str) -> list:
+    return [why for rx, why in HOST_HARM if rx.search(text or "")]
+
+
+def command_harm(cmd) -> list:
+    """Why a shell command would harm the host (kill, power, system config)."""
+    if isinstance(cmd, (list, tuple)):
+        cmd = " ".join(c if isinstance(c, str) else str(os.fspath(c)) for c in cmd)
+    text = str(cmd or "")
+    return [why for rx, why in ((COMMAND_KILL, "kills processes"), *HOST_HARM[1:]) if rx.search(text)]
+
+
 ENV = "SYRAX_GUARD_PATHS"
 SITE_DIR = str(Path(__file__).with_name("_guard_site"))
 WRITE_FLAGS = ("w", "a", "+", "x")
@@ -101,6 +126,73 @@ def install(paths: Iterable[str]) -> None:
             return wrapped
 
         setattr(os, name, make())
+
+    _guard_host()
+
+
+def _guard_host() -> None:
+    """Processes it did not start, the power state and system configuration
+    are off limits to code SYRAX runs."""
+    me = os.getpid()
+
+    def own(pid: int) -> bool:
+        if pid == me:
+            return True
+        try:
+            import psutil
+
+            return any(c.pid == pid for c in psutil.Process(me).children(recursive=True))
+        except Exception:
+            return False
+
+    real_kill = os.kill
+
+    def kill(pid, sig, *a, **k):
+        if sig != 0 and not own(int(pid)):
+            raise PermissionError(f"pid {pid}: code run by SYRAX may not kill processes it did not start")
+        return real_kill(pid, sig, *a, **k)
+
+    os.kill = kill
+    if hasattr(os, "killpg"):
+        def killpg(*a, **k):
+            raise PermissionError("code run by SYRAX may not kill process groups")
+        os.killpg = killpg
+
+    import subprocess
+
+    real_init = subprocess.Popen.__init__
+
+    def popen_init(self, args, *a, **k):
+        harm = command_harm(args)
+        if harm:
+            raise PermissionError(f"refused: this command {'; '.join(harm)}. SYRAX must not harm the host; ask the human")
+        return real_init(self, args, *a, **k)
+
+    subprocess.Popen.__init__ = popen_init
+    real_system = os.system
+
+    def system(cmd):
+        harm = command_harm(cmd)
+        if harm:
+            raise PermissionError(f"refused: this command {'; '.join(harm)}. SYRAX must not harm the host; ask the human")
+        return real_system(cmd)
+
+    os.system = system
+    try:
+        import psutil
+    except Exception:
+        return
+    for name in ("terminate", "kill", "send_signal", "suspend"):
+        real = getattr(psutil.Process, name)
+
+        def make(real=real, name=name):
+            def wrapped(self, *a, **k):
+                if not own(self.pid):
+                    raise PermissionError(f"pid {self.pid}: code run by SYRAX may not {name} processes it did not start")
+                return real(self, *a, **k)
+            return wrapped
+
+        setattr(psutil.Process, name, make())
 
 
 def child_env(paths: Iterable[str]) -> None:
