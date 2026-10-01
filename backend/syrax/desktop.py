@@ -253,11 +253,11 @@ class DesktopControl(BaseTool):
                 "type": "string",
                 "enum": [
                     "open", "launch_app", "list_apps", "volume", "media", "screenshot",
-                    "notify", "clipboard_get", "clipboard_set", "find_files", "system_info", "lock_screen",
+                    "notify", "clipboard_get", "clipboard_set", "find_files", "system_info", "lock_screen", "window",
                 ],
             },
             "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name. find_files: name pattern."},
-            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: play, pause, toggle, next, previous, status. notify/clipboard_set: text."},
+            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: play, pause, toggle, next, previous, status. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title)."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
         "required": ["action"],
@@ -557,6 +557,16 @@ class DesktopControl(BaseTool):
         if up is not None:
             lines.append(f"Uptime: {int(up // 3600)}h {int(up % 3600 // 60)}m")
         return ToolResult(output="\n".join(lines))
+
+    async def _do_window(self, value: str, target: str = "", **_) -> ToolResult:
+        if not WINDOWS:
+            return ToolResult(error="window control is implemented for Windows; on Linux/macOS use launch_app/open")
+        from syrax import winctl
+
+        try:
+            return ToolResult(output=await asyncio.to_thread(winctl.act, (value or "list").lower(), target))
+        except (ValueError, OSError) as e:
+            return ToolResult(error=str(e))
 
     async def _do_lock_screen(self, **_) -> ToolResult:
         if WINDOWS:

@@ -175,7 +175,9 @@ def build_ui() -> None:
 class Component:
     def __init__(self, name: str, cmd: List[str], cwd: Path, log):
         self.name = name
-        kw = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | (subprocess.CREATE_NO_WINDOW if log is not None else 0) if WINDOWS else 0
+        # in the background (log file) the core and UI must not pop console windows onto the desktop
+        kw = {"creationflags": flags} if WINDOWS else {"start_new_session": True}
         self.proc = subprocess.Popen(cmd, cwd=str(cwd), stdout=log, stderr=log, **kw)
 
     def alive(self) -> bool:

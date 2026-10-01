@@ -52,3 +52,16 @@ def test_system_info_and_find_files(tmp_path):
     assert "RAM" in info and "Disk" in info
     found = run(d.execute(action="find_files", target="report", folder=str(tmp_path))).output
     assert "Report-final.pdf" in found and "node_modules" not in found
+
+
+def test_window_action_lists_and_validates():
+    import sys
+    d = DesktopControl()
+    run = lambda c: asyncio.new_event_loop().run_until_complete(c)
+    if sys.platform != "win32":
+        assert run(d.execute(action="window", value="list")).error
+        return
+    assert "Open windows" in run(d.execute(action="window", value="list")).output or "No visible" in run(d.execute(action="window", value="list")).output
+    assert "needs part of the window title" in run(d.execute(action="window", value="focus")).error
+    assert "no open window title contains" in run(d.execute(action="window", value="minimize", target="zz-no-such-window-zz")).error
+    assert "must be one of" in run(d.execute(action="window", value="close", target="x")).error  # nothing destructive
