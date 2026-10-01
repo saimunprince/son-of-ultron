@@ -44,6 +44,10 @@ NOT_AUTO_VERIFIED = frozenset({
     "compare_versions",
 })
 DEFAULT_INTERVAL_S = 120.0
+# A quality objective is verified by a quality run, which needs an idle core:
+# the cycle runs the suite itself, at most this often (free brain quotas).
+QUALITY_MEASURE_EVERY_S = 6 * 3600.0
+QUALITY_KINDS = ("quality_case_passes", "quality_recovered")
 IDLE_INTERVAL_S = 600.0
 MAINTENANCE_EVERY_S = 86400.0
 
@@ -56,6 +60,8 @@ AUTONOMOUS_BRIEF = (
     "Never weaken a check, test, benchmark or quality case to make it pass: fix the behaviour it measures. "
     "The files that judge you (quality.py, verify.py, bench.py, autonomy.py, experiments.py, versions.py, "
     "devloop.py) and existing tests are changed only by a human; `release` refuses them here.\n"
+    "You cannot run the quality suite or start another SYRAX core from a task (the core is busy with you, "
+    "and the journal refuses a second core): fix, `release`, and finish; the next cycle runs the quality suite.\n"
     "Do the work with your tools. Your completion is judged from the journal evidence "
     "(which tools ran and whether they succeeded), not from what you say. Do not claim "
     "success you did not produce. Be economical: every step costs a model call; take the "
@@ -65,6 +71,7 @@ AUTONOMOUS_BRIEF = (
 BRIEF_HINTS = {
     "tool_verified": " For this objective one call of the `{tool}` tool with a harmless read-only action is enough; report its output and finish.",
     "knowledge_stored": " Use `research` once on the stated topic, then `learn` one verified conclusion citing the knowledge_ids, then finish.",
+    "tool_reliability": " Follow the plan in the goal step by step. The objective closes only when new uses of `{tool}` show the lower failure rate, so finish by using it as the plan says.",
 }
 
 
@@ -275,6 +282,9 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         ok = bool(st and st["last_outcome"] == "ok")
         ev = {"tool": spec.get("tool"), "used_after_objective": used_after, "last_outcome": st["last_outcome"] if st else None, "stats": st}
         return ("DONE" if used_after and ok else "RETRY"), ev
+    if kind == "tool_reliability":
+        from syrax.limits import judge_tool_reliability
+        return judge_tool_reliability(journal, objective)
     if kind == "knowledge_stored":
         topic_words = set(auto_keywords(spec.get("topic") or ""))
         rows = journal.knowledge_recent(limit=50, since=objective["created"])
@@ -318,6 +328,8 @@ class Autonomy:
         self.core = core
         self.journal = journal or core.journal
         self.interval = float(os.getenv("SYRAX_CYCLE_INTERVAL", DEFAULT_INTERVAL_S))
+        # Phase 1: when idle, rank own limitations and work on the strongest
+        self.reflect = os.getenv("SYRAX_REFLECT", "1") != "0"
         self.reports: List[CycleReport] = []
         self._loop_task: Optional[asyncio.Task] = None
         self._cycle_running = False
@@ -401,6 +413,18 @@ class Autonomy:
         except Exception as e:  # deriving must never kill the cycle
             logger.warning(f"objective derivation failed: {e}")
         objective = self._pick()
+        if objective is None and self.reflect:
+            # Phase 1: nothing is failing loudly, so ask what limits SYRAX most
+            # and work on that instead of idling.
+            try:
+                from syrax.limits import choose
+
+                chosen = await self.journal.run(choose, self.journal, self.core.selfmodel)
+                if chosen:
+                    rep.derived += 1
+                    objective = self._pick()
+            except Exception as e:  # choosing must never kill the cycle
+                logger.warning(f"limitation ranking failed: {e}")
         if objective is None:
             rep.outcome, rep.reason = "IDLE", "no open objective"
             if self.journal.maintenance_due(MAINTENANCE_EVERY_S):
@@ -422,6 +446,8 @@ class Autonomy:
                 note="closed from existing evidence",
             )
             rep.outcome, rep.verdict, rep.reason = "RAN", "DONE", "satisfied by existing evidence"
+            return await self._finish(rep)
+        if await self._measure_quality(objective, rep):
             return await self._finish(rep)
         await self.journal.update_objective(
             objective["id"], status="ACTIVE",
@@ -475,6 +501,33 @@ class Autonomy:
             task_id=task_id,
         )
         return await self._finish(rep)
+
+    async def _measure_quality(self, objective: dict, rep: CycleReport) -> bool:
+        """Verify step for quality objectives: after an attempt, the cycle runs
+        the quality suite instead of another task. True when it measured."""
+        spec = objective.get("check_spec") or {}
+        runner = getattr(self.core, "quality", None)
+        if spec.get("kind") not in QUALITY_KINDS or objective.get("attempts", 0) < 1 or runner is None:
+            return False
+        last = self.journal.quality_runs(limit=1)
+        last_ts = last[0]["ts"] if last else 0.0
+        if last_ts >= objective["updated"] or time.time() - last_ts < QUALITY_MEASURE_EVERY_S:
+            return False  # already measured since the attempt, or measured too recently
+        try:
+            row = await runner.run()
+        except Exception as e:
+            logger.warning(f"scheduled quality run failed: {e}")
+            return False
+        verdict, evidence = await asyncio.to_thread(judge, self.journal, objective, None)
+        rep.outcome, rep.verdict = "RAN", verdict if verdict == "DONE" else None
+        rep.reason = f"measured: quality run {row.get('id')} at {row.get('pass_rate')}%"
+        if verdict == "DONE":
+            await self.journal.update_objective(objective["id"], status="DONE", evidence={"judged": evidence, "task_id": None},
+                                                progress={"lesson": "the fix held: verified by a scheduled quality run"}, note=rep.reason)
+        else:
+            await self.journal.update_objective(objective["id"], status="OPEN", evidence={"judged": evidence, "task_id": None},
+                                                next_action="the measured run still fails: change the approach", note=rep.reason)
+        return True
 
     async def _finish(self, rep: CycleReport) -> CycleReport:
         self.reports.append(rep)

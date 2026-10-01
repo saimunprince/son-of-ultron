@@ -92,7 +92,7 @@ def owned_files(files: Dict[str, str], tools_used: Iterable[str], edited_paths: 
 JUDGES = (
     "backend/syrax/quality.py", "backend/syrax/verify.py", "backend/syrax/bench.py",
     "backend/syrax/autonomy.py", "backend/syrax/experiments.py", "backend/syrax/versions.py",
-    "backend/syrax/devloop.py",
+    "backend/syrax/devloop.py", "backend/syrax/limits.py",
 )
 
 

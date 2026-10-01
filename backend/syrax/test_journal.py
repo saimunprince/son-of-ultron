@@ -256,6 +256,20 @@ def test_a_second_live_process_cannot_recover_the_journal(tmp_path):
     out = subprocess.run([sys.executable, "-c", probe, str(tmp_path / "journal.db")], cwd=str(BACKEND),
                          env={**os.environ, "PYTHONPATH": str(BACKEND)}, capture_output=True, text=True, timeout=60).stdout
     assert "REFUSED" in out and "another running SYRAX" in out and "READ 1" in out
+    writer = (
+        "import sys\n"
+        "from syrax.journal import Journal, JournalError\n"
+        "r = Journal(sys.argv[1], boot_id='second-core', recover=False)\n"
+        "try:\n"
+        "    r.start_task_sync('fake quality case')\n"
+        "    print('WROTE')\n"
+        "except JournalError as e:\n"
+        "    print('READ-ONLY', e)\n"
+    )
+    out = subprocess.run([sys.executable, "-c", writer, str(tmp_path / "journal.db")], cwd=str(BACKEND),
+                         env={**os.environ, "PYTHONPATH": str(BACKEND)}, capture_output=True, text=True, timeout=60).stdout
+    assert "READ-ONLY" in out and "only one that records" in out  # live: a second core stored fabricated evidence
+    assert len(j.tasks(limit=10)) == 1
     assert j.task(t)["status"] == "IN_PROGRESS"  # untouched
     j.close()  # the owner lets go; the next boot may recover
     out = subprocess.run([sys.executable, "-c", probe, str(tmp_path / "journal.db")], cwd=str(BACKEND),

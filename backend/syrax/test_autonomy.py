@@ -55,6 +55,7 @@ def make(tmp_path, tools=("python_execute", "desktop", "self_inspect", "terminat
     j = Journal(tmp_path / "j.db")
     core = FakeCore(j, list(tools))
     a = Autonomy(core, j)
+    a.reflect = False  # these tests measure one objective at a time; test_limits covers reflection
     return j, core, a
 
 
@@ -437,3 +438,62 @@ def test_persistent_quality_failures_and_own_tracebacks_become_code_fix_objectiv
     assert b["check_spec"] == {"kind": "tool_verified", "tool": "desktop"} and "ZeroDivisionError" in b["goal"] and b["priority"] == 2
     assert "repair-capability:desktop:1" not in keys  # one live objective per tool: the bug objective took the slot
     assert derive_objectives(j, core.selfmodel) == 0
+
+
+def test_cycle_measures_a_quality_objective_after_an_attempt(tmp_path, monkeypatch):
+    """Live: SYRAX tried ten times to run the quality suite from inside its task
+    (refused: the core was busy and the journal refuses a second core). The
+    cycle now runs the suite itself once an attempt was made."""
+    import asyncio as _a
+    from syrax import autonomy as au
+    j, core, a = make(tmp_path)
+    monkeypatch.setattr("syrax.autonomy.resource_pressure", lambda: None)
+    runs = []
+
+    class Runner:
+        async def run(self):
+            runs.append(1)
+            return j.add_quality_run_sync([{"id": "research_cite", "ok": True}], 100.0, "PASS", brain="gemini")
+
+    core.quality = Runner()
+    o = j.add_objective_sync("make research_cite pass", source="selfmodel", check={"kind": "quality_case_passes", "case": "research_cite"}, key="q:rc")
+    j.update_objective_sync(o["id"], status="OPEN", bump_attempts=True, note="first attempt released a fix")
+    monkeypatch.setattr(au, "QUALITY_MEASURE_EVERY_S", 0.0)
+    rep = _a.run(a.run_once(force=True))
+    assert runs == [1] and rep.reason.startswith("measured: quality run")
+    assert [x for x in j.objectives(limit=50) if x["id"] == o["id"]][0]["status"] == "DONE"
+
+
+def test_idle_cycle_works_on_the_strongest_limitation_instead(tmp_path, monkeypatch):
+    """Phase 1: with nothing open, a failing busy tool becomes the objective."""
+    import asyncio as _a
+    j, core, a = make(tmp_path)
+    a.reflect = True
+    monkeypatch.setattr("syrax.autonomy.resource_pressure", lambda: None)
+    t = j.start_task_sync("history")
+    for i in range(12):
+        j.record_sync("tool.started", {"id": f"e{i}", "name": "desktop", "args": {}, "step": 1}, task_id=t)
+        j.record_sync("tool.completed" if i % 2 else "tool.failed", {"id": f"e{i}", "name": "desktop", "ok": bool(i % 2), "output": "x"}, task_id=t)
+    for o in j.objectives(limit=100, status=["OPEN", "ACTIVE"]):
+        j.update_objective_sync(o["id"], status="DROPPED", note="test")
+    core.selfmodel.weaknesses = lambda: []
+    core.selfmodel.capabilities = lambda: []
+    rep = _a.run(a.run_once(force=True))
+    assert rep.outcome == "RAN" and rep.objective_id is not None
+    o = [x for x in j.objectives(limit=100) if x["id"] == rep.objective_id][0]
+    assert o["check_spec"]["kind"] == "tool_reliability" and o["check_spec"]["tool"] == "desktop"
+
+
+def test_a_human_can_reopen_a_done_objective_with_a_note(tmp_path):
+    """DONE stays terminal, except for the human override (evidence can be wrong)."""
+    j = Journal(tmp_path / "j.db")
+    o = j.add_objective_sync("make research_cite pass", source="selfmodel")
+    j.update_objective_sync(o["id"], status="DONE", evidence={"quality": 13}, bump_attempts=True)
+    with pytest.raises(JournalError, match="needs a note"):
+        j.reopen_objective_sync(o["id"], "")
+    r = j.reopen_objective_sync(o["id"], "quality run 13 used an edited case")
+    assert r["status"] == "OPEN" and r["attempts"] == 0
+    ev = [e for e in j.recent_events() if e["type"] == "objective.reopened"][-1]["payload"]
+    assert ev["previous_evidence"] == {"quality": 13} and "edited case" in ev["note"]
+    with pytest.raises(JournalError, match="not DONE"):
+        j.reopen_objective_sync(o["id"], "again")

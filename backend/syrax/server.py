@@ -8,6 +8,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     history {limit?} | task_events {task_id} | resume {task_id} |
                     verifications {limit?} | self_model {section?} |
                     objectives {limit?} | objective_add {goal, reason?, priority?} |
+                    objective_update {id, status, note} (a human reopens, drops or closes) |
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
                     skills | presentation | benchmarks {limit?} | experiments {limit?} |
                     quality_run {only?, brain?} | quality_runs {limit?} | compare_brains {a, b, only?} |
@@ -345,6 +346,26 @@ class Session:
             except (TypeError, ValueError):
                 priority = 3
             await journal.add_objective(goal, str(msg.get("reason") or "") or None, priority, "human")
+        elif kind == "objective_update":
+            # The human's override, e.g. reopening an objective that closed on
+            # evidence SYRAX fabricated (2026-10-01). Always journaled with a note.
+            status = str(msg.get("status") or "").upper()
+            note = str(msg.get("note") or "").strip()
+            try:
+                oid = int(msg.get("id"))
+            except (TypeError, ValueError):
+                oid = 0
+            if status not in ("OPEN", "DONE", "BLOCKED", "DROPPED") or not oid or not note:
+                await self.send({"type": "notice", "text": "objective_update needs id, status (OPEN/DONE/BLOCKED/DROPPED) and a note."})
+                return
+            try:
+                current = (await asyncio.to_thread(journal.objective, oid)) or {}
+                if current.get("status") == "DONE" and status == "OPEN":
+                    await journal.run(journal.reopen_objective_sync, oid, f"human: {note}")
+                else:
+                    await journal.update_objective(oid, status=status, note=f"human: {note}")
+            except JournalError as e:
+                await self.send({"type": "notice", "text": str(e)})
         elif kind == "autonomy":
             if "enabled" in msg:
                 on = bool(msg.get("enabled"))

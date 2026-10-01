@@ -583,6 +583,14 @@ def test_objective_cycle_over_ws_marks_done_only_with_tool_evidence(script, monk
         ws.send_json({"type": "objective_add", "goal": "Verify the desktop tool", "priority": 1})
         created, _ = recv_until(ws, "objective")
         assert created["event"] == "created" and created["source"] == "human"
+        ws.send_json({"type": "objective_update", "id": created["objective_id"], "status": "DROPPED"})
+        assert "needs id, status" in recv_until(ws, "notice")[0]["text"]  # a note is required
+        ws.send_json({"type": "objective_update", "id": created["objective_id"], "status": "DROPPED", "note": "changed my mind"})
+        upd, _ = recv_until(ws, "objective")
+        assert upd["status"] == "DROPPED"
+        ws.send_json({"type": "objective_update", "id": created["objective_id"], "status": "OPEN", "note": "reopen: evidence was fabricated"})
+        upd, _ = recv_until(ws, "objective")
+        assert upd["status"] == "OPEN"
         ws.send_json({"type": "cycle_now"})
         started, _ = recv_until(ws, "cycle")
         assert started["event"] == "started" and started["forced"] is True

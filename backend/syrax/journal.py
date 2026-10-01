@@ -117,6 +117,17 @@ def _lock_owner(db_path: Path) -> bool:
     return True
 
 
+def _owned_elsewhere(db_path: Path) -> bool:
+    """True when another live process owns this journal (probe and let go)."""
+    key = str(Path(db_path).resolve())
+    if key in _OWNED or not Path(key).exists():
+        return False
+    if not _lock_owner(db_path):
+        return True
+    _unlock_owner(db_path)
+    return False
+
+
 def _unlock_owner(db_path: Path) -> None:
     f = _OWNED.pop(str(Path(db_path).resolve()), None)
     if f is None:
@@ -417,6 +428,18 @@ class Journal:
         self._subs: List[Subscriber] = []
         self.recovered: List[dict] = []
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # Another live process owns this journal: read it, never write it. Live
+        # 2026-10-01: SYRAX built a second Core on Journal(recover=False) inside
+        # python_execute, ran its own edited quality case there, and the stored
+        # "pass" closed its objective. Only the owner records evidence.
+        self.read_only = (not recover) and _owned_elsewhere(self.path)
+        if self.read_only:
+            self._owner = False
+            self._db = sqlite3.connect(
+                f"file:{self.path.resolve().as_posix()}?mode=ro", uri=True, check_same_thread=False, isolation_level=None, timeout=10
+            )
+            self._db.row_factory = sqlite3.Row
+            return
         self._db = sqlite3.connect(
             str(self.path), check_same_thread=False, isolation_level=None, timeout=10
         )
@@ -985,6 +1008,25 @@ class Journal:
                 {"objective_id": objective_id, "status": new_status, "attempts": upd.get("attempts", row["attempts"]),
                  "note": note, "evidence": evidence or {}},
             )
+        return self.objective(objective_id)
+
+    def reopen_objective_sync(self, objective_id: int, note: str) -> dict:
+        """A human's override: put a DONE objective back to OPEN because the
+        evidence that closed it was wrong (2026-10-01: SYRAX closed one with a
+        quality run it ran on its own edited case). DONE stays terminal for
+        every other path; this one requires a note and is journaled as such."""
+        if not (note or "").strip():
+            raise JournalError("reopening needs a note saying why the evidence was wrong")
+        ts = _now()
+        with self._txn() as cur:
+            row = cur.execute("SELECT * FROM objectives WHERE id=?", (objective_id,)).fetchone()
+            if row is None:
+                raise JournalError(f"unknown objective {objective_id}")
+            if row["status"] != "DONE":
+                raise JournalError(f"objective {objective_id} is {row['status']}, not DONE")
+            cur.execute("UPDATE objectives SET status='OPEN', attempts=0, updated=? WHERE id=?", (ts, objective_id))
+            self._insert_event(cur, ts, None, "objective.reopened",
+                               {"objective_id": objective_id, "status": "OPEN", "note": note, "previous_evidence": _loads(row["evidence"], {})})
         return self.objective(objective_id)
 
     def objective(self, objective_id: int) -> Optional[dict]:
@@ -1672,6 +1714,11 @@ class _Txn:
         self.cur: Optional[sqlite3.Cursor] = None
 
     def __enter__(self) -> sqlite3.Cursor:
+        if getattr(self.j, "read_only", False):
+            raise JournalError(
+                f"journal {self.j.path} is read-only here: a running SYRAX process owns it and is the only one "
+                "that records tasks, evidence and quality runs"
+            )
         self.j._lock.acquire()
         try:
             self.cur = self.j._db.cursor()
