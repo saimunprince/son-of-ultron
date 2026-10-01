@@ -191,6 +191,12 @@ def brief_evidence(objective: dict, budget: int = 1800) -> str:
 LAUNCHER_PID_FILE = REPO_ROOT_PATH / "syrax.pid"
 
 
+def _router():
+    from syrax.brains import get_router
+
+    return get_router()
+
+
 def spawn_restart() -> None:
     """Start `syrax.py --respawn`, which starts the real restarter and exits:
     the restarter is then nobody's child, so stopping SYRAX's process tree
@@ -570,6 +576,20 @@ class Autonomy:
                     objective = self._pick()
             except Exception as e:  # choosing must never kill the cycle
                 logger.warning(f"limitation ranking failed: {e}")
+        if objective is None and self.reflect and os.getenv("SYRAX_RADAR", "1") != "0":
+            # Phase 6: idle time is when SYRAX looks outward (new models on its brains)
+            try:
+                from syrax import radar
+
+                if await asyncio.to_thread(radar.due, self.journal):
+                    router = _router()
+                    found = await radar.scan(router, self.journal)
+                    rep.outcome = "RAN"
+                    rep.reason = (f"radar: {sum(len(v) for v in found['new'].values())} new model(s), "
+                                  f"{len(found['tested'])} tested, baseline for {', '.join(found['baselined']) or 'none'}")
+                    return await self._finish(rep)
+            except Exception as e:
+                logger.warning(f"technology radar failed: {e}")
         if objective is None:
             rep.outcome, rep.reason = "IDLE", "no open objective"
             if self.journal.maintenance_due(MAINTENANCE_EVERY_S):

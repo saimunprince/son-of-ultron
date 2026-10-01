@@ -594,7 +594,7 @@ class BrainRouter(LLM):
             ids = [i for i in ids if re.search(p.model_filter, i)]
         return sorted(set(ids))
 
-    async def test(self, pid: str) -> dict:
+    async def test(self, pid: str, model: Optional[str] = None) -> dict:
         tool = {
             "type": "function",
             "function": {
@@ -615,6 +615,7 @@ class BrainRouter(LLM):
                 [tool],
                 "auto",
                 images=False,
+                model=model,
             )
             calls = msg.tool_calls or []
             ok_tools = any(c.function.name == "report" for c in calls)
@@ -622,7 +623,7 @@ class BrainRouter(LLM):
                 "id": pid,
                 "ok": True,
                 "tools": ok_tools,
-                "model": self.store.model(pid),
+                "model": model or self.store.model(pid),
                 "latency_ms": int((time.time() - started) * 1000),
                 "reply": (msg.content or "")[:200],
             }
