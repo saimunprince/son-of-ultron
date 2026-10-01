@@ -32,7 +32,7 @@ def test_identity_version_is_the_real_git_head(tmp_path):
     m = SelfModel(journal(tmp_path))
     ident = m.identity()
     real = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True).stdout.strip()
-    assert ident["name"] == "SYRAX" and ident["version"] == real and ident["repo_head"] == real
+    assert ident["name"] == "SYRAX" and ident["version"] == real and "newer_on_disk_not_running" not in ident
     assert ident["restart_pending"] is False
     assert ident["principles"] and ident["process_uptime_s"] >= 0
 
@@ -58,7 +58,7 @@ def test_version_is_the_loaded_code_not_a_newer_head(tmp_path, monkeypatch):
     m = SelfModel(journal(tmp_path))
     monkeypatch.setitem(sm._LOADED_HEAD, str(m.repo_root), "abc1234")  # booted on an older commit
     ident = m.identity()
-    assert ident["version"] == "abc1234" and ident["repo_head"] != "abc1234" and ident["restart_pending"] is True
+    assert ident["version"] == "abc1234" and ident["newer_on_disk_not_running"] != "abc1234" and ident["restart_pending"] is True
 
 
 def test_structure_reads_repo_and_system_map(tmp_path):

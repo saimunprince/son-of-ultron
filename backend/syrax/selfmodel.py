@@ -88,11 +88,11 @@ class SelfModel:
     def identity(self) -> dict:
         head = _git(["rev-parse", "--short", "HEAD"], self.repo_root)
         loaded = _LOADED_HEAD.setdefault(str(self.repo_root), head)
-        return {
+        pending = bool(loaded and head and loaded != head)
+        out = {
             "name": NAME,
             "version": loaded,  # the code this process is running; None if git is unavailable
-            "repo_head": head,  # the newest commit on disk
-            "restart_pending": bool(loaded and head and loaded != head),
+            "restart_pending": pending,
             "repo_root": str(self.repo_root),  # absolute: your own code lives here
             "journal_path": str(self.journal.path),
             "stage": STAGE,
@@ -100,6 +100,9 @@ class SelfModel:
             "boot_id": self.journal.boot_id,
             "process_uptime_s": int(time.time() - _PROCESS_STARTED),
         }
+        if pending:
+            out["newer_on_disk_not_running"] = head
+        return out
 
     # ——— structure ———
 

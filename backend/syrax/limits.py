@@ -34,6 +34,7 @@ BRAIN_WINDOW_S = 86400.0
 MIN_BRAIN_CALLS = 10
 MIN_FAILOVER_SHARE = 0.3
 KNOWN_LIMITATION_SCORE = 0.15
+KNOWN_PER_DAY = 3  # research-only objectives from the system map; measured limitations are not capped
 SKIP_TOOLS = {"terminate", "ask_human"}
 
 
@@ -106,8 +107,11 @@ def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[
         weaknesses = selfmodel.weaknesses()
     except Exception:
         weaknesses = []
+    since = now - 86400
+    known_today = sum(1 for o in journal.objectives(limit=200)
+                      if (o.get("key") or "").startswith("limit:known_limitation:") and o["created"] >= since)
     for w in weaknesses:
-        if w.get("kind") != "known_limitation":
+        if w.get("kind") != "known_limitation" or known_today >= KNOWN_PER_DAY:
             continue
         out.append({
             "kind": "known_limitation",

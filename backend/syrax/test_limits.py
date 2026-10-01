@@ -71,6 +71,14 @@ def test_reliability_is_judged_on_new_uses_only(tmp_path):
     assert limits.judge_tool_reliability(j, obj)[0] == "DONE"
 
 
+def test_known_limitations_are_capped_per_day(tmp_path):
+    """Live: the engine researched one system-map limitation every 2 minutes."""
+    j = Journal(tmp_path / "j.db")
+    me = FakeSelf([{"kind": "known_limitation", "detail": f"limitation {i}", "evidence": "docs"} for i in range(6)])
+    made = [limits.choose(j, me) for _ in range(6)]
+    assert sum(1 for m in made if m) == limits.KNOWN_PER_DAY
+
+
 def test_nothing_measurable_means_nothing_chosen(tmp_path):
     j = Journal(tmp_path / "j.db")
     assert limits.rank(j, FakeSelf()) == [] and limits.choose(j, FakeSelf()) is None
