@@ -86,6 +86,7 @@ async def scan(router: Any, journal: Journal, now: Optional[float] = None, max_t
     try:  # SYRAX's own dependencies: known vulnerabilities (live 2026-10-03: next had a critical RCE on Windows)
         if os.getenv("SYRAX_AUDIT", "1") != "0":
             report["audit"] = await asyncio.to_thread(audit_dependencies, journal)
+            report["py_audit"] = await asyncio.to_thread(audit_python, journal)
     except Exception as e:
         report["audit"] = {"error": str(e)[:200]}
     try:  # Phase 3: requests the human keeps repeating become skill proposals
@@ -141,3 +142,102 @@ def audit_dependencies(journal: Journal, frontend: Optional[Path] = None) -> Dic
             "sources": [],
         })
     return {"total": len(found), "serious": sorted(serious), "new": new}
+
+
+OSV = "https://api.osv.dev/v1"
+PY_AUDIT_KEY = "radar_py_audit"
+MAX_DETAILS = 80  # OSV detail lookups per audit
+PER_PACKAGE = 6  # ... and per package, so every vulnerable package gets a severity
+
+
+def _post(url: str, body: dict, timeout: float = 60) -> dict:
+    import urllib.request
+
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.load(r)
+
+
+def _get(url: str, timeout: float = 30) -> dict:
+    import urllib.request
+
+    with urllib.request.urlopen(url, timeout=timeout) as r:
+        return json.load(r)
+
+
+def installed_python() -> Dict[str, str]:
+    """{name: version} of the packages in the Python running SYRAX (its venv)."""
+    from importlib import metadata
+
+    out = {}
+    for d in metadata.distributions():
+        name = (d.metadata["Name"] or "").lower()
+        if name:
+            out[name] = d.version
+    return out
+
+
+def osv_audit(packages: Dict[str, str], post=_post, get=_get) -> Dict[str, Any]:
+    """Known vulnerabilities of these PyPI packages from OSV.dev (GitHub
+    advisories, PyPA): {package: {version, ids, severity, summaries, fixed}}."""
+    names = sorted(packages)
+    res = post(f"{OSV}/querybatch", {"queries": [{"package": {"name": n, "ecosystem": "PyPI"}, "version": packages[n]} for n in names]})
+    out: Dict[str, Any] = {}
+    budget = MAX_DETAILS
+    for name, r in zip(names, res.get("results") or []):
+        ids = [v["id"] for v in r.get("vulns") or []]
+        if not ids:
+            continue
+        row = {"version": packages[name], "ids": ids, "severity": "unknown", "summaries": [], "fixed": None}
+        rank = {"LOW": 1, "MODERATE": 2, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+        best = 0
+        for vid in ids[:PER_PACKAGE]:
+            if budget <= 0:
+                break
+            budget -= 1
+            try:
+                d = get(f"{OSV}/vulns/{vid}")
+            except Exception:
+                continue
+            sev = str((d.get("database_specific") or {}).get("severity") or "").upper()
+            if rank.get(sev, 0) > best:
+                best, row["severity"] = rank[sev], "moderate" if sev == "MEDIUM" else sev.lower()
+            if d.get("summary") and len(row["summaries"]) < 3:
+                row["summaries"].append(d["summary"][:120])
+            for a in d.get("affected") or []:
+                if (a.get("package") or {}).get("name", "").lower() != name:
+                    continue
+                for rng in a.get("ranges") or []:
+                    for ev in rng.get("events") or []:
+                        if ev.get("fixed") and (row["fixed"] is None or _ver(ev["fixed"]) > _ver(row["fixed"])):
+                            row["fixed"] = ev["fixed"]
+        out[name] = row
+    return out
+
+
+def _ver(v: str) -> tuple:
+    parts = []
+    for x in str(v).replace("-", ".").split("."):
+        parts.append(int(x) if x.isdigit() else 0)
+    return tuple(parts)
+
+
+def audit_python(journal: Journal, packages: Optional[Dict[str, str]] = None, post=_post, get=_get) -> Dict[str, Any]:
+    """Like audit_dependencies, for SYRAX's Python packages."""
+    found = osv_audit(packages if packages is not None else installed_python(), post, get)
+    serious = {n: v for n, v in found.items() if v["severity"] in SERIOUS}
+    raw = journal.get_meta(PY_AUDIT_KEY)
+    before = set(json.loads(raw)) if raw else set()
+    journal.set_meta(PY_AUDIT_KEY, json.dumps(sorted(serious)))
+    journal.record_sync("radar.py_audit", {"vulnerable": sorted(found), "serious": sorted(serious)})
+    new = sorted(set(serious) - before)
+    if new:
+        lines = [f"{n} {serious[n]['version']} ({serious[n]['severity']}{', fixed in ' + serious[n]['fixed'] if serious[n]['fixed'] else ''}): "
+                 f"{'; '.join(serious[n]['summaries'][:1])}" for n in new]
+        journal.record_sync("proposal.created", {
+            "kind": "security", "limitation": f"{len(new)} Python package(s) have a known serious vulnerability",
+            "proposal": "OSV: " + " | ".join(lines) + ". Upgrading them needs the gate and a check that OpenManus still works; "
+                        "changing dependencies is the human's decision.",
+            "sources": [f"https://osv.dev/vulnerability/{serious[n]['ids'][0]}" for n in new[:5]],
+        })
+    return {"vulnerable": sorted(found), "serious": sorted(serious), "new": new}

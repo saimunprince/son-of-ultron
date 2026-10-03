@@ -139,7 +139,7 @@ local-inference technology, hardware → relevant? → research → experiment �
 benchmark → adopt / reject.
 
 - DONE (2026-10-01): new models on SYRAX's own brains, tool-call tested, proposed (`radar.py`).
-- DONE (2026-10-03): SYRAX's own dependencies. The daily radar pass runs `npm audit` on the UI; a new critical or high advisory becomes a `security` proposal (once per finding). It started from a manual audit that found a critical Windows RCE in next 16.2.10 (fixed in 225e21d). Python dependencies are not audited yet (the venv has no pip; needs `uv pip` or pip-audit).
+- DONE (2026-10-03): SYRAX's own dependencies. The daily radar pass runs `npm audit` on the UI; a new critical or high advisory becomes a `security` proposal (once per finding). It started from a manual audit that found a critical Windows RCE in next 16.2.10 (fixed in 225e21d). Python dependencies too: the installed packages are checked against OSV.dev (GitHub and PyPA advisories) with each one's worst severity and the version that fixes it; no extra tool needed. First run, 2026-10-03: 14 vulnerable, 3 critical (crawl4ai, litellm, transformers), 7 high (lxml, mcp, nltk, pillow, setuptools, starlette, text-generation).
 
 ## Phase 7 — Multi-brain intelligence
 
