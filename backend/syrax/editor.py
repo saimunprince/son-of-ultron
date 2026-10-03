@@ -107,7 +107,8 @@ class SyraxEditor(StrReplaceEditor):
     description: str = (
         "View, create and edit files. view: a file (cat -n) or a directory (2 levels). create: write file_text "
         "(overwrites; undo_edit restores). str_replace: replace old_str, which must match once (indentation-tolerant), "
-        "with new_str. insert: new_str after line insert_line. undo_edit: revert the last edit. Use absolute paths."
+        "with new_str. insert: new_str after line insert_line. undo_edit: revert the last edit. Use absolute paths. "
+        "It cannot delete files: use python_execute (os.remove)."
     )
     parameters: dict = {
         "type": "object",
@@ -150,6 +151,14 @@ class SyraxEditor(StrReplaceEditor):
                 return self._noted(loose, note)
         result = await super().execute(command=command, path=str(resolved), **kwargs)
         return self._noted(result, note)
+
+    def _make_output(self, file_content: str, file_descriptor: str, init_line: int = 1, expand_tabs: bool = True) -> str:
+        # A file's final newline ends its last line; it does not start another.
+        # Live 2026-10-03: 37 lines were shown as 38 (the last one empty), and
+        # SYRAX reported 38 and fought a phantom blank line while deleting.
+        if file_content.endswith("\n"):
+            file_content = file_content[:-1]
+        return super()._make_output(file_content, file_descriptor, init_line, expand_tabs)
 
     @staticmethod
     def _noted(text: str, note: Optional[str]) -> str:
