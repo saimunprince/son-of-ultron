@@ -1,0 +1,910 @@
+{
+  "generated": "2026-10-03 16:40:26 +0600",
+  "label": "run1",
+  "repo": {
+    "head": "7b0ca890fdac3d22077de6110262a6e7551840e3",
+    "short": "7b0ca89",
+    "branch": "main",
+    "dirty_files": 1,
+    "worktrees": [
+      "C:/ai-agent/son-of-ultron                                                                                               7b0ca89 [main]",
+      "C:/ai-agent/son-of-ultron/.kilo/worktrees/spice-melon                                                                   067aad7 (detached HEAD)",
+      "C:/Users/sanmu/AppData/Local/Temp/claude/c--ai-agent-son-of-ultron/fb737e1a-c770-4953-ad17-77ecdedf54af/scratchpad/wt61 7b0ca89 [utf8-reads]"
+    ]
+  },
+  "env": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python_venv": "Python 3.12.10",
+    "node": "v26.10.0",
+    "cwd": "C:\\ai-agent\\son-of-ultron"
+  },
+  "journal": {
+    "path": "C:\\ai-agent\\son-of-ultron\\backend\\config\\journal.db",
+    "journal_mode": "wal",
+    "tables": {
+      "benchmarks": 0,
+      "checkpoints": 974,
+      "events": 8014,
+      "experiments": 0,
+      "knowledge": 126,
+      "meta": 12,
+      "objectives": 61,
+      "quality_runs": 23,
+      "skills": 5,
+      "sqlite_sequence": 6,
+      "tasks": 279,
+      "verifications": 1
+    },
+    "tasks_by_status": {
+      "CANCELLED": 7,
+      "FAILED": 21,
+      "PARTIAL": 2,
+      "SUCCESS": 249
+    },
+    "tasks_by_kind": {
+      "autonomous": 74,
+      "conversation": 21,
+      "eval": 184
+    },
+    "tasks_last_24h": 90,
+    "tool_stats_all": {
+      "browser_exec": {
+        "uses": 14,
+        "ok": 10,
+        "fail": 4,
+        "last_ok": 1791022829.7803082,
+        "last_fail": 1791021996.9113533,
+        "fail_share": 0.286,
+        "last_ok_age_days": 0.0
+      },
+      "browser_screenshot": {
+        "uses": 1,
+        "ok": 1,
+        "fail": 0,
+        "last_ok": 1790760235.7264555,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 3.1
+      },
+      "desktop": {
+        "uses": 17,
+        "ok": 17,
+        "fail": 0,
+        "last_ok": 1791020967.542585,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      },
+      "journal_query": {
+        "uses": 64,
+        "ok": 62,
+        "fail": 2,
+        "last_ok": 1791022819.0208073,
+        "last_fail": 1791002956.115839,
+        "fail_share": 0.031,
+        "last_ok_age_days": 0.0
+      },
+      "know": {
+        "uses": 28,
+        "ok": 28,
+        "fail": 0,
+        "last_ok": 1791020995.251506,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      },
+      "learn": {
+        "uses": 23,
+        "ok": 23,
+        "fail": 0,
+        "last_ok": 1791019886.6204934,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      },
+      "make_docx": {
+        "uses": 1,
+        "ok": 1,
+        "fail": 0,
+        "last_ok": 1790851440.732055,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 2.0
+      },
+      "make_pdf": {
+        "uses": 1,
+        "ok": 1,
+        "fail": 0,
+        "last_ok": 1790852702.5102997,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 2.0
+      },
+      "make_pptx": {
+        "uses": 1,
+        "ok": 1,
+        "fail": 0,
+        "last_ok": 1790852828.749515,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 2.0
+      },
+      "make_xlsx": {
+        "uses": 2,
+        "ok": 1,
+        "fail": 1,
+        "last_ok": 1790851689.450373,
+        "last_fail": 1790851687.3360865,
+        "fail_share": 0.5,
+        "last_ok_age_days": 2.0
+      },
+      "present": {
+        "uses": 30,
+        "ok": 25,
+        "fail": 5,
+        "last_ok": 1791020974.7336602,
+        "last_fail": 1791019466.66881,
+        "fail_share": 0.167,
+        "last_ok_age_days": 0.0
+      },
+      "python_execute": {
+        "uses": 181,
+        "ok": 145,
+        "fail": 36,
+        "last_ok": 1791021026.6182168,
+        "last_fail": 1791019106.5428867,
+        "fail_share": 0.199,
+        "last_ok_age_days": 0.0
+      },
+      "recall": {
+        "uses": 1,
+        "ok": 1,
+        "fail": 0,
+        "last_ok": 1790764782.7187755,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 3.0
+      },
+      "release": {
+        "uses": 4,
+        "ok": 0,
+        "fail": 4,
+        "last_ok": null,
+        "last_fail": 1791019148.8408418,
+        "fail_share": 1.0,
+        "last_ok_age_days": null
+      },
+      "research": {
+        "uses": 33,
+        "ok": 33,
+        "fail": 0,
+        "last_ok": 1791020985.712346,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      },
+      "self_inspect": {
+        "uses": 69,
+        "ok": 69,
+        "fail": 0,
+        "last_ok": 1791022814.7850425,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      },
+      "skill_create": {
+        "uses": 13,
+        "ok": 13,
+        "fail": 0,
+        "last_ok": 1790859339.0278757,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 1.9
+      },
+      "skill_list": {
+        "uses": 2,
+        "ok": 2,
+        "fail": 0,
+        "last_ok": 1790851295.698695,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 2.0
+      },
+      "skill_test": {
+        "uses": 1,
+        "ok": 0,
+        "fail": 1,
+        "last_ok": null,
+        "last_fail": 1790851297.3775425,
+        "fail_share": 1.0,
+        "last_ok_age_days": null
+      },
+      "str_replace_editor": {
+        "uses": 105,
+        "ok": 88,
+        "fail": 17,
+        "last_ok": 1791020999.835819,
+        "last_fail": 1791018951.39083,
+        "fail_share": 0.162,
+        "last_ok_age_days": 0.0
+      },
+      "terminate": {
+        "uses": 133,
+        "ok": 133,
+        "fail": 0,
+        "last_ok": 1791022831.5266805,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      }
+    },
+    "tool_stats_7d": {
+      "browser_exec": {
+        "uses": 14,
+        "ok": 10,
+        "fail": 4,
+        "last_ok": 1791022829.7803082,
+        "last_fail": 1791021996.9113533,
+        "fail_share": 0.286,
+        "last_ok_age_days": 0.0
+      },
+      "browser_screenshot": {
+        "uses": 1,
+        "ok": 1,
+        "fail": 0,
+        "last_ok": 1790760235.7264555,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 3.1
+      },
+      "desktop": {
+        "uses": 17,
+        "ok": 17,
+        "fail": 0,
+        "last_ok": 1791020967.542585,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      },
+      "journal_query": {
+        "uses": 64,
+        "ok": 62,
+        "fail": 2,
+        "last_ok": 1791022819.0208073,
+        "last_fail": 1791002956.115839,
+        "fail_share": 0.031,
+        "last_ok_age_days": 0.0
+      },
+      "know": {
+        "uses": 28,
+        "ok": 28,
+        "fail": 0,
+        "last_ok": 1791020995.251506,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      },
+      "learn": {
+        "uses": 23,
+        "ok": 23,
+        "fail": 0,
+        "last_ok": 1791019886.6204934,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      },
+      "make_docx": {
+        "uses": 1,
+        "ok": 1,
+        "fail": 0,
+        "last_ok": 1790851440.732055,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 2.0
+      },
+      "make_pdf": {
+        "uses": 1,
+        "ok": 1,
+        "fail": 0,
+        "last_ok": 1790852702.5102997,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 2.0
+      },
+      "make_pptx": {
+        "uses": 1,
+        "ok": 1,
+        "fail": 0,
+        "last_ok": 1790852828.749515,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 2.0
+      },
+      "make_xlsx": {
+        "uses": 2,
+        "ok": 1,
+        "fail": 1,
+        "last_ok": 1790851689.450373,
+        "last_fail": 1790851687.3360865,
+        "fail_share": 0.5,
+        "last_ok_age_days": 2.0
+      },
+      "present": {
+        "uses": 30,
+        "ok": 25,
+        "fail": 5,
+        "last_ok": 1791020974.7336602,
+        "last_fail": 1791019466.66881,
+        "fail_share": 0.167,
+        "last_ok_age_days": 0.0
+      },
+      "python_execute": {
+        "uses": 181,
+        "ok": 145,
+        "fail": 36,
+        "last_ok": 1791021026.6182168,
+        "last_fail": 1791019106.5428867,
+        "fail_share": 0.199,
+        "last_ok_age_days": 0.0
+      },
+      "recall": {
+        "uses": 1,
+        "ok": 1,
+        "fail": 0,
+        "last_ok": 1790764782.7187755,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 3.0
+      },
+      "release": {
+        "uses": 4,
+        "ok": 0,
+        "fail": 4,
+        "last_ok": null,
+        "last_fail": 1791019148.8408418,
+        "fail_share": 1.0,
+        "last_ok_age_days": null
+      },
+      "research": {
+        "uses": 33,
+        "ok": 33,
+        "fail": 0,
+        "last_ok": 1791020985.712346,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      },
+      "self_inspect": {
+        "uses": 69,
+        "ok": 69,
+        "fail": 0,
+        "last_ok": 1791022814.7850425,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      },
+      "skill_create": {
+        "uses": 13,
+        "ok": 13,
+        "fail": 0,
+        "last_ok": 1790859339.0278757,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 1.9
+      },
+      "skill_list": {
+        "uses": 2,
+        "ok": 2,
+        "fail": 0,
+        "last_ok": 1790851295.698695,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 2.0
+      },
+      "skill_test": {
+        "uses": 1,
+        "ok": 0,
+        "fail": 1,
+        "last_ok": null,
+        "last_fail": 1790851297.3775425,
+        "fail_share": 1.0,
+        "last_ok_age_days": null
+      },
+      "str_replace_editor": {
+        "uses": 105,
+        "ok": 88,
+        "fail": 17,
+        "last_ok": 1791020999.835819,
+        "last_fail": 1791018951.39083,
+        "fail_share": 0.162,
+        "last_ok_age_days": 0.0
+      },
+      "terminate": {
+        "uses": 133,
+        "ok": 133,
+        "fail": 0,
+        "last_ok": 1791022831.5266805,
+        "last_fail": null,
+        "fail_share": 0.0,
+        "last_ok_age_days": 0.0
+      }
+    },
+    "desktop_actions": {
+      "open": 1,
+      "system_info": 16
+    },
+    "brain_answered_by_provider": {
+      "gemini": 821,
+      "groq": 7,
+      "pollinations": 35,
+      "upstage": 96
+    },
+    "brain_failovers": 171,
+    "brain_routed": 0,
+    "quality_runs_last3": [
+      {
+        "id": 23,
+        "ts": 1791021030.8572886,
+        "git_head": "9159d2ee0381d02b03b4ce54a6e89926c1cf337f",
+        "brain": "gemini,upstage",
+        "pass_rate": 92.9,
+        "status": "PASS",
+        "cases": {
+          "arith": true,
+          "python": true,
+          "file_create": true,
+          "file_edit": true,
+          "self_version": true,
+          "desktop_cpu": true,
+          "restraint": true,
+          "present_table": true,
+          "know_honest": true,
+          "research_cite": false,
+          "act_not_promise": true,
+          "act_delete": true,
+          "act_concise": true,
+          "act_measure": true
+        },
+        "when": "2026-10-03 15:50"
+      },
+      {
+        "id": 22,
+        "ts": 1791019004.8980637,
+        "git_head": "067aad7649db74fe8bfb9257f4bec3d6c5d0ee09",
+        "brain": "gemini,upstage",
+        "pass_rate": 100.0,
+        "status": "PASS",
+        "cases": {
+          "arith": true,
+          "python": true,
+          "file_create": true,
+          "file_edit": true,
+          "self_version": true,
+          "desktop_cpu": true,
+          "restraint": true,
+          "present_table": true,
+          "know_honest": true,
+          "research_cite": true,
+          "act_not_promise": true,
+          "act_delete": true,
+          "act_concise": true,
+          "act_measure": true
+        },
+        "when": "2026-10-03 15:16"
+      },
+      {
+        "id": 21,
+        "ts": 1791003188.4834085,
+        "git_head": "f3e7c649a4f7eef745be9749c6632da370df7206",
+        "brain": "gemini",
+        "pass_rate": 100.0,
+        "status": "PASS",
+        "cases": {
+          "act_delete": true,
+          "act_measure": true
+        },
+        "when": "2026-10-03 10:53"
+      }
+    ],
+    "verifications_last3": [
+      {
+        "id": 1,
+        "ts": 1790827883.0070586,
+        "status": "GREEN",
+        "git_head": "91cda4f1cd6ed8af74d2144f49bc2f5470d6307d",
+        "gates": [
+          {
+            "name": "py_compile",
+            "status": "PASS",
+            "required": true
+          },
+          {
+            "name": "pytest",
+            "status": "PASS",
+            "required": true
+          },
+          {
+            "name": "tsc",
+            "status": "PASS",
+            "required": true
+          },
+          {
+            "name": "eslint",
+            "status": "PASS",
+            "required": true
+          },
+          {
+            "name": "node_test",
+            "status": "PASS",
+            "required": true
+          },
+          {
+            "name": "next_build",
+            "status": "PASS",
+            "required": true
+          },
+          {
+            "name": "diff_scan",
+            "status": "PASS",
+            "required": true
+          },
+          {
+            "name": "performance",
+            "status": "PASS",
+            "required": false
+          }
+        ],
+        "when": "2026-10-01 10:11"
+      }
+    ],
+    "skills": [
+      {
+        "name": "make_docx",
+        "version": 5,
+        "status": "VERIFIED",
+        "tests_passed": 1,
+        "tests_failed": 0,
+        "last_verified": 1790851313.7785628
+      },
+      {
+        "name": "make_pdf",
+        "version": 1,
+        "status": "VERIFIED",
+        "tests_passed": 1,
+        "tests_failed": 0,
+        "last_verified": 1790852574.4848146
+      },
+      {
+        "name": "make_pptx",
+        "version": 1,
+        "status": "VERIFIED",
+        "tests_passed": 1,
+        "tests_failed": 0,
+        "last_verified": 1790852431.526488
+      },
+      {
+        "name": "make_xlsx",
+        "version": 4,
+        "status": "VERIFIED",
+        "tests_passed": 1,
+        "tests_failed": 0,
+        "last_verified": 1790851391.068091
+      },
+      {
+        "name": "system_optimizer",
+        "version": 2,
+        "status": "FAILED",
+        "tests_passed": 1,
+        "tests_failed": 0,
+        "last_verified": 1790859339.0119178
+      }
+    ],
+    "objectives_by_status": {
+      "BLOCKED": 2,
+      "DONE": 57,
+      "DROPPED": 2
+    },
+    "knowledge_by_kind": {
+      "conclusion": 22,
+      "web": 104
+    },
+    "recovery_states": {
+      "RESUMABLE:None": 3,
+      "UNCERTAIN:python_execute": 2
+    },
+    "event_types": {
+      "presentation.created": 1132,
+      "checkpoint.created": 974,
+      "think": 959,
+      "brain.answered": 959,
+      "tool.started": 729,
+      "tool.completed": 654,
+      "presentation.dismissed": 553,
+      "task.started": 279,
+      "final": 252,
+      "task.completed": 251,
+      "brain.failover": 171,
+      "cycle.completed": 142,
+      "knowledge.stored": 126,
+      "cycle.started": 126,
+      "objective.updated": 103,
+      "tool.failed": 70,
+      "reflection.created": 69,
+      "objective.created": 61,
+      "objective.completed": 59,
+      "limitation.ranked": 45,
+      "code.changed": 39,
+      "research.started": 33,
+      "research.completed": 32,
+      "quality.started": 24,
+      "quality.completed": 23,
+      "task.failed": 21,
+      "restart.requested": 16,
+      "skill.created": 13,
+      "plan.progressed": 12,
+      "skill.failed": 9,
+      "rollback.created": 8,
+      "task.cancelled": 7,
+      "objective.blocked": 7,
+      "autonomy.toggled": 7,
+      "skill.verified": 6,
+      "task.interrupted": 5,
+      "recovery.verified": 5,
+      "recovery.started": 5,
+      "recovery.completed": 5,
+      "proposal.created": 4,
+      "followup.derived": 4,
+      "maintenance.completed": 3,
+      "objective.reopened": 2,
+      "objective.dropped": 2,
+      "verification.completed": 1,
+      "release.planned": 1,
+      "radar.tested": 1,
+      "radar.new_models": 1,
+      "radar.audit": 1,
+      "presentation.feedback": 1,
+      "knowledge.reinforced": 1,
+      "ask": 1
+    },
+    "event_span": [
+      "2026-09-30 15:18",
+      "2026-10-03 16:32"
+    ]
+  },
+  "map": {
+    "components": 19,
+    "generated": "2026-09-30 (all 12 phases have a first real implementation; runs on Linux and Windows)",
+    "modules": 38,
+    "referenced": 23,
+    "missing": [
+      "briefing",
+      "consolidate",
+      "editor",
+      "followup",
+      "guard",
+      "journal_query",
+      "limits",
+      "plan",
+      "prompt",
+      "radar",
+      "review",
+      "routing",
+      "scorecard",
+      "skillevo",
+      "winctl"
+    ]
+  },
+  "process": {
+    "pid": "3032",
+    "pid_alive": true,
+    "startup_vbs": true
+  },
+  "http": {
+    "health": {
+      "status": 200,
+      "ms": 27,
+      "json": {
+        "name": "SYRAX",
+        "status": "online",
+        "brain": "gemini"
+      }
+    },
+    "voice": {
+      "status": 200,
+      "ms": 1,
+      "json": {
+        "tts_voice": "en-US-ChristopherNeural",
+        "stt": "groq",
+        "whisper": "ready"
+      }
+    },
+    "self_identity": {
+      "status": 200,
+      "bytes": 594,
+      "mojibake_count": 0
+    },
+    "identity": {
+      "version": "7b0ca89",
+      "boot_id": "65613c11b180",
+      "process_uptime_s": 2056,
+      "restart_pending": false
+    },
+    "self_capabilities": {
+      "status": 200,
+      "bytes": 6208,
+      "mojibake_count": 0
+    },
+    "capabilities_by_status": {
+      "VERIFIED": 20,
+      "NOT_TESTED": 4,
+      "FAILING": 2,
+      "MISSING": 0
+    },
+    "capabilities_with_level": 0,
+    "self_weaknesses": {
+      "status": 200,
+      "bytes": 7707,
+      "mojibake_count": 0
+    },
+    "weaknesses_by_kind": {
+      "capability": 6,
+      "quality": 1,
+      "known_limitation": 46
+    },
+    "self_structure": {
+      "status": 200,
+      "bytes": 11299,
+      "mojibake_count": 1
+    }
+  },
+  "ui": {
+    "status": 200,
+    "title": null
+  },
+  "ws": {
+    "hello": {
+      "tools": [
+        "ask_human",
+        "browser_exec",
+        "browser_screenshot",
+        "compare_versions",
+        "desktop",
+        "experiment",
+        "forget",
+        "journal_query",
+        "know",
+        "learn",
+        "make_docx",
+        "make_pdf",
+        "make_pptx",
+        "make_xlsx",
+        "present",
+        "python_execute",
+        "recall",
+        "release",
+        "remember",
+        "research",
+        "self_inspect",
+        "skill_create",
+        "skill_list",
+        "skill_test",
+        "str_replace_editor",
+        "terminate"
+      ],
+      "interrupted": 0,
+      "running": false,
+      "autonomy_enabled": true,
+      "tool_levels": null
+    },
+    "skills_live": [
+      {
+        "name": "make_docx",
+        "status": "VERIFIED",
+        "registered": true
+      },
+      {
+        "name": "make_pdf",
+        "status": "VERIFIED",
+        "registered": true
+      },
+      {
+        "name": "make_pptx",
+        "status": "VERIFIED",
+        "registered": true
+      },
+      {
+        "name": "make_xlsx",
+        "status": "VERIFIED",
+        "registered": true
+      },
+      {
+        "name": "system_optimizer",
+        "status": "FAILED",
+        "registered": false
+      }
+    ],
+    "quality_runs": [
+      {
+        "id": 23,
+        "pass_rate": 92.9,
+        "status": "PASS"
+      },
+      {
+        "id": 22,
+        "pass_rate": 100.0,
+        "status": "PASS"
+      },
+      {
+        "id": 21,
+        "pass_rate": 100.0,
+        "status": "PASS"
+      }
+    ],
+    "verifications": [
+      {
+        "id": 1,
+        "status": "GREEN",
+        "git_head": "91cda4f1cd6ed8af74d2144f49bc2f5470d6307d"
+      }
+    ],
+    "history": [
+      {
+        "task_id": "6febb45b05ba",
+        "status": "SUCCESS",
+        "kind": "autonomous"
+      },
+      {
+        "task_id": "db99880aaf7d",
+        "status": "SUCCESS",
+        "kind": "conversation"
+      },
+      {
+        "task_id": "fcf2ee958358",
+        "status": "SUCCESS",
+        "kind": "eval"
+      },
+      {
+        "task_id": "b9b6c31783c0",
+        "status": "SUCCESS",
+        "kind": "eval"
+      },
+      {
+        "task_id": "dac7e64ed71e",
+        "status": "SUCCESS",
+        "kind": "eval"
+      }
+    ],
+    "self_model_summary": {
+      "version": "7b0ca89",
+      "success_rate": 0.9,
+      "capabilities": 26,
+      "weaknesses": 7
+    },
+    "answered": [
+      "hello",
+      "skills",
+      "quality_runs",
+      "verifications",
+      "history",
+      "self_model"
+    ]
+  },
+  "voice": {
+    "tts": {
+      "status": 200,
+      "bytes": 18576,
+      "ms": 1971,
+      "content_type": "audio/mpeg"
+    },
+    "stt": {
+      "status": 200,
+      "ms": 656,
+      "json": {
+        "text": "SYRAX. Open the journal.",
+        "engine": "groq",
+        "ms": 632
+      }
+    },
+    "roundtrip_pass": true
+  }
+}

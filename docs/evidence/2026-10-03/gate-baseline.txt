@@ -1,0 +1,24 @@
+C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\pydantic\_internal\_config.py:386: UserWarning: Valid config keys have changed in V2:
+* 'underscore_attrs_are_private' has been removed
+  warnings.warn(message, UserWarning)
+C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\pydantic\_internal\_config.py:386: UserWarning: Valid config keys have changed in V2:
+* 'underscore_attrs_are_private' has been removed
+  warnings.warn(message, UserWarning)
+VERIFICATION BLOCKED  git_head=7b0ca890fdac3d22077de6110262a6e7551840e3
+  PASS          py_compile   exit=0       125ms  (required)
+  FAIL          pytest       exit=1    191046ms  (required)
+      | =========================== short test summary info ===========================
+      | FAILED syrax/test_limits.py::test_reliability_is_judged_on_new_uses_only - As...
+      | 1 failed, 383 passed, 1 skipped, 149 warnings in 189.97s (0:03:09)
+      | 
+      | C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\pytest_asyncio\plugin.py:207: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+      | The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+      | 
+      |   warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+  PASS          tsc          exit=0     10842ms  (required)
+  PASS          eslint       exit=0     19500ms  (required)
+  PASS          node_test    exit=0       500ms  (required)
+  PASS          next_build   exit=0     23860ms  (required)
+  PASS          diff_scan    exit=0        61ms  (required)
+  PASS          performance  exit=0      4375ms  (optional)
+exit=1 seconds=251

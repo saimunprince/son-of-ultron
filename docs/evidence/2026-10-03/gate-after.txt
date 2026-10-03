@@ -1,0 +1,16 @@
+C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\pydantic\_internal\_config.py:386: UserWarning: Valid config keys have changed in V2:
+* 'underscore_attrs_are_private' has been removed
+  warnings.warn(message, UserWarning)
+C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\pydantic\_internal\_config.py:386: UserWarning: Valid config keys have changed in V2:
+* 'underscore_attrs_are_private' has been removed
+  warnings.warn(message, UserWarning)
+VERIFICATION GREEN  git_head=a9240d7f10e9b4b73913792f18b3abb1cc31b432
+  PASS          py_compile   exit=0       186ms  (required)
+  PASS          pytest       exit=0    320015ms  (required)
+  PASS          tsc          exit=0     26906ms  (required)
+  PASS          eslint       exit=0     37202ms  (required)
+  PASS          node_test    exit=0       827ms  (required)
+  PASS          next_build   exit=0     44703ms  (required)
+  PASS          diff_scan    exit=0        93ms  (required)
+  PASS          performance  exit=0      5500ms  (optional)
+exit=0 seconds=437

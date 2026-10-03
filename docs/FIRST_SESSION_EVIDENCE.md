@@ -222,8 +222,14 @@ VERIFICATION GREEN  git_head=a9240d7
   PASS py_compile · PASS pytest (320 s) · PASS tsc · PASS eslint · PASS node_test · PASS next_build · PASS diff_scan · PASS performance (optional)
 ```
 
-`4d48cfa` and `fe5a146` were gated in their worktree with the backend
-gates (`py_compile`, `pytest`, `diff_scan`): __WT64_GATE__.
+`4d48cfa` + `fe5a146` were gated in their worktree with the backend gates
+(`py_compile`, `pytest`, `diff_scan`): first run FAIL — 2 of 449 tests in
+`test_skillevo.py` (`test_real_use_is_counted_per_skill_and_shown_in_the_list`,
+`test_a_skill_doing_fine_is_left_alone`) failed under load and passed 5/5
+alone and in the immediate rerun: **GREEN**, pytest 284.7 s, 449 tests.
+Recorded as a flake to look at (both sides use `time.time()`; no cause
+found in-session). `faf6415` (per-case quality verdicts in the matrix):
+**GREEN**, pytest 238.2 s, 450 tests (449 pass, 1 skip).
 
 ### Permission gate, live (improvement 001)
 
@@ -241,15 +247,52 @@ SYRAX on `a9240d7`, real WebSocket, real brains, real files under
 ### Startup, self-model, voice, WebSocket (re-probed)
 
 `python audit_evidence.py --voice --junit …/pytest-after.xml --out …` →
-`evidence-__RUN2_STAMP__-run2.{json,md}`.
+`evidence-20261003-175458-run2.{json,md}`.
 
-__RUN2_PROBES__
+SYRAX restarted itself into `fe5a146` at the next idle cycle
+(`restart.requested` ×18 in the journal, this one included): pid 5524, boot
+`0c6314ed9d3c`, uptime 48 s at probe time, `restart_pending` false.
 
-### Capability matrix, run 2 (commit __FINAL_HEAD__)
+| Check | Run 1 | Run 2 | Status |
+|---|---|---|---|
+| `GET /health` | online, brain gemini | online (brain `null`: no brain had answered yet, 48 s after boot) | GREEN |
+| `/self?section=identity` | `7b0ca89`, boot `65613c11b180` | `fe5a146`, boot `0c6314ed9d3c` | GREEN |
+| mojibake in `/self` identity / capabilities / weaknesses / structure | 0 / 0 / 0 / **1** | 0 / 0 / 0 / **0** | fixed (`9230d40`) |
+| capabilities by status | VERIFIED 20, NOT_TESTED 4, FAILING 2 | same; **26/26 carry a permission `level`** | GREEN |
+| weaknesses | capability 6, known_limitation 46 | capability 6, known_limitation 50 | — |
+| `hello` | 26 tools | 26 tools + `tool_levels` for all 26, 0 interrupted | GREEN |
+| WS `skills`, `quality_runs`, `verifications`, `history`, `self_model` | all answered | all answered | GREEN |
+| TTS `POST /tts` | 18 576 B, 1971 ms | 18 576 B, 1716 ms | GREEN |
+| STT round trip | "SYRAX. Open the journal." (groq, 632 ms) | "SYRAX. Open the journal." (groq, 660 ms) | GREEN |
+| UI `http://localhost:3000` | 200 | 200 | GREEN |
+| Startup `SYRAX.vbs`, pid file | present, alive | present, alive | GREEN |
 
-`python -m syrax.capmatrix --junit pytest-after.xml --evidence evidence-…-run2.json --gate gate-after.txt --head __FINAL_HEAD__`
+Journal at run 2 (read-only): tasks 284 (SUCCESS 254 · FAILED 21 · CANCELLED 7
+· PARTIAL 2; eval 186 · autonomous 75 · conversation 23; 95 in 24 h), events
+8185, checkpoints 990, objectives 62 (DONE 58 · BLOCKED 2 · DROPPED 2),
+quality runs 24. New since run 1: 5 tasks (3 live scenarios, the quality
+subset, 1 autonomous), **`permission.authorized` 4 · `permission.refused` 1**
+(the whole history of the gate so far). `python_execute` last 7 d: 149 ok /
+38 fail (20.3 %; the 2 extra failures are the refused calls of B and C,
+which count as `tool.failed` by design). `browser_exec` unchanged 10/4
+(28.6 %). `release` unchanged 0/4. Brains answered: gemini 837 · upstage 96
+· pollinations 35 · groq 7; failovers 171 (unchanged).
 
-__RUN2_MATRIX__
+### Capability matrix, run 2 (commit faf6415)
+
+`python -m syrax.capmatrix --junit pytest-after.xml --evidence evidence-…-run2.json --gate gate-after.txt --head faf6415`
+
+GREEN 18 · YELLOW 4 · RED 2 · BLOCKED 0 · UNVERIFIED 4 (run 1: 15 · 4 · 5 · 0 · 4).
+
+Moved: verification gate RED→GREEN (gate GREEN on `a9240d7`); self-model
+RED→GREEN (mojibake 0); tool permission levels RED→GREEN (51/51 tests,
+`act_delete` pass, 4 authorized / 1 refused in the journal). The four
+YELLOW rows are the same four (browser 28.6 % failure share; memory,
+recovery, presentation PARTIAL). Still RED: research/knowledge (`research_cite` failed in
+full run #23 and was not re-run; the matrix keeps a case's latest verdict,
+`faf6415`) and the task phase model (not built). Still UNVERIFIED: server
+STT (its only test is the skipped Whisper test, though the round trip
+passes), microphone, autonomous release, Work Presence.
 
 ### Not verified this session
 
