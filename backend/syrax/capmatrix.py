@@ -119,7 +119,7 @@ CAPABILITIES: List[Capability] = [
                tests=["syrax.test_autonomy::*", "syrax.test_limits::*", "syrax.test_plan::*", "syrax.test_followup::*"], live=["cycles"]),
     Capability("release", "Autonomous self-modification (release, review, rollback)", PARTIAL, "backend/syrax/devloop.py, review.py",
                tools=["release"], tests=["syrax.test_devloop::*"],
-               note="gate + rollback + cross-brain review exist; SYRAX has never landed its own commit; edits land in the live tree"),
+               note="gate + rollback + cross-brain review; first own commit landed 2026-10-03 (d9e60cf, docs-only); edits land in the live tree"),
     Capability("skills", "Skill / tool creation (skill_create, tests, registry)", CURRENT, "backend/syrax/skills.py, skillevo.py",
                tools=["skill_create", "skill_test", "make_docx", "make_xlsx", "make_pptx", "make_pdf"],
                tests=["syrax.test_skills::*", "syrax.test_skill_safety::*", "syrax.test_skillevo::*"], live=["skills_verified"]),

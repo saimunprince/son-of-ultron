@@ -301,3 +301,49 @@ and Ollama brains (never answered); Linux/macOS launchers; cancellation and
 crash recovery live (tests and journal only); the Work Presence system
 (specified, not built); SYRAX landing its own commit (`release` 0 ok / 4
 fail, unchanged — no autonomous release was attempted during the audit).
+
+---
+
+## Run 3 — SYRAX's first own release (18:05–18:13)
+
+After the docs merge (`e683446`, SYRAX restarted into it), one human
+objective was added over the WebSocket (`objective_add`, priority 1):
+refresh `docs/system_map.json` so the 15 unreferenced `backend/syrax`
+modules are listed under the component that owns them, verify the JSON,
+then `release` with a plan. `cycle_now` forced the cycle. Everything below
+is from the journal (task `25d9d889a90c`, objective 63) and `git log`.
+
+| Time | Event | Detail |
+|---|---|---|
+| 18:05:10 | `cycle.started` | forced |
+| 18:05:27 | `release.planned` | summary `docs(system_map): reference the 15 unmapped backend/syrax modules`; plan why/risk/tests present |
+| 18:05:27 | `code.changed` | `docs/system_map.json` M, snapshot `backend/config/rollback/1791029127-e683446.patch` |
+| 18:11:28 | `verification.completed` | **#2 GREEN**, head `e683446`: py_compile, pytest, tsc, eslint, node_test, next_build, diff_scan PASS |
+| 18:12:42 | `review.completed` | reviewer **openrouter** on author **gemini**: approve, weakens_checks false, clear_bug false, secret false, matches_summary true |
+| 18:12:42 | `commit.created` | **`d9e60cf`**, author `SYRAX <syrax@localhost>`, `Verified-By: syrax.verify #2` |
+| 18:13:10 | `final` | "RELEASE COMMITTED · d9e60cf05751" |
+| 18:13:11 | `cycle.completed` | outcome RAN, task SUCCESS, objective 63 DONE |
+| 18:16 | `git push` | by a human (`SYRAX_AUTOPUSH` is off by default) |
+
+Tools used in the task: `python_execute` ×2 (edit + `json.load` check),
+`release` ×1, `terminate` ×1. No `permission.*` event: every call was
+WRITE or READ_ONLY in repo scope, allowed for autonomous work by policy.
+
+Checked afterwards: the component list is unchanged (20), no field other
+than `code` changed, the 15 modules landed under the expected owners
+(Autonomy 6, Tools 3, Research 1, Skill factory 1, Dev loop 1, SyraxAgent 1,
+BrainRouter 1, Verification gate 1), `map_coverage` is 40/40. One side
+effect: SYRAX rewrote the file with `json.dump` defaults, so the 44 `→`
+characters became `→` escapes (semantically identical JSON; 70/55
+line diff instead of 15 insertions). The reviewer noticed and called it an
+encoding fix; it is not a bug, but it is noise a human would not have made.
+
+Matrix after this (same test, evidence and gate files, journal re-read,
+head `d9e60cf`): GREEN 18 · YELLOW 5 · RED 2 · BLOCKED 0 · UNVERIFIED 3.
+"Autonomous self-modification" moved UNVERIFIED → **YELLOW**: it now has
+runtime evidence, and a 7-day failure share of 80 % (1 ok / 4 fail), which
+is the truth of its track record. "System map coverage" is 40/40.
+
+Not changed by this run: objective 63 closed on `task_success`, the weakest
+check; the mechanism is proven by `commit.created`, not by the objective's
+own check (see SYRAX_STATUS.md, next step).
