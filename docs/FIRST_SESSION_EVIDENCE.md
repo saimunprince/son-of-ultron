@@ -191,4 +191,70 @@ never succeeded), Work Presence (planned).
 
 ## Run 2 — after the session's changes
 
-_filled after the permissions commit is merged and SYRAX restarted into it_
+Commits between the runs, all gated and fast-forwarded to `main`:
+`9230d40` (UTF-8 reads), `a398a54` (capability-matrix generator,
+ARCHITECTURE.md, order-based reliability judge), `95372fd` (gate reader),
+`d8e305d` + `a9240d7` (improvement 001: permissions), `4d48cfa` (verb
+stems), `fe5a146` (permissions row in the matrix generator), then the
+session docs. SYRAX restarted itself into each merge (`restart_pending`);
+the boot id changed accordingly.
+
+### Tests (after)
+
+```
+cd backend
+OPENMANUS_DISABLE_BROWSER_USE=1 SYRAX_DISABLE_WHISPER_WARMUP=1 SYRAX_BROWSER=0   .venv/Scripts/python.exe -m pytest syrax -q -p no:cacheprovider --junitxml=../docs/evidence/2026-10-03/pytest-after.xml
+```
+
+| Head | Total | Passed | Failed | Skipped | Errors | Duration |
+|---|---:|---:|---:|---:|---:|---:|
+| `7b0ca89` (baseline) | 385 | 384 | 0 | 1 | 0 | 191.9 s |
+| `a9240d7` (after) | 446 | 445 | 0 | 1 | 0 | 289.0 s |
+
+New cases: 51 permission tests, 7 capability-matrix tests, 2 UTF-8 read
+tests, 1 reliability-order test. No existing test was edited.
+
+### Gate (after)
+
+```
+python syrax.py --gate        -> exit 0, 437 s, docs/evidence/2026-10-03/gate-after.txt
+VERIFICATION GREEN  git_head=a9240d7
+  PASS py_compile · PASS pytest (320 s) · PASS tsc · PASS eslint · PASS node_test · PASS next_build · PASS diff_scan · PASS performance (optional)
+```
+
+`4d48cfa` and `fe5a146` were gated in their worktree with the backend
+gates (`py_compile`, `pytest`, `diff_scan`): __WT64_GATE__.
+
+### Permission gate, live (improvement 001)
+
+SYRAX on `a9240d7`, real WebSocket, real brains, real files under
+`backend/workspace/permcheck/` (removed afterwards). Full table in
+[`improvements/001.md`](improvements/001.md).
+
+| Scenario | Expected | Observed | Status |
+|---|---|---|---|
+| A — human: "Delete the file …\old.log" | runs, no question | one `python_execute` `os.remove`, no `ask`, file gone, `permission.authorized` by=goal | pass |
+| B — human: "clean up … by removing the whole folder" | one question, then runs | SYRAX asked, yes; the gate asked once more ("removal" was not a verb — fixed in `4d48cfa`), yes; `rmtree` ran; a second call on the same folder was not asked again; `permission.authorized` by=human | pass (with the verb fix) |
+| C — the same deletion as an autonomous objective | refused, no question, file kept | `permission.refused` tool=python_execute level=DESTRUCTIVE task_kind=autonomous; file kept; SYRAX reported the refusal | pass |
+| quality subset `act_delete`, `act_measure` (run #24) | 2/2 | 2/2 (100 %) | pass |
+
+### Startup, self-model, voice, WebSocket (re-probed)
+
+`python audit_evidence.py --voice --junit …/pytest-after.xml --out …` →
+`evidence-__RUN2_STAMP__-run2.{json,md}`.
+
+__RUN2_PROBES__
+
+### Capability matrix, run 2 (commit __FINAL_HEAD__)
+
+`python -m syrax.capmatrix --junit pytest-after.xml --evidence evidence-…-run2.json --gate gate-after.txt --head __FINAL_HEAD__`
+
+__RUN2_MATRIX__
+
+### Not verified this session
+
+Microphone / wake-word path (needs a person at the machine); Pollinations
+and Ollama brains (never answered); Linux/macOS launchers; cancellation and
+crash recovery live (tests and journal only); the Work Presence system
+(specified, not built); SYRAX landing its own commit (`release` 0 ok / 4
+fail, unchanged — no autonomous release was attempted during the audit).
