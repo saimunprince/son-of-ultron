@@ -49,9 +49,9 @@
         "npx eslint ."
       ],
       "failure_modes": [
-        "WebGL missing → CSS fallback orb",
-        "WS offline → exponential reconnect, agent shown as booting",
-        "TTS 502 → browser voice"
+        "WebGL missing \u2192 CSS fallback orb",
+        "WS offline \u2192 exponential reconnect, agent shown as booting",
+        "TTS 502 \u2192 browser voice"
       ]
     },
     {
@@ -90,8 +90,8 @@
         "backend/syrax/test_memory.py (last test)"
       ],
       "failure_modes": [
-        "bad JSON → error event, session survives",
-        "command exception → error event, session survives",
+        "bad JSON \u2192 error event, session survives",
+        "command exception \u2192 error event, session survives",
         "lifespan shutdown closes journal (reopened lazily)"
       ]
     },
@@ -115,7 +115,7 @@
       "capabilities": [
         "task continues when all browsers disconnect",
         "checkpoint after each tool step and at final",
-        "journal write failure → unjournaled flag, no fake success",
+        "journal write failure \u2192 unjournaled flag, no fake success",
         "auto-resume of RESUMABLE tasks when SYRAX_AUTO_RESUME=1"
       ],
       "limitations": [
@@ -129,9 +129,9 @@
         "backend/syrax/test_bridge.py (journal + core section)"
       ],
       "failure_modes": [
-        "LLM error → task.failed + error event",
-        "cancel → task.cancelled + notice",
-        "sqlite error → task stays IN_PROGRESS, marked INTERRUPTED next boot"
+        "LLM error \u2192 task.failed + error event",
+        "cancel \u2192 task.cancelled + notice",
+        "sqlite error \u2192 task stays IN_PROGRESS, marked INTERRUPTED next boot"
       ]
     },
     {
@@ -170,14 +170,14 @@
         "backend/syrax/test_journal.py (SIGKILL crash matrix, transition table, recovery, resume, fan-out)"
       ],
       "failure_modes": [
-        "JournalError on invalid transition/unknown task/terminal task → rolled back",
+        "JournalError on invalid transition/unknown task/terminal task \u2192 rolled back",
         "sqlite3.Error propagates to caller (core handles)",
-        "crash inside recovery → whole txn lost, redone next boot"
+        "crash inside recovery \u2192 whole txn lost, redone next boot"
       ]
     },
     {
       "component": "Self-model",
-      "purpose": "Evidence-based model of SYRAX itself: identity/version from git, structure from docs/system_map.json + repo introspection, behavior/failures/verifications from the journal, a capability registry (registered tools × journal evidence), runtime resources, derived weaknesses. Exposed as the self_inspect tool, WS self_model and GET /self, and the SELF panel.",
+      "purpose": "Evidence-based model of SYRAX itself: identity/version from git, structure from docs/system_map.json + repo introspection, behavior/failures/verifications from the journal, a capability registry (registered tools \u00d7 journal evidence), runtime resources, derived weaknesses. Exposed as the self_inspect tool, WS self_model and GET /self, and the SELF panel.",
       "dependencies": [
         "syrax.journal (status_counts, tool_stats, tasks, verifications)",
         "git",
@@ -212,9 +212,9 @@
         "backend/syrax/test_bridge.py (self-model section)"
       ],
       "failure_modes": [
-        "git unavailable → version/head None",
-        "map missing → components [] and present=false",
-        "self_inspect before the core exists → tool error"
+        "git unavailable \u2192 version/head None",
+        "map missing \u2192 components [] and present=false",
+        "self_inspect before the core exists \u2192 tool error"
       ]
     },
     {
@@ -241,7 +241,7 @@
       "capabilities": [
         "evidence-only judging (tool_verified, verification_green, task_success, human)",
         "idempotent derivation by key; one live objective per tool",
-        "objective already satisfied → closed without a task",
+        "objective already satisfied \u2192 closed without a task",
         "resource gate; never runs while a human task runs",
         "background loop with interval; off by default",
         "quiet hours and battery/disk pressure skip cycles (human cycle_now ignores them)",
@@ -256,7 +256,13 @@
       "code": [
         "backend/syrax/autonomy.py",
         "backend/syrax/resources.py",
-        "backend/syrax/sysinfo.py"
+        "backend/syrax/sysinfo.py",
+        "backend/syrax/limits.py",
+        "backend/syrax/plan.py",
+        "backend/syrax/followup.py",
+        "backend/syrax/radar.py",
+        "backend/syrax/scorecard.py",
+        "backend/syrax/briefing.py"
       ],
       "tests": [
         "backend/syrax/test_autonomy.py",
@@ -265,9 +271,9 @@
         "backend/syrax/test_sysinfo.py"
       ],
       "failure_modes": [
-        "derivation error → logged, cycle continues",
-        "cycle crash in loop → logged, next cycle after interval",
-        "core busy → BUSY report, objective back to OPEN"
+        "derivation error \u2192 logged, cycle continues",
+        "cycle crash in loop \u2192 logged, next cycle after interval",
+        "core busy \u2192 BUSY report, objective back to OPEN"
       ]
     },
     {
@@ -286,7 +292,7 @@
         "WS knowledge {query?, limit?}"
       ],
       "outputs": [
-        "knowledge rows (kind web|conclusion, confidence ≤ policy)",
+        "knowledge rows (kind web|conclusion, confidence \u2264 policy)",
         "research.started / research.completed / knowledge.stored events",
         "knowledge_list replies"
       ],
@@ -297,7 +303,7 @@
         "confidence policy: web 0.4/0.6/0.75 by agreeing sources, conclusion capped by cited sources, human 1.0",
         "learn refuses uncited or unknown-id conclusions",
         "keyword-ranked know search with usage counters",
-        "failure → research objective judged by stored knowledge"
+        "failure \u2192 research objective judged by stored knowledge"
       ],
       "limitations": [
         "keyword overlap, not semantic understanding; contradictions are shown, not detected",
@@ -307,7 +313,8 @@
       ],
       "code": [
         "backend/syrax/research.py",
-        "backend/syrax/journal.py (knowledge)"
+        "backend/syrax/journal.py (knowledge)",
+        "backend/syrax/consolidate.py"
       ],
       "tests": [
         "backend/syrax/test_research.py",
@@ -315,9 +322,9 @@
         "backend/syrax/test_autonomy.py (research objective)"
       ],
       "failure_modes": [
-        "all engines fail → report UNKNOWN, nothing stored",
-        "page fetch fails → snippet only, basis says NOT fetched",
-        "engine crash inside the tool → tool error, task continues"
+        "all engines fail \u2192 report UNKNOWN, nothing stored",
+        "page fetch fails \u2192 snippet only, basis says NOT fetched",
+        "engine crash inside the tool \u2192 tool error, task continues"
       ]
     },
     {
@@ -356,17 +363,18 @@
       ],
       "code": [
         "backend/syrax/skills.py",
-        "backend/skills/README.md"
+        "backend/skills/README.md",
+        "backend/syrax/skillevo.py"
       ],
       "tests": [
         "backend/syrax/test_skills.py",
         "backend/syrax/test_bridge.py (skill section)"
       ],
       "failure_modes": [
-        "compile error → FAILED at stage compile",
-        "failing/absent tests → FAILED with pytest tail",
-        "loads but wrong Skill.name → FAILED at stage load",
-        "test timeout → FAILED"
+        "compile error \u2192 FAILED at stage compile",
+        "failing/absent tests \u2192 FAILED with pytest tail",
+        "loads but wrong Skill.name \u2192 FAILED at stage load",
+        "test timeout \u2192 FAILED"
       ]
     },
     {
@@ -402,7 +410,8 @@
         "one release per tool call; the gate takes about a minute"
       ],
       "code": [
-        "backend/syrax/devloop.py"
+        "backend/syrax/devloop.py",
+        "backend/syrax/review.py"
       ],
       "tests": [
         "backend/syrax/test_devloop.py",
@@ -410,9 +419,9 @@
         "backend/syrax/test_autonomy.py (change_released)"
       ],
       "failure_modes": [
-        "gate BLOCKED → rollback.created, tree restored",
-        "git commit fails → commit.failed",
-        "push fails → push.failed, commit stays local"
+        "gate BLOCKED \u2192 rollback.created, tree restored",
+        "git commit fails \u2192 commit.failed",
+        "push fails \u2192 push.failed, commit stays local"
       ]
     },
     {
@@ -435,7 +444,7 @@
       "state": "active elements in memory (rebuilt from events as they arrive; not restored across restarts)",
       "persistence": "events only",
       "capabilities": [
-        "state → decision rules in the core, not the UI",
+        "state \u2192 decision rules in the core, not the UI",
         "one element per slot, replaces old information",
         "ttl expiry server- and client-side",
         "empty plan = minimal UI",
@@ -456,8 +465,8 @@
         "backend/syrax/test_bridge.py (presentation section)"
       ],
       "failure_modes": [
-        "journal outage → element still broadcast with unjournaled=true",
-        "bad present arguments → tool error, nothing shown"
+        "journal outage \u2192 element still broadcast with unjournaled=true",
+        "bad present arguments \u2192 tool error, nothing shown"
       ]
     },
     {
@@ -510,8 +519,8 @@
         "backend/syrax/test_versions.py"
       ],
       "failure_modes": [
-        "both arms fail → INCONCLUSIVE, no conclusion drawn",
-        "benchmark under load → REGRESSION reported, objective created, gate optional"
+        "both arms fail \u2192 INCONCLUSIVE, no conclusion drawn",
+        "benchmark under load \u2192 REGRESSION reported, objective created, gate optional"
       ]
     },
     {
@@ -546,14 +555,15 @@
         "tool success is a heuristic on the result text (_succeeded)"
       ],
       "code": [
-        "backend/syrax/agent.py"
+        "backend/syrax/agent.py",
+        "backend/syrax/prompt.py"
       ],
       "tests": [
         "backend/syrax/test_bridge.py"
       ],
       "failure_modes": [
-        "step limit → step_limit_hit → task PARTIAL",
-        "browser unavailable → tool error string"
+        "step limit \u2192 step_limit_hit \u2192 task PARTIAL",
+        "browser unavailable \u2192 tool error string"
       ]
     },
     {
@@ -582,14 +592,15 @@
         "listeners are global: all sessions see brain events"
       ],
       "code": [
-        "backend/syrax/brains.py"
+        "backend/syrax/brains.py",
+        "backend/syrax/routing.py"
       ],
       "tests": [
         "backend/syrax/test_brains.py (mock OpenAI server)"
       ],
       "failure_modes": [
-        "all providers failing → BrainError → task.failed",
-        "401/403 → 1h cooldown"
+        "all providers failing \u2192 BrainError \u2192 task.failed",
+        "401/403 \u2192 1h cooldown"
       ]
     },
     {
@@ -653,15 +664,18 @@
         "backend/syrax/tools.py",
         "backend/syrax/desktop.py",
         "backend/syrax/browser.py",
-        "backend/app/tool/*"
+        "backend/app/tool/*",
+        "backend/syrax/editor.py",
+        "backend/syrax/journal_query.py",
+        "backend/syrax/winctl.py"
       ],
       "tests": [
         "backend/syrax/test_desktop.py",
         "backend/syrax/test_bridge.py"
       ],
       "failure_modes": [
-        "timeouts → error result",
-        "missing binaries → error result"
+        "timeouts \u2192 error result",
+        "missing binaries \u2192 error result"
       ]
     },
     {
@@ -738,8 +752,8 @@
         "backend/syrax/test_voice.py"
       ],
       "failure_modes": [
-        "offline → /tts 502",
-        "Whisper load error → /stt 500"
+        "offline \u2192 /tts 502",
+        "Whisper load error \u2192 /stt 500"
       ]
     },
     {
@@ -767,13 +781,14 @@
         "no independent-review gate; review is done by the operator/agent"
       ],
       "code": [
-        "backend/syrax/verify.py"
+        "backend/syrax/verify.py",
+        "backend/syrax/capmatrix.py"
       ],
       "tests": [
         "backend/syrax/test_verify.py"
       ],
       "failure_modes": [
-        "missing venv/node → NOT_VERIFIED → BLOCKED"
+        "missing venv/node \u2192 NOT_VERIFIED \u2192 BLOCKED"
       ]
     },
     {
@@ -808,7 +823,7 @@
         "backend/tests/** (sandbox, browser MCP; not run by SYRAX gate)"
       ],
       "failure_modes": [
-        "missing [daytona] → config crash at boot"
+        "missing [daytona] \u2192 config crash at boot"
       ]
     },
     {
