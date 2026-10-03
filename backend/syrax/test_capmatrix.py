@@ -118,3 +118,11 @@ def test_architecture_doc_names_every_system_map_component():
     doc = (cm.REPO_ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
     for name in cm.map_coverage()["components"]:
         assert name in doc, f"docs/ARCHITECTURE.md does not mention component {name!r}"
+
+
+def test_read_gate_keeps_every_gate(tmp_path):
+    report = tmp_path / "gate.txt"
+    report.write_text("VERIFICATION BLOCKED  git_head=abc\n  PASS          py_compile   exit=0  (required)\n  FAIL          pytest       exit=1  (required)\n"
+                      "  PASS          tsc          exit=0  (required)\n  PASS          next_build   exit=0  (required)\n  PASS          performance  exit=0  (optional)\n")
+    g = cm.read_gate(report)
+    assert g["status"] == "BLOCKED" and g["gates"] == {"py_compile": "PASS", "pytest": "FAIL", "tsc": "PASS", "next_build": "PASS", "performance": "PASS"}

@@ -224,8 +224,8 @@ def read_gate(path: Optional[Path]) -> Optional[dict]:
         return None
     text = Path(path).read_text(encoding="utf-8", errors="replace")
     m = re.search(r"VERIFICATION (GREEN|BLOCKED)", text)
-    gates = dict(re.findall(r"^\s+(PASS|FAIL|NOT_VERIFIED)\s+(\w+)", text, re.M))
-    return {"status": m.group(1) if m else None, "gates": {name: st for st, name in gates.items()}}
+    gates = {name: st for st, name in re.findall(r"^\s+(PASS|FAIL|NOT_VERIFIED)\s+(\w+)", text, re.M)}
+    return {"status": m.group(1) if m else None, "gates": gates}
 
 
 def live_checks(evidence: Optional[dict], gate: Optional[dict], journal: Dict[str, Any]) -> Dict[str, tuple]:

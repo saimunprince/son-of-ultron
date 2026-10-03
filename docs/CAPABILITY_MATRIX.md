@@ -1,6 +1,6 @@
 # SYRAX capability matrix
 
-Generated 2026-10-03 16:55 +0600 by `python -m syrax.capmatrix` from commit `7b0ca89`, journal `C:\ai-agent\son-of-ultron\backend\config\journal.db`, evidence window 7 days, max failure share 25%. Status is computed, not typed: GREEN needs passing mapped tests **and** runtime evidence within the window; RED is a failing test, quality case or live check; BLOCKED is an external cause; UNVERIFIED is missing evidence or a planned capability.
+Generated 2026-10-03 17:01 +0600 by `python -m syrax.capmatrix` from commit `7b0ca89`, journal `C:\ai-agent\son-of-ultron\backend\config\journal.db`, evidence window 7 days, max failure share 25%. Status is computed, not typed: GREEN needs passing mapped tests **and** runtime evidence within the window; RED is a failing test, quality case or live check; BLOCKED is an external cause; UNVERIFIED is missing evidence or a planned capability.
 
 Test suite: 384 passed, 0 failed, 0 errors, 1 skipped of 385 in 191.9 s.
 
@@ -20,12 +20,12 @@ Test suite: 384 passed, 0 failed, 0 errors, 1 skipped of 385 in 191.9 s.
 | Task persistence (checkpoints, context) | CURRENT (backend/syrax/core.py (_checkpoint), journal.py) | live:checkpoints | tests 2/2 | tests 2/2 pass; live checkpoints: pass (974 checkpoints) | **GREEN** — tests pass, recent runtime evidence |
 | Task cancellation | CURRENT (backend/syrax/core.py (cancel), server.py) | live:cancelled_tasks | tests 2/2 | tests 2/2 pass; live cancelled_tasks: pass (7 cancelled tasks) _not exercised live during the audit (it would create a task)_ | **GREEN** — tests pass, recent runtime evidence |
 | Recovery / resume after a crash | PARTIAL (backend/syrax/journal.py (recover_interrupted), core.py (resume)) | live:recoveries | tests 9/9 | tests 9/9 pass; live recoveries: pass (5 recoveries) _only str_replace_editor operations are verified against reality; others stay UNCERTAIN for a human_ | **YELLOW** — implementation PARTIAL |
-| Frontend (orb, console, panels) | CURRENT (frontend/components/*.tsx) | live:ui, live:gate_frontend | tests 1/1 | tests 1/1 pass; live ui: pass (UI 200 'None'); live gate_frontend: fail (frontend gates tsc None, eslint None, node_test None, next_build None) _one frontend unit test file (wake words)_ | **RED** — live check failed: gate_frontend |
+| Frontend (orb, console, panels) | CURRENT (frontend/components/*.tsx) | live:ui, live:gate_frontend | tests 1/1 | tests 1/1 pass; live ui: pass (UI 200 'None'); live gate_frontend: pass (frontend gates tsc PASS, eslint PASS, node_test PASS, next_build PASS) _one frontend unit test file (wake words)_ | **GREEN** — tests pass, recent runtime evidence |
 | WebSocket / HTTP API | CURRENT (backend/syrax/server.py) | live:ws_hello, live:health | tests 2/2 | tests 2/2 pass; live ws_hello: pass (hello with 26 tools); live health: pass (/health online) | **GREEN** — tests pass, recent runtime evidence |
 | Voice input (server STT) | PARTIAL (backend/syrax/voice.py (/stt), frontend/lib/mic.ts) | live:stt_roundtrip | tests 0/1 | tests 0/1 pass; live stt_roundtrip: pass (groq heard 'SYRAX. Open the journal.') _server transcription proven by a TTS->STT round trip; microphone capture needs a human_ | **UNVERIFIED** — no passing test mapped |
 | Voice input (microphone and wake word) | PARTIAL (frontend/lib/mic.ts, wake.ts, useHandsFree.ts) | — | no test mapped | none _cannot be exercised without a person at the microphone_ | **UNVERIFIED** — needs a human at the machine |
 | Voice output (TTS) | CURRENT (backend/syrax/voice.py (/tts, edge-tts)) | live:tts | tests 1/1 | tests 1/1 pass; live tts: pass (18576 B in 1971 ms) | **GREEN** — tests pass, recent runtime evidence |
-| Verification / release gate | CURRENT (backend/syrax/verify.py) | live:gate | tests 6/6 | tests 6/6 pass; live gate: fail (gate BLOCKED: performance PASS, pytest FAIL) | **RED** — live check failed: gate |
+| Verification / release gate | CURRENT (backend/syrax/verify.py) | live:gate | tests 6/6 | tests 6/6 pass; live gate: fail (gate BLOCKED: py_compile PASS, pytest FAIL, tsc PASS, eslint PASS, node_test PASS, next_build PASS, diff_scan PASS, performance PASS) | **RED** — live check failed: gate |
 | Self-model (identity, capabilities, weaknesses) | CURRENT (backend/syrax/selfmodel.py) | quality:self_version, live:self_model | tests 11/11 | tests 11/11 pass; journal tool.*: 69 ok / 0 fail all-time; last 7 d 69 ok / 0 fail; quality run #23: self_version pass; live self_model: fail (1 mojibake in /self?section=structure) | **RED** — live check failed: self_model |
 | Self-improvement loop (objectives, judge, follow-ups) | CURRENT (backend/syrax/autonomy.py, limits.py, plan.py, followup.py) | live:cycles | tests 47/47 | tests 47/47 pass; live cycles: pass (144 cycles in 7 d) | **GREEN** — tests pass, recent runtime evidence |
 | Autonomous self-modification (release, review, rollback) | PARTIAL (backend/syrax/devloop.py, review.py) | — | tests 12/12 | tests 12/12 pass; journal tool.*: 0 ok / 4 fail all-time; last 7 d 0 ok / 4 fail _gate + rollback + cross-brain review exist; SYRAX has never landed its own commit; edits land in the live tree_ | **UNVERIFIED** — no runtime success within 7 d |
@@ -37,11 +37,11 @@ Test suite: 384 passed, 0 failed, 0 errors, 1 skipped of 385 in 191.9 s.
 
 ## Totals
 
-GREEN 14 · YELLOW 4 · RED 6 · BLOCKED 0 · UNVERIFIED 4 · total 28
+GREEN 15 · YELLOW 4 · RED 5 · BLOCKED 0 · UNVERIFIED 4 · total 28
 
-- **GREEN**: Startup (launcher, core, UI); LLM provider routing and failover; Agent execution (task to final answer); Filesystem access (view, create, edit, delete); Shell / code execution (python_execute); Screenshot (desktop and browser); Desktop automation (apps, media, clipboard, windows); Durable journal (WAL, owner lock, retention); Task persistence (checkpoints, context); Task cancellation; WebSocket / HTTP API; Voice output (TTS); Self-improvement loop (objectives, judge, follow-ups); Skill / tool creation (skill_create, tests, registry)
+- **GREEN**: Startup (launcher, core, UI); LLM provider routing and failover; Agent execution (task to final answer); Filesystem access (view, create, edit, delete); Shell / code execution (python_execute); Screenshot (desktop and browser); Desktop automation (apps, media, clipboard, windows); Durable journal (WAL, owner lock, retention); Task persistence (checkpoints, context); Task cancellation; Frontend (orb, console, panels); WebSocket / HTTP API; Voice output (TTS); Self-improvement loop (objectives, judge, follow-ups); Skill / tool creation (skill_create, tests, registry)
 - **YELLOW**: Browser automation (browser-use MCP); Memory (remember / recall / forget); Recovery / resume after a crash; Presentation engine (stage elements)
-- **RED**: Research and knowledge (research / know / learn); Frontend (orb, console, panels); Verification / release gate; Self-model (identity, capabilities, weaknesses); Tool permission levels enforced in code; Task phase model (understand/plan/act/observe/verify)
+- **RED**: Research and knowledge (research / know / learn); Verification / release gate; Self-model (identity, capabilities, weaknesses); Tool permission levels enforced in code; Task phase model (understand/plan/act/observe/verify)
 - **UNVERIFIED**: Voice input (server STT); Voice input (microphone and wake word); Autonomous self-modification (release, review, rollback); Visible Work Presence (visibility, hide/show, timeline)
 
 ## System map coverage
