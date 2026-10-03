@@ -31,6 +31,7 @@ from typing import Any, Dict, List, Optional
 from app.tool.base import BaseTool, ToolResult
 
 from syrax import sysinfo
+from syrax import permissions
 from syrax.journal import BACKEND_ROOT, Journal
 
 REPO_ROOT = BACKEND_ROOT.parent
@@ -315,6 +316,7 @@ class SelfModel:
                     "last_used": st["last_used"] if st else None,
                     "last_failed": st["last_failed"] if st else None,
                     "implementation": _implementation_of(name),
+                    "level": permissions.level_of_tool(name),  # what the call may do (permissions.py)
                 }
             )
         return out

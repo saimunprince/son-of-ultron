@@ -113,6 +113,8 @@ export interface SelfCapability {
   status: "VERIFIED" | "FAILING" | "NOT_TESTED" | "MISSING";
   uses: number;
   confidence: number | null;
+  /** permission level (permissions.py) */
+  level?: string;
 }
 
 export interface SelfWeakness {
@@ -359,6 +361,8 @@ export type ServerEvent =
       type: "hello";
       name: string;
       tools: string[];
+      /** permission level per tool (permissions.py): READ_ONLY … DESTRUCTIVE */
+      tool_levels?: Record<string, string>;
       interrupted: InterruptedTask[];
       running: RunningTask | null;
       recent: TaskSummary[];
@@ -423,6 +427,18 @@ export type ServerEvent =
   | { type: "briefing"; text: string }
   | { type: "proposals"; proposals: Proposal[] }
   | ({ type: "autonomy_status" } & AutonomyStatus)
+  | ({
+      type: "permission";
+      event: "authorized" | "refused";
+      tool: string;
+      level: string;
+      task_kind: string;
+      reason: string;
+      targets: string[];
+      authorized_by: "goal" | "human" | null;
+      answer?: string;
+      harm?: string[];
+    } & Journaled)
   | ({ type: "autonomy"; event: "toggled"; enabled: boolean } & Journaled)
   | ({
       type: "objective";

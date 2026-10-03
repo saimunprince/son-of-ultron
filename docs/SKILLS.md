@@ -20,6 +20,24 @@ class Skill(BaseTool):
 
 with pytest tests that import it as `from skills.<name>.skill import Skill`.
 
+### Risk level
+
+A skill may say what it does, as a class attribute:
+
+```python
+class Skill(BaseTool):
+    risk: str = "EXTERNAL_READ"      # optional
+```
+
+Allowed values: `READ_ONLY`, `WRITE`, `EXTERNAL_READ`, `SYSTEM`,
+`EXTERNAL_WRITE`, `DESTRUCTIVE` (`backend/syrax/permissions.py`). The
+effective level is the highest of `WRITE` (the floor), what `skill.py` shows
+(deletes, sends, shells, network, file writes) and the declaration, so `risk`
+can only raise the level, never hide what the code does; an unknown value is
+ignored. It is stored as `evidence.risk` in `skill.json`, declared to the
+permission check when the skill is registered, and shown per tool in the SELF
+panel.
+
 ## Lifecycle
 
 ```

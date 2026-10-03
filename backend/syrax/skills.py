@@ -51,11 +51,10 @@ MAX_CODE_CHARS = 60_000
 # the owner's machine. A skill's tests execute its code on the host, so code
 # that can hurt the machine is refused before anything runs. A human who wants
 # such a capability writes it by hand.
-from syrax.guard import HOST_HARM  # noqa: E402  (one list for skills and python_execute)
+from syrax import permissions  # noqa: E402
+from syrax.guard import HOST_HARM, TREE_DELETE  # noqa: E402  (one list for skills, python_execute and permissions)
 
-UNSAFE = HOST_HARM + (
-    (re.compile(r"\bshutil\.rmtree\b|\brm\s+-rf?\b|\brmdir\s+/s\b|\bdel\s+/[sfq]\b|Remove-Item[^\n]*-Recurse|\bformat\s+[a-z]:", re.I), "deletes directory trees or disks"),
-)
+UNSAFE = HOST_HARM + (TREE_DELETE,)
 
 
 def unsafe_reasons(*sources: str) -> List[str]:
@@ -193,9 +192,19 @@ class SkillFactory:
         self._unregister(name)
         self.collection.add_tool(tool)
         self.loaded[name] = tool
+        permissions.declare(name, self.risk_of(name, tool))
         return tool
 
+    def risk_of(self, name: str, tool: Optional[BaseTool] = None) -> str:
+        """A skill's permission level: what its source shows, raised (never
+        lowered) by a `risk` it declares on its Skill class; floor WRITE."""
+        src = self.root / name / "skill.py"
+        shown = permissions.level_of_source(src.read_text(encoding="utf-8", errors="replace"))[0] if src.is_file() else permissions.WRITE
+        declared = str(getattr(tool, "risk", "") or "").upper()
+        return permissions.highest(permissions.WRITE, shown, declared if declared in permissions.ORDER else permissions.WRITE)
+
     def _unregister(self, name: str) -> bool:
+        permissions.undeclare(name)
         if self.collection is None or name not in self.collection.tool_map:
             return False
         self.collection.tools = tuple(t for t in self.collection.tools if t.name != name)
@@ -248,9 +257,11 @@ class SkillFactory:
         else:
             result = await asyncio.to_thread(run_skill_tests, skill_dir)
         status = result["status"]
+        result = {**result, "risk": self.risk_of(name, None)}  # what the skill's source may do (permissions.py)
         if status == "VERIFIED":
             try:
                 await asyncio.to_thread(self._register, name)
+                result["risk"] = permissions.level_of_tool(name)  # with the class's own declaration, if any
             except Exception as e:
                 status = "FAILED"
                 result = {**result, "stage": "load", "evidence": f"tests passed but the skill failed to load: {e}"}
@@ -296,6 +307,8 @@ class SkillCreateTool(BaseTool):
         "Build a new reusable tool for yourself. Provide Python code defining `class Skill(BaseTool)` "
         "(from app.tool.base import BaseTool, ToolResult) with `name` equal to the skill name, a "
         "`description`, JSON-schema `parameters`, and `async def execute(self, **kwargs) -> ToolResult`; "
+        "optionally `risk: str` (READ_ONLY, WRITE, EXTERNAL_READ, SYSTEM, EXTERNAL_WRITE, DESTRUCTIVE) stating honestly what it may do, "
+        "which can only raise the level its source already shows; "
         "plus pytest tests (test_code) that import it via "
         "`from skills.<name>.skill import Skill`. The skill is registered ONLY if the tests pass; "
         "otherwise you get the failure output. Re-running with the same name replaces the skill."

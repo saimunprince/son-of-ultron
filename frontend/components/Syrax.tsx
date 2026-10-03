@@ -324,6 +324,16 @@ export default function Syrax() {
         case "autonomy":
           push({ kind: "notice", id: nextId++, text: e.enabled ? "AUTONOMY ON · SYRAX will pursue its own objectives when idle." : "AUTONOMY OFF." });
           break;
+        case "permission":
+          push({
+            kind: e.event === "refused" ? "error" : "notice",
+            id: nextId++,
+            text:
+              e.event === "refused"
+                ? `PERMISSION REFUSED · ${e.tool} · ${e.level} · ${e.reason}`
+                : `AUTHORIZED · ${e.tool} · ${e.level} · by ${e.authorized_by === "goal" ? "your words" : "your answer"}${e.targets?.length ? ` · ${e.targets.slice(0, 2).join(", ")}` : ""}`,
+          });
+          break;
         case "objective":
           if (e.event === "created") push({ kind: "notice", id: nextId++, text: `OBJECTIVE · P${e.priority ?? "?"} · ${e.goal ?? ""}` });
           else if (e.event === "completed") push({ kind: "notice", id: nextId++, text: `OBJECTIVE DONE · #${e.objective_id} · ${e.note ?? ""}` });

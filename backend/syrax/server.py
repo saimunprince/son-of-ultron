@@ -54,6 +54,7 @@ from app.logger import logger
 from syrax import browser, voice
 from syrax.brains import PROVIDERS, get_router
 from syrax.core import get_core
+from syrax import permissions
 from syrax.journal import JournalError, get_journal
 
 VOICE_HINT = (
@@ -221,6 +222,7 @@ class Session:
                 "type": "hello",
                 "name": "SYRAX",
                 "tools": sorted(agent.available_tools.tool_map.keys()),
+                "tool_levels": permissions.levels_for(agent.available_tools.tool_map.keys()),
                 "interrupted": snap["interrupted"],
                 "running": snap["running"],
                 "recent": snap["recent"],

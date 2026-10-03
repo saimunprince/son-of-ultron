@@ -35,6 +35,17 @@ HOST_HARM = (
 )
 COMMAND_KILL = re.compile(r"\btaskkill\b|\bpkill\b|\bkillall\b|\bkill\s+-|Stop-Process|\bwmic\b[^\n]*\bdelete\b", re.I)
 
+# Shared with skills.py (unsafe skills) and permissions.py (risk levels), so
+# one list decides what counts as destructive, external or system-level code.
+TREE_DELETE = (re.compile(r"\bshutil\.rmtree\b|\brm\s+-rf?\b|\brmdir\s+/s\b|\bdel\s+/[sfq]\b|Remove-Item[^\n]*-Recurse|\bformat\s+[a-z]:", re.I), "deletes directory trees or disks")
+FILE_DELETE = (re.compile(r"\bos\.(remove|unlink|rmdir|removedirs)\b|\.unlink\(|\.rmdir\(|\bsend2trash\b|\b(del|erase|rm|Remove-Item)\s+[\"'A-Za-z\\/.~$%-]", re.I), "deletes files")
+GIT_FORCE = (re.compile(r"\bgit\b[^\n]*\b(push[^\n]*(-f\b|--force)|reset\s+--hard|clean\s+-[a-z]*[fdx]|branch\s+-D|checkout\s+--\s)", re.I), "rewrites or discards git history")
+DESTRUCTIVE_PATTERNS = (TREE_DELETE, FILE_DELETE, GIT_FORCE)
+NET_SEND = (re.compile(r"\bsmtplib\b|\bsendmail\b|\bftplib\b|\b(twilio|telethon|discord|slack_sdk|stripe|paypal)\b|\bwebhook\b", re.I), "sends messages or money")
+NET_READ = (re.compile(r"\brequests\.|\b(?:import|from)\s+(?:requests|httpx|aiohttp|urllib\.request|websockets?)\b|\bhttpx\b|\burllib\.request\b|\baiohttp\b|\bsocket\.(socket|create_connection)\b|\bwebsockets?\b", re.I), "contacts the network")
+SHELL = (re.compile(r"\bsubprocess\.|\bos\.(system|popen|spawn\w*|exec\w*)\b|\bpexpect\b", re.I), "runs shell commands")
+FILE_WRITE = re.compile(r"open\([^)]*['\"][wax+]|\.write(?:_text|_bytes)?\(|\.save\(|os\.(?:remove|unlink|rename|replace|makedirs|mkdir)|shutil\.|\.unlink\(|\.mkdir\(")
+
 
 def host_harm(text: str) -> list:
     return [why for rx, why in HOST_HARM if rx.search(text or "")]

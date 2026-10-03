@@ -55,6 +55,8 @@ def _journal_type(event: dict) -> Optional[str]:
         return "tool.completed" if event.get("ok") else "tool.failed"
     if t == "brain" and event.get("event") in ("failover", "answered"):
         return f"brain.{event['event']}"
+    if t == "permission" and event.get("event") in ("authorized", "refused"):
+        return f"permission.{event['event']}"
     if t in ("think", "ask", "final"):
         return t
     return None
@@ -265,6 +267,9 @@ class Core:
             task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)
             await self._route(said or goal, task_id)
             self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind)
+            if self.agent is not None:  # permissions: the kind and the human's own words (not the brief)
+                self.agent.task_kind = kind
+                self.agent.task_goal = said or goal
             if kind in ("eval", "autonomous") and self.agent is not None:
                 # Self-contained work: earlier tasks' messages only cost tokens and
                 # confuse the model (a quality case once answered "clarify the task"
@@ -430,10 +435,14 @@ class Core:
         )
         await self.journal.mark_resumed(task_id, session_id)
         await asyncio.to_thread(self.devloop.begin_task)
+        kind = task.get("kind") or "conversation"
+        agent.task_kind = kind
+        agent.task_goal = task["goal"]
         self.current = Running(
             task_id=task_id,
             goal=task["goal"],
             session_id=session_id,
+            kind=kind,
             steps=list((cp or {}).get("completed_steps") or []),
         )
         request = f"Continue the interrupted task: {task['goal']}"

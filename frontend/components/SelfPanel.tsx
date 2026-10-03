@@ -86,6 +86,7 @@ export default function SelfPanel({ model, onRefresh, onClose }: Props) {
                     <tr key={c.capability} className={`cap-${c.status.toLowerCase()}`}>
                       <td>{c.capability}</td>
                       <td>{c.status}</td>
+                      <td className="self-kind">{c.level ?? "—"}</td>
                       <td>{c.uses} use{c.uses === 1 ? "" : "s"}</td>
                       <td>{c.confidence == null ? "—" : `${Math.round(c.confidence * 100)}%`}</td>
                     </tr>

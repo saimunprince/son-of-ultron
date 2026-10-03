@@ -38,6 +38,8 @@ durably, then fanned out) iff replay or recovery needs it:
 | client `answer` accepted | `answer` (wired back as `user`) |
 | `final` | `final` |
 | `brain` failover / answered | `brain.failover` / `brain.answered` |
+| `permission` authorized (agent, through `emit`) | `permission.authorized` — payload `tool`, `level`, `task_kind`, `reason`, `targets`, `authorized_by` (`goal` or `human`), `answer?`, `harm?` |
+| `permission` refused (agent, through `emit`) | `permission.refused` — same payload, `authorized_by` null |
 | written by the core / journal | `task.started`, `task.queued`, `task.completed`, `task.failed`, `task.cancelled`, `task.blocked`, `task.interrupted`, `task.unknown`, `checkpoint.created`, `recovery.started`, `recovery.verified`, `recovery.resumed`, `recovery.completed`, `verification.completed`, `stage.started` |
 
 Direct (never stored): `state`, `hello`, `brains`, `brain_models`, `brain_test`,
@@ -85,6 +87,56 @@ Transition table (anything else raises `JournalError` and rolls back —
 a non-empty `final` event exists for the task
 (`test_success_requires_final_event_and_rolls_back`). `PARTIAL` is used when the
 agent hit its step limit.
+
+## 4a. Tool permissions
+
+Every tool call passes `SyraxAgent._permit` (`backend/syrax/permissions.py`)
+before it runs; the persona no longer carries this rule, code does. Levels,
+lowest first:
+
+- `READ_ONLY` — observes (`self_inspect`, `recall`, `journal_query`, a file view, `ask_human`).
+- `WRITE` — changes files or SYRAX's own state (editor edits, `remember`, `skill_create`, `release`).
+- `EXTERNAL_READ` — reads from the network or a web page (`research`, `browser_*`).
+- `SYSTEM` — acts on the host beyond files (desktop actions, shell commands from `python_execute`, an unknown or MCP tool).
+- `EXTERNAL_WRITE` — sends, posts, pays (smtplib, webhooks, stripe, ...).
+- `DESTRUCTIVE` — deletes or discards history (`shutil.rmtree`, `os.remove`, `git reset --hard`, ...).
+- `harm` flag — the code kills processes, powers the machine off or changes
+  system configuration; refused in every task kind, whatever the level.
+
+Levels are static per tool; the polymorphic tools (`str_replace_editor`,
+`python_execute`, `skill_create`, `desktop`) are refined per call from the
+command, the source or the action. Policy by task kind (the table in the
+module docstring):
+
+| level | conversation | eval | autonomous |
+|---|---|---|---|
+| READ_ONLY | allow | allow | allow |
+| WRITE | allow | allow | allow |
+| EXTERNAL_READ | allow | allow | allow |
+| SYSTEM | allow | allow | refuse |
+| EXTERNAL_WRITE | authorize | by words | refuse |
+| DESTRUCTIVE | authorize | by words | refuse |
+| harm | refuse | refuse | refuse |
+
+- **The human's words are the confirmation** (`named_in`): the request, or an
+  earlier `ask_human` answer that was a yes, must contain the action verb
+  (delete/remove/wipe/... for `DESTRUCTIVE`, send/post/pay/... for
+  `EXTERNAL_WRITE`) *and* every extracted target (full path, wildcard pattern,
+  or a basename of at least 3 characters). A call with zero extracted targets
+  never counts as named.
+- **Ask once per call signature** (`tool|level|sorted targets`): a
+  `conversation` task asks through `ask_human` exactly for that call; the
+  yes/no is kept in `grants` for the rest of the task, so the same call is not
+  asked twice and a refused one stays refused.
+- **Eval never asks**: a quality run is unattended; by words, or refused.
+- **Silence is not consent**: only an affirmative answer allows. The
+  `WebAskHuman` fallback strings ("No operator connected...", "The human did
+  not answer in time...", "(no answer)") are refusals.
+- **Refused calls are final**: the model gets `Error: refused...` instead of a
+  result, the `tool_result` event carries `refused: true`, and the text tells
+  the model not to retry but to do the rest or report.
+- **Dynamic skills** may declare `risk` on their Skill class; the declared
+  level can only raise the level their source shows (floor `WRITE`).
 
 ## 5. Semantic checkpoints
 
@@ -179,3 +231,13 @@ evidence (`test_verify.py`).
   SUCCESS/PARTIAL); `history.jsonl` is no longer written and is read only as a
   fallback when the journal has no conversations yet.
 - The frontend only shows recovered/running notices; no LIVE/HISTORY/WHY view yet.
+- Permissions: the write scope of `python_execute` cannot be checked (the
+  paths live inside the code), so writes outside the repository are allowed.
+- Permissions: targets are extracted from string literals only; a computed
+  path (`os.path.join`, an f-string, a variable) yields no target, so a human
+  gets asked once and autonomous work gets refused.
+- Permissions: a crash while a permission question is pending is classified
+  `UNCERTAIN` by recovery (the safe side), like any `python_execute` call.
+- Permissions: in-process code shares the process with `permissions.py`;
+  `devloop.JUDGES` prevents a *released* weakening of the policy, not a
+  runtime monkeypatch from `python_execute` or a skill.

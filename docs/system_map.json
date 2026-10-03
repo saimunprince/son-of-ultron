@@ -346,7 +346,8 @@
         "re-create replaces code and bumps version",
         "remove unregisters",
         "boot re-registers VERIFIED skills, demotes ones that no longer import",
-        "self-model lists skills under structure.skills"
+        "self-model lists skills under structure.skills",
+        "skills carry a permission level: declared risk, never below what their source shows (evidence.risk in skill.json)"
       ],
       "limitations": [
         "skill code runs in-process (no sandbox), like every tool",
@@ -661,6 +662,49 @@
       "failure_modes": [
         "timeouts → error result",
         "missing binaries → error result"
+      ]
+    },
+    {
+      "component": "Permissions",
+      "purpose": "Tool permission levels enforced at the agent's tool choke point: static level per tool, per-call refinement, the human's words as confirmation, autonomous work refused destructive/host/external-write calls",
+      "dependencies": [
+        "syrax.guard (shared regexes)",
+        "syrax.editor (path resolution)"
+      ],
+      "inputs": [
+        "SyraxAgent._permit: tool call name + args, task kind, the human's words, consents, grants"
+      ],
+      "outputs": [
+        "permission.authorized / permission.refused events",
+        "levels in selfmodel.capabilities() and hello.tool_levels"
+      ],
+      "state": "per task: consents (ask_human Q/A) and grants (signature -> yes/no)",
+      "persistence": "journal events only",
+      "capabilities": [
+        "six levels READ_ONLY < WRITE < EXTERNAL_READ < SYSTEM < EXTERNAL_WRITE < DESTRUCTIVE plus a harm flag (kill, power, system config) refused in every task kind",
+        "static level per tool (unknown/MCP tools default to SYSTEM); per-call refinement for str_replace_editor, python_execute, skill_create and desktop from the command, source or action",
+        "conversation: destructive/external-write calls run when the human's words name the verb and every target, otherwise asked once per call signature (ask_human, yes/no remembered for the task); eval never asks; autonomous refuses SYSTEM, EXTERNAL_WRITE, DESTRUCTIVE",
+        "every decision is a journaled event with tool, level, reason, targets and who authorized it; refusals are final (Error: refused, refused: true on tool_result)"
+      ],
+      "limitations": [
+        "python_execute write scope cannot be checked (paths live inside the code); writes outside the repository are allowed",
+        "targets are extracted from string literals only: a computed path makes a human get asked once and autonomous work get refused",
+        "a crash while a permission question is pending is classified UNCERTAIN by recovery (safe side)",
+        "in-process code shares the process with permissions.py: devloop.JUDGES prevents a released weakening, not a runtime monkeypatch"
+      ],
+      "code": [
+        "backend/syrax/permissions.py",
+        "backend/syrax/agent.py (_permit)",
+        "backend/syrax/guard.py (patterns)"
+      ],
+      "tests": [
+        "backend/syrax/test_permissions.py (unit)",
+        "backend/syrax/test_permissions_agent.py (agent, eval, autonomous)",
+        "backend/syrax/test_permissions_skills.py"
+      ],
+      "failure_modes": [
+        "a refused call is a tool failure for the model (Error: refused, final)",
+        "ask timeout = refusal"
       ]
     },
     {

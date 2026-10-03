@@ -165,6 +165,11 @@ speaker. Then just talk:
 | `B` | brain panel |
 | `R`, `+`, `−` | reset / zoom orb |
 
+The operations log also shows permission decisions: a refused tool call
+appears as a `PERMISSION REFUSED · tool · level · reason` notice, an
+authorized destructive or external call as `AUTHORIZED · ...` with what
+allowed it (your words or your answer).
+
 ## Looks
 
 Two themes, switched with the ULTRON / CLASSIC button (remembered per browser):
@@ -255,6 +260,23 @@ A running human task always wins, and the cycle skips under CPU, RAM, disk or
 battery pressure and during `SYRAX_QUIET_HOURS`. Idle cycles do real housekeeping:
 once a day the journal prunes chatty events of tasks older than 30 days and
 truncates its WAL. Details: `docs/AUTONOMY.md`, `docs/OPERATIONS.md`.
+
+## Permissions
+
+Every tool call passes a permission check before it runs
+(`backend/syrax/permissions.py`, enforced in the agent, not by a line in the
+persona). Reading, writing files and reading the web just run. Deleting,
+discarding git history, sending or paying needs your authorization, and your
+own words are the confirmation: if your request named the action and every
+target ("delete backend/workspace/tmp.txt"), it runs; if not, SYRAX asks once,
+exactly for that call, and anything but a yes (silence included) refuses it.
+Killing processes, powering the machine off or changing system configuration
+is refused in every task. Quality runs never ask; autonomous work is refused
+anything destructive, external-write or host-level and reports what it would
+have run instead. A refused call is final for that task. Every decision is
+journaled as a `permission.authorized` / `permission.refused` event (tool,
+level, reason, targets, who authorized it); `hello` carries `tool_levels` and
+the SELF panel shows each tool's level.
 
 ## Research and knowledge
 

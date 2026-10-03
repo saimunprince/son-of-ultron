@@ -59,6 +59,7 @@ TOOLS_GUIDE = (
     "and it must contain the answer itself (the number, name, year or result), never just 'Done.'; "
     "a fact taken from `know` or `research` comes with its source URL. "
 )
+from syrax import guard, permissions
 from syrax.prompt import SYRAX_PERSONA
 from syrax.presentation import PresentTool
 from syrax.research import KnowTool, LearnTool, ResearchTool
@@ -117,7 +118,7 @@ CLAIM = re.compile(
     re.I,
 )
 EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
-WRITES = re.compile(r"open\([^)]*['\"][wax+]|\.write(?:_text|_bytes)?\(|\.save\(|os\.(?:remove|unlink|rename|replace|makedirs|mkdir)|shutil\.|\.unlink\(|\.mkdir\(")
+WRITES = guard.FILE_WRITE  # one regex, shared with permissions.py
 CLAIM_ASK = (
     "Your answer says something was fixed or changed, but this task changed nothing: no file was edited, "
     "nothing was created, written or released. Rewrite the final answer honestly: what you found, and what "
@@ -161,6 +162,13 @@ class SyraxAgent(Manus):
     last_reply: str = ""
     seen_calls: dict = Field(default_factory=dict)  # tool+args already run this turn
     changed: bool = False  # a tool that changes the world succeeded this turn
+    # Permissions (permissions.py): the task's kind and the human's own words
+    # decide what a destructive or external call needs; consents are the
+    # ask_human answers of this task, grants the yes/no already given per call.
+    task_kind: str = "conversation"
+    task_goal: str = ""
+    consents: list = Field(default_factory=list)
+    grants: dict = Field(default_factory=dict)
     step_limit_hit: bool = False
 
     available_tools: ToolCollection = Field(
@@ -196,6 +204,10 @@ class SyraxAgent(Manus):
         self.last_reply = ""
         self.seen_calls = {}
         self.changed = False
+        self.consents = []
+        self.grants = {}
+        if not self.task_goal:
+            self.task_goal = request or ""  # a bare agent.run() is a human conversation
         self.step_limit_hit = False
         # Fresh persona + long-term memory for every task.
         base = SYRAX_PERSONA.format(directory=config.workspace_root)
@@ -222,6 +234,7 @@ class SyraxAgent(Manus):
             await self._final_answer()
         if self.last_reply and not self.changed and CLAIM.search(self.last_reply):
             await self._final_answer(CLAIM_ASK)
+        self.task_goal, self.task_kind = "", "conversation"  # the core sets them again for the next task
         return self.last_reply or "Done."
 
     async def _final_answer(self, ask: str = FINAL_ASK) -> None:
@@ -294,12 +307,19 @@ class SyraxAgent(Manus):
         elif problem:
             result = f"Error: {problem}"
         else:
-            result = await ToolCallAgent.execute_tool(self, command)
-            if name not in READ_ONLY_TOOLS:
-                seen.clear()  # the world may have changed: re-reading it is legitimate again
-            seen[key] = self.current_step
-            if _succeeded(result) and changes_something(name, _args_of(command)):
-                self.changed = True
+            refused = await self._permit(command)
+            if refused is not None:
+                result = refused
+                seen[key] = self.current_step  # the same call again is a loop, not a second chance
+            else:
+                result = await ToolCallAgent.execute_tool(self, command)
+                if name not in READ_ONLY_TOOLS:
+                    seen.clear()  # the world may have changed: re-reading it is legitimate again
+                seen[key] = self.current_step
+                if _succeeded(result) and changes_something(name, _args_of(command)):
+                    self.changed = True
+                if name == "ask_human":  # a yes to a question that names a target authorizes it (permissions.named_in)
+                    self.consents.append((str(_args_of(command).get("inquire", "")), _OBSERVED.sub("", result, count=1).strip()))
         event = {
             "type": "tool_result",
             "id": command.id,
@@ -309,10 +329,44 @@ class SyraxAgent(Manus):
             "truncated": len(result) > RESULT_PREVIEW_CHARS,
             "step": self.current_step,
         }
+        if result.startswith("Error: refused"):
+            event["refused"] = True
         if self._current_base64_image:
             event["image"] = self._current_base64_image
         await self._send(event)
         return result
+
+    async def _permit(self, command: ToolCall) -> Optional[str]:
+        """Permission levels (permissions.py). None = run it; otherwise the
+        refusal text the model gets instead of a result. A destructive or
+        external call the human did not name is asked for once, here."""
+        name = command.function.name
+        decision = permissions.classify(name, _args_of(command))
+        verdict = permissions.decide(decision, self.task_kind, self.task_goal, self.consents, self.grants)
+
+        async def tell(event: str, authorized_by: Optional[str], answer: Optional[str] = None) -> None:
+            payload = {"type": "permission", "event": event, "tool": name, "level": decision.level, "task_kind": self.task_kind,
+                       "reason": verdict.reason, "targets": decision.targets[:6], "authorized_by": authorized_by, "step": self.current_step}
+            if decision.harm:
+                payload["harm"] = decision.harm
+            if answer is not None:
+                payload["answer"] = answer[:120]
+            await self._send(payload)
+
+        if verdict.action == "allow":
+            if verdict.authorized_by in ("goal", "human"):
+                await tell("authorized", verdict.authorized_by)
+            return None
+        if verdict.action == "refuse":
+            await tell("refused", None)
+            return f"Error: refused: {verdict.reason}. This is final: do not retry it; do the rest or report."
+        answer = await self.ask_tool.execute(permissions.question(decision))
+        ok = permissions.affirmative(answer)
+        self.grants[permissions.signature(decision)] = ok
+        await tell("authorized" if ok else "refused", "human" if ok else None, answer)
+        if ok:
+            return None
+        return f"Error: refused by the human ({answer[:80]!r}). This is final: do not retry it; do the rest or report."
 
     async def act(self) -> str:
         """One tool step, then a semantic checkpoint: the tool results are in
