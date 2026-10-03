@@ -1,9 +1,8 @@
-# SYRAX — Status and Handover (2026-09-26; Windows 2026-09-30; autonomy and integrity 2026-10-01)
+# SYRAX — Handover and setup
 
-Read this first on a fresh machine. It says what exists, what is verified, what
-is left, how to set the machine up again, and what to back up before wiping an
-OS. Everything here is backed by commits on `main` and by tests; nothing is
-planned-only unless it sits under "Remaining".
+Read this on a fresh machine: how to set SYRAX up again, what to back up before
+wiping an OS, and the operating rules that proved necessary. What exists and
+how well it is verified lives in the documents linked below.
 
 **2026-09-30 — moved to Windows 11.** The OS was wiped; the repo now runs
 natively on Windows (no WSL). What changed: `syrax/sysinfo.py` answers RAM,
@@ -20,106 +19,10 @@ on each OS (systemd / launchd / Task Scheduler). macOS backends exist in
 Linux paths are untouched. The journal, brain keys and skills from the old laptop
 were **not** carried over (see §5): SYRAX starts here with an empty history.
 
-## 0. Where things stand (2026-10-01 evening)
 
-SYRAX runs natively on Windows in the background (`python syrax.py --restart`;
-login start through a hidden `SYRAX.vbs` in the Startup folder; logs in
-`syrax.log`). It restarts itself into new commits when idle. Brains, in
-order: Gemini (`gemini-3.5-flash-lite`), Upstage (`solar-pro3`), OpenRouter
-(`nemotron-3-ultra-550b:free`), Groq. Real quality runs: 90 %.
-
-What the autonomy does now, in one cycle (`autonomy.py`):
-restart into new code if pending → derive objectives from failures →
-re-judge BLOCKED objectives against newer evidence → pick an objective, or
-rank its own limitations (`limits.py`, value = score × confidence ÷ cost) →
-brief with the objective's evidence, earlier attempts and similar past
-objectives → run → judge from evidence, fingerprint the strategy (a failed
-strategy is never repeated) → proposals for the human from research; when
-idle once a day, the technology radar (`radar.py`) and the brain scorecard
-(`scorecard.py`).
-
-Integrity, learned the hard way on 2026-10-01 (SYRAX weakened a quality
-check, then manufactured a passing run in a second core it built):
-autonomous `release` refuses the judge and guard files and edits to existing
-tests; a different brain must clear every autonomous change (`review.py`,
-four yes/no answers, verdict computed in code); only the journal's owner
-process writes it; python_execute and its child Pythons cannot write the
-journal or the keys (`guard.py`); a human can reopen an objective closed on
-bad evidence (`objective_update`).
-
-SYRAX built four skills itself (Word, Excel, PowerPoint, PDF), each verified
-by its own tests and by hand. Skills live in `backend/skills/`, outside git.
-
-Day-to-day for a human: the UI's daily briefing card; `proposals` over the
-WebSocket (or ask SYRAX "what do you propose?"); `objective_add` with an
-optional check to ask for a capability. Phase-by-phase progress and what is
-left: [ROADMAP.md](ROADMAP.md).
-
-## 1. What SYRAX is now
-
-SYRAX is an OpenManus-based personal AI that keeps a durable record of
-everything it does, understands itself from that record, pursues its own
-objectives when idle, researches, builds tools, changes its own code through a
-release gate, measures itself, and decides what to show on screen. The UI is an
-observer; the core is the brain and keeps running when the browser is closed.
-
-Architecture, one line each (details in the linked docs):
-
-| Piece | File | Doc |
-|---|---|---|
-| Durable journal (tasks, events, checkpoints, objectives, knowledge, skills, benchmarks, experiments, quality runs) — SQLite WAL, transactional, crash-recovering | `backend/syrax/journal.py` | [EXECUTION_MODEL.md](EXECUTION_MODEL.md) |
-| Core: one agent, one running task, sessions are observers; resume; post-task cleanup | `backend/syrax/core.py` | [EXECUTION_MODEL.md](EXECUTION_MODEL.md) |
-| Release gate: pytest, tsc, eslint, node tests, isolated next build, diff scan, benchmark | `backend/syrax/verify.py` | [DEVLOOP.md](DEVLOOP.md) |
-| Self-model: identity, structure, behavior, capabilities (evidence), performance, weaknesses | `backend/syrax/selfmodel.py` | [SELF_MODEL.md](SELF_MODEL.md) |
-| Autonomy: objectives judged from evidence, bounded cycles, resource gate | `backend/syrax/autonomy.py`, `resources.py` | [AUTONOMY.md](AUTONOMY.md), [OPERATIONS.md](OPERATIONS.md) |
-| Research + knowledge with provenance and confidence policy | `backend/syrax/research.py` | [RESEARCH.md](RESEARCH.md) |
-| Skill factory: tools whose tests decide registration | `backend/syrax/skills.py`, `backend/skills/` | [SKILLS.md](SKILLS.md) |
-| Dev loop: `release` = gate → commit or rollback; task-scoped changes | `backend/syrax/devloop.py` | [DEVLOOP.md](DEVLOOP.md) |
-| Presentation engine + stage, human-feedback learning | `backend/syrax/presentation.py`, `frontend/components/Stage.tsx` | [PRESENTATION.md](PRESENTATION.md) |
-| Benchmarks, experiments, task-quality suite, version and brain comparison | `bench.py`, `experiments.py`, `quality.py`, `versions.py` | [EXPERIMENTS.md](EXPERIMENTS.md) |
-| Observer views LIVE / HISTORY / WHY / TODAY, SELF panel | `frontend/components/HistoryView.tsx`, `SelfPanel.tsx` | — |
-| Component map | `docs/system_map.json` | [SYSTEM_MAP.md](SYSTEM_MAP.md) |
-
-## 2. What was done today (33 commits on `main`, in order)
-
-All twelve phases of the master plan received a first real implementation,
-each behind a GREEN gate:
-
-1. `5b25c07` journal, task lifecycle, checkpoints, crash recovery, resume; core decoupled from the UI
-2. `cae9cf0` release gate · `bc5070e` system map, gap analysis, execution model
-3. `ef927d2` self-model + `self_inspect` + SELF panel
-4. `32a0844` objectives + autonomous cycle · `6f3df74` LIVE/HISTORY/WHY/TODAY
-5. `eab9791` research + knowledge store · `7656716` skill factory · `f682958` dev loop
-6. `958574f` 24/7 operations (resource gate, maintenance) · `fb1da93` self-hosted fonts
-7. `2de8f49` presentation engine · `f41a92f` benchmarks, experiments, self-improvement objectives
-8. `9a5ad60` `e261b12` `f152fd4` fixes from the first supervised live runs
-9. `d352023` task-quality benchmark · `92fadae` `compare_versions` · `1050611` journal-backed history, presentation feedback, brain comparison
-10. `024ae7a` facts memory in the journal, chart kind · `a847858` Groq default model
-11. `c33b6cd` task-scoped release/rollback, post-task cleanup (learned from SYRAX's first self-modification attempt)
-12. `b69a0ae` **SYRAX's own commit**: it edited its prompt and released it through the gate (author `SYRAX <syrax@localhost>`)
-13. `85e5299` SYRAX derives code-fix objectives itself; narration measured · `1c69423` truthful brain column
-
-Measured state at the end of the day:
-
-| Measure | Value |
-|---|---|
-| Backend tests | 270 passing (was 43 in the morning); `cd backend && .venv/bin/python -m pytest syrax -q` ≈ 100 s |
-| Gate | `cd backend && .venv/bin/python -m syrax.verify` ≈ 2 min, GREEN at every push |
-| Task quality (10 fixed cases) | Gemini 100 % · Groq 90 % · Pollinations 80 % — see caveats in §5 |
-| Live autonomous runs | 14+ autonomous tasks; 12 tools VERIFIED from evidence; 12 objectives DONE, 9 DROPPED |
-
-## 3. Remaining work (honest, in priority order)
-
-The phase plan in [ROADMAP.md](ROADMAP.md) is the order of work. Beyond it:
-
-1. **Quality is 90 %, not 100 %.** The remaining misses are brain quirks (Upstage reaching for tools on a trivial ask; flash-lite ending silently, now wrapped up) rather than missing capability. The scorecard will show whether routing by task kind helps once there is variety.
-2. **Free quotas.** Gemini free keys allow ~20 requests per model per day; Groq's 8k tokens per request leaves little room after the ~6k fixed prompt; OpenRouter free models have daily caps. The radar finds new models; a paid key would remove most of the friction.
-3. **Prompt size.** ~6k tokens before any conversation (persona, tool guide, 25+ tool schemas, the Browser Use MCP manual). Clipping makes small brains fit; shorter tool descriptions would help every brain.
-4. **Recovery of non-file operations.** After a crash only editor edits are verified against reality; python/browser/desktop side effects stay UNCERTAIN (a human dismisses or resumes them).
-5. **Voice.** Local Whisper + edge-tts works but is slow; real-time native audio is possible but the free quota is tiny.
-6. **The Upstage key was pasted in chat on 2026-10-01** — rotate it.
-
-Full gap table: [GAP_ANALYSIS.md](GAP_ANALYSIS.md). The owner's phase plan and its order: [ROADMAP.md](ROADMAP.md).
+> Status moved on 2026-10-03: the measured snapshot is [`SYRAX_STATUS.md`](../SYRAX_STATUS.md), the per-capability evidence is
+> [`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md) (generated), the phase plan is [`ROADMAP.md`](ROADMAP.md), the architecture is
+> [`ARCHITECTURE.md`](ARCHITECTURE.md). What remains here is how to set SYRAX up, back it up and operate it.
 
 ## 4. Setting up on a new machine
 

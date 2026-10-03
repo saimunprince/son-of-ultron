@@ -201,7 +201,7 @@ Without WebGL the UI falls back to a CSS orb and keeps working.
 
 ## Status, handover and setup on a new machine
 
-`docs/STATUS.md` is the entry point: what exists and is verified, what is
+`SYRAX_STATUS.md` (repo root) is the measured snapshot: commit, test counts, the capability matrix totals and the next task; `docs/CAPABILITY_MATRIX.md` is generated from evidence by `python -m syrax.capmatrix`. `docs/STATUS.md` is the handover: what exists and is verified, what is
 left, how to set up a fresh machine, and what to back up before wiping an OS.
 
 ## Durable execution (journal, recovery, resume)

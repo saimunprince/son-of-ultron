@@ -1,5 +1,7 @@
 # SYRAX Gap Analysis
 
+> Superseded on 2026-10-03 by the generated [`CAPABILITY_MATRIX.md`](CAPABILITY_MATRIX.md); kept for history.
+
 See `docs/STATUS.md` for the handover summary and the prioritised remaining work. (audit of 2026-09-26, updated after the foundation commit)
 
 Legend: EXISTS · PARTIAL · MISSING · NEEDS REFACTOR · NEEDS REPLACEMENT.
