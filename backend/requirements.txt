@@ -38,7 +38,8 @@ boto3~=1.37.18
 
 requests>=2.33,<3
 beautifulsoup4~=4.13.3
-crawl4ai~=0.6.3
+# crawl4ai removed 2026-10-03: SYRAX never uses OpenManus' Crawl4aiTool (it imports crawl4ai only when run), 0.6.3 has
+# critical advisories and pins pillow < 11 / lxml 5; 0.9 would move openai 1.x -> 3.x under every brain. Install it by hand to use that tool.
 
 huggingface-hub~=0.29.2
 setuptools>=78.1.1,<82  # path traversal fixed in 78.1.1; torch needs < 82
