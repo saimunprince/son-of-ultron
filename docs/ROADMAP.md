@@ -143,6 +143,8 @@ synthesizer merges results. Later: learn → experiment → fine-tune / distill 
 specialised models.
 
 - PARTIAL: ten providers with failover, `compare_brains` (`brains.py`).
+- DONE (2026-10-03): routing by kind of work (`syrax/routing.py`). Each task is classified (chat, code, research, desktop, other); graded quality runs give each brain's quality per kind. A brain is tried first for a kind only when it and the human's first brain both have 5+ graded tasks of that kind and it is 15+ points better; otherwise the human's order stands. Journaled as `brain.routed`; the MIND panel shows the per-kind evidence.
+- TODO: a synthesizer that merges several brains' answers.
 
 ## Phase 8 — Dynamic presentation 2.0
 

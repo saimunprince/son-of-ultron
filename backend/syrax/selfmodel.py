@@ -378,8 +378,10 @@ class SelfModel:
         if section == "brains":
             from syrax import scorecard
 
+            from syrax import routing
+
             card = scorecard.compute(self.journal)
-            return {"brains": {"scorecard": card, "summary": scorecard.render(card)}}
+            return {"brains": {"scorecard": card, "summary": scorecard.render(card), "by_kind": routing.table(self.journal)}}
         identity = self.identity()
         behavior = self.behavior()
         caps = self.capabilities()

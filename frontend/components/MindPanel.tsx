@@ -11,6 +11,8 @@ export interface MindData {
   proposals: Proposal[] | null;
   skills: SkillRow[] | null;
   scorecard: Record<string, BrainScore> | null;
+  /** per kind of work: {kind: {brain: {graded, ok, quality}}} (Phase 7 routing evidence) */
+  byKind?: Record<string, Record<string, { graded: number; ok: number; quality: number }>> | null;
 }
 
 interface Props {
@@ -274,6 +276,27 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
               </span>
             </div>
           ))}
+          {data.byKind && Object.keys(data.byKind).length > 0 && (
+            <>
+              <h4>BY KIND OF WORK (routing evidence)</h4>
+              <p className="self-dim">A brain is tried first for a kind only when both it and the first brain have 5+ graded tasks of that kind and it is 15+ points better.</p>
+              <table className="self-table">
+                <tbody>
+                  {Object.entries(data.byKind).map(([kind, brains]) => (
+                    <tr key={kind}>
+                      <td>{kind}</td>
+                      <td>
+                        {Object.entries(brains)
+                          .sort((a, b) => b[1].quality - a[1].quality)
+                          .map(([id, s]) => `${id} ${pct(s.quality)} (${s.graded})`)
+                          .join(" · ")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
       );
   }

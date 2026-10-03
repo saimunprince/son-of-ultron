@@ -263,6 +263,7 @@ class Core:
             await self.ensure_agent()
             await asyncio.to_thread(self.devloop.begin_task)  # a task owns only the changes it makes
             task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)
+            await self._route(said or goal, task_id)
             self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind)
             if kind in ("eval", "autonomous") and self.agent is not None:
                 # Self-contained work: earlier tasks' messages only cost tokens and
@@ -271,6 +272,22 @@ class Core:
                 self.agent.reset_conversation()
             self.current.task = asyncio.create_task(self._run(goal, said))
             return task_id
+
+    async def _route(self, text: str, task_id: str) -> None:
+        """Phase 7: try first the brain measured best at this kind of work."""
+        from syrax import routing
+
+        router = get_router()
+        try:
+            order = [p for p in router.store.order if router.store.enabled(p)]
+            kind = routing.kind_of(text)
+            router.routed = await asyncio.to_thread(routing.preferred, self.journal, kind, order)
+        except Exception as e:  # routing is an optimisation; the human's order always works
+            logger.warning(f"routing failed: {e}")
+            router.routed = None
+            return
+        if router.routed:
+            await self.journal.record("brain.routed", {"kind": kind, "brain": router.routed, "instead_of": order[0]}, task_id=task_id)
 
     async def wait(self) -> None:
         """Wait for the running task (if any) to finish. Never raises."""

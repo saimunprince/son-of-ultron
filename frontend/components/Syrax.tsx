@@ -419,8 +419,8 @@ export default function Syrax() {
           break;
         case "self_model":
           if (e.section === "brains") {
-            const card = (e as { brains?: { scorecard?: MindData["scorecard"] } }).brains?.scorecard ?? {};
-            setMind((m) => ({ ...m, scorecard: card }));
+            const brains = (e as { brains?: { scorecard?: MindData["scorecard"]; by_kind?: MindData["byKind"] } }).brains;
+            setMind((m) => ({ ...m, scorecard: brains?.scorecard ?? {}, byKind: brains?.by_kind ?? null }));
           } else if (e.section === "summary") {
             const { type: _t, section: _s, ...rest } = e;
             void _t;
