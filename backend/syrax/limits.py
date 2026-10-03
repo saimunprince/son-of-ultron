@@ -215,7 +215,15 @@ def judge_tool_reliability(journal: Journal, objective: dict) -> tuple:
     spec = objective.get("check_spec") or {}
     tool = spec.get("tool")
     ok = bad = 0
-    for e in journal.events_between(objective["created"], limit=10000):
+    # "New uses" are the events after the objective's own creation event, by
+    # id: on Windows time.time() ticks every ~15 ms, so uses recorded in the
+    # same tick as the objective passed a ts >= created filter (gate run,
+    # 2026-10-03) and counted old failures against the fix.
+    born = next((e["id"] for e in reversed(journal.recent_events(5000))
+                 if e["type"] == "objective.created" and e["payload"].get("objective_id") == objective.get("id")), None)
+    for e in journal.events_between(objective["created"] - 1, limit=10000):
+        if born is not None and e["id"] <= born:
+            continue
         if e["type"] in ("tool.completed", "tool.failed") and e["payload"].get("name") == tool:
             if e["type"] == "tool.completed":
                 ok += 1
