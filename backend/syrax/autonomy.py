@@ -221,6 +221,22 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
     """Turn evidence-based weaknesses into objectives. Idempotent via keys."""
     created = 0
     caps = selfmodel.capabilities()
+    # Phase 5: contradicting conclusions are settled by fresh research
+    for e in journal.recent_events(2000):
+        if e["type"] != "knowledge.contradiction":
+            continue
+        p = e["payload"]
+        ids = sorted({p.get("knowledge_id"), *(p.get("conflicts_with") or [])} - {None})
+        ok = journal.add_objective_sync(
+            goal=(f"My knowledge contradicts itself: id={p.get('knowledge_id')} says {str(p.get('claim'))[:160]!r} but "
+                  f"{'; '.join(repr(c[:120]) for c in p.get('their_claims') or [])} (ids {ids}). `research` it again from primary "
+                  "sources and `learn` the correct conclusion, citing them."),
+            reason="two stored conclusions about the same thing disagree",
+            priority=3, source="selfmodel", key=f"contradiction:{':'.join(map(str, ids))}",
+            check={"kind": "knowledge_stored", "topic": " ".join((p.get("tags") or [])[:6]) or str(p.get("claim"))[:80]},
+            evidence={"knowledge_ids": ids},
+        )
+        created += bool(ok)
     # a traceback inside SYRAX's own code is a bug SYRAX can fix
     for e in journal.recent_events(300):
         if e["type"] != "tool.failed":
@@ -435,6 +451,9 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
     if kind == "knowledge_stored":
         topic_words = set(auto_keywords(spec.get("topic") or ""))
         rows = journal.knowledge_recent(limit=50, since=objective["created"])
+        # a conclusion learned again is reinforced, not stored twice (consolidate.py): it still counts
+        rows += [{"id": e["payload"].get("knowledge_id"), "claim": e["payload"].get("claim") or "", "tags": e["payload"].get("tags") or []}
+                 for e in journal.events_between(objective["created"], limit=5000) if e["type"] == "knowledge.reinforced"]
         hits = [k for k in rows if topic_words & set(auto_keywords(" ".join([k["claim"], k.get("question") or "", " ".join(k["tags"])])))]
         return ("DONE" if hits else "RETRY"), {"topic": spec.get("topic"), "stored_after_objective": len(rows), "matching": [k["id"] for k in hits][:10]}
     if kind == "quality_case_passes":

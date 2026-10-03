@@ -286,10 +286,17 @@ class KnowTool(BaseTool):
         rows = await asyncio.to_thread(self.journal.knowledge_search, query)
         if not rows:
             return ToolResult(output="Nothing stored about that yet. Use `research` to find out.")
+        disputed: dict = {}
+        for e in await asyncio.to_thread(self.journal.recent_events, 3000):
+            if e["type"] == "knowledge.contradiction":
+                ids = [e["payload"].get("knowledge_id"), *(e["payload"].get("conflicts_with") or [])]
+                for x in ids:
+                    disputed.setdefault(x, set()).update(i for i in ids if i != x)
         lines = [f"KNOWN ({len(rows)} entries):"]
         for k in rows:
             src = k["source_url"] or (f"sources {k['sources']}" if k["sources"] else "no url")
-            lines.append(f"- id={k['id']} [{k['kind']} · confidence {k['confidence']:.2f}] {k['claim'][:300]}\n    source: {src}")
+            warn = f"\n    DISPUTED: contradicts id(s) {sorted(disputed[k['id']])}" if k["id"] in disputed else ""
+            lines.append(f"- id={k['id']} [{k['kind']} · confidence {k['confidence']:.2f}] {k['claim'][:300]}\n    source: {src}{warn}")
         return ToolResult(output="\n".join(lines))
 
 
@@ -326,6 +333,15 @@ class LearnTool(BaseTool):
             return ToolResult(error=f"learn refused: unknown knowledge_id(s) {missing}")
         cap = max([k["confidence"] for k in cited if k] + ([0.4] if urls else []))
         want = cap if confidence is None else min(float(confidence), cap)
+        from syrax import consolidate
+
+        tid = self.task_id_provider() if self.task_id_provider else None
+        duplicate, conflicts = await asyncio.to_thread(consolidate.compare, claim, self.journal)
+        if duplicate is not None:  # Phase 5: reinforce what is known instead of storing it again
+            await asyncio.to_thread(self.journal.record_sync, "knowledge.reinforced",
+                                    {"knowledge_id": duplicate["id"], "claim": claim[:300], "tags": duplicate.get("tags") or []}, task_id=tid)
+            return ToolResult(output=f"Already known as id={duplicate['id']} (confidence {duplicate['confidence']:.2f}): "
+                                     f"{duplicate['claim'][:200]} - reinforced, not stored again.")
         try:
             row = await asyncio.to_thread(
                 self.journal.add_knowledge_sync,
@@ -336,4 +352,11 @@ class LearnTool(BaseTool):
             )
         except JournalError as e:
             return ToolResult(error=f"learn refused: {e}")
-        return ToolResult(output=f"Learned id={row['id']} with confidence {row['confidence']:.2f} (cap {cap:.2f}).")
+        out = f"Learned id={row['id']} with confidence {row['confidence']:.2f} (cap {cap:.2f})."
+        if conflicts:
+            await asyncio.to_thread(self.journal.record_sync, "knowledge.contradiction", {
+                "knowledge_id": row["id"], "claim": claim[:300], "conflicts_with": [k["id"] for k in conflicts],
+                "their_claims": [k["claim"][:200] for k in conflicts[:3]], "tags": row.get("tags") or []}, task_id=tid)
+            out += (" It CONTRADICTS " + "; ".join(f"id={k['id']}: {k['claim'][:160]}" for k in conflicts[:3])
+                    + ". Do not rely on either until fresh research settles which is right.")
+        return ToolResult(output=out)

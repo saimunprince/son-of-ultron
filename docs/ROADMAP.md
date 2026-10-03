@@ -128,7 +128,9 @@ long-term experience. "Three weeks ago this approach performed badly because
 of X, so this time I use Y."
 
 - PARTIAL: journal (tasks, checkpoints, knowledge, lessons, facts).
-- TODO: experience retrieval before planning; embeddings; contradiction handling.
+- DONE (2026-10-01): experience retrieval before planning: every autonomous brief carries the closed objectives most like this one, with what worked or why they failed (`past_experience`).
+- DONE (2026-10-03): knowledge consolidates (`syrax/consolidate.py`). A conclusion that matches a stored one is reinforced, not stored again (SQLite's release year had been stored four times); one about the same subject with different figures is stored, flagged as `knowledge.contradiction`, shown as DISPUTED by `know`, and turned into an objective to settle it with fresh research.
+- TODO: embeddings, when a local embedding model is worth its dependency; keyword overlap decides "same subject" today.
 
 ## Phase 6 — Technology radar
 
