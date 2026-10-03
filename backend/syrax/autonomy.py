@@ -628,7 +628,12 @@ class Autonomy:
         brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-", hint=hint, repo_root=REPO_ROOT,
                                         evidence=plan.render(steps_before) + followup.learned_brief(self.journal, objective)
                                         + brief_evidence(objective) + past_experience(self.journal, objective))
-        task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous")
+        try:
+            task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous")
+        except RuntimeError as e:  # e.g. the agent could not be built: the objective must not stay ACTIVE
+            await self.journal.update_objective(objective["id"], status="OPEN", note=f"could not start: {e}")
+            rep.outcome, rep.reason = "SKIPPED", f"could not start the task: {e}"
+            return await self._finish(rep)
         if task_id is None:
             await self.journal.update_objective(objective["id"], status="OPEN", note="core busy")
             rep.outcome, rep.reason = "BUSY", "core refused the task"

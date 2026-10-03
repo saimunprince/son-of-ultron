@@ -256,7 +256,13 @@ class Session:
                 return
             await self.core.broadcast({"type": "user", "text": text, "voice": bool(msg.get("voice"))})
             request = text + VOICE_HINT if msg.get("voice") else text
-            await self.core.submit(request, said=text, session_id=self.id)
+            try:
+                started = await self.core.submit(request, said=text, session_id=self.id)
+            except RuntimeError as e:
+                await self.send({"type": "error", "message": str(e)})
+                return
+            if started is None:  # another task started while this one waited
+                await self.send({"type": "notice", "text": "Already executing. Stop it first."})
         elif kind == "answer":
             if not await self.core.answer(text, session_id=self.id):
                 await self.send({"type": "notice", "text": "No pending question."})

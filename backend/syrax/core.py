@@ -71,11 +71,21 @@ class Running:
     kind: str = "conversation"
 
 
+# Live 2026-10-03: right after boot the autonomy cycle and a human "hi" both
+# submitted while the agent was still being built (~1 min of MCP connect).
+# Both passed the busy check, the cycle never got its task, and its objective
+# sat ACTIVE with the cycle hanging. One submit at a time, one agent build at
+# a time, and a build that hangs fails instead of freezing SYRAX.
+AGENT_CREATE_TIMEOUT_S = float(os.getenv("SYRAX_AGENT_CREATE_TIMEOUT_S", "240"))
+
+
 class Core:
     def __init__(self, journal: Optional[Journal] = None):
         self.journal = journal or get_journal()
         self.agent: Optional[SyraxAgent] = None
         self.current: Optional[Running] = None
+        self._submit_lock = asyncio.Lock()
+        self._agent_lock = asyncio.Lock()
         self.observers: List[Observer] = []
         self.state: dict = {"state": "idle"}  # last direct state event
         self._last_tool_args: dict = {}
@@ -128,44 +138,53 @@ class Core:
     # ——— agent ———
 
     async def ensure_agent(self) -> SyraxAgent:
-        if self.agent is None:
-            self.agent = await SyraxAgent.create(emit=self.emit)
-            self.agent.checkpoint = self._checkpoint
-            tools = self.agent.available_tools
-            tool = tools.get_tool("self_inspect")
-            if isinstance(tool, SelfInspectTool):
-                tool.model = self.selfmodel
-            r = tools.get_tool("research")
-            if isinstance(r, ResearchTool):
-                r.researcher = self.researcher
-            k = tools.get_tool("know")
-            if isinstance(k, KnowTool):
-                k.journal = self.journal
-            le = tools.get_tool("learn")
-            if isinstance(le, LearnTool):
-                le.journal = self.journal
-                le.task_id_provider = self.current_task_id
-            for tname in ("skill_create", "skill_list", "skill_test"):
-                st = tools.get_tool(tname)
-                if isinstance(st, (SkillCreateTool, SkillListTool, SkillTestTool)):
-                    st.factory = self.skills
-            rt = tools.get_tool("release")
-            if isinstance(rt, ReleaseTool):
-                rt.loop = self.devloop
-            pt = tools.get_tool("present")
-            if isinstance(pt, PresentTool):
-                pt.engine = self.presentation
-                pt.task_id_provider = self.current_task_id
-            xt = tools.get_tool("experiment")
-            if isinstance(xt, ExperimentTool):
-                xt.engine = self.experiments
-            vt = tools.get_tool("compare_versions")
-            if isinstance(vt, CompareVersionsTool):
-                vt.comparer = self.versions
-            loaded = self.skills.attach(tools)  # VERIFIED skills from the registry become live tools
-            if loaded:
-                logger.info(f"registered {loaded} skill(s) from the registry")
+        async with self._agent_lock:
+            if self.agent is None:
+                self.agent = await self._build_agent()
         return self.agent
+
+    async def _build_agent(self) -> SyraxAgent:
+        try:
+            agent = await asyncio.wait_for(SyraxAgent.create(emit=self.emit), AGENT_CREATE_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"building the agent took over {AGENT_CREATE_TIMEOUT_S:.0f}s (MCP servers not answering)") from None
+        self.agent = agent
+        agent.checkpoint = self._checkpoint
+        tools = agent.available_tools
+        tool = tools.get_tool("self_inspect")
+        if isinstance(tool, SelfInspectTool):
+            tool.model = self.selfmodel
+        r = tools.get_tool("research")
+        if isinstance(r, ResearchTool):
+            r.researcher = self.researcher
+        k = tools.get_tool("know")
+        if isinstance(k, KnowTool):
+            k.journal = self.journal
+        le = tools.get_tool("learn")
+        if isinstance(le, LearnTool):
+            le.journal = self.journal
+            le.task_id_provider = self.current_task_id
+        for tname in ("skill_create", "skill_list", "skill_test"):
+            st = tools.get_tool(tname)
+            if isinstance(st, (SkillCreateTool, SkillListTool, SkillTestTool)):
+                st.factory = self.skills
+        rt = tools.get_tool("release")
+        if isinstance(rt, ReleaseTool):
+            rt.loop = self.devloop
+        pt = tools.get_tool("present")
+        if isinstance(pt, PresentTool):
+            pt.engine = self.presentation
+            pt.task_id_provider = self.current_task_id
+        xt = tools.get_tool("experiment")
+        if isinstance(xt, ExperimentTool):
+            xt.engine = self.experiments
+        vt = tools.get_tool("compare_versions")
+        if isinstance(vt, CompareVersionsTool):
+            vt.comparer = self.versions
+        loaded = self.skills.attach(tools)  # VERIFIED skills from the registry become live tools
+        if loaded:
+            logger.info(f"registered {loaded} skill(s) from the registry")
+        return agent
 
     def current_task_id(self) -> Optional[str]:
         return self.current.task_id if self.current is not None else None
@@ -236,20 +255,22 @@ class Core:
     async def submit(
         self, goal: str, said: Optional[str], session_id: Optional[str], kind: str = "conversation"
     ) -> Optional[str]:
-        """Start a task. Returns its id, or None when SYRAX is already busy."""
-        if self.busy:
-            return None
-        await self.ensure_agent()
-        await asyncio.to_thread(self.devloop.begin_task)  # a task owns only the changes it makes
-        task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)
-        self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind)
-        if kind in ("eval", "autonomous") and self.agent is not None:
-            # Self-contained work: earlier tasks' messages only cost tokens and
-            # confuse the model (a quality case once answered "clarify the task"
-            # after the previous run's history). System messages stay.
-            self.agent.reset_conversation()
-        self.current.task = asyncio.create_task(self._run(goal, said))
-        return task_id
+        """Start a task. Returns its id, or None when SYRAX is already busy
+        (also when another submit got there first while this one waited)."""
+        async with self._submit_lock:
+            if self.busy:
+                return None
+            await self.ensure_agent()
+            await asyncio.to_thread(self.devloop.begin_task)  # a task owns only the changes it makes
+            task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)
+            self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind)
+            if kind in ("eval", "autonomous") and self.agent is not None:
+                # Self-contained work: earlier tasks' messages only cost tokens and
+                # confuse the model (a quality case once answered "clarify the task"
+                # after the previous run's history). System messages stay.
+                self.agent.reset_conversation()
+            self.current.task = asyncio.create_task(self._run(goal, said))
+            return task_id
 
     async def wait(self) -> None:
         """Wait for the running task (if any) to finish. Never raises."""
