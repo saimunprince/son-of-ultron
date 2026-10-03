@@ -157,6 +157,17 @@ Intent + state + context + importance + user attention + history →
 show / hide / replace / expand / minimise / voice-only / full-screen.
 
 - PARTIAL: `presentation.py`, `Stage.tsx`, dismissal learning.
+- NEXT (specified 2026-10-03, "Visible Work Presence"): a truthful live view of what SYRAX is doing — current task, phase, action, target, application — with
+  visibility levels visible / minimal / hidden that never touch execution, "hide" / "show" by voice and text, a durable timeline, redaction of secrets. Needs a
+  task phase model first (the `stage.started` wire event exists and is never recorded: use it for understand / plan / act / observe / verify), a
+  `work_presence` state in `Core.snapshot()`, an active-window reader in `winctl.py` journaled only during desktop/browser calls, and `hello.tool_levels`
+  (permissions, 2026-10-03) for the tool view. Level 3 (live workspace) mechanism is still the owner's decision.
+- Reference studied 2026-10-03: jaredrhod's barehands / backtalk / ai-visualizer (all **AGPL-3.0**: ideas only, no code). Worth re-implementing: a
+  read-back of the stage for the agent ("eyes on the board": zone + state per card, so SYRAX describes only what is really shown); an allow-listed command
+  channel with clamped arguments for anything the model puts on stage; stale-state decay (every "thinking/working" indicator carries a timestamp and falls
+  back to "unknown" when the backend stops heartbeating — never a frozen ring); scale-invariant pinch/tap/clap thresholds for `handTracker.ts`; a
+  tracker/render role split (one page tracks, another renders from state), which maps onto visible / minimal / hidden. Not worth copying: free-running
+  "thinking" animations and demo modes that fabricate state.
 
 ## Phase 9 — Continuous life cycle
 
