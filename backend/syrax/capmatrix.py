@@ -144,9 +144,19 @@ def read_journal(path: Path, now: Optional[float] = None) -> Dict[str, Any]:
     c.row_factory = sqlite3.Row
     try:
         out: Dict[str, Any] = {"tool_stats": tool_stats(c, now)}
-        qr = c.execute("SELECT id, ts, pass_rate, status, results FROM quality_runs ORDER BY id DESC LIMIT 1").fetchone()
-        out["quality"] = {"id": qr["id"], "ts": qr["ts"], "pass_rate": qr["pass_rate"], "status": qr["status"],
-                          "cases": {r["id"]: bool(r.get("ok")) for r in json.loads(qr["results"] or "[]")}} if qr else None
+        # per case, the latest verdict within the window: a later subset run must
+        # not hide a case that failed in the last full run and was not re-run since
+        cases: Dict[str, bool] = {}
+        runs: Dict[str, int] = {}
+        latest = None
+        for qr in c.execute("SELECT id, ts, pass_rate, status, results FROM quality_runs WHERE ts>? ORDER BY id DESC", (now - WINDOW_DAYS * 86400,)):
+            latest = latest or qr
+            for r in json.loads(qr["results"] or "[]"):
+                if r.get("id") and r["id"] not in cases:
+                    cases[r["id"]] = bool(r.get("ok"))
+                    runs[r["id"]] = qr["id"]
+        out["quality"] = {"id": latest["id"], "ts": latest["ts"], "pass_rate": latest["pass_rate"], "status": latest["status"],
+                          "cases": cases, "runs": runs} if latest else None
         vr = c.execute("SELECT id, ts, status, git_head FROM verifications ORDER BY id DESC LIMIT 1").fetchone()
         out["verification"] = dict(vr) if vr else None
         out["skills_verified"] = [r["name"] for r in c.execute("SELECT name FROM skills WHERE status='VERIFIED' ORDER BY name")]
@@ -308,7 +318,8 @@ def evaluate(cap: Capability, journal: Dict[str, Any], tests: Dict[str, str], li
     if cap.tools:
         evidence.append(f"journal tool.*: {all_ok} ok / {all_fail} fail all-time; last {WINDOW_DAYS} d {rec_ok} ok / {rec_fail} fail")
     if cap.quality_cases and q:
-        evidence.append(f"quality run #{q['id']}: " + ", ".join(f"{c} {'pass' if ok else 'FAIL' if ok is False else 'n/a'}" for c, ok in qcases.items()))
+        runs = q.get("runs") or {}
+        evidence.append("quality: " + ", ".join(f"{c} {'pass' if ok else 'FAIL' if ok is False else 'n/a'}" + (f" (#{runs[c]})" if c in runs else "") for c, ok in qcases.items()))
     for k, (r, d) in lv.items():
         if r:
             evidence.append(f"live {k}: {r} ({d})")
