@@ -233,6 +233,17 @@ Each component below uses its exact name from [`system_map.json`](system_map.jso
 - **Persistence:** files and screenshots written under `backend/workspace/`; nothing else.
 - **Failure behavior:** timeouts and missing binaries → error result to the model, `tool.failed` journaled, the task continues; cancel kills the python child; writes to protected paths (journal, keys) from `python_execute` raise `PermissionError`.
 
+### Permissions
+- **Status:** CURRENT (improvement 001, 2026-10-03; [map](SYSTEM_MAP.md#permissions))
+- **Purpose:** Tool permission levels enforced in code at the agent's single tool choke point: a static level per tool (`READ_ONLY < WRITE < EXTERNAL_READ < SYSTEM < EXTERNAL_WRITE < DESTRUCTIVE`, plus a host-harm flag), refined per call for the editor, desktop, `python_execute` and `skill_create`; a policy by task kind — humans may do anything up to SYSTEM, destructive and external-write calls are authorized by the human's own words or asked for once, a quality run never asks, autonomous work is refused destructive, host and external-write calls.
+- **Entry point:** [`permissions.py`](../backend/syrax/permissions.py) `classify` / `decide`; applied by `SyraxAgent._permit` in [`agent.py`](../backend/syrax/agent.py).
+- **Important files:** `permissions.py`, `agent.py` (`_permit`, `task_kind`, `task_goal`, `consents`, `grants`), `guard.py` (the shared destructive / network / shell regexes), `skills.py` (`risk_of`, declared skill levels).
+- **Dependencies:** `syrax.guard`, `syrax.editor` (path resolution for scope), `WebAskHuman` for the one question it may ask.
+- **Inputs:** every tool call (name + args), the task's kind and the human's words (set by `Core.submit` / `resume`), the task's earlier `ask_human` answers.
+- **Outputs:** the call runs, or the model gets `Error: refused …` (final; `refused: true` on the result event); `permission.authorized` / `permission.refused` journal events; `level` on each `selfmodel.capabilities()` row and `hello.tool_levels`.
+- **Persistence:** journal events only; per-task consents and grants live in the agent for the task's duration.
+- **Failure behavior:** an unanswered question (timeout, no operator) is a refusal, never consent; a refused call counts as a `tool.failed` for that tool; computed paths cannot be matched to the human's words, so they make a human get asked once and autonomous work get refused.
+
 ### Voice
 - **Status:** PARTIAL ([map](SYSTEM_MAP.md#voice)). Server STT/TTS exist and are tested (`test_voice.py`); the end-to-end microphone path in the browser is unverified.
 - **Purpose:** TTS through edge-tts (free neural voices, `SYRAX_TTS_VOICE`), STT through Groq Whisper when a Groq key is saved, otherwise local faster-whisper (`SYRAX_WHISPER_MODEL`).
@@ -308,7 +319,6 @@ All CURRENT and tested (`test_<name>.py` beside each), but not yet audited into 
 
 ## 5. PLANNED (not built)
 
-- **Tool permission levels enforced in code** (improvement 001, landing this session): today every registered tool is callable by the model on equal terms; the only in-code restrictions are the guard's protected paths and the dev loop's `SCOPE`/`FORBIDDEN` lists.
 - **Task phase model** (understand / plan / act / observe / verify): tasks today are an undifferentiated OpenManus step loop; checkpoints carry a `stage` string but no phase machine exists.
 - **Visible Work Presence**: visibility levels, hide/show of SYRAX's own windows, observation of the human's active window. `winctl.py` can list and focus windows; nothing decides when SYRAX should be visible.
 - **Sandboxed self-modification**: the dev loop edits the live working tree and relies on gate + rollback; skills and `python_execute` run in-process or as plain child processes.
