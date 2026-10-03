@@ -73,9 +73,12 @@ def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[
     """Every measurable limitation, strongest first."""
     now = now or time.time()
     out: List[dict] = []
+    from syrax import skillevo
+
+    skill_names = {s["name"] for s in journal.skills()}
     for tool, st in recent_tool_stats(journal).items():
         done = st["successes"] + st["failures"]
-        if tool in SKIP_TOOLS or done < MIN_USES:
+        if tool in SKIP_TOOLS or tool in skill_names or done < MIN_USES:  # skills are repaired as skills (below)
             continue
         rate = st["failures"] / done
         if rate < MIN_FAIL_RATE:
@@ -97,6 +100,7 @@ def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[
             ],
             "plan_checks": [{"kind": "tool_ok", "tools": ["self_inspect", "journal_query"]}, None, {"kind": "released"}, {"kind": "tool_ok", "tools": [tool], "min": MIN_USES}],
         })
+    out += skillevo.repairs(journal)  # Phase 3: a skill failing in real use gets a new version
     answered = failed = 0
     for e in journal.events_between(now - BRAIN_WINDOW_S, now, limit=10000):
         if e["type"] == "brain.answered":

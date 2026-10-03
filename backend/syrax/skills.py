@@ -274,7 +274,9 @@ class SkillFactory:
         return await self.journal.run(self.journal.set_skill_status_sync, name, "DISABLED", "removed by request", self.task_id_provider())
 
     def list(self) -> List[dict]:
-        return [{**r, "registered": r["name"] in self.loaded} for r in self.journal.skills()]
+        from syrax import skillevo
+
+        return skillevo.annotate([{**r, "registered": r["name"] in self.loaded} for r in self.journal.skills()], self.journal)
 
 
 # ——— tools ———

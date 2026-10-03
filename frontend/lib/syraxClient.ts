@@ -280,6 +280,8 @@ export interface SkillRow {
   updated: number;
   last_verified: number | null;
   registered: boolean;
+  /** calls since the current version was verified (Phase 3) */
+  real_use?: { uses: number; failures: number; version: number };
 }
 
 export type PresentationKind = "status" | "card" | "code" | "terminal" | "table" | "list" | "image" | "notification" | "chart";

@@ -108,7 +108,8 @@ Repeated task → pattern → "this should be a skill" → design → implement 
 tests → benchmark → register → observe real use → improve.
 
 - PARTIAL: `skill_create` with tests deciding registration (`skills.py`).
-- TODO: repeated-task detection from the journal; skill versions with real-use metrics.
+- DONE (2026-10-03): skills evolve from real use (`syrax/skillevo.py`). Every skill call is counted since its version was verified (shown in the MIND panel); a skill failing ≥30 % of ≥3 real uses ranks as a `skill_repair` limitation: reproduce the failure as a new test, then a new version that passes old and new tests (check: `skill_verified`).
+- DONE (2026-10-03): repeated-task detection. Human requests that recur 3+ times in 14 days, solved with the same working tools and not covered by a skill, become a `skill_candidate` proposal (daily, with the radar). SYRAX proposes; it does not build skills nobody asked for.
 
 ## Phase 4 — Self-modification 2.0
 

@@ -79,6 +79,12 @@ async def scan(router: Any, journal: Journal, now: Optional[float] = None, max_t
                                 f"a quality run with it would show whether it is better.",
                     "sources": [],
                 })
+    try:  # Phase 3: requests the human keeps repeating become skill proposals
+        from syrax import skillevo
+
+        report["skill_candidates"] = skillevo.propose_candidates(journal, now)
+    except Exception:
+        pass
     try:  # the daily pass also checks whether the brain order matches measured quality
         from syrax import scorecard
 

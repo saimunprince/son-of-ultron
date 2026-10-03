@@ -243,6 +243,12 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
                 </span>
               </div>
               <p className="self-dim">{s.purpose}</p>
+              {s.real_use && (
+                <p className={s.real_use.failures > 0 ? "self-warn" : "self-dim"}>
+                  real use: {s.real_use.uses} call{s.real_use.uses === 1 ? "" : "s"}
+                  {s.real_use.failures > 0 ? `, ${s.real_use.failures} failed` : ""}
+                </p>
+              )}
             </li>
           ))}
         </ul>
