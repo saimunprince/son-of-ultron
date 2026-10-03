@@ -138,6 +138,9 @@ New models, frameworks, libraries, research, agent architectures, browser and
 local-inference technology, hardware → relevant? → research → experiment →
 benchmark → adopt / reject.
 
+- DONE (2026-10-01): new models on SYRAX's own brains, tool-call tested, proposed (`radar.py`).
+- DONE (2026-10-03): SYRAX's own dependencies. The daily radar pass runs `npm audit` on the UI; a new critical or high advisory becomes a `security` proposal (once per finding). It started from a manual audit that found a critical Windows RCE in next 16.2.10 (fixed in 225e21d). Python dependencies are not audited yet (the venv has no pip; needs `uv pip` or pip-audit).
+
 ## Phase 7 — Multi-brain intelligence
 
 Router picks a brain per kind of work (reasoning, coding, research) and a
