@@ -126,8 +126,9 @@ CAPABILITIES: List[Capability] = [
     Capability("presentation", "Presentation engine (stage elements)", PARTIAL, "backend/syrax/presentation.py, frontend/components/Stage.tsx",
                tools=["present"], tests=["syrax.test_presentation::*"], quality_cases=["present_table"],
                note="stage only; elements are not restored after a restart"),
-    Capability("permissions", "Tool permission levels enforced in code", MISSING, "(none)",
-               note="destructive gating is a prompt rule only; improvement 001"),
+    Capability("permissions", "Tool permission levels enforced in code", CURRENT, "syrax/permissions.py, agent._permit",
+               tests=["syrax.test_permissions*::*"], quality_cases=["act_delete"], live=["permissions"],
+               note="READ_ONLY..DESTRUCTIVE + harm; conversation authorizes by goal or consent, eval never asks, autonomous refuses SYSTEM and above (improvement 001)"),
     Capability("phases", "Task phase model (understand/plan/act/observe/verify)", MISSING, "(none)",
                note="only a free-text stage column exists"),
     Capability("presence", "Visible Work Presence (visibility, hide/show, timeline)", PLANNED, "(none)",
@@ -155,6 +156,8 @@ def read_journal(path: Path, now: Optional[float] = None) -> Dict[str, Any]:
             "cancelled_tasks": c.execute("SELECT COUNT(*) FROM tasks WHERE status='CANCELLED'").fetchone()[0],
             "recoveries": c.execute("SELECT COUNT(*) FROM events WHERE type='recovery.completed'").fetchone()[0],
             "cycles": c.execute("SELECT COUNT(*) FROM events WHERE type='cycle.completed' AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            "permission_authorized": c.execute("SELECT COUNT(*) FROM events WHERE type='permission.authorized' AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            "permission_refused": c.execute("SELECT COUNT(*) FROM events WHERE type='permission.refused' AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
             "brains_answered": c.execute("SELECT COUNT(DISTINCT json_extract(payload,'$.provider')) FROM events WHERE type='brain.answered' AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
             "desktop_screenshot": c.execute("SELECT COUNT(*) FROM events WHERE type='tool.completed' AND json_extract(payload,'$.name')='desktop' AND id IN "
                                             "(SELECT e2.id FROM events e2 JOIN events e1 ON e1.task_id=e2.task_id AND json_extract(e1.payload,'$.id')=json_extract(e2.payload,'$.id') "
@@ -266,6 +269,9 @@ def live_checks(evidence: Optional[dict], gate: Optional[dict], journal: Dict[st
                        ("recoveries", "recoveries"), ("cycles", "cycles"), ("brains_answered", "providers answered"), ("desktop_screenshot", "desktop screenshots")):
         n = counts.get(key, 0)
         out[key] = ("pass", f"{n} {label}" + (f" in {WINDOW_DAYS} d" if key in ("tasks_recent", "cycles", "brains_answered") else "")) if n else (None, f"0 {label}")
+    pa, pr = counts.get("permission_authorized", 0), counts.get("permission_refused", 0)
+    # the gate is proven at runtime only when it has both let a named action through and refused one
+    out["permissions"] = ("pass" if pa and pr else None, f"{pa} authorized / {pr} refused decisions in {WINDOW_DAYS} d")
     out["journal_wal"] = ("pass", f"journal_mode={journal.get('journal_wal')}") if journal.get("journal_wal") == "wal" else ("fail", f"journal_mode={journal.get('journal_wal')}")
     sk = journal.get("skills_verified") or []
     out["skills_verified"] = ("pass", f"{len(sk)} VERIFIED skills: {', '.join(sk)}") if sk else (None, "no VERIFIED skill")
