@@ -446,7 +446,7 @@ export type ServerEvent =
 export type ClientMessage =
   | { type: "task"; text: string; voice?: boolean }
   | { type: "answer"; text: string }
-  | { type: "stop" }
+  | { type: "stop"; reason?: string }
   | { type: "reset" }
   | { type: "ping" }
   | { type: "history"; limit?: number }

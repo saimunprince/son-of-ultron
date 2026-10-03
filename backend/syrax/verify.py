@@ -95,7 +95,7 @@ def run_gate(gate: Gate) -> GateResult:
     env = {**os.environ, **(gate.env or {})}
     try:
         proc = subprocess.run(
-            cmd, cwd=str(gate.cwd), env=env, capture_output=True, text=True, timeout=gate.timeout
+            cmd, cwd=str(gate.cwd), env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=gate.timeout
         )
     except FileNotFoundError as e:
         return GateResult(
@@ -181,14 +181,14 @@ def scan_diff_text(diff: str) -> List[str]:
 def diff_scan(root: Path = REPO_ROOT) -> Tuple[bool, str]:
     diff = subprocess.run(
         ["git", "diff", "HEAD", "--", ".", ":(exclude)*.lock", ":(exclude)package-lock.json"],
-        cwd=str(root), capture_output=True, text=True, timeout=60,
+        cwd=str(root), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
     )
     if diff.returncode != 0:
         raise RuntimeError(f"git diff failed: {diff.stderr.strip()}")
     findings = scan_diff_text(diff.stdout)
     untracked = subprocess.run(
         ["git", "ls-files", "--others", "--exclude-standard"],
-        cwd=str(root), capture_output=True, text=True, timeout=60,
+        cwd=str(root), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
     ).stdout.splitlines()
     for rel in untracked:
         p = root / rel

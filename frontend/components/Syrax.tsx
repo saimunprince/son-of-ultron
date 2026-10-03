@@ -634,9 +634,10 @@ export default function Syrax() {
     document.documentElement.dataset.speaking = speaking ? "true" : "false";
   }, [speaking]);
 
-  const stopTask = useCallback(() => {
+  /** reason is journaled with the stop, so a cancelled task says what stopped it */
+  const stopTask = useCallback((reason: string) => {
     stopSpeaking();
-    clientRef.current?.send({ type: "stop" });
+    clientRef.current?.send({ type: "stop", reason });
   }, []);
 
   const resetMemory = useCallback(() => {
@@ -650,7 +651,7 @@ export default function Syrax() {
     (h: Heard) => {
       switch (h.kind) {
         case "abort":
-          stopTask();
+          stopTask("voice: stop heard");
           arm(0);
           break;
         case "silence":
@@ -829,7 +830,7 @@ export default function Syrax() {
           inputRef.current?.focus();
           break;
         case "Escape":
-          stopTask();
+          stopTask("ESC key");
           break;
       }
     };
@@ -1149,7 +1150,7 @@ export default function Syrax() {
             {ear.mic === "starting" ? "…" : handsFree ? "● LIVE" : "MIC"}
           </button>
           {busy ? (
-            <button type="button" className="hud-btn danger" onClick={stopTask} title="Abort task (Esc)">
+            <button type="button" className="hud-btn danger" onClick={() => stopTask("ABORT button")} title="Abort task (Esc)">
               ABORT
             </button>
           ) : (

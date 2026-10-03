@@ -267,6 +267,14 @@ class Session:
             if not await self.core.answer(text, session_id=self.id):
                 await self.send({"type": "notice", "text": "No pending question."})
         elif kind == "stop":
+            # Live 2026-10-03: an autonomous release was "aborted by human" and
+            # nothing said who sent the stop. Journal where it came from.
+            running = self.core.current
+            if running is not None and self.core.busy:
+                await self.core.journal.record("task.stop_requested", {
+                    "session": self.id, "origin": self.ws.headers.get("origin"),
+                    "client": self.ws.headers.get("user-agent", "")[:120], "reason": str(msg.get("reason") or "")[:200],
+                }, task_id=running.task_id)
             await self.core.cancel()
         elif kind == "reset":
             await self.core.reset()
