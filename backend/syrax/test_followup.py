@@ -65,3 +65,14 @@ def test_follow_ups_stop_at_max_depth_and_never_for_human_checks(tmp_path):
                                 evidence={"followup_depth": followup.MAX_DEPTH})
     human = j.add_objective_sync("y", check={"kind": "human"}, key="y")
     assert followup.derive(j, deep) == [] and followup.derive(j, human) == []
+
+
+def test_a_measured_check_gets_no_learning_objective(tmp_path):
+    """Live 2026-10-03: a quality regression spawned "learn how to fix a quality regression"."""
+    from syrax.journal import Journal
+    j = Journal(tmp_path / "j.db")
+    o = j.add_objective_sync("quality regressed", source="selfmodel", check={"kind": "quality_recovered"}, key="q")
+    t = j.start_task_sync("attempt", kind="autonomous")
+    use_tool("journal_query")(t, j)
+    j.update_objective_sync(o["id"], status="BLOCKED", last_task_id=t, progress={"attempts_log": [{"task_id": t, "lesson": "nothing changed"}]})
+    assert followup.derive(j, _blocked(j, o)) == []

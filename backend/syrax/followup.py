@@ -22,6 +22,11 @@ from syrax import plan
 from syrax.journal import Journal
 
 MAX_DEPTH = 2
+# Checks that a measurement settles (a quality run, a benchmark, the gate):
+# what is missing is a fix, not knowledge, so they get no learning objective.
+# Live 2026-10-03: a quality regression spawned "learn how to fix a quality
+# regression" research.
+MEASURED = {"quality_recovered", "quality_case_passes", "benchmark_recovered", "verification_green", "change_released"}
 KEEP = ("limitation", "plan", "plan_checks")
 
 
@@ -62,7 +67,7 @@ def derive(journal: Journal, objective: dict) -> List[dict]:
         )
         if o:
             out.append(o)
-    elif not learned:
+    elif not learned and spec.get("kind") not in MEASURED:
         limitation = (ev.get("limitation") or {}).get("detail")
         topic = str(limitation or goal)[:120]
         learn = journal.add_objective_sync(

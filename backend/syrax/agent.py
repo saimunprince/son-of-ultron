@@ -107,6 +107,33 @@ REPEATED_CALL = (
 
 READ_ONLY_TOOLS = {"self_inspect", "know", "recall", "skill_list"}
 
+# Live 2026-10-03: three autonomous attempts read the journal, changed nothing,
+# and ended "Fixed task quality regression ... by ensuring prompt alignment".
+# A final answer that claims a change the task never made is sent back once.
+CLAIM = re.compile(
+    r"(?:^|[.!]\s+)(?:fixed|resolved|repaired|patched|implemented)\b"
+    r"|\b(?:has|have) been (?:successfully )?(?:\w+ and )?(?:fixed|resolved|repaired|patched|implemented|updated|changed|modified)\b"
+    r"|\bi(?:'ve| have)? (?:\w+ )?(?:fixed|resolved|repaired|patched|implemented|updated|changed|modified|released)\b",
+    re.I,
+)
+EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
+WRITES = re.compile(r"open\([^)]*['\"][wax+]|\.write(?:_text|_bytes)?\(|\.save\(|os\.(?:remove|unlink|rename|replace|makedirs|mkdir)|shutil\.|\.unlink\(|\.mkdir\(")
+CLAIM_ASK = (
+    "Your answer says something was fixed or changed, but this task changed nothing: no file was edited, "
+    "nothing was created, written or released. Rewrite the final answer honestly: what you found, and what "
+    "is still not done. Never claim a change that did not happen. No tool calls."
+)
+
+
+def changes_something(name: str, args: Any) -> bool:
+    """Whether a successful call of this tool changed the world."""
+    a = args if isinstance(args, dict) else {}
+    if name == "str_replace_editor":
+        return a.get("command") in EDIT_COMMANDS
+    if name == "python_execute":
+        return bool(WRITES.search(str(a.get("code") or "")))
+    return name in ("release", "skill_create", "desktop", "present", "learn", "remember", "forget") or name.startswith("browser_") or name.startswith("make_")
+
 
 def _call_key(command: ToolCall) -> str:
     return f"{command.function.name}:{json.dumps(_args_of(command), sort_keys=True, default=str)}"
@@ -133,6 +160,7 @@ class SyraxAgent(Manus):
     ask_tool: WebAskHuman = Field(default_factory=WebAskHuman, exclude=True)
     last_reply: str = ""
     seen_calls: dict = Field(default_factory=dict)  # tool+args already run this turn
+    changed: bool = False  # a tool that changes the world succeeded this turn
     step_limit_hit: bool = False
 
     available_tools: ToolCollection = Field(
@@ -167,6 +195,7 @@ class SyraxAgent(Manus):
         self.state = AgentState.IDLE
         self.last_reply = ""
         self.seen_calls = {}
+        self.changed = False
         self.step_limit_hit = False
         # Fresh persona + long-term memory for every task.
         base = SYRAX_PERSONA.format(directory=config.workspace_root)
@@ -191,15 +220,17 @@ class SyraxAgent(Manus):
             self.last_reply = self.last_reply[len("SYRAX:"):].strip()
         if (not self.last_reply or PROMISE.search(self.last_reply)) and any(m.role == "tool" for m in self.memory.messages):
             await self._final_answer()
+        if self.last_reply and not self.changed and CLAIM.search(self.last_reply):
+            await self._final_answer(CLAIM_ASK)
         return self.last_reply or "Done."
 
-    async def _final_answer(self) -> None:
+    async def _final_answer(self, ask: str = FINAL_ASK) -> None:
         """Some models run the right tools and then terminate without a word
         (live: gemini-3.5-flash-lite answered five quality cases with "Done.").
         The work happened; ask once, without tools, for the answer it produced."""
         try:
             msg = await self.llm.ask_tool(
-                messages=self.memory.messages + [Message.user_message(FINAL_ASK)],
+                messages=self.memory.messages + [Message.user_message(ask)],
                 system_msgs=[Message.system_message(self.system_prompt)] if self.system_prompt else None,
                 tools=None,
                 tool_choice=ToolChoice.NONE,
@@ -267,6 +298,8 @@ class SyraxAgent(Manus):
             if name not in READ_ONLY_TOOLS:
                 seen.clear()  # the world may have changed: re-reading it is legitimate again
             seen[key] = self.current_step
+            if _succeeded(result) and changes_something(name, _args_of(command)):
+                self.changed = True
         event = {
             "type": "tool_result",
             "id": command.id,
