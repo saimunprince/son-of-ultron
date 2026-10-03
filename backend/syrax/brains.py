@@ -339,7 +339,7 @@ class BrainStore:
     def load(cls) -> "BrainStore":
         store = cls()
         try:
-            data = json.loads(BRAINS_FILE.read_text())
+            data = json.loads(BRAINS_FILE.read_text(encoding="utf-8"))
             store.settings = {
                 k: v for k, v in (data.get("providers") or {}).items() if k in PROVIDERS
             }

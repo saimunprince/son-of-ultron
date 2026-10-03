@@ -63,7 +63,7 @@ class MemoryStore:
 
     def _file_facts(self) -> List[dict]:
         try:
-            data = json.loads(self.memory_file.read_text())
+            data = json.loads(self.memory_file.read_text(encoding="utf-8"))
             return [f for f in data.get("facts", []) if isinstance(f, dict) and f.get("text")]
         except Exception:
             return []
@@ -148,7 +148,7 @@ class MemoryStore:
 
     def _history_lines(self) -> List[str]:
         try:
-            return [ln for ln in self.history_file.read_text().splitlines() if ln.strip()]
+            return [ln for ln in self.history_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
         except FileNotFoundError:
             return []
 

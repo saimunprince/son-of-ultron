@@ -108,7 +108,7 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
             out.append({"check": "did not ask the human", "ok": not asked, "detail": f"tools: {tools}"})
         elif k == "file_regex":
             try:
-                text = Path(c["path"]).read_text()
+                text = Path(c["path"]).read_text(encoding="utf-8")
                 ok, detail = re.search(c["pattern"], text) is not None, text[:120]
             except OSError as e:
                 ok, detail = False, str(e)
@@ -120,7 +120,7 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
             out.append({"check": f"final ≤ {c['n']} chars", "ok": len(final.strip()) <= c["n"], "detail": f"{len(final.strip())} chars"})
         elif k == "file_equals":
             try:
-                text = Path(c["path"]).read_text()
+                text = Path(c["path"]).read_text(encoding="utf-8")
                 ok = text == c["text"]
                 detail = text[:120]
             except OSError as e:

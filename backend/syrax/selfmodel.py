@@ -54,7 +54,7 @@ _LOADED_HEAD: Dict[str, Optional[str]] = {}
 
 def _git(args: List[str], cwd: Path = REPO_ROOT) -> Optional[str]:
     try:
-        out = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=3)
+        out = subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=3)
     except Exception:
         return None
     if out.returncode != 0:
@@ -108,7 +108,7 @@ class SelfModel:
 
     def system_map(self) -> Optional[dict]:
         try:
-            return json.loads(self.system_map_path.read_text())
+            return json.loads(self.system_map_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
 
