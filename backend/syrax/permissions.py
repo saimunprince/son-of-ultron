@@ -67,8 +67,11 @@ DECLARED: Dict[str, str] = {}  # dynamic skills, set by SkillFactory at registra
 DESKTOP_READ = {"list_apps", "system_info", "screenshot", "find_files", "clipboard_get"}
 EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 
-DESTRUCTIVE_VERBS = re.compile(r"\b(delete|remove|erase|wipe|clear|drop|purge|uninstall|rm|unlink|force[- ]push|reset|discard|overwrite|format|muchh?e|mochh?e|delet)\b", re.I)
-SEND_VERBS = re.compile(r"\b(send|email|mail|message|text|post|tweet|publish|pay|buy|order|subscribe|transfer|pathao|pathiye)\b", re.I)
+# Stems, so "removal", "deleting", "wiped" count as naming the action too
+# (live 2026-10-03: SYRAX asked "confirm the removal of the folder X?", the
+# human said yes, and the gate asked again because only "remove" matched).
+DESTRUCTIVE_VERBS = re.compile(r"\b(delet\w*|remov\w*|eras\w*|wip(e|ed|es|ing)|clear\w*|drop\w*|purg\w*|uninstall\w*|rm|unlink\w*|force[- ]push\w*|reset\w*|discard\w*|overwrit\w*|format\w*|muchh?e\w*|mochh?e\w*|felo|fele)\b", re.I)
+SEND_VERBS = re.compile(r"\b(send\w*|sent|email\w*|mail\w*|messag\w*|text\w*|post\w*|tweet\w*|publish\w*|pay\w*|paid|buy\w*|bought|order\w*|subscrib\w*|transfer\w*|pathao|pathiye|pathano)\b", re.I)
 AFFIRMATIVE = re.compile(r"^\s*(y|yes|yeah|yep|ok|okay|sure|do it|go ahead|go|proceed|confirm(ed)?|affirmative|approved|allow(ed)?|ha|haan|hya|kor|koro|thik ache)\b", re.I)
 PATH_LITERAL = re.compile(r"""(?:r|rb|b)?['"]([^'"\n]{3,})['"]""")
 
