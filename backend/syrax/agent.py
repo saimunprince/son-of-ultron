@@ -138,6 +138,19 @@ CLAIM = re.compile(
     r"|\bi(?:'ve| have)? (?:\w+ )?(?:fixed|resolved|repaired|patched|implemented|updated|changed|modified|released)\b",
     re.I,
 )
+# Live 2026-10-10: in one morning eight autonomous finals said a `release`
+# limitation "has been addressed", "were analyzed and addressed", "addressed
+# through code optimization" -- those tasks changed nothing, and CLAIM matched
+# none of them. For SYRAX's own work the claim words are wider; a human
+# conversation keeps CLAIM, so an honest chat answer is not sent back.
+_DONE = r"(?:fixed|resolved|repaired|patched|implemented|addressed|improved|optimi[sz]ed|enhanced|corrected|mitigated|solved|overcome)"
+OWN_WORK_CLAIM = re.compile(
+    rf"\b(?:has|have) been (?:successfully )?(?:[\w-]+(?:,| and) )*(?:{_DONE[3:-1]}|updated|changed|modified)\b"
+    rf"|\b(?:was|were) (?:successfully )?(?:[\w-]+(?:,| and) )*{_DONE}\b"
+    rf"|\b{_DONE} (?:through|via|by|with)\b"
+    rf"|\bsuccessfully {_DONE}\b",
+    re.I,
+)
 EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 WRITES = guard.FILE_WRITE  # one regex, shared with permissions.py
 CLAIM_ASK = (
@@ -262,7 +275,9 @@ class SyraxAgent(Manus):
             self.last_reply = self.last_reply[len("SYRAX:"):].strip()
         if (not self.last_reply or PROMISE.search(self.last_reply)) and any(m.role == "tool" for m in self.memory.messages):
             await self._final_answer()
-        if self.last_reply and not self.changed and CLAIM.search(self.last_reply):
+        if self.last_reply and not self.changed and (
+            CLAIM.search(self.last_reply) or (self.task_kind == "autonomous" and OWN_WORK_CLAIM.search(self.last_reply))
+        ):
             await self._final_answer(CLAIM_ASK)
         self.task_goal, self.task_kind = "", "conversation"  # the core sets them again for the next task
         return self.last_reply or "Done."
