@@ -84,6 +84,36 @@ def uptime_seconds() -> Optional[float]:
         return None
 
 
+
+def gpu() -> Optional[Dict[str, any]]:
+    """GPU info or None if nvidia-smi is not present or fails."""
+    try:
+        res = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name,memory.total,memory.used,utilization.gpu", "--format=csv,noheader,nounits"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if res.returncode != 0:
+            return None
+        line = res.stdout.strip().splitlines()
+        if not line:
+            return None
+        parts = [p.strip() for p in line[0].split(",")]
+        if len(parts) < 4:
+            return None
+        return {
+            "name": parts[0],
+            "memory_total_mb": int(parts[1]),
+            "memory_used_mb": int(parts[2]),
+            "utilization_pct": int(parts[3]),
+        }
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError, ValueError, IndexError):
+        return None
+
+
+
+
 # ——— macOS, via sysctl / vm_stat / pmset ———
 
 def _sh(*cmd: str) -> str:
