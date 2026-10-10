@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional
 from app.logger import logger
 
 from syrax import resources
-from syrax import followup, plan
+from syrax import contracts, followup, plan
 from syrax.journal import BACKEND_ROOT, Journal, JournalError
 
 REPO_ROOT_PATH = BACKEND_ROOT.parent
@@ -444,8 +444,9 @@ def rejudge_blocked(journal: Journal) -> int:
         if kind in ("human", "task_success"):
             continue
         verdict, evidence = judge(journal, o, None)
+        verdict, contract = contracts.assess(journal, o, None, verdict, evidence, path="rejudge")
         if verdict == "DONE":
-            journal.update_objective_sync(o["id"], status="DONE", evidence={"judged": evidence, "task_id": None},
+            journal.update_objective_sync(o["id"], status="DONE", evidence={"judged": evidence, "contract": contract, "task_id": None},
                                           progress={"lesson": "evidence that arrived after it was blocked satisfied it"},
                                           note="closed from newer evidence while blocked")
             closed += 1
@@ -694,9 +695,10 @@ class Autonomy:
         # Evidence may already satisfy the objective (e.g. the tool ran for another
         # objective). Then there is no work to do: close it, run nothing.
         verdict, evidence = await asyncio.to_thread(judge, self.journal, objective, None)
+        verdict, contract = await asyncio.to_thread(contracts.assess, self.journal, objective, None, verdict, evidence, "existing")
         if verdict == "DONE":
             await self.journal.update_objective(
-                objective["id"], status="DONE", evidence={"judged": evidence, "task_id": None},
+                objective["id"], status="DONE", evidence={"judged": evidence, "contract": contract, "task_id": None},
                 progress={"lesson": "already satisfied by existing evidence; no task needed"},
                 note="closed from existing evidence",
             )
@@ -734,9 +736,13 @@ class Autonomy:
         rep.outcome = "RAN"
         # ——— reflect: expected vs actual, judged from evidence ———
         verdict, evidence = await asyncio.to_thread(judge, self.journal, objective, task)
+        judged = verdict
+        verdict, contract = await asyncio.to_thread(contracts.assess, self.journal, objective, task, verdict, evidence, "task")
         rep.verdict = verdict
         attempts = objective["attempts"] + 1
         lesson = _lesson(objective, task, verdict, evidence)
+        if judged == "DONE" and verdict != "DONE":  # the check read as met, the contract withdrew it
+            lesson = f"not done: {contract['reason']}"
         # Phase 2: remember how this attempt went about it; a strategy that
         # already failed is not tried again (no blind retry)
         task_events = self.journal.events(task_id)
@@ -765,7 +771,7 @@ class Autonomy:
         if verdict == "DONE":
             await self.journal.update_objective(
                 objective["id"], status="DONE",
-                progress={"lesson": lesson, "attempts_log": log[-6:]}, evidence={"judged": evidence, "task_id": task_id},
+                progress={"lesson": lesson, "attempts_log": log[-6:]}, evidence={"judged": evidence, "contract": contract, "task_id": task_id},
                 last_task_id=task_id, bump_attempts=True, note=lesson,
             )
             proposal = proposal_from(objective, task)
@@ -775,7 +781,7 @@ class Autonomy:
             rep.verdict = "BLOCKED"
             await self.journal.update_objective(
                 objective["id"], status="BLOCKED",
-                progress={"lesson": lesson, "attempts_log": log[-6:]}, evidence={"judged": evidence, "task_id": task_id},
+                progress={"lesson": lesson, "attempts_log": log[-6:]}, evidence={"judged": evidence, "contract": contract, "task_id": task_id},
                 last_task_id=task_id, bump_attempts=True,
                 next_action="needs a different strategy or a human", note=lesson,
             )
@@ -786,7 +792,7 @@ class Autonomy:
             await self.journal.update_objective(
                 objective["id"], status="OPEN",
                 progress={"lesson": lesson, "attempts_log": log[-6:], **({"plan": plan.summary(steps)} if steps else {})},
-                evidence={"judged": evidence, "task_id": task_id},
+                evidence={"judged": evidence, "contract": contract, "task_id": task_id},
                 last_task_id=task_id, bump_attempts=True,
                 next_action=(f"step {nxt['step']}: {nxt['do']}" if nxt else "retry with a changed approach"), note=lesson,
             )
@@ -834,10 +840,11 @@ class Autonomy:
             logger.warning(f"scheduled quality run failed: {e}")
             return False
         verdict, evidence = await asyncio.to_thread(judge, self.journal, objective, None)
+        verdict, contract = await asyncio.to_thread(contracts.assess, self.journal, objective, None, verdict, evidence, "measure")
         rep.outcome, rep.verdict = "RAN", verdict if verdict == "DONE" else None
         rep.reason = f"measured: quality run {row.get('id')} at {row.get('pass_rate')}%"
         if verdict == "DONE":
-            await self.journal.update_objective(objective["id"], status="DONE", evidence={"judged": evidence, "task_id": None},
+            await self.journal.update_objective(objective["id"], status="DONE", evidence={"judged": evidence, "contract": contract, "task_id": None},
                                                 progress={"lesson": "the fix held: verified by a scheduled quality run"}, note=rep.reason)
         else:
             await self.journal.update_objective(objective["id"], status="OPEN", evidence={"judged": evidence, "task_id": None},
