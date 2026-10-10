@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
@@ -211,6 +212,52 @@ def diff_scan(root: Path = REPO_ROOT) -> Tuple[bool, str]:
     return True, f"clean: {len(untracked)} untracked file(s) checked, diff scanned"
 
 
+def modules_source(frontend: Path) -> Path:
+    """The node_modules a frontend builds with: its own, or the live tree's
+    when it is a worktree (a worktree is a checkout, not an install)."""
+    own = frontend / "node_modules"
+    return own if own.is_dir() else FRONTEND_ROOT / "node_modules"
+
+
+@contextmanager
+def shared_node_modules(frontend: Path, source: Optional[Path] = None):
+    """For the duration of a frontend gate in a worktree, link the live
+    node_modules in; afterwards remove only the link. os.rmdir on a junction
+    and os.unlink on a symlink never follow it, so the shared modules are never
+    touched (removing a worktree with a junction inside can delete the target's
+    files)."""
+    target = frontend / "node_modules"
+    source = source or (FRONTEND_ROOT / "node_modules")
+    if target.exists() or not source.is_dir():
+        yield
+        return
+    if WINDOWS:
+        import _winapi
+
+        _winapi.CreateJunction(str(source), str(target))
+    else:
+        os.symlink(source, target, target_is_directory=True)
+    try:
+        yield
+    finally:
+        try:
+            if WINDOWS:
+                os.rmdir(target)
+            else:
+                os.unlink(target)
+        except OSError:
+            pass
+
+
+def frontend_gate(frontend: Path, cmd: Sequence[str], timeout: float = 900.0) -> GateFn:
+    """A frontend gate run in another tree (a worktree), with the shared modules linked in."""
+    def run() -> Tuple[bool, str]:
+        with shared_node_modules(frontend):
+            proc = subprocess.run(list(cmd), cwd=str(frontend), capture_output=True, text=True, timeout=timeout)
+        return proc.returncode == 0, (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+    return run
+
+
 def isolated_next_build(frontend: Path = FRONTEND_ROOT, timeout: float = 1200.0) -> Tuple[bool, str]:
     """Run ``next build`` on a scratch copy (sources copied, node_modules
     hard-linked on Linux or junctioned on Windows) so a live ``next start``
@@ -219,14 +266,17 @@ def isolated_next_build(frontend: Path = FRONTEND_ROOT, timeout: float = 1200.0)
     import shutil
     import tempfile
 
-    if not (frontend / "node_modules").is_dir():
+    modules = modules_source(frontend)
+    if not modules.is_dir():
         raise RuntimeError("frontend/node_modules missing; run npm install")
     scratch = Path(tempfile.mkdtemp(prefix="syrax-next-build-"))
     try:
         shutil.copytree(frontend, scratch, dirs_exist_ok=True, symlinks=True,
                         ignore=shutil.ignore_patterns("node_modules", ".next"))
-        _link_tree(frontend / "node_modules", scratch / "node_modules")
+        _link_tree(modules, scratch / "node_modules")
         cache = frontend / ".next" / "cache"
+        if not cache.is_dir():
+            cache = FRONTEND_ROOT / ".next" / "cache"
         if cache.is_dir():  # reuse the local build cache (Google Fonts are fetched at build time; the cache makes the gate offline-safe)
             (scratch / ".next").mkdir(exist_ok=True)
             _link_tree(cache, scratch / ".next" / "cache")
@@ -293,6 +343,12 @@ def performance_gate(journal_path: Optional[str] = None) -> Tuple[bool, str]:
 
 
 def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None) -> List[Gate]:
+    """The release gate for the tree at ``root``: the live repository, or a
+    worktree where SYRAX prepared a change (M1, isolated evolution). The checks
+    are the same; only the directories they run in follow ``root``."""
+    root = Path(root)
+    backend, frontend = root / "backend", root / "frontend"
+    live = root.resolve() == REPO_ROOT.resolve()
     py = venv_python()
     test_env = {
         "OPENMANUS_DISABLE_BROWSER_USE": "1",
@@ -300,13 +356,18 @@ def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None) ->
         "SYRAX_BROWSER": "0",
     }
     npx = _npx()
+    tsc, eslint, node_test = [npx, "tsc", "--noEmit"], [npx, "eslint", "."], [_npm(), "test", "--silent"]
+
+    def fe(name: str, cmd: List[str]) -> Gate:
+        return Gate(name, cmd, cwd=FRONTEND_ROOT) if live else Gate(name, frontend_gate(frontend, cmd))
+
     return [
-        Gate("py_compile", [py, "-m", "compileall", "-q", "syrax"], cwd=BACKEND_ROOT),
-        Gate("pytest", [py, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider"], cwd=BACKEND_ROOT, env=test_env),
-        Gate("tsc", [npx, "tsc", "--noEmit"], cwd=FRONTEND_ROOT),
-        Gate("eslint", [npx, "eslint", "."], cwd=FRONTEND_ROOT),
-        Gate("node_test", [_npm(), "test", "--silent"], cwd=FRONTEND_ROOT),
-        Gate("next_build", isolated_next_build),
+        Gate("py_compile", [py, "-m", "compileall", "-q", "syrax"], cwd=backend),
+        Gate("pytest", [py, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider"], cwd=backend, env=test_env),
+        fe("tsc", tsc),
+        fe("eslint", eslint),
+        fe("node_test", node_test),
+        Gate("next_build", isolated_next_build if live else (lambda: isolated_next_build(frontend))),
         Gate("diff_scan", lambda: diff_scan(root)),
         Gate("performance", lambda: performance_gate(journal_path), required=False, timeout=600),
     ]
