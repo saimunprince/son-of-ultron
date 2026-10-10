@@ -158,6 +158,7 @@ class AsyncPythonExecute(PythonExecute):
             return {"observation": f"Error: python_execute could not start a worker process: {starter.exception()}", "success": False}
         send.close()  # the child holds its own end; EOF once it is gone
         result = None
+        eof = False  # the worker's end closed without a result: it is exiting, not running
         deadline = time.monotonic() + timeout
         try:
             while time.monotonic() < deadline:
@@ -165,14 +166,14 @@ class AsyncPythonExecute(PythonExecute):
                     try:
                         result = recv.recv()
                     except (EOFError, OSError):
-                        result = None
+                        eof = True
                     break
                 if not proc.is_alive():
                     if _poll(recv, 0.2):  # sent just before it exited
                         try:
                             result = recv.recv()
                         except (EOFError, OSError):
-                            result = None
+                            eof = True
                     break
                 await asyncio.sleep(0.05)
         except asyncio.CancelledError:
@@ -180,7 +181,9 @@ class AsyncPythonExecute(PythonExecute):
             recv.close()
             raise
         recv.close()
-        if result is None and proc.is_alive():
+        # the pipe can report EOF a moment before Windows has reaped the process:
+        # still "alive" then is an exit in progress, not a timeout (seen under load)
+        if result is None and not eof and proc.is_alive():
             _kill_quietly(proc)
             return {
                 "observation": f"Execution timeout after {timeout} seconds",
