@@ -10,6 +10,7 @@ journal evidence, devloop ownership and prompts are unchanged.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
@@ -21,6 +22,29 @@ from syrax.journal import BACKEND_ROOT
 
 REPO_ROOT = BACKEND_ROOT.parent
 WORKSPACE = BACKEND_ROOT / "workspace"
+
+
+# M1, isolated evolution: while an autonomous task works in its own worktree,
+# (running tree, worktree); set and cleared by the core around that task.
+ROOT_MAP: Optional[Tuple[Path, Path]] = None
+NOT_REDIRECTED = (".syrax", ".git", "backend/workspace", "backend/config")
+
+
+def redirect(p: Path) -> Path:
+    """A path in the running tree, mapped into the isolated task's worktree.
+    The workspace, the runtime config and the worktrees themselves stay where
+    they are."""
+    if ROOT_MAP is None:
+        return p
+    live, wt = ROOT_MAP
+    try:
+        rel = Path(os.path.realpath(p)).relative_to(Path(os.path.realpath(live)))
+    except ValueError:
+        return p
+    posix = rel.as_posix().lower()
+    if any(posix == n or posix.startswith(n + "/") for n in NOT_REDIRECTED):
+        return p
+    return Path(wt) / rel
 
 
 def resolve_path(raw: str, command: str) -> Tuple[Path, Optional[str]]:
@@ -159,6 +183,7 @@ class SyraxEditor(StrReplaceEditor):
         if not path:
             raise ToolError(f"Parameter `path` is required for `{command}`: give the absolute path of the file.")
         resolved, note = resolve_path(str(path), str(command))
+        resolved = redirect(resolved)  # M1: an isolated task writes into its own worktree
         operator = self._get_operator()
         if command == "create" and await operator.exists(resolved) and not await operator.is_directory(resolved):
             if kwargs.get("file_text") is None:

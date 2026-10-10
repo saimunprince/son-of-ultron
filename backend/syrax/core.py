@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 import sqlite3
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, List, Optional
@@ -272,6 +273,10 @@ class Core:
                 # M1, isolated evolution: SYRAX's own work happens in a worktree, never in the running tree
                 try:
                     wt = await asyncio.to_thread(self.devloop.isolate, task_id)
+                    from syrax import editor as _editor
+
+                    _editor.ROOT_MAP = (self.devloop.live_root, wt)
+                    goal = goal + ISOLATION_NOTE.format(worktree=wt, live=self.devloop.live_root)
                     await self.journal.record("isolation.started", {"worktree": str(wt)}, task_id=task_id)
                 except Exception as e:
                     logger.warning(f"could not isolate task {task_id}: {e}")
@@ -406,6 +411,9 @@ class Core:
         except Exception as e:
             logger.warning(f"could not keep the worktree diff of task {self.current.task_id}: {e}")
         finally:
+            from syrax import editor as _editor
+
+            _editor.ROOT_MAP = None
             await asyncio.to_thread(self.devloop.discard)
 
     def _dirty_repo_info(self) -> Optional[dict]:
@@ -558,6 +566,14 @@ async def _cross_review(info: dict, summary: str, authors: List[str]) -> dict:
     return await review(get_router(), info, summary, authors)
 
 
+ISOLATION_NOTE = (
+    "\n\n[ISOLATED WORKTREE] This task works in its own copy of the repository at {worktree}. "
+    "str_replace_editor maps every path under {live} there by itself, so keep using the usual paths. "
+    "python_execute must not write into {live}. Only `release` moves your change into the running SYRAX: "
+    "it gates and commits the copy, then fast-forwards the running tree."
+)
+
+
 def _repo_edit(steps: List[dict], args: dict) -> Optional[dict]:
     """A str_replace_editor edit inside SYRAX's own repository → code.changed payload."""
     cmd = str(args.get("command") or "")
@@ -572,13 +588,25 @@ def _repo_edit(steps: List[dict], args: dict) -> Optional[dict]:
             raw = str(resolve_path(raw, cmd)[0])  # the editor resolves relative paths the same way
         except Exception:
             return None
+    from syrax import editor as _editor
+
+    step = steps[-1].get("step") if steps else None
+    if _editor.ROOT_MAP is not None:  # M1: the edit went into the task's worktree; its path is relative to that copy
+        wt = _editor.ROOT_MAP[1]
+        target = str(_editor.redirect(Path(os.path.realpath(raw))))
+        try:
+            rel = os.path.relpath(os.path.realpath(target), os.path.realpath(str(wt)))
+        except ValueError:
+            rel = ".."
+        if not rel.startswith(".."):
+            return {"path": rel, "command": cmd, "step": step, "isolated": True}
     try:
         rel = os.path.relpath(os.path.realpath(raw), os.path.realpath(str(REPO_ROOT)))
     except ValueError:
         return None
     if rel.startswith(".."):
         return None
-    return {"path": rel, "command": cmd, "step": steps[-1].get("step") if steps else None}
+    return {"path": rel, "command": cmd, "step": step}
 
 
 def _task_summary(t: dict) -> dict:

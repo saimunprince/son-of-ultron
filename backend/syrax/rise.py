@@ -115,6 +115,15 @@ def release_success(c, t0, t1) -> Value:
     return _share(commits, attempts)
 
 
+def live_tree_edits(c, t0, t1) -> Value:
+    """Edits SYRAX's own (autonomous) tasks made in the running tree instead of
+    an isolated worktree (M1). code.changed of an isolated task says so."""
+    n = _one(c, "SELECT COUNT(*) FROM events e JOIN tasks t ON t.task_id=e.task_id WHERE e.type='code.changed' "
+                "AND t.kind='autonomous' AND json_extract(e.payload,'$.path') IS NOT NULL "
+                "AND COALESCE(json_extract(e.payload,'$.isolated'),0)=0 AND e.ts>=? AND e.ts<?", t0, t1)
+    return float(n), f"{n} edits"
+
+
 def review_rejections(c, t0, t1) -> Value:
     n = _one(c, "SELECT COUNT(*) FROM events WHERE type='review.completed' AND json_extract(payload,'$.approve')=0 AND ts>=? AND ts<?", t0, t1)
     return float(n), f"{n} rejected"
@@ -201,6 +210,7 @@ METRICS: List[Metric] = [
     Metric("unfinished", "Brain", "Own tasks left unfinished", "lower", "%", "Autonomous tasks that ended PARTIAL (step limit, loop stop) or FAILED, out of all finished ones.", unfinished_own_tasks),
     Metric("own_commits", "Evolution", "Commits SYRAX made to itself", "higher", "count", "commit.created: a change that passed the gate, a second brain's review, and was committed by SYRAX's release.", _count_events("commit.created")),
     Metric("release_success", "Evolution", "Releases that landed", "higher", "%", "commit.created out of release calls in the window.", release_success),
+    Metric("live_tree_edits", "Evolution", "Own edits in the running tree", "lower", "count", "Editor edits by SYRAX's own tasks that landed in the running tree instead of the task's isolated worktree (M1; every edit before it counts).", live_tree_edits),
     Metric("rollbacks", "Evolution", "Changes rolled back", "lower", "count", "rollback.created: an own change that failed the gate or the review, or a task that ended without releasing its edits.", _count_events("rollback.created")),
     Metric("review_rejections", "Evolution", "Changes a second brain rejected", "-", "count", "review.completed with approve false.", review_rejections),
     Metric("experiments", "Evolution", "Experiments run", "higher", "count", "Rows in the experiments table: baseline against candidate, verdict computed from numbers.", experiments_run),
