@@ -21,6 +21,7 @@ SYRAX_OPEN_UI=1 (open the browser once both answer). Both servers listen on
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import signal
@@ -52,20 +53,35 @@ SERVICE_NAME = "syrax"
 LAUNCHD_LABEL = "com.syrax.agent"
 
 
-if sys.stdout is None or sys.stderr is None:  # pythonw (the Windows login task) has no console
+_OUTPUT_IS_LOG = sys.stdout is None or sys.stderr is None
+if _OUTPUT_IS_LOG:  # pythonw (the Windows login task) has no console
     _log = open(LOG, "a", encoding="utf-8", buffering=1)
     sys.stdout = sys.stdout or _log
     sys.stderr = sys.stderr or _log
 
 
+def _note(msg: str) -> None:
+    """A service launcher's decisions belong in syrax.log even when its output
+    goes nowhere: a self-restart starts it detached with stdout sent to NUL.
+    Live 2026-10-10: it stepped aside without a word and SYRAX stayed down."""
+    if "--service" in sys.argv and not _OUTPUT_IS_LOG:
+        try:
+            with open(LOG, "a", encoding="utf-8") as f:
+                f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} SYRAX launcher: {msg}\n")
+        except OSError:
+            pass
+
+
 def say(msg: str) -> None:
     sys.stdout.write(f"SYRAX: {msg}\n")
     sys.stdout.flush()
+    _note(msg)
 
 
 def die(msg: str, code: int = 1) -> "None":
     sys.stderr.write(f"SYRAX: {msg}\n")
     sys.stderr.flush()
+    _note(msg)
     sys.exit(code)
 
 
@@ -199,6 +215,16 @@ class Component:
                 pass
 
 
+def syrax_answers() -> bool:
+    """True only when the process on the backend port is SYRAX: its /health says so.
+    A busy port alone proves nothing (live 2026-10-10: another app took 3000)."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{BACKEND_PORT}/health", timeout=2) as r:
+            return r.status == 200 and json.loads(r.read().decode("utf-8", "replace")).get("name") == "SYRAX"
+    except Exception:
+        return False
+
+
 def both_answer() -> bool:
     for url in (f"http://127.0.0.1:{UI_PORT}", f"http://127.0.0.1:{BACKEND_PORT}/health"):
         try:
@@ -288,11 +314,15 @@ def start_detached() -> int:
 def launch(dev: bool, service: bool) -> int:
     setup(verbose=False)
     check_config()
-    for port in (BACKEND_PORT, UI_PORT):
-        if port_in_use(port):
-            if service:  # as a login service, another running SYRAX is fine: step aside quietly
+    busy = [port for port in (BACKEND_PORT, UI_PORT) if port_in_use(port)]
+    if busy:
+        if syrax_answers():
+            if service:  # as a login service, another running SYRAX is fine: step aside
+                say(f"SYRAX already answers on port {BACKEND_PORT}; stepping aside.")
                 return 0
-            die(f"port {port} is already in use. Is SYRAX already running?")
+            die("SYRAX is already running.")
+        die(f"port {', '.join(map(str, busy))} is in use by another program, and SYRAX is not running. "
+            "Free the port, or move SYRAX with SYRAX_UI_PORT / SYRAX_PORT (and SYRAX_ALLOWED_ORIGINS).")
     if not dev and ui_is_stale():
         build_ui()
 
