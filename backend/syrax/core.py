@@ -86,6 +86,8 @@ class Core:
         self.journal = journal or get_journal()
         self.agent: Optional[SyraxAgent] = None
         self.current: Optional[Running] = None
+        # the human's conversation, kept aside while SYRAX does its own work
+        self._human_context: Optional[list] = None
         self._submit_lock = asyncio.Lock()
         self._agent_lock = asyncio.Lock()
         self.observers: List[Observer] = []
@@ -279,7 +281,17 @@ class Core:
                 # Self-contained work: earlier tasks' messages only cost tokens and
                 # confuse the model (a quality case once answered "clarify the task"
                 # after the previous run's history). System messages stay.
+                if self._human_context is None and hasattr(self.agent, "export_context"):
+                    self._human_context = list(self.agent.export_context() or [])  # kept once, across a run of own tasks
                 self.agent.reset_conversation()
+            elif self._human_context is not None and self.agent is not None:
+                # Live 2026-10-10: Prince said "hi" right after an autonomous task and
+                # SYRAX continued that task (edited sysinfo.py, answered with its own
+                # step prompt); a conversation task is never rolled back. The human's
+                # conversation resumes where the human left it.
+                if hasattr(self.agent, "import_context"):
+                    self.agent.import_context(self._human_context)
+                self._human_context = None
             self.current.task = asyncio.create_task(self._run(goal, said))
             return task_id
 
@@ -412,6 +424,7 @@ class Core:
             await asyncio.gather(self.current.task, return_exceptions=True)
         if self.agent:
             self.agent.reset_conversation()
+        self._human_context = None
 
     async def resume(self, task_id: str, session_id: Optional[str]) -> Optional[str]:
         """Continue an INTERRUPTED task from its last checkpoint. Returns an
