@@ -1,0 +1,16 @@
+C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\pydantic\_internal\_config.py:386: UserWarning: Valid config keys have changed in V2:
+* 'underscore_attrs_are_private' has been removed
+  warnings.warn(message, UserWarning)
+C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\pydantic\_internal\_config.py:386: UserWarning: Valid config keys have changed in V2:
+* 'underscore_attrs_are_private' has been removed
+  warnings.warn(message, UserWarning)
+VERIFICATION GREEN  git_head=c2f7decb7f79013684126be01246d646dd827759
+  PASS          py_compile   exit=0       531ms  (required)
+  PASS          pytest       exit=0    298030ms  (required)
+  PASS          tsc          exit=0     17969ms  (required)
+  PASS          eslint       exit=0     27890ms  (required)
+  PASS          node_test    exit=0       625ms  (required)
+  PASS          next_build   exit=0     35092ms  (required)
+  PASS          diff_scan    exit=0        94ms  (required)
+  PASS          performance  exit=0      5375ms  (optional)
+exit=0 command=python -m syrax.verify (all gates, head c2f7dec)
