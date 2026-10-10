@@ -310,7 +310,7 @@ class Core:
             reply = await self.agent.run(request)
             await self.journal.record("final", {"text": reply}, task_id=self.current.task_id)
             await self._checkpoint("final", verified={"final": True}, next_action=None)
-            status = "PARTIAL" if self.agent.step_limit_hit else "SUCCESS"
+            status = "PARTIAL" if self.agent.step_limit_hit or getattr(self.agent, "loop_stopped", False) else "SUCCESS"
             await self.journal.record(
                 "task.completed", {"status": status, "result": reply}, task_id=self.current.task_id
             )

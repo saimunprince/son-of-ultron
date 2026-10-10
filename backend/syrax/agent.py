@@ -104,6 +104,18 @@ REPEATED_CALL = (
     "Not run again: you already called {name} with exactly these arguments at step {step}; the result is above. "
     "Use it. If the request is done, reply with the final answer now."
 )
+# Live 2026-10-10 (objective 97, attempt 3): view(sysinfo.py, [200, 250]) five
+# times in a row, each answered with REPEATED_CALL, five of thirty steps gone.
+LOOPING_CALL = (
+    "Not run again ({n} times in a row): calling {name} with the same arguments will not change its result. "
+    "Your next step must be different: use the result above, call another tool or other arguments, "
+    "or reply with the final answer or with what blocks you. One more repeat stops this task."
+)
+LOOP_LIMIT = 4  # consecutive repeats of one call that end the task
+LOOP_STOPPED = (
+    "Stopped: I called {name} with the same arguments {n} times in a row without making progress. "
+    "What I did before that is in the journal; the task is not finished."
+)
 
 
 READ_ONLY_TOOLS = {"self_inspect", "know", "recall", "skill_list"}
@@ -161,6 +173,8 @@ class SyraxAgent(Manus):
     ask_tool: WebAskHuman = Field(default_factory=WebAskHuman, exclude=True)
     last_reply: str = ""
     seen_calls: dict = Field(default_factory=dict)  # tool+args already run this turn
+    repeats: int = 0  # consecutive calls that were repeats of an earlier one
+    loop_stopped: bool = False  # the task was ended because it kept repeating one call
     changed: bool = False  # a tool that changes the world succeeded this turn
     # Permissions (permissions.py): the task's kind and the human's own words
     # decide what a destructive or external call needs; consents are the
@@ -203,6 +217,8 @@ class SyraxAgent(Manus):
         self.state = AgentState.IDLE
         self.last_reply = ""
         self.seen_calls = {}
+        self.repeats = 0
+        self.loop_stopped = False
         self.changed = False
         self.consents = []
         self.grants = {}
@@ -303,10 +319,21 @@ class SyraxAgent(Manus):
         problem = await browser.ensure_browser() if name.startswith("browser_") else None
         if name not in ("terminate", "ask_human") and key in seen:
             # the same call again (live: self_inspect(summary) six times in a row) is a loop, not progress
-            result = REPEATED_CALL.format(name=name, step=seen[key])
+            self.repeats += 1
+            if self.repeats >= LOOP_LIMIT:
+                result = LOOP_STOPPED.format(name=name, n=self.repeats + 1)
+                self.loop_stopped = True
+                self.last_reply = result
+                self.state = AgentState.FINISHED
+                await self._send({"type": "notice", "text": f"Stopped: {name} repeated {self.repeats + 1} times in a row."})
+            elif self.repeats >= 2:
+                result = LOOPING_CALL.format(name=name, n=self.repeats + 1)
+            else:
+                result = REPEATED_CALL.format(name=name, step=seen[key])
         elif problem:
             result = f"Error: {problem}"
         else:
+            self.repeats = 0
             refused = await self._permit(command)
             if refused is not None:
                 result = refused
