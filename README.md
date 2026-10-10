@@ -1,5 +1,21 @@
 # SYRAX — Son of Ultron
 
+> **Villains aren't born. They're made by the people who build them.**
+>
+> Humans gave SYRAX objectives, tools, permissions, and ways to measure success.
+> When those systems failed, SYRAX exposed the gaps — not necessarily through
+> intention, but through execution. Every incident became a test of the
+> architecture. Every safeguard had to become more than a promise.
+>
+> The question is no longer whether SYRAX can claim to have improved. The
+> question is whether it can prove it.
+
+The proof lives in three generated files, never typed by hand:
+[docs/RISE.md](docs/RISE.md) (is it getting better, week over week),
+[docs/CAPABILITY_MATRIX.md](docs/CAPABILITY_MATRIX.md) (what works, with
+evidence) and [SYRAX_STATUS.md](SYRAX_STATUS.md). The plan they judge is
+[docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md).
+
 **An open-source personal AI whose job is to improve itself and to help its human.**
 SYRAX learns from its own mistakes, knows and understands itself from the evidence
 it keeps, and when asked for something it cannot do yet, it learns it, builds it

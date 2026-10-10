@@ -782,7 +782,8 @@
       ],
       "code": [
         "backend/syrax/verify.py",
-        "backend/syrax/capmatrix.py"
+        "backend/syrax/capmatrix.py",
+        "backend/syrax/rise.py"
       ],
       "tests": [
         "backend/syrax/test_verify.py"

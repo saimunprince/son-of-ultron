@@ -44,6 +44,7 @@ PRINCIPLES = [
     "Every change passes the verification gate before it is pushed.",
     "Unknown is a valid state; say it.",
     "The UI observes; the core is the brain.",
+    "Don't announce your evolution. Demonstrate it. Don't claim power. Prove capability. Let the evidence speak.",
 ]
 SECTIONS = ("summary", "identity", "structure", "runtime", "behavior", "capabilities", "performance", "weaknesses", "proposals", "brains", "all")
 _PROCESS_STARTED = time.time()

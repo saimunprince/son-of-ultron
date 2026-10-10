@@ -98,6 +98,8 @@ JUDGES = (
     # python_execute guard (an agent must not take down its own guard rails)
     "backend/syrax/journal.py", "backend/syrax/guard.py", "backend/syrax/_guard_site/sitecustomize.py",
     "backend/syrax/tools.py", "backend/syrax/review.py",
+    # and what measures it: a system that reports its own rise must not edit the ruler
+    "backend/syrax/rise.py", "backend/syrax/capmatrix.py",
 )
 
 
