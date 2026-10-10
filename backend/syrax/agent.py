@@ -112,6 +112,15 @@ LOOPING_CALL = (
     "or reply with the final answer or with what blocks you. One more repeat stops this task."
 )
 LOOP_LIMIT = 4  # consecutive repeats of one call that end the task
+# Live 2026-10-10 (objective 105, attempt 1): the change was made and its new
+# tests passed (5 passed, exit 0), then the brain ended the task without
+# `release`, and the dev loop rolled the finished work back.
+RELEASE_NUDGE = (
+    "[SYRAX check, not a new request] You changed files but never called `release`, and this objective closes only "
+    "when `release` creates a commit; without it every edit is rolled back. If the change is done and its tests pass, "
+    "call `release` now with the summary and the plan (why, risk, tests). If it is not done, finish it first. "
+    "If something blocks you, say what in one sentence."
+)
 LOOP_STOPPED = (
     "Stopped: I called {name} with the same arguments {n} times in a row without making progress. "
     "What I did before that is in the journal; the task is not finished."
@@ -175,6 +184,7 @@ class SyraxAgent(Manus):
     seen_calls: dict = Field(default_factory=dict)  # tool+args already run this turn
     repeats: int = 0  # consecutive calls that were repeats of an earlier one
     loop_stopped: bool = False  # the task was ended because it kept repeating one call
+    release_called: bool = False  # `release` ran in this task (whatever its outcome)
     changed: bool = False  # a tool that changes the world succeeded this turn
     # Permissions (permissions.py): the task's kind and the human's own words
     # decide what a destructive or external call needs; consents are the
@@ -219,6 +229,7 @@ class SyraxAgent(Manus):
         self.seen_calls = {}
         self.repeats = 0
         self.loop_stopped = False
+        self.release_called = False
         self.changed = False
         self.consents = []
         self.grants = {}
@@ -239,6 +250,9 @@ class SyraxAgent(Manus):
         self._trim_memory()
         await self._send({"type": "state", "state": "thinking"})
         result = await BaseAgent.run(self, request)
+        if self._owes_release(request):
+            await self._send({"type": "notice", "text": "Files changed but not released: asking once for `release`."})
+            result += "\n" + await BaseAgent.run(self, RELEASE_NUDGE)
         if self.current_step == 0 and "max steps" in result:
             self.step_limit_hit = True
             await self._send(
@@ -252,6 +266,14 @@ class SyraxAgent(Manus):
             await self._final_answer(CLAIM_ASK)
         self.task_goal, self.task_kind = "", "conversation"  # the core sets them again for the next task
         return self.last_reply or "Done."
+
+    def _owes_release(self, request: Optional[str]) -> bool:
+        """The brief asked for a release, files changed, `release` never ran,
+        and steps are left (a step-limit or loop stop is final)."""
+        from syrax.autonomy import RELEASE_MARK
+
+        return (RELEASE_MARK in (request or "") and self.changed and not self.release_called and not self.loop_stopped
+                and 0 < self.current_step < self.max_steps)
 
     async def _final_answer(self, ask: str = FINAL_ASK) -> None:
         """Some models run the right tools and then terminate without a word
@@ -340,6 +362,8 @@ class SyraxAgent(Manus):
                 seen[key] = self.current_step  # the same call again is a loop, not a second chance
             else:
                 result = await ToolCallAgent.execute_tool(self, command)
+                if name == "release":
+                    self.release_called = True
                 if name not in READ_ONLY_TOOLS:
                     seen.clear()  # the world may have changed: re-reading it is legitimate again
                 seen[key] = self.current_step

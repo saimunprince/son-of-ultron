@@ -78,9 +78,12 @@ AUTONOMOUS_BRIEF = (
 # A code change needs read, edit, test, fix and release; the default 20 steps
 # ran out live with a nearly finished change (objective 97, attempt 2).
 RELEASE_STEPS = 30
+# A brief that carries this phrase asks for a release; the agent checks for it
+# before it lets such a task end with unreleased edits (agent.RELEASE_NUDGE).
+RELEASE_MARK = "closes only when your `release` creates a commit"
 
 BRIEF_HINTS = {
-    "change_released": f" The objective closes only when your `release` creates a commit. You have {RELEASE_STEPS} steps: view only the regions you change, edit, run the tests, fix, then `release`.",
+    "change_released": f" The objective {RELEASE_MARK}. You have {RELEASE_STEPS} steps: view only the regions you change, edit, run the tests, fix, then `release`.",
     "skill_verified": " Build it with `skill_create` (code + pytest tests, dependencies listed); the objective closes only when the skill `{name}` is VERIFIED by its own tests. Write files only inside the workspace.",
     "tool_verified": " For this objective one call of the `{tool}` tool with a harmless read-only action is enough; report its output and finish.",
     "knowledge_stored": " Use `research` once on the stated topic, then `learn` one verified conclusion citing the knowledge_ids, then finish.",
