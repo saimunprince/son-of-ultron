@@ -550,7 +550,17 @@ class DesktopControl(BaseTool):
             lines.append(f"RAM: {mem['total_mb'] - mem['available_mb']} / {mem['total_mb']} MB used")
         gpu_info = sysinfo.gpu()
         if gpu_info is not None:
-            lines.append(f"GPU: {gpu_info['name']}, {gpu_info['memory_used_mb']}/{gpu_info['memory_total_mb']} MB, {gpu_info['utilization_pct']}%")
+            parts = [f"GPU: {gpu_info['name']}"]
+            used = gpu_info.get("memory_used_mb")
+            total = gpu_info.get("memory_total_mb")
+            if used is not None and total is not None:
+                parts.append(f", {used}/{total} MB")
+            elif total is not None:
+                parts.append(f", {total} MB")
+            util = gpu_info.get("utilization_pct")
+            if util is not None:
+                parts.append(f", {util}%")
+            lines.append("".join(parts))
         du = shutil.disk_usage(str(Path.home()))
         lines.append(f"Disk (home): {du.used // 2**30} / {du.total // 2**30} GB used")
         bat = sysinfo.battery()

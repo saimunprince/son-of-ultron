@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 WINDOWS = sys.platform == "win32"
 MACOS = sys.platform == "darwin"
@@ -85,7 +85,7 @@ def uptime_seconds() -> Optional[float]:
 
 
 
-def gpu() -> Optional[Dict[str, any]]:
+def gpu() -> Optional[Dict[str, Any]]:
     """GPU info or None if nvidia-smi is not present or fails."""
     try:
         res = subprocess.run(
@@ -93,6 +93,7 @@ def gpu() -> Optional[Dict[str, any]]:
             capture_output=True,
             text=True,
             timeout=2,
+            creationflags=subprocess.CREATE_NO_WINDOW if WINDOWS else 0,
         )
         if res.returncode != 0:
             return None
@@ -104,12 +105,46 @@ def gpu() -> Optional[Dict[str, any]]:
             return None
         return {
             "name": parts[0],
-            "memory_total_mb": int(parts[1]),
-            "memory_used_mb": int(parts[2]),
-            "utilization_pct": int(parts[3]),
+            "memory_total_mb": int(parts[1]) if parts[1].isdigit() else None,
+            "memory_used_mb": int(parts[2]) if parts[2].isdigit() else None,
+            "utilization_pct": int(parts[3]) if parts[3].isdigit() else None,
         }
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError, ValueError, IndexError):
-        return None
+        pass
+
+    if WINDOWS:
+        try:
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", "Get-CimInstance Win32_VideoController | Select-Object -First 1 Name,AdapterRAM | ConvertTo-Json -Compress"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            if res.returncode == 0 and res.stdout.strip():
+                import json
+                data = json.loads(res.stdout.strip())
+                if isinstance(data, list) and data:
+                    item = data[0]
+                elif isinstance(data, dict):
+                    item = data
+                else:
+                    item = None
+                if item and isinstance(item, dict):
+                    name = item.get("Name")
+                    if name:
+                        adapter_ram = item.get("AdapterRAM")
+                        memory_total_mb = adapter_ram // 1048576 if isinstance(adapter_ram, (int, float)) else None
+                        return {
+                            "name": name,
+                            "memory_total_mb": memory_total_mb,
+                            "memory_used_mb": None,
+                            "utilization_pct": None,
+                        }
+        except Exception:
+            pass
+
+    return None
 
 
 
