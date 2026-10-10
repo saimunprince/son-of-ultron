@@ -8,18 +8,17 @@ DONE, and may only keep or withdraw that DONE; it never makes one. It adds:
 - links: every DONE carries the ids of the events, commits, knowledge rows,
   skills, files or measurement runs it rests on (`contract.evidence`);
 - attribution: whether that evidence came from the objective's own tasks
-  (`own`), from a measurement SYRAX does not write (`measurement`: quality
-  runs, benchmarks, gate verdicts, tool reliability counts), or from another
-  task (`other-task`, accepted only for `tool_verified`, whose subject is a
-  property of SYRAX's own tool, not a work product of the objective);
-- work products (a commit, a file, knowledge, a skill) must come from the
-  objective's own tasks;
+  (`own`), or from a measurement SYRAX does not write (`measurement`: quality
+  runs, benchmarks, gate verdicts, tool reliability counts);
+- everything else (a commit, a file, knowledge, a skill, a tool call) must
+  come from the objective's own tasks;
 - doubt: evidence from a task that was interrupted (a crash, a restart) does
   not count until it is verified, and a commit is verified only when it is in
   the repository's history;
-- `task_success`, the check that only asks whether the task said SUCCESS, also
-  needs a successful tool call in the objective's own task and a final answer
-  that does not claim work the task did not do.
+- `task_success`, the check that only asks whether the task said SUCCESS, is
+  not a completion contract at all: it never closes an objective, and the
+  cycle blocks such an objective before spending a task on it (owner's
+  decision, 2026-10-10).
 
 This file decides whether SYRAX succeeded, so its own releases may not change
 it (devloop.JUDGES).
@@ -40,7 +39,14 @@ MEASUREMENT_KINDS = frozenset({"quality_case_passes", "quality_recovered", "benc
 WORK_PRODUCT_KINDS = frozenset({"change_released", "file_present", "file_absent", "knowledge_stored", "knowledge_confidence", "skill_verified"})
 DOUBTFUL = frozenset({"INTERRUPTED", "UNKNOWN"})  # a crash or a restart cut the task off: what it left is unverified
 CHANGE_EVENTS = ("code.changed", "commit.created", "skill.created", "knowledge.stored")
-QUIET_TOOLS = ("terminate", "ask_human")
+CHECK_KINDS_FOR_HUMANS = ("change_released", "file_present", "file_absent", "tool_verified", "quality_case_passes", "knowledge_stored", "skill_verified")
+NOT_VERIFIABLE = ("task_success is not a machine-verifiable completion contract: attach a check ("
+                  + ", ".join(CHECK_KINDS_FOR_HUMANS) + ") or close it by hand")
+
+
+def needs_a_check(objective: dict) -> bool:
+    """True when the objective has no machine-verifiable contract (task_success)."""
+    return (objective.get("check_spec") or {}).get("kind", "task_success") == "task_success"
 
 
 def own_task_ids(journal: Journal, objective: dict, task: Optional[dict]) -> List[str]:
@@ -87,15 +93,6 @@ def commit_in_history(sha: str, root: Path = REPO_ROOT) -> bool:
         return out.returncode == 0
     except (OSError, subprocess.TimeoutExpired):
         return False
-
-
-def _claims_without_change(journal: Journal, task: dict) -> bool:
-    from syrax.agent import CLAIM, OWN_WORK_CLAIM
-
-    text = str(task.get("result") or "")
-    if not (CLAIM.search(text) or OWN_WORK_CLAIM.search(text)):
-        return False
-    return not any(e["type"] in CHANGE_EVENTS for e in journal.events(task["task_id"], limit=5000))
 
 
 def _evidence_for(journal: Journal, objective: dict, evidence: dict, repo_root: Path) -> List[dict]:
@@ -172,22 +169,7 @@ def assess(journal: Journal, objective: dict, task: Optional[dict], verdict: str
         return withdraw("a human check is closed by a human, not by the cycle")
 
     if kind == "task_success":
-        t = task if task and task.get("task_id") else (journal.task(own[-1]) if own else None)
-        if not t or t.get("task_id") not in own:
-            return withdraw("task_success needs the objective's own task")
-        if t.get("status") != "SUCCESS":
-            return withdraw(f"the objective's task ended {t.get('status')}")
-        if _claims_without_change(journal, t):
-            return withdraw("the final answer claims work the task did not do")
-        tools = [e for e in journal.events(t["task_id"], limit=5000)
-                 if e["type"] == "tool.completed" and e["payload"].get("ok", True) and e["payload"].get("name") not in QUIET_TOOLS]
-        # Kept for compatibility, and marked: task_success is not machine-verifiable.
-        # Requiring tool evidence here is the stricter rule; existing tests pin that a
-        # text-only task closes a task_success objective (see docs/improvements/002.md).
-        contract.update({"verdict": "DONE", "attribution": "own",
-                         "reason": "own task ended SUCCESS" + (f" with {len(tools)} successful tool call(s)" if tools else " with no tool evidence (not machine-verifiable)"),
-                         "evidence": [{"type": "event", "id": e["id"], "task_id": t["task_id"]} for e in tools[-5:]]})
-        return "DONE", contract
+        return withdraw(NOT_VERIFIABLE)
 
     items = _evidence_for(journal, objective, evidence, repo_root)
     if not items:
@@ -213,8 +195,6 @@ def assess(journal: Journal, objective: dict, task: Optional[dict], verdict: str
         attribution, use = "measurement", verified
     elif own_items:
         attribution, use = "own", own_items
-    elif kind == "tool_verified":
-        attribution, use = "other-task", verified  # a fact about SYRAX's tool, whichever task showed it
     else:
         return withdraw(f"{kind} needs a work product of this objective's own tasks; the evidence came from elsewhere", verified)
     contract.update({"verdict": "DONE", "attribution": attribution, "evidence": use[-20:],

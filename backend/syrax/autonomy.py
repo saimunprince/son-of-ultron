@@ -692,6 +692,12 @@ class Autonomy:
                     logger.warning(f"maintenance failed: {e}")
             return await self._finish(rep)
         rep.objective_id = objective["id"]
+        if contracts.needs_a_check(objective):
+            # no task is spent on an objective that nothing could ever prove done
+            await self.journal.update_objective(objective["id"], status="BLOCKED", note=contracts.NOT_VERIFIABLE,
+                                                next_action="attach a machine check, or close it by hand")
+            rep.outcome, rep.verdict, rep.reason = "RAN", "BLOCKED", contracts.NOT_VERIFIABLE
+            return await self._finish(rep)
         # Evidence may already satisfy the objective (e.g. the tool ran for another
         # objective). Then there is no work to do: close it, run nothing.
         verdict, evidence = await asyncio.to_thread(judge, self.journal, objective, None)

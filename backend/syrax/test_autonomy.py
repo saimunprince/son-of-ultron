@@ -244,17 +244,19 @@ def test_repeated_failure_blocks_after_max_attempts(tmp_path, monkeypatch):
     assert len(core.submitted) == auto.MAX_ATTEMPTS + 1
 
 
-def test_human_objective_uses_task_success_and_priority_order(tmp_path, monkeypatch):
+def test_human_objectives_follow_priority_and_one_without_a_check_is_blocked(tmp_path, monkeypatch):
+    # changed 2026-10-10 with the owner's approval: task_success no longer closes an objective
     j, core, a = make(tmp_path, tools=["terminate"])
     monkeypatch.setattr(auto, "resource_pressure", lambda: None)
     a.set_enabled(True)
-    j.add_objective_sync("later", priority=5)
-    j.add_objective_sync("first", priority=1, reason="urgent")
-    core.script = [lambda tid: "did first", lambda tid: None]
+    later = j.add_objective_sync("later", priority=5)  # no check: task_success
+    j.add_objective_sync("first", priority=1, reason="urgent", check={"kind": "tool_verified", "tool": "desktop"})
+    core.script = [lambda tid: (use_tool("desktop")(tid, j), "did first")[1]]
     r1 = asyncio.run(a.run_once())
     assert j.objective(r1.objective_id)["goal"] == "first" and r1.verdict == "DONE"
     r2 = asyncio.run(a.run_once())
-    assert j.objective(r2.objective_id)["goal"] == "later" and r2.verdict == "RETRY" and r2.task_status == "FAILED"
+    assert r2.objective_id == later["id"] and r2.verdict == "BLOCKED" and r2.task_id is None
+    assert len(core.submitted) == 1 and j.objective(later["id"])["status"] == "BLOCKED"  # no task spent on words
 
 
 def test_dependencies_gate_picking(tmp_path):
@@ -293,13 +295,15 @@ def test_objective_already_satisfied_is_closed_without_a_task(tmp_path, monkeypa
     j, core, a = make(tmp_path, tools=["desktop", "terminate"])
     monkeypatch.setattr(auto, "resource_pressure", lambda: None)
     a.set_enabled(True)
-    o = j.add_objective_sync("verify desktop", check={"kind": "tool_verified", "tool": "desktop"}, priority=1)
-    t = j.start_task_sync("human used it meanwhile")
-    use_tool("desktop")(t, j)
+    # changed 2026-10-10 with the owner's approval: another task's tool call no longer
+    # closes tool_verified; a measurement SYRAX does not write still closes without a task
+    o = j.add_objective_sync("gate green", check={"kind": "verification_green"}, priority=1)
+    j.record_verification_sync({"status": "GREEN", "gates": []})
     rep = asyncio.run(a.run_once())
     assert rep.outcome == "RAN" and rep.verdict == "DONE" and rep.task_id is None
     assert core.submitted == [] and j.objective(o["id"])["status"] == "DONE"
     assert "existing evidence" in j.objective(o["id"])["progress"]["lesson"]
+    assert j.objective(o["id"])["evidence"]["contract"]["attribution"] == "measurement"
 
 
 def test_active_objectives_are_reopened_on_restart_and_stop(tmp_path, monkeypatch):
@@ -401,14 +405,14 @@ def test_stop_during_a_running_cycle_does_not_steal_its_objective(tmp_path, monk
     j, core, a = make(tmp_path, tools=["terminate"])
     monkeypatch.setattr(auto, "resource_pressure", lambda: None)
     a.set_enabled(True)
-    o = j.add_objective_sync("slow one", priority=1)
+    o = j.add_objective_sync("slow one", priority=1, check={"kind": "tool_verified", "tool": "desktop"})  # changed 2026-10-10: a machine check
     gate = asyncio.Event()
 
     async def slow_wait():
         await gate.wait()
 
     core.wait = slow_wait
-    core.script = [lambda tid: "done slowly"]
+    core.script = [lambda tid: (use_tool("desktop")(tid, j), "done slowly")[1]]
 
     async def go():
         cycle = asyncio.create_task(a.run_once(force=True))
@@ -548,9 +552,11 @@ def test_a_researched_limitation_becomes_a_proposal(tmp_path, monkeypatch):
     j, core, a = make(tmp_path)
     monkeypatch.setattr("syrax.autonomy.resource_pressure", lambda: None)
     o = j.add_objective_sync("research the task queue limitation", source="selfmodel", key="limit:known_limitation:queue:2026-W40",
-                             check={"kind": "task_success"},
+                             check={"kind": "knowledge_stored", "topic": "persistent task queue"},  # changed 2026-10-10: a machine check
                              evidence={"limitation": {"kind": "known_limitation", "detail": "Core: one task at a time", "score": 0.15}})
-    core.script = [lambda t: "Use a persistent task queue with a concurrency limit. Sources: https://learn.microsoft.com/x, https://arxiv.org/abs/1"]
+    text = "Use a persistent task queue with a concurrency limit. Sources: https://learn.microsoft.com/x, https://arxiv.org/abs/1"
+    core.script = [lambda t: (j.add_knowledge_sync("A persistent task queue with a concurrency limit runs objectives in turn", "web",
+                                                    source_url="https://learn.microsoft.com/x", tags=["persistent", "task", "queue"], task_id=t), text)[1]]
     rep = _a.run(a.run_once(force=True))
     assert rep.objective_id == o["id"] and rep.verdict == "DONE"
     props = core.selfmodel.proposals()

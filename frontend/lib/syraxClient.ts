@@ -459,6 +459,9 @@ export type ServerEvent =
   | { type: "error"; message: string }
   | { type: "pong" };
 
+/** How an objective is proven done: a machine check, never the task's own words. */
+export type ObjectiveCheck = { kind: string } & Record<string, string>;
+
 export type ClientMessage =
   | { type: "task"; text: string; voice?: boolean }
   | { type: "answer"; text: string }
@@ -471,7 +474,7 @@ export type ClientMessage =
   | { type: "resume"; task_id: string }
   | { type: "self_model"; section?: string }
   | { type: "objectives"; limit?: number }
-  | { type: "objective_add"; goal: string; reason?: string; priority?: number }
+  | { type: "objective_add"; goal: string; reason?: string; priority?: number; check: ObjectiveCheck }
   | { type: "objective_update"; id: number; status: "OPEN" | "DONE" | "BLOCKED" | "DROPPED"; note: string }
   | { type: "briefing"; hours?: number }
   | { type: "proposals"; limit?: number }

@@ -1,7 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { BrainScore, ClientMessage, Objective, ObjectiveStatus, Proposal, SkillRow } from "@/lib/syraxClient";
+import type { BrainScore, ClientMessage, Objective, ObjectiveCheck, ObjectiveStatus, Proposal, SkillRow } from "@/lib/syraxClient";
+
+/** What proves an objective done. A task's own words never do. */
+const CHECKS: { kind: string; label: string; field: string | null }[] = [
+  { kind: "change_released", label: "a commit is released", field: null },
+  { kind: "file_present", label: "a file exists", field: "path" },
+  { kind: "file_absent", label: "a file is gone", field: "path" },
+  { kind: "tool_verified", label: "a tool works", field: "tool" },
+  { kind: "quality_case_passes", label: "a quality case passes", field: "case" },
+  { kind: "knowledge_stored", label: "it learned about", field: "topic" },
+  { kind: "skill_verified", label: "a skill is verified", field: "name" },
+];
 
 export type MindTab = "briefing" | "objectives" | "proposals" | "skills" | "brains";
 
@@ -70,6 +81,10 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
   const [note, setNote] = useState("");
   const [goal, setGoal] = useState("");
   const [priority, setPriority] = useState(3);
+  const [checkKind, setCheckKind] = useState(CHECKS[0].kind);
+  const [checkArg, setCheckArg] = useState("");
+  const check = CHECKS.find((c) => c.kind === checkKind) ?? CHECKS[0];
+  const ready = goal.trim() !== "" && (check.field === null || checkArg.trim() !== "");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -88,9 +103,11 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
   };
 
   const addObjective = () => {
-    if (!goal.trim()) return;
-    send({ type: "objective_add", goal: goal.trim(), priority });
+    if (!ready) return;
+    const spec: ObjectiveCheck = check.field ? { kind: check.kind, [check.field]: checkArg.trim() } : { kind: check.kind };
+    send({ type: "objective_add", goal: goal.trim(), priority, check: spec });
     setGoal("");
+    setCheckArg("");
     setTimeout(refresh, 400);
   };
 
@@ -178,7 +195,23 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
                 </option>
               ))}
             </select>
-            <button type="button" className="hud-btn" disabled={!goal.trim()} onClick={addObjective}>
+            <select value={checkKind} onChange={(e) => setCheckKind(e.target.value)} aria-label="done when">
+              {CHECKS.map((c) => (
+                <option key={c.kind} value={c.kind}>
+                  done when: {c.label}
+                </option>
+              ))}
+            </select>
+            {check.field && (
+              <input
+                value={checkArg}
+                placeholder={check.field}
+                aria-label={check.field}
+                onChange={(e) => setCheckArg(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && addObjective()}
+              />
+            )}
+            <button type="button" className="hud-btn" disabled={!ready} onClick={addObjective}>
               ADD
             </button>
           </div>

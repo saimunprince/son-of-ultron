@@ -184,15 +184,18 @@ async def health():
 DETACHED: set = set()
 
 
-# A human objective may carry a machine check; task_success is the weakest and
-# the default. Each kind names the field it needs.
+# A human objective needs a machine-verifiable check (owner's decision,
+# 2026-10-10): task_success, which only asks whether the task said SUCCESS, is
+# no longer accepted. Each kind names the field it needs.
 OBJECTIVE_CHECKS = {
-    "task_success": None, "skill_verified": "name", "tool_verified": "tool", "knowledge_stored": "topic",
+    "skill_verified": "name", "tool_verified": "tool", "knowledge_stored": "topic",
     "change_released": None, "file_present": "path", "file_absent": "path", "quality_case_passes": "case",
 }
 
 
-def objective_check_problem(check: dict) -> Optional[str]:
+def objective_check_problem(check: Optional[dict]) -> Optional[str]:
+    if not check:
+        return "a check is required, one of " + ", ".join(OBJECTIVE_CHECKS)
     kind = check.get("kind")
     if kind not in OBJECTIVE_CHECKS:
         return "kind must be one of " + ", ".join(OBJECTIVE_CHECKS)
@@ -394,11 +397,10 @@ class Session:
             except (TypeError, ValueError):
                 priority = 3
             check = msg.get("check") if isinstance(msg.get("check"), dict) else None
-            if check:
-                problem = objective_check_problem(check)
-                if problem:
-                    await self.send({"type": "notice", "text": f"objective_add check: {problem}"})
-                    return
+            problem = objective_check_problem(check)
+            if problem:
+                await self.send({"type": "notice", "text": f"objective_add check: {problem}"})
+                return
             await journal.run(journal.add_objective_sync, goal, str(msg.get("reason") or "") or None, priority, "human", check)
         elif kind == "objective_update":
             # The human's override, e.g. reopening an objective that closed on

@@ -581,7 +581,7 @@ def test_objective_cycle_over_ws_marks_done_only_with_tool_evidence(script, monk
     with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
         hello = boot(ws)
         assert hello["autonomy"]["enabled"] is False and hello["autonomy"]["objectives"]["OPEN"] == 0
-        ws.send_json({"type": "objective_add", "goal": "Verify the desktop tool", "priority": 1})
+        ws.send_json({"type": "objective_add", "goal": "Verify the desktop tool", "priority": 1, "check": {"kind": "tool_verified", "tool": "desktop"}})
         created, _ = recv_until(ws, "objective")
         assert created["event"] == "created" and created["source"] == "human"
         ws.send_json({"type": "objective_update", "id": created["objective_id"], "status": "DROPPED"})
@@ -606,24 +606,16 @@ def test_objective_cycle_over_ws_marks_done_only_with_tool_evidence(script, monk
         objs, _ = recv_until(ws, "objectives")
         j = get_journal()
         human = [o for o in objs["objectives"] if o["source"] == "human"][0]
-        assert human["status"] == "DONE" and human["evidence"]["judged"]["task_status"] == "SUCCESS"
+        assert human["status"] == "DONE" and human["evidence"]["judged"]["used_after_objective"] is True
+        assert human["evidence"]["contract"]["attribution"] == "own"  # changed 2026-10-10: closed on its own task's tool call
         task = j.task(human["last_task_id"])
         assert task["kind"] == "autonomous" and task["status"] == "SUCCESS"
         # the cycle derived verify-capability objectives for every untested tool before running
         derived = {o["key"]: o for o in objs["objectives"] if o["source"] == "selfmodel"}
         assert "verify-capability:python_execute" in derived
-        assert derived["verify-capability:desktop"]["status"] == "OPEN"
+        assert "verify-capability:desktop" not in derived  # changed 2026-10-10: the human's tool_verified objective is the one live objective for desktop
         caps = {c["capability"]: c for c in core_mod.get_core().selfmodel.capabilities()}
         assert caps["desktop"]["status"] == "VERIFIED"
-        # next cycle: the desktop objective is already satisfied by that evidence → closed with NO task
-        tasks_before = len(j.tasks(limit=100))
-        ws.send_json({"type": "cycle_now"})
-        st, seen = recv_until(ws, "autonomy_status")
-        assert st["last_cycle"]["verdict"] == "DONE" and st["last_cycle"]["task_id"] is None
-        assert "existing evidence" in st["last_cycle"]["reason"]
-        assert not any(e["type"] == "task" and e["event"] == "started" for e in seen)
-        assert len(j.tasks(limit=100)) == tasks_before
-        assert j.objective(derived["verify-capability:desktop"]["id"])["status"] == "DONE"
     # autonomous work never lands in the conversation history
     from syrax.memory import get_memory
     assert all("AUTONOMOUS" not in r["user"] for r in get_memory().recent(50))

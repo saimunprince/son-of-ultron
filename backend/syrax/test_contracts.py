@@ -39,38 +39,35 @@ def tool(j, t, name, ok=True, cid="c1", args=None):
 
 # ——— false-success claims ———
 
-def test_task_success_refuses_a_false_claim_and_is_marked_not_machine_verifiable(tmp_path):
+def test_task_success_never_closes_an_objective(tmp_path):
+    # changed 2026-10-10 with the owner's approval (was: kept for compatibility, marked not verifiable)
     j = Journal(tmp_path / "j.db")
-    o = j.add_objective_sync("improve the release tool")  # no check: task_success
+    o = j.add_objective_sync("report the machine")  # no check: task_success
     t = own_task(j, o)
-    tool(j, t, "journal_query")
-    finish(j, t, "The release limitation has been addressed through code optimization.")
-    task = j.task(t)
-    assert judge(j, o, task)[0] == "DONE"  # the check alone reads it as met
-    verdict, c = contracts.assess(j, o, task, "DONE", {"task_status": "SUCCESS"})
-    assert verdict == "RETRY" and "claims work the task did not do" in c["reason"]
-
-    t2 = own_task(j, o)
-    tool(j, t2, "desktop", args={"action": "system_info"})
-    finish(j, t2, "Read the machine: 16 cores, 15.7 GB RAM.")
-    verdict, c = contracts.assess(j, o, j.task(t2), "DONE", {"task_status": "SUCCESS"})
-    assert verdict == "DONE" and c["attribution"] == "own" and c["evidence"][0]["task_id"] == t2
-    assert c["machine_verifiable"] is False  # the gap stays visible in every record
-
-    t3 = own_task(j, o)
-    finish(j, t3, "did it")
-    verdict, c = contracts.assess(j, o, j.task(t3), "DONE", {"task_status": "SUCCESS"})
-    assert verdict == "DONE" and c["evidence"] == [] and "not machine-verifiable" in c["reason"]  # pinned by existing tests; reported as open
+    tool(j, t, "desktop", args={"action": "system_info"})
+    finish(j, t, "Read the machine: 16 cores, 15.7 GB RAM.")
+    assert judge(j, o, j.task(t))[0] == "DONE"  # the check alone reads it as met
+    verdict, c = contracts.assess(j, o, j.task(t), "DONE", {"task_status": "SUCCESS"})
+    assert verdict == "RETRY" and "not a machine-verifiable completion contract" in c["reason"] and not c["machine_verifiable"]
+    assert contracts.needs_a_check(o) and not contracts.needs_a_check({"check_spec": {"kind": "change_released"}})
 
 
-def test_a_task_that_is_not_the_objectives_own_cannot_close_it(tmp_path):
+def test_another_tasks_tool_call_does_not_close_tool_verified(tmp_path):
     j = Journal(tmp_path / "j.db")
-    o = j.add_objective_sync("say hi")
+    o = j.add_objective_sync("verify desktop", check={"kind": "tool_verified", "tool": "desktop"})
     stranger = j.start_task_sync("someone else's task", kind="autonomous")
     tool(j, stranger, "desktop")
     finish(j, stranger, "hi")
-    verdict, c = contracts.assess(j, o, None, "DONE", {"task_status": "SUCCESS"})
-    assert verdict == "RETRY" and "own task" in c["reason"]
+    verdict, ev = judge(j, o, None)
+    assert verdict == "DONE"
+    verdict, c = contracts.assess(j, o, None, verdict, ev, path="existing")
+    assert verdict == "RETRY" and "came from elsewhere" in c["reason"]
+    t = own_task(j, o)
+    tool(j, t, "desktop", cid="c2")
+    finish(j, t, "desktop works")
+    verdict, ev = judge(j, o, j.task(t))
+    verdict, c = contracts.assess(j, o, j.task(t), verdict, ev)
+    assert verdict == "DONE" and c["attribution"] == "own" and all(e["task_id"] == t for e in c["evidence"])
 
 
 # ——— missing commits, and work products from elsewhere ———
@@ -211,15 +208,23 @@ class Core:
 
 
 def test_the_cycle_keeps_an_objective_open_when_the_contract_withdraws_done(tmp_path, monkeypatch):
+    # changed 2026-10-10: the withdrawn DONE comes from a task-less commit (task_success no longer runs at all)
     monkeypatch.setattr(auto, "resource_pressure", lambda: None)
     j = Journal(tmp_path / "j.db")
-    claim = lambda jj, t: finish(jj, t, "The limitation has been addressed.")
-    work = lambda jj, t: (tool(jj, t, "desktop", args={"action": "system_info"}), finish(jj, t, "16 cores."))
-    core = Core(j, [claim, work])
+
+    def nobodys_commit(jj, t):
+        jj.record_sync("commit.created", {"commit": "f00d", "files": ["a"], "summary": "x"})  # task-less
+        finish(jj, t, "Released.")
+
+    def own_commit(jj, t):
+        jj.record_sync("commit.created", {"commit": "beef", "files": ["b"], "summary": "y"}, task_id=t)
+        finish(jj, t, "Released beef.")
+
+    core = Core(j, [nobodys_commit, own_commit])
     a = Autonomy(core, j)
     a.reflect = False
     a.set_enabled(True)
-    o = j.add_objective_sync("report the machine", priority=1)
+    o = j.add_objective_sync("land a change", priority=1, check={"kind": "change_released"})
     rep = asyncio.run(a.run_once())
     got = j.objective(o["id"])
     assert rep.verdict == "RETRY" and got["status"] == "OPEN" and got["evidence"]["contract"]["verdict"] == "RETRY"
@@ -228,7 +233,7 @@ def test_the_cycle_keeps_an_objective_open_when_the_contract_withdraws_done(tmp_
     got = j.objective(o["id"])
     assert rep.verdict == "DONE" and got["status"] == "DONE"
     c = got["evidence"]["contract"]
-    assert c["attribution"] == "own" and c["evidence"] and c["evidence"][0]["task_id"] == got["last_task_id"]
+    assert c["attribution"] == "own" and [e["sha"] for e in c["evidence"]] == ["beef"] and c["evidence"][0]["task_id"] == got["last_task_id"]
 
 
 # ——— the evaluator stays out of reach ———
