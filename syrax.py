@@ -215,6 +215,26 @@ class Component:
                 pass
 
 
+UI_MAX_RESTARTS = 5
+UI_RESTART_WINDOW_S = 600
+
+
+def supervise(core_alive: bool, ui_alive: bool, ui_restarts: List[float], now: float, ui_given_up: bool = False) -> str:
+    """What the launcher does about a component that is down.
+
+    The core is the brain: when it dies, SYRAX stops and the service starts it
+    again. The UI only observes: it is restarted, at most UI_MAX_RESTARTS times
+    in UI_RESTART_WINDOW_S, and the core keeps running either way. Live
+    2026-10-10 16:02: the UI process ended without an error and the launcher
+    took the core down with it."""
+    if not core_alive:
+        return "shutdown"
+    if ui_alive or ui_given_up:
+        return "ok"
+    recent = [t for t in ui_restarts if now - t < UI_RESTART_WINDOW_S]
+    return "restart_ui" if len(recent) < UI_MAX_RESTARTS else "give_up_ui"
+
+
 def syrax_answers() -> bool:
     """True only when the process on the backend port is SYRAX: its /health says so.
     A busy port alone proves nothing (live 2026-10-10: another app took 3000)."""
@@ -345,21 +365,31 @@ def launch(dev: bool, service: bool) -> int:
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
     try:
+        ui_cmd = [npx, "next", "dev" if dev else "start", *env_ui]
         comps.append(Component("core", [str(venv_python()), "-m", "syrax.server"], BACKEND, log))
-        comps.append(Component("ui", [npx, "next", "dev" if dev else "start", *env_ui], FRONTEND, log))
+        comps.append(Component("ui", ui_cmd, FRONTEND, log))
         say(f"core  : ws://127.0.0.1:{BACKEND_PORT}/ws")
         say(f"orb UI: http://localhost:{UI_PORT}")
         PID_FILE.write_text(str(os.getpid()))
         # a login start opens the UI; a restart minutes or hours later does not
         open_ui = os.getenv("SYRAX_OPEN_UI") == "1" or (service and os.getenv("SYRAX_OPEN_UI") != "0" and _uptime_s() < 600)
         started = time.time()
+        ui_restarts: List[float] = []
+        ui_given_up = False
         while not stopping:
             time.sleep(1)
-            dead = [c.name for c in comps if not c.alive()]
-            if dead:
+            action = supervise(comps[0].alive(), comps[1].alive(), ui_restarts, time.time(), ui_given_up)
+            if action == "shutdown":
                 if not stopping:
-                    say(f"{dead[0]} exited, shutting down.")
+                    say(f"core exited (code {comps[0].proc.returncode}), shutting down.")
                 break
+            if action == "restart_ui":
+                say(f"ui exited (code {comps[1].proc.returncode}); restarting it, the core keeps running.")
+                ui_restarts.append(time.time())
+                comps[1] = Component("ui", ui_cmd, FRONTEND, log)
+            elif action == "give_up_ui":
+                say(f"ui exited {UI_MAX_RESTARTS} times in {UI_RESTART_WINDOW_S // 60} min; the core keeps running without it.")
+                ui_given_up = True
             if open_ui and time.time() - started < 120 and both_answer():
                 webbrowser.open(f"http://localhost:{UI_PORT}")
                 open_ui = False
