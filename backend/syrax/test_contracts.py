@@ -178,7 +178,7 @@ def test_a_commit_left_by_a_crash_counts_only_once_git_has_it(tmp_path):
 
 # ——— invalid state transitions and duplicate workers ———
 
-def test_done_is_final_and_a_second_live_process_cannot_take_over(tmp_path):
+def test_done_is_final_and_a_finished_task_takes_no_more_work(tmp_path):
     j = Journal(tmp_path / "j.db")
     o = j.add_objective_sync("x", check={"kind": "verification_green"})
     j.update_objective_sync(o["id"], status="DONE")

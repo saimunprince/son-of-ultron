@@ -1,0 +1,14 @@
+C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\pytest_asyncio\plugin.py:207: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+........................................................................ [ 14%]
+........................................................................ [ 28%]
+........................................................................ [ 43%]
+........................................................................ [ 57%]
+........................................................................ [ 72%]
+........................................................................ [ 86%]
+................................................................s.       [100%]
+- generated xml file: C:\Users\sanmu\AppData\Local\Temp\claude\c--ai-agent-son-of-ultron\fb737e1a-c770-4953-ad17-77ecdedf54af\scratchpad\wt76\docs\evidence\2026-10-10\pytest-baseline.xml -
+497 passed, 1 skipped in 266.78s (0:04:26)
+exit=0 seconds=270 command=OPENMANUS_DISABLE_BROWSER_USE=1 SYRAX_DISABLE_WHISPER_WARMUP=1 SYRAX_BROWSER=0 python -m pytest syrax -q -p no:cacheprovider -p no:warnings --junitxml=pytest-baseline.xml (head 9b1143d)

@@ -1,0 +1,5 @@
+VERIFICATION GREEN  git_head=048e46a895c8343affc27dbb89f5c080cd788935
+  PASS          py_compile   exit=0       359ms  (required)
+  PASS          pytest       exit=0    247781ms  (required)
+  PASS          diff_scan    exit=0        63ms  (required)
+exit=0 command=python -m syrax.verify --gate py_compile --gate pytest --gate diff_scan (head 048e46a)
