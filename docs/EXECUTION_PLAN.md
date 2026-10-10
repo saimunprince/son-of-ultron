@@ -70,6 +70,15 @@ self-change incident touched the live tree: 111 lines deleted from
 - New ledger metric: own edits inside the live tree (lower is better).
 - **Exit**: the next 5 own release attempts run in worktrees, and the new
   metric reads 0 for a full week.
+- **Status 2026-10-10: built, not yet proven live.** Branch
+  `m1-isolated-evolution`: the gate runs against any tree (`7189d4a`); a task
+  worktree with fast-forward-only landing and link-safe removal (`37e2144`);
+  the editor writes into it, the service turns it on, and RISE counts "Own
+  edits in the running tree" (`00a74f2`). The full eight-check gate passed
+  with a worktree as the tree under test
+  (`docs/evidence/2026-10-10/gate-worktree-as-root.txt`). Known gap:
+  `python_execute` writing into the running tree is not blocked (the guard
+  protects files, not folders); the post-task safety net rolls it back.
 
 ### M2 · A brain that finishes code (Brain)
 
