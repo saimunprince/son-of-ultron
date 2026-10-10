@@ -56,6 +56,16 @@ becomes a `research-failure:<task_id>` objective with check
 `knowledge_stored {topic}`: it is DONE only when knowledge matching the topic
 was stored after the objective was created. Words in the final reply do not count.
 
+Human objectives (`objective_add {goal, check?}`) can carry the same kind of
+machine check instead of the default `task_success` (which only asks whether
+the task ended SUCCESS, so an honest refusal or a report with no change
+closes it): `change_released` (a `commit.created` by this objective's own
+task), `file_present {path}` / `file_absent {path}` (a real look at the tree,
+inside the repository only; a present file counts only if written after the
+objective was set), `quality_case_passes {case}`, `tool_verified {tool}`,
+`skill_verified {name}`, `knowledge_stored {topic}`. A check with a missing
+field or a path outside the repository is refused with a notice.
+
 ## Access
 
 - WebSocket `knowledge {query?, limit?}` → `knowledge_list` (recent, or ranked by query).

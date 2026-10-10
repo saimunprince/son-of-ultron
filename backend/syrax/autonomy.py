@@ -427,6 +427,30 @@ def rejudge_blocked(journal: Journal) -> int:
     return closed
 
 
+CHECK_ROOTS = (BACKEND_ROOT.parent,)  # file_* checks may look here only (the workspace is inside)
+
+
+def check_path(raw: Any) -> Optional[Path]:
+    """Resolve a file_present / file_absent path; None when it is not ours to check."""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    p = Path(text)
+    if not p.is_absolute():
+        p = CHECK_ROOTS[0] / p
+    try:
+        p = p.resolve()
+    except OSError:
+        return None
+    for root in CHECK_ROOTS:
+        try:
+            p.relative_to(root.resolve())
+            return p
+        except ValueError:
+            continue
+    return None
+
+
 def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str, dict]:
     """Decide DONE / RETRY from journal evidence only. Returns (verdict, evidence)."""
     spec = objective.get("check_spec") or {}
@@ -481,8 +505,26 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         newer = [k for k in journal.knowledge_recent(limit=200, since=objective["created"]) if k["confidence"] >= want and (tags & set(k["tags"]))]
         return ("DONE" if newer else "RETRY"), {"knowledge_id": spec.get("knowledge_id"), "min": want, "stronger": [k["id"] for k in newer][:5]}
     if kind == "change_released":
-        commits = [e for e in journal.events_between(objective["created"]) if e["type"] == "commit.created"]
-        return ("DONE" if commits else "RETRY"), {"commits": [e["payload"].get("commit") for e in commits][:5]}
+        # only a commit made by this objective's own tasks counts; someone
+        # else's release landing in the window is not this objective's work
+        ids = {task["task_id"]} if task and task.get("task_id") else set()
+        window = journal.events_between(objective["created"], limit=5000)
+        ids |= {e["payload"].get("task_id") for e in window
+                if e["type"] == "cycle.completed" and e["payload"].get("objective_id") == objective.get("id") and e["payload"].get("task_id")}
+        # a task-less commit event (recorded from outside any task) keeps counting
+        commits = [e for e in window if e["type"] == "commit.created" and (e.get("task_id") is None or e.get("task_id") in ids)]
+        return ("DONE" if commits else "RETRY"), {"commits": [e["payload"].get("commit") for e in commits][:5], "tasks": sorted(ids)}
+    if kind in ("file_present", "file_absent"):
+        # a world-state check: the file must be inside the repository or the
+        # workspace, and a present file counts only if it changed after the
+        # objective was set (evidence that work happened, not that it existed)
+        path = check_path(spec.get("path"))
+        if path is None:
+            return "BLOCKED", {"reason": f"path {spec.get('path')!r} is outside the repository and workspace; a human must check it"}
+        exists = path.exists()
+        mtime = path.stat().st_mtime if exists else None
+        ok = (not exists) if kind == "file_absent" else bool(exists and mtime is not None and mtime >= objective["created"] - 1)
+        return ("DONE" if ok else "RETRY"), {"path": str(path), "exists": exists, "mtime": mtime}
     if kind == "verification_green":
         rows = journal.verifications(limit=1)
         ok = bool(rows and rows[0]["status"] == "GREEN" and rows[0]["ts"] >= objective["created"])
@@ -855,7 +897,11 @@ def _lesson(objective: dict, task: dict, verdict: str, evidence: dict) -> str:
     if spec.get("kind") == "knowledge_confidence":
         return "no stronger knowledge with the same tags was stored; research more sources"
     if spec.get("kind") == "change_released":
-        return "no commit was created: the change was never released, or the gate rolled it back"
+        return "no commit was created by this objective's task: the change was never released, or the gate or review rolled it back"
+    if spec.get("kind") == "file_present":
+        return f"{spec.get('path')} does not exist, or was not written after the objective was set"
+    if spec.get("kind") == "file_absent":
+        return f"{spec.get('path')} still exists"
     if spec.get("kind") == "knowledge_stored":
         return f"nothing about {spec.get('topic')!r} was stored; research and `learn` must actually run"
     return f"task ended {task.get('status')} with error {task.get('error')!r}"

@@ -184,6 +184,28 @@ async def health():
 DETACHED: set = set()
 
 
+# A human objective may carry a machine check; task_success is the weakest and
+# the default. Each kind names the field it needs.
+OBJECTIVE_CHECKS = {
+    "task_success": None, "skill_verified": "name", "tool_verified": "tool", "knowledge_stored": "topic",
+    "change_released": None, "file_present": "path", "file_absent": "path", "quality_case_passes": "case",
+}
+
+
+def objective_check_problem(check: dict) -> Optional[str]:
+    kind = check.get("kind")
+    if kind not in OBJECTIVE_CHECKS:
+        return "kind must be one of " + ", ".join(OBJECTIVE_CHECKS)
+    field = OBJECTIVE_CHECKS[kind]
+    if field and not str(check.get(field) or "").strip():
+        return f"{kind} needs {field!r}"
+    if kind in ("file_present", "file_absent"):
+        from syrax.autonomy import check_path
+        if check_path(check.get("path")) is None:
+            return "path must be inside the repository (or backend/workspace)"
+    return None
+
+
 class Session:
     """One WebSocket connection: observes the core, routes commands to it."""
 
@@ -372,9 +394,11 @@ class Session:
             except (TypeError, ValueError):
                 priority = 3
             check = msg.get("check") if isinstance(msg.get("check"), dict) else None
-            if check and check.get("kind") not in ("task_success", "skill_verified", "tool_verified", "knowledge_stored"):
-                await self.send({"type": "notice", "text": "objective_add check kind must be task_success, skill_verified, tool_verified or knowledge_stored."})
-                return
+            if check:
+                problem = objective_check_problem(check)
+                if problem:
+                    await self.send({"type": "notice", "text": f"objective_add check: {problem}"})
+                    return
             await journal.run(journal.add_objective_sync, goal, str(msg.get("reason") or "") or None, priority, "human", check)
         elif kind == "objective_update":
             # The human's override, e.g. reopening an objective that closed on
