@@ -42,6 +42,26 @@ REPO_ROOT = BACKEND_ROOT.parent
 SCOPE = ("backend/syrax/", "backend/skills/", "backend/requirements-syrax.txt", "frontend/components/", "frontend/lib/", "frontend/app/", "docs/", "README.md")
 FORBIDDEN = (".env", "config/config.toml", "config/brains.json", "journal.db", ".git/", "node_modules/", ".venv/", ".next/")
 SNAPSHOT_DIR = BACKEND_ROOT / "config" / "rollback"
+WORKTREES_DIR = REPO_ROOT / ".syrax" / "worktrees"  # one per autonomous task (M1, isolated evolution)
+
+
+def remove_worktree(worktree: Path, live_root: Path) -> None:
+    """Remove a task worktree without following links. A frontend gate links
+    the live node_modules into a worktree for its duration; if it crashed and
+    left the link, deleting the tree through it would delete the shared
+    modules. The link is unlinked first, never followed."""
+    import shutil
+
+    link = worktree / "frontend" / "node_modules"
+    try:
+        if link.is_symlink() or getattr(os.path, "isjunction", lambda p: False)(link):
+            os.rmdir(link) if os.name == "nt" else os.unlink(link)
+    except OSError:
+        pass
+    _git(["worktree", "remove", "--force", str(worktree)], live_root)
+    if worktree.exists() and not worktree.is_symlink():
+        shutil.rmtree(worktree, ignore_errors=True)
+    _git(["worktree", "prune"], live_root)
 
 
 def _git(args: Sequence[str], cwd: Path, timeout: float = 60) -> subprocess.CompletedProcess:
@@ -148,9 +168,15 @@ def scope_problems(files: Dict[str, str]) -> List[str]:
 
 class DevLoop:
     def __init__(self, journal: Journal, root: Path = REPO_ROOT, gates: Optional[Callable[[], List[Gate]]] = None,
-                 task_id_provider: Optional[Callable[[], Optional[str]]] = None, snapshot_dir: Optional[Path] = None):
+                 task_id_provider: Optional[Callable[[], Optional[str]]] = None, snapshot_dir: Optional[Path] = None,
+                 worktrees_dir: Optional[Path] = None):
         self.journal = journal
         self.root = Path(root)
+        # M1: while a task is isolated, root is its worktree and live_root the running tree
+        self.live_root = self.root
+        self.isolated: Optional[Path] = None
+        self.worktrees_dir = Path(worktrees_dir or (self.live_root / ".syrax" / "worktrees"))
+        self.live_baseline: Dict[str, str] = {}
         # async (info, summary, author_brains) -> {approve, reasons, reviewer} | {skipped};
         # set by the core: a different brain must approve an autonomous change
         self.reviewer: Optional[Callable[..., Any]] = None
@@ -170,6 +196,51 @@ class DevLoop:
         except Exception:
             self.baseline = {}
         return dict(self.baseline)
+
+    # ——— M1: isolated evolution ———
+
+    def isolate(self, task_id: str) -> Path:
+        """Give the task its own worktree at HEAD: its edits, the gate and the
+        commit happen there; the running tree changes only when a released
+        commit is fast-forwarded into it. Leftover worktrees (one task runs at a
+        time) are removed first."""
+        from syrax.versions import prepare_worktree
+
+        self.prune_worktrees()
+        wt = self.worktrees_dir / str(task_id)
+        wt.parent.mkdir(parents=True, exist_ok=True)
+        add = _git(["worktree", "add", "--detach", str(wt), "HEAD"], self.live_root)
+        if add.returncode != 0:
+            raise RuntimeError(f"git worktree add failed: {(add.stderr or add.stdout).strip()[:300]}")
+        prepare_worktree(wt, self.live_root)  # the untracked runtime files a checkout needs to import
+        self.live_baseline = dict(self.baseline)  # the human's uncommitted work in the running tree stays protected
+        self.isolated, self.root, self.baseline = wt, wt, {}
+        return wt
+
+    def discard(self) -> None:
+        """Drop the task's worktree and point the loop at the running tree again."""
+        wt = self.isolated
+        if wt is None:
+            return
+        self.isolated, self.root, self.baseline = None, self.live_root, dict(self.live_baseline)
+        remove_worktree(wt, self.live_root)
+
+    def prune_worktrees(self) -> List[str]:
+        """Remove task worktrees left behind (a crash, a restart). Not the current one."""
+        removed = []
+        if self.worktrees_dir.is_dir():
+            for wt in sorted(self.worktrees_dir.iterdir()):
+                if wt.is_dir() and wt != self.isolated:
+                    remove_worktree(wt, self.live_root)
+                    removed.append(wt.name)
+        return removed
+
+    def land(self, sha: str) -> Dict[str, Any]:
+        """Fast-forward the running tree to a commit made in the task's worktree.
+        Only a fast-forward: if the running tree's branch moved meanwhile, or a
+        human's uncommitted change is in the way, nothing lands."""
+        out = _git(["merge", "--ff-only", sha], self.live_root)
+        return {"ok": out.returncode == 0, "output": (out.stdout + out.stderr).strip()[-500:]}
 
     def task_files(self, files: Dict[str, str]) -> Dict[str, str]:
         """Changed files this task is responsible for: everything not dirty at task start."""
@@ -257,11 +328,16 @@ class DevLoop:
         if out.returncode != 0:
             raise RuntimeError(f"git commit failed: {out.stderr.strip() or out.stdout.strip()}")
         head = _git(["rev-parse", "HEAD"], self.root).stdout.strip()
+        if self.isolated is not None:  # the commit lives in the worktree until the running tree takes it
+            landed = self.land(head)
+            if not landed["ok"]:
+                raise RuntimeError(f"committed {head[:12]} in the task's worktree but could not fast-forward the running tree "
+                                   f"(it moved, or a human's change is in the way): {landed['output'][:300]}")
         return {"commit": head, "files": files}
 
     def push(self) -> Dict[str, Any]:
-        branch = _git(["rev-parse", "--abbrev-ref", "HEAD"], self.root).stdout.strip()
-        out = _git(["push", "origin", branch], self.root, timeout=120)
+        branch = _git(["rev-parse", "--abbrev-ref", "HEAD"], self.live_root).stdout.strip()
+        out = _git(["push", "origin", branch], self.live_root, timeout=120)
         return {"ok": out.returncode == 0, "branch": branch, "output": (out.stdout + out.stderr).strip()[-500:]}
 
     # ——— the loop ———

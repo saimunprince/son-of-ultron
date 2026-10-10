@@ -26,6 +26,9 @@ backend/config/memory.json
 backend/config/history.jsonl
 backend/config/*.tmp
 
+# SYRAX's per-task worktrees (M1, isolated evolution)
+.syrax/
+
 # durable execution journal (runtime state)
 backend/config/journal.db
 backend/config/journal.db-wal

@@ -268,6 +268,14 @@ class Core:
             await self.ensure_agent()
             await asyncio.to_thread(self.devloop.begin_task)  # a task owns only the changes it makes
             task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)
+            if kind == "autonomous" and os.getenv("SYRAX_ISOLATE", "0") == "1":
+                # M1, isolated evolution: SYRAX's own work happens in a worktree, never in the running tree
+                try:
+                    wt = await asyncio.to_thread(self.devloop.isolate, task_id)
+                    await self.journal.record("isolation.started", {"worktree": str(wt)}, task_id=task_id)
+                except Exception as e:
+                    logger.warning(f"could not isolate task {task_id}: {e}")
+                    await self.journal.record("isolation.failed", {"error": str(e)[:300]}, task_id=task_id)
             await self._route(said or goal, task_id)
             self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind)
             if self.agent is not None:  # permissions: the kind and the human's own words (not the brief)
@@ -358,6 +366,8 @@ class Core:
         conversations are left alone."""
         if self.current is None or self.current.kind == "conversation":
             return
+        if self.devloop.isolated is not None:
+            await self._close_worktree()
         try:
             info = await asyncio.to_thread(self._dirty_repo_info)
         except Exception as e:
@@ -376,6 +386,27 @@ class Core:
             logger.warning(f"rolled back uncommitted edits left by task {self.current.task_id}: {list(info['files'])}")
         except Exception as e:
             logger.error(f"rollback after task failed: {e}")
+
+    async def _close_worktree(self) -> None:
+        """M1: the task worked in its own worktree. What it did not release is
+        kept as a diff (the next attempt can re-apply it), then the worktree is
+        removed. The running tree was never touched."""
+        assert self.current is not None
+        wt = self.devloop.isolated
+        try:
+            info = await asyncio.to_thread(self._dirty_repo_info)  # devloop.root is the worktree here
+            if info:
+                snap = await asyncio.to_thread(self.devloop.snapshot, info)
+                await self.journal.record(
+                    "rollback.created",
+                    {"reason": "task ended without a committed release", "restored": [], "removed": sorted(info["files"]),
+                     "clean": True, "snapshot": str(snap), "files": info["files"], "worktree": str(wt)},
+                    task_id=self.current.task_id,
+                )
+        except Exception as e:
+            logger.warning(f"could not keep the worktree diff of task {self.current.task_id}: {e}")
+        finally:
+            await asyncio.to_thread(self.devloop.discard)
 
     def _dirty_repo_info(self) -> Optional[dict]:
         from syrax.devloop import _git, changed_files, owned_files
