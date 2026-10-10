@@ -75,7 +75,12 @@ AUTONOMOUS_BRIEF = (
     "fewest steps that produce the evidence, do nothing unrelated, and then finish with one "
     "plain sentence stating exactly what you observed.{hint}"
 )
+# A code change needs read, edit, test, fix and release; the default 20 steps
+# ran out live with a nearly finished change (objective 97, attempt 2).
+RELEASE_STEPS = 30
+
 BRIEF_HINTS = {
+    "change_released": f" The objective closes only when your `release` creates a commit. You have {RELEASE_STEPS} steps: view only the regions you change, edit, run the tests, fix, then `release`.",
     "skill_verified": " Build it with `skill_create` (code + pytest tests, dependencies listed); the objective closes only when the skill `{name}` is VERIFIED by its own tests. Write files only inside the workspace.",
     "tool_verified": " For this objective one call of the `{tool}` tool with a harmless read-only action is enough; report its output and finish.",
     "knowledge_stored": " Use `research` once on the stated topic, then `learn` one verified conclusion citing the knowledge_ids, then finish.",
@@ -167,6 +172,19 @@ def past_experience(journal: Journal, objective: dict, limit: int = 3, budget: i
     return ("Past experience with similar objectives (repeat what worked, avoid what failed):\n" + "\n".join(lines))[:budget] + "\n"
 
 
+def rolled_back(events: List[dict]) -> Optional[dict]:
+    """The attempt's own edits, rolled back because it ended without a committed
+    release: where the diff was kept, so the next attempt can re-apply it
+    instead of starting over (live: objective 97, attempt 2 ran out of steps
+    with a nearly finished change, and attempt 3 would have started from zero)."""
+    for e in reversed(events):
+        p = e["payload"]
+        if e["type"] == "rollback.created" and p.get("snapshot"):
+            files = sorted(set((p.get("restored") or []) + (p.get("removed") or []))) or sorted(p.get("files") or {})
+            return {"snapshot": p["snapshot"], "files": files}
+    return None
+
+
 def brief_evidence(objective: dict, budget: int = 1800) -> str:
     """The evidence the objective was created from, compact, for the task.
     Live: SYRAX was told to "read the failures listed in the evidence" but the
@@ -182,6 +200,10 @@ def brief_evidence(objective: dict, budget: int = 1800) -> str:
             f"- attempt {a.get('attempt')} {a.get('verdict')}: {'; '.join(a.get('strategy') or ['no tools'])[:240]} — {a.get('lesson', '')[:160]}"
             for a in log[-4:]
         ) + "\n"
+        last = log[-1]
+        if last.get("kept"):
+            tried += (f"The last attempt's edits to {', '.join(last.get('kept_files') or [])} were rolled back but kept as a diff at "
+                      f"{last['kept']}: view it with str_replace_editor first and re-apply what was right instead of starting over.\n")
     if not ev:
         return tried
     lines = []
@@ -692,7 +714,8 @@ class Autonomy:
                                         evidence=plan.render(steps_before) + followup.learned_brief(self.journal, objective)
                                         + brief_evidence(objective) + past_experience(self.journal, objective))
         try:
-            task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous")
+            budget = {"max_steps": RELEASE_STEPS} if spec.get("kind") == "change_released" else {}
+            task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous", **budget)
         except RuntimeError as e:  # e.g. the agent could not be built: the objective must not stay ACTIVE
             await self.journal.update_objective(objective["id"], status="OPEN", note=f"could not start: {e}")
             rep.outcome, rep.reason = "SKIPPED", f"could not start the task: {e}"
@@ -713,7 +736,11 @@ class Autonomy:
         lesson = _lesson(objective, task, verdict, evidence)
         # Phase 2: remember how this attempt went about it; a strategy that
         # already failed is not tried again (no blind retry)
-        strategy = strategy_of(self.journal.events(task_id))
+        task_events = self.journal.events(task_id)
+        strategy = strategy_of(task_events)
+        kept = rolled_back(task_events) if verdict != "DONE" else None
+        if verdict != "DONE" and task.get("status") == "PARTIAL":
+            lesson = f"ran out of steps; {lesson}"
         log = list(((objective.get("progress") or {}).get("attempts_log")) or [])
         # Phase 1: which plan steps the journal now proves, across all attempts
         steps = await asyncio.to_thread(plan.status, self.journal, objective, plan.task_ids_of(objective, task_id))
@@ -728,7 +755,8 @@ class Autonomy:
         if repeated:
             lesson = f"repeated the strategy of an earlier failed attempt ({', '.join(strategy[:4]) or 'no tools'}); {lesson}"
         log.append({"attempt": attempts, "task_id": task_id, "verdict": verdict, "strategy": strategy, "lesson": lesson[:300],
-                    **({"steps_proven": plan.proven(steps)} if steps else {})})
+                    **({"steps_proven": plan.proven(steps)} if steps else {}),
+                    **({"kept": kept["snapshot"], "kept_files": kept["files"][:6]} if kept else {})})
         if repeated:
             verdict = "BLOCKED"
         if verdict == "DONE":

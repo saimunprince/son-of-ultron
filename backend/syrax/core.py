@@ -255,7 +255,8 @@ class Core:
     # ——— commands ———
 
     async def submit(
-        self, goal: str, said: Optional[str], session_id: Optional[str], kind: str = "conversation"
+        self, goal: str, said: Optional[str], session_id: Optional[str], kind: str = "conversation",
+        max_steps: Optional[int] = None,
     ) -> Optional[str]:
         """Start a task. Returns its id, or None when SYRAX is already busy
         (also when another submit got there first while this one waited)."""
@@ -270,6 +271,10 @@ class Core:
             if self.agent is not None:  # permissions: the kind and the human's own words (not the brief)
                 self.agent.task_kind = kind
                 self.agent.task_goal = said or goal
+                # a budget is per task: a release objective's 30 steps never leak into the next task
+                fields = getattr(type(self.agent), "model_fields", {})
+                if "max_steps" in fields:
+                    self.agent.max_steps = max_steps or fields["max_steps"].default
             if kind in ("eval", "autonomous") and self.agent is not None:
                 # Self-contained work: earlier tasks' messages only cost tokens and
                 # confuse the model (a quality case once answered "clarify the task"
