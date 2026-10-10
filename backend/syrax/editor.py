@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 from app.exceptions import ToolError
+from app.tool.file_operators import LocalFileOperator
 from app.tool.str_replace_editor import StrReplaceEditor
 
 from syrax.journal import BACKEND_ROOT
@@ -101,6 +102,30 @@ def list_directory(path: Path, depth: int = 2, limit: int = 400) -> str:
     return "\n".join(rows)
 
 
+class KeepEolOperator(LocalFileOperator):
+    """Writes text with the file's own line endings: LF unless the file already
+    uses CRLF; new files get LF. Upstream writes with Path.write_text, which on
+    Windows turns every newline into CRLF: live 2026-10-10 an edit undone with
+    undo_edit left sysinfo.py byte-different but content-identical, git showed
+    it modified with an empty diff, and the dev loop would have counted it as a
+    human's uncommitted work in the next task's baseline."""
+
+    async def write_file(self, path: Any, content: str) -> None:
+        target = Path(path)
+        try:
+            crlf = target.is_file() and b"\r\n" in target.read_bytes()[:65536]
+        except OSError:
+            crlf = False
+        try:
+            with open(target, "w", encoding=self.encoding, newline="\r\n" if crlf else "\n") as f:
+                f.write(content.replace("\r\n", "\n"))
+        except Exception as e:
+            raise ToolError(f"Failed to write to {path}: {e}") from None
+
+
+_KEEP_EOL = KeepEolOperator()
+
+
 class SyraxEditor(StrReplaceEditor):
     # OpenManus' description and schema cost 632 tokens on every model call;
     # this says the same in about a third (measured with brains.count_tokens).
@@ -123,6 +148,10 @@ class SyraxEditor(StrReplaceEditor):
         },
         "required": ["command", "path"],
     }
+
+    def _get_operator(self) -> Any:
+        op = super()._get_operator()
+        return _KEEP_EOL if isinstance(op, LocalFileOperator) else op  # the sandbox operator writes inside its container
 
     async def execute(self, *, command: Any = None, path: Any = None, **kwargs: Any) -> str:  # type: ignore[override]
         if not command:
