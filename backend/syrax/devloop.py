@@ -31,6 +31,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
 from pydantic import Field
 
+from app.logger import logger
 from app.tool.base import BaseTool, ToolResult
 
 from syrax.journal import BACKEND_ROOT, Journal, JournalError
@@ -266,6 +267,74 @@ class DevLoop:
     # ——— the loop ———
 
     async def release(self, summary: str, plan: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+        """Every attempt, whatever its outcome, leaves an experiment record:
+        candidate = the change, baseline = HEAD, measured by the gate and the
+        review; the verdict comes from the outcome, never from the summary."""
+        try:
+            report = await self._release(summary, plan)
+        except (ValueError, JournalError) as e:
+            await asyncio.to_thread(self.record_experiment, summary, plan, {"outcome": "REFUSED", "error": str(e)})
+            raise
+        await asyncio.to_thread(self.record_experiment, summary, plan, report)
+        return report
+
+    DECISION_VERDICT = {"COMMITTED": "CANDIDATE_BETTER", "ROLLED_BACK": "BASELINE_BETTER", "REVIEW_REJECTED": "BASELINE_BETTER",
+                        "REFUSED": "BASELINE_BETTER", "COMMIT_FAILED": "INCONCLUSIVE"}
+
+    def _active_objective_id(self, task: Optional[dict]) -> Optional[int]:
+        """The objective an autonomous task works on: the cycle marks exactly one ACTIVE before it starts the task."""
+        if not task or task.get("kind") != "autonomous":
+            return None
+        active = self.journal.objectives(limit=5, status="ACTIVE")
+        return active[0]["id"] if len(active) == 1 else None
+
+    def record_experiment(self, summary: str, plan: Optional[Dict[str, str]], report: Dict[str, Any]) -> Optional[dict]:
+        """Write the attempt as an experiment. Never raises: a release must not fail on its own bookkeeping."""
+        import hashlib
+        import platform
+        import sys
+
+        try:
+            task_id = self.task_id_provider()
+            task = self.journal.task(task_id) if task_id else None
+            decision = str(report.get("outcome") or "UNKNOWN")
+            head = report.get("head") or _git(["rev-parse", "HEAD"], self.root).stdout.strip()
+            diff = str(report.get("diff") or "")
+            objective_id = self._active_objective_id(task)
+            result = {
+                "decision": decision,
+                "objective_id": objective_id,
+                "task_id": task_id,
+                "task_kind": (task or {}).get("kind"),
+                "source_revision": head,
+                "environment": {"python": sys.version.split()[0], "platform": platform.platform()},
+                "tests": {"verification_id": report.get("verification_id"), "status": report.get("verification"),
+                          "gates": report.get("gates") or [], "failing": [f.get("name") for f in report.get("failing") or []]},
+                "review": report.get("review"),
+                "artifacts": {"files": sorted(report.get("files") or {}), "snapshot": report.get("snapshot"), "commit": report.get("commit"),
+                              "diff_sha256": hashlib.sha256(diff.encode("utf-8", "replace")).hexdigest() if diff else None},
+                "reason": report.get("error"),
+                "plan": {k: v for k, v in (plan or {}).items() if v},
+            }
+            verdict = self.DECISION_VERDICT.get(decision, "INCONCLUSIVE")
+            conclusion = {
+                "COMMITTED": f"committed {str(report.get('commit') or '')[:12]} after gate #{report.get('verification_id')} GREEN",
+                "ROLLED_BACK": f"rolled back: gate #{report.get('verification_id')} {report.get('verification')}",
+                "REVIEW_REJECTED": "rolled back: a second brain rejected the change",
+                "REFUSED": f"refused before the gate: {str(report.get('error') or '')[:200]}",
+                "COMMIT_FAILED": f"gate GREEN but the commit failed: {str(report.get('error') or '')[:200]}",
+            }.get(decision, decision)
+            return self.journal.add_experiment_sync(
+                f"release: {summary.strip()[:200]}", {"git_head": head}, {"files": result["artifacts"]["files"], "diff_sha256": result["artifacts"]["diff_sha256"]},
+                "release_gate", result, conclusion, verdict, objective=str(objective_id) if objective_id is not None else None,
+                next_action=None if decision == "COMMITTED" else "change the approach; the same change fails the same way",
+                task_id=None,  # task-less on purpose: the task's own event sequence stays the release's
+            )
+        except Exception as e:  # pragma: no cover - bookkeeping must not break a release
+            logger.warning(f"could not record the release experiment: {e}")
+            return None
+
+    async def _release(self, summary: str, plan: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         if not (summary or "").strip():
             raise ValueError("summary required")
         task_id = self.task_id_provider()
@@ -289,6 +358,9 @@ class DevLoop:
         vid = self.journal.verifications(limit=1)[0]["id"]
         report: Dict[str, Any] = {
             "summary": summary,
+            "head": info["head"],
+            "diff": info["diff"],
+            "snapshot": str(snap),
             "files": info["files"],
             "verification_id": vid,
             "verification": verification.status,
