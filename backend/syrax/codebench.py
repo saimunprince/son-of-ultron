@@ -227,11 +227,16 @@ async def measure(core: Any, brain: str, cases: Optional[List[dict]] = None, ws:
     if router is None or not hasattr(router, "preferred"):
         raise JournalError("no brain router available")
     results: List[dict] = []
+    todo = list(cases if cases is not None else CASES)
     router.preferred = brain
     try:
-        for case in cases if cases is not None else CASES:
+        for case in todo:
             results.append(await run_case(core, case, ws, steps, timeout))
             if results[-1]["stopped"]:
+                break
+            if len(results) == 1 and brain not in (results[0].get("answers") or {}):
+                # Live 2026-10-11: groq, pollinations and ollama never answered (another brain did
+                # every step), so 12 tasks spent gemini's free quota on work credited to nobody.
                 break
     finally:
         router.preferred = None
@@ -241,6 +246,8 @@ async def measure(core: Any, brain: str, cases: Optional[List[dict]] = None, ws:
         "brain": brain, "graded": len(mine), "passed": passed,
         "pass_rate": round(passed / len(mine), 3) if mine else None,
         "not_measured": [r["id"] for r in results if r["answered_by"] != brain],
+        "never_answered": bool(results) and not any(brain in (r.get("answers") or {}) for r in results),
+        "skipped": [c["id"] for c in todo[len(results):]],
         "stopped": any(r["stopped"] for r in results),
         "cases": [{k: r.get(k) for k in ("id", "files_to_change", "ok", "task_id", "status", "steps", "ms", "answered_by")}
                   | {"failed": [c["check"] + ": " + str(c["detail"])[:160] for c in r["checks"] if not c["ok"]]} for r in results],
@@ -294,10 +301,10 @@ async def run_all(core: Any, brains: Optional[List[str]] = None, cases: Optional
     stopped = any(r["stopped"] for r in runs)
     experiments = []
     base = next((r for r in runs if r["brain"] == order[0]), None)
-    if base is not None and not stopped:
+    if base is not None and not stopped and not base.get("never_answered"):
         for r in runs:
-            if r is base:
-                continue
+            if r is base or r.get("never_answered"):
+                continue  # nothing was measured, so there is nothing to compare (and no row to count)
             verdict, conclusion = _verdict(base, r)
             row = await journal.run(
                 journal.add_experiment_sync, f"brain {r['brain']} finishes code changes at least as well as {base['brain']}",
@@ -317,7 +324,8 @@ async def run_all(core: Any, brains: Optional[List[str]] = None, cases: Optional
 
 
 def summary(res: dict) -> str:
-    parts = [f"{r['brain']} {r['passed']}/{r['graded']}" + (f" ({len(r['not_measured'])} not its own)" if r["not_measured"] else "")
+    parts = [f"{r['brain']} never answered" if r.get("never_answered") else
+             f"{r['brain']} {r['passed']}/{r['graded']}" + (f" ({len(r['not_measured'])} not its own)" if r["not_measured"] else "")
              for r in res.get("runs") or []]
     parts += [f"{b} skipped ({why})" for b, why in (res.get("skipped") or {}).items()]
     return ", ".join(parts) + (" · stopped by the human" if res.get("stopped") else "")

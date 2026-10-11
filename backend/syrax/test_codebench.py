@@ -177,8 +177,8 @@ def test_a_brain_that_failed_over_is_not_measured_and_not_credited(tmp_path):
     core = FakeCore(j, ["alpha", "beta"], skill={"beta": set(CASES)}, failover={"alpha": "beta"})
     res = asyncio.run(codebench.run_all(core, ws=tmp_path / "ws"))
     alpha = res["runs"][0]
-    assert alpha["graded"] == 0 and alpha["pass_rate"] is None and len(alpha["not_measured"]) == 4
-    assert j.experiments(limit=5)[0]["verdict"] == "INCONCLUSIVE"  # beta's work never counts as alpha's
+    assert alpha["graded"] == 0 and alpha["pass_rate"] is None and alpha["never_answered"] and len(alpha["not_measured"]) == 1
+    assert j.experiments(limit=5) == []  # nothing of alpha's was measured: no comparison, and beta's work never counts as alpha's
     assert codebench.table(j) == {"alpha": {"graded": 0, "passed": 0, "pass_rate": None},
                                   "beta": {"graded": 4, "passed": 4, "pass_rate": 1.0}}
 
