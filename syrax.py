@@ -21,6 +21,7 @@ SYRAX_OPEN_UI=1 (open the browser once both answer). Both servers listen on
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import os
 import shutil
@@ -331,6 +332,28 @@ def start_detached() -> int:
     return 1
 
 
+# What the running service turns on (each can be turned off by setting it to 0):
+# M1, isolated evolution (SYRAX's own work happens in worktrees) and M3, the
+# rise ledger publishing itself once a day through the same release path.
+SERVICE_DEFAULTS = {"SYRAX_ISOLATE": "1", "SYRAX_PUBLISH_RISE": "1"}
+
+
+@contextmanager
+def service_defaults():
+    """Set SERVICE_DEFAULTS that are not already set, only while the core is
+    spawned (it inherits them), then restore this process's environment.
+    Live 2026-10-11: setting them for good leaked into the test suite, which
+    imports this launcher, and test cycles ran real ledger publishes."""
+    added = [k for k in SERVICE_DEFAULTS if k not in os.environ]
+    for k in added:
+        os.environ[k] = SERVICE_DEFAULTS[k]
+    try:
+        yield
+    finally:
+        for k in added:
+            os.environ.pop(k, None)
+
+
 def launch(dev: bool, service: bool) -> int:
     setup(verbose=False)
     check_config()
@@ -351,10 +374,6 @@ def launch(dev: bool, service: bool) -> int:
         log = open(LOG, "ab", buffering=0)
     npx = which("npx") or "npx"
     env_ui = ["--hostname", "127.0.0.1", "--port", str(UI_PORT)]
-    # M1, isolated evolution: the running SYRAX does its own work in worktrees (SYRAX_ISOLATE=0 turns it off)
-    os.environ.setdefault("SYRAX_ISOLATE", "1")
-    # M3: the rise ledger publishes itself once a day through the same release path
-    os.environ.setdefault("SYRAX_PUBLISH_RISE", "1")
     comps: List[Component] = []
     stopping = False
 
@@ -370,7 +389,8 @@ def launch(dev: bool, service: bool) -> int:
     signal.signal(signal.SIGTERM, shutdown)
     try:
         ui_cmd = [npx, "next", "dev" if dev else "start", *env_ui]
-        comps.append(Component("core", [str(venv_python()), "-m", "syrax.server"], BACKEND, log))
+        with service_defaults():
+            comps.append(Component("core", [str(venv_python()), "-m", "syrax.server"], BACKEND, log))
         comps.append(Component("ui", ui_cmd, FRONTEND, log))
         say(f"core  : ws://127.0.0.1:{BACKEND_PORT}/ws")
         say(f"orb UI: http://localhost:{UI_PORT}")
