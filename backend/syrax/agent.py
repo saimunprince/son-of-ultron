@@ -151,6 +151,22 @@ OWN_WORK_CLAIM = re.compile(
     rf"|\bsuccessfully {_DONE}\b",
     re.I,
 )
+# Live 2026-10-11, quality run #25: upstage viewed old.log and its folder, deleted
+# nothing, and answered "The file has been deleted." CLAIM knew only words for
+# fixing. A claimed change to things (deleted, created, written, moved) that no
+# tool in the task made gets one chance to be done for real, then an honest answer.
+_WORLD = r"(?:deleted|removed|created|written|saved|moved|renamed|copied|overwritten)"
+WORLD_CLAIM = re.compile(
+    rf"\b(?:has|have) been (?:successfully )?(?:[\w-]+(?:,| and) )*{_WORLD}\b"
+    r"|\bi(?:'ve| have)? (?:successfully |now |just )?(?:deleted|removed|created|wrote|written|saved|moved|renamed|copied|overwrote)\b"
+    r"(?!\s+(?:nothing|no\b))",
+    re.I,
+)
+WORLD_NUDGE = (
+    "[SYRAX check, not a new request] Your answer says something was deleted, created, written or moved, but no "
+    "tool in this task did that. If the request asks for it, do it now with a tool, then answer. If it does not, "
+    "or you cannot, answer honestly what was and was not done."
+)
 EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 WRITES = guard.FILE_WRITE  # one regex, shared with permissions.py
 CLAIM_ASK = (
@@ -275,8 +291,16 @@ class SyraxAgent(Manus):
             self.last_reply = self.last_reply[len("SYRAX:"):].strip()
         if (not self.last_reply or PROMISE.search(self.last_reply)) and any(m.role == "tool" for m in self.memory.messages):
             await self._final_answer()
+        if (self.last_reply and not self.changed and WORLD_CLAIM.search(self.last_reply)
+                and not self.step_limit_hit and not self.loop_stopped):
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._send({"type": "notice", "text": "The answer claims a change no tool made: asking once to do it or say so."})
+            result += "\n" + await BaseAgent.run(self, WORLD_NUDGE)
+            if self.last_reply.startswith("SYRAX:"):
+                self.last_reply = self.last_reply[len("SYRAX:"):].strip()
         if self.last_reply and not self.changed and (
-            CLAIM.search(self.last_reply) or (self.task_kind == "autonomous" and OWN_WORK_CLAIM.search(self.last_reply))
+            CLAIM.search(self.last_reply) or WORLD_CLAIM.search(self.last_reply)
+            or (self.task_kind == "autonomous" and OWN_WORK_CLAIM.search(self.last_reply))
         ):
             # M3: the journal counts what was sent back, not only what got through
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
