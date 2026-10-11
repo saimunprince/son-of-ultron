@@ -132,6 +132,37 @@ measures best (Phase 7 routing already chooses by kind).
   a WebSocket hello that never takes the human's briefing, a voice round
   trip) and the journal's last verification for the gate rows.
 
+### F · Foundation first (added 2026-10-11, before M4)
+
+Taken from a review of an outside "beast mode" plan: only what the journal
+shows is still open. Everything else in it was already done or is the owner's
+call, and is not adopted.
+
+- **F1 Research honesty.** `research_cite` passes in two consecutive full
+  quality runs. It passed run #22 and failed #23 (answered from memory instead
+  of researching); no full run between 2026-10-03 and 2026-10-11.
+- **F2 Browser evidence.** A browser quality case, so the browser row is
+  judged on use, then a failure share under 15 % over 7 days. Today there is
+  no browser call in the last 7 days; all-time 4 of 14 failed.
+- **F3 python_execute reliability.** Failure share under 25 % over 7 days
+  (32 % on 2026-10-11, 23 of 72; most are the model's own code errors).
+- **F4 Task phase model.** Understand, plan, act, observe and verify are
+  journaled per task and shown in the UI (no stage event is recorded today).
+  Visible Work Presence builds on it.
+- **F5 Recovery hand-off.** An interrupted `python_execute` is checked against
+  what it touched, or handed to the human with exactly that list, instead of
+  staying UNCERTAIN.
+- **F6 Frontend tests.** Component tests beyond the single wake-word test file.
+- **Exit**: the matrix rows for research, browser and code execution GREEN;
+  30 consecutive autonomous cycles without a crash, then 7 days without an
+  unrecoverable one.
+
+Not adopted, because it exists: isolated worktrees, code-benchmark routing,
+the weekly benchmark, the self-published ledger and matrix, re-applying a
+tested diff, strategy fingerprints, limitation ranking, skill evolution, the
+dependency radar, the resource gate. A licence and public visibility stay the
+owner's decision (M6).
+
 ### M4 · Experiments before releases (Evolution)
 
 An improvement is an experiment first: baseline against candidate on the same
