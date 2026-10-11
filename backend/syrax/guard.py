@@ -21,7 +21,7 @@ from __future__ import annotations
 import builtins
 import os
 from pathlib import Path
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 
 import re
 
@@ -73,7 +73,25 @@ def protected_paths() -> List[str]:
     keys = {str((journal.parent / "brains.json").resolve())}
     if os.getenv("SYRAX_BRAINS_FILE"):
         keys.add(str(Path(os.environ["SYRAX_BRAINS_FILE"]).resolve()))
-    return [str(journal), f"{journal}-wal", f"{journal}-shm", f"{journal}.owner", *sorted(keys)]
+    return [str(journal), f"{journal}-wal", f"{journal}-shm", f"{journal}.owner", *sorted(keys), *isolation_rules()]
+
+
+def isolation_rules() -> List[str]:
+    """While an autonomous task works in its own worktree (M1), the running
+    tree is read-only for the code it runs: "<folder>*" makes a folder
+    read-only, "!<folder>*" re-opens a part of it. The workspace and the
+    worktrees (.syrax) stay writable. The editor already writes into the
+    worktree; this closes the python_execute way around it."""
+    try:
+        from syrax import editor
+
+        mapping = editor.ROOT_MAP
+    except Exception:
+        return []
+    if not mapping:
+        return []
+    live = Path(mapping[0]).resolve()
+    return [f"{live}{os.sep}*", f"!{live / 'backend' / 'workspace'}{os.sep}*", f"!{live / '.syrax'}{os.sep}*"]
 
 
 def _norm(p) -> str:
@@ -91,15 +109,45 @@ def _norm(p) -> str:
         return os.path.normcase(s)
 
 
+def _rules(paths: Iterable[str]):
+    """Split the path list into exact files, read-only folders and their re-opened parts."""
+    files, readonly, allowed = set(), [], []
+    for p in paths:
+        if not p:
+            continue
+        if p.endswith("*"):
+            folder = os.path.normcase(str(Path(p.lstrip("!")[:-1]).resolve()))
+            (allowed if p.startswith("!") else readonly).append(folder)
+        else:
+            files.add(os.path.normcase(str(Path(p).resolve())))
+    return files, readonly, allowed
+
+
+def _under(path: str, folder: str) -> bool:
+    return path == folder or path.startswith(folder.rstrip(os.sep) + os.sep)
+
+
 def install(paths: Iterable[str]) -> None:
     """Patch this interpreter. Idempotent."""
-    guarded = {os.path.normcase(str(Path(p).resolve())) for p in paths if p}
-    if not guarded or getattr(builtins, "_syrax_guard", False):
+    guarded, readonly, allowed = _rules(paths)
+    if not (guarded or readonly) or getattr(builtins, "_syrax_guard", False):
         return
     builtins._syrax_guard = True
 
+    def in_readonly_tree(p) -> bool:
+        n = _norm(p)
+        return bool(n) and any(_under(n, f) for f in readonly) and not any(_under(n, a) for a in allowed)
+
     def is_protected(p) -> bool:
         return _norm(p) in guarded
+
+    def refuse_write(p) -> Optional[str]:
+        if is_protected(p):
+            return f"{p}: SYRAX's journal and keys are written only by the running core"
+        if in_readonly_tree(p):
+            return (f"{p}: the running SYRAX is read-only while this task works in its own worktree; "
+                    "write into the worktree (.syrax/worktrees/...) or backend/workspace, and `release` lands the change")
+        return None
 
     import sqlite3
 
@@ -116,8 +164,10 @@ def install(paths: Iterable[str]) -> None:
     real_open = builtins.open
 
     def guarded_open(file, mode="r", *args, **kwargs):
-        if isinstance(mode, str) and any(f in mode for f in WRITE_FLAGS) and is_protected(file):
-            raise PermissionError(f"{file}: SYRAX's journal and keys are written only by the running core")
+        if isinstance(mode, str) and any(f in mode for f in WRITE_FLAGS):
+            why = refuse_write(file)
+            if why:
+                raise PermissionError(why)
         return real_open(file, mode, *args, **kwargs)
 
     builtins.open = guarded_open
@@ -125,7 +175,7 @@ def install(paths: Iterable[str]) -> None:
 
     io.open = guarded_open
 
-    for name in ("remove", "unlink", "replace", "rename"):
+    for name in ("remove", "unlink", "replace", "rename", "rmdir"):
         real = getattr(os, name)
 
         def make(real=real, name=name):
@@ -133,6 +183,10 @@ def install(paths: Iterable[str]) -> None:
                 targets = [src] + [a for a in args[:1]]
                 if any(is_protected(t) for t in targets):
                     raise PermissionError(f"{src}: SYRAX's journal and keys cannot be {name}d from here")
+                for t in targets:
+                    why = refuse_write(t)
+                    if why:
+                        raise PermissionError(why)
                 return real(src, *args, **kwargs)
             return wrapped
 

@@ -569,8 +569,9 @@ async def _cross_review(info: dict, summary: str, authors: List[str]) -> dict:
 ISOLATION_NOTE = (
     "\n\n[ISOLATED WORKTREE] This task works in its own copy of the repository at {worktree}. "
     "str_replace_editor maps every path under {live} there by itself, so keep using the usual paths. "
-    "python_execute must not write into {live}. Only `release` moves your change into the running SYRAX: "
-    "it gates and commits the copy, then fast-forwards the running tree."
+    "python_execute cannot write into {live} (it is read-only while you work), and tests run with python_execute "
+    "would import the running code, not your copy, so do not test that way: `release` runs the full test suite "
+    "on your copy, then gates, commits and fast-forwards the running tree. Only `release` moves your change in."
 )
 
 
