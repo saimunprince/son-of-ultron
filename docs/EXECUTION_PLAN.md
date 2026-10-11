@@ -126,8 +126,11 @@ measures best (Phase 7 routing already chooses by kind).
   run: maintenance worktree, gate #15 GREEN on all eight checks, a second
   brain approved, SYRAX commit `90ffbdf` landed and was pushed. Objectives
   without a check are refused outright since `c2f7dec` (stricter than the
-  proposal in the third bullet). Still to do: daily matrix regeneration,
-  which needs a JUnit report from the gate and the live probes.
+  proposal in the third bullet). The capability matrix is regenerated in
+  the same daily release: a JUnit run of the test suite on the worktree,
+  live probes of the running service (`syrax/probe.py`: process, health, UI,
+  a WebSocket hello that never takes the human's briefing, a voice round
+  trip) and the journal's last verification for the gate rows.
 
 ### M4 · Experiments before releases (Evolution)
 

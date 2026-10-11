@@ -119,7 +119,18 @@ CAPABILITIES: List[Capability] = [
                tests=["syrax.test_autonomy::*", "syrax.test_limits::*", "syrax.test_plan::*", "syrax.test_followup::*"], live=["cycles"]),
     Capability("release", "Autonomous self-modification (release, review, rollback)", PARTIAL, "backend/syrax/devloop.py, review.py",
                tools=["release"], tests=["syrax.test_devloop::*"],
-               note="gate + rollback + cross-brain review; first own commit landed 2026-10-03 (d9e60cf, docs-only); edits land in the live tree"),
+               note="gate + rollback + cross-brain review; the landing rate is in RISE.md (Releases that landed)"),
+    Capability("isolation", "Isolated evolution (own changes in a worktree, fast-forward landing)", CURRENT,
+               "backend/syrax/devloop.py (isolate, land), editor.py (redirect), guard.py (isolation rules)",
+               tests=["syrax.test_isolated_evolution::*", "syrax.test_isolated_redirect::*", "syrax.test_guard_isolation::*", "syrax.test_m1_gaps::*"],
+               live=["isolated_commits"], note="M1; the running tree changes only by a fast-forward of a gated, reviewed commit"),
+    Capability("ledger", "Self-published evidence (RISE ledger and this matrix)", CURRENT,
+               "backend/syrax/rise.py, ledger.py, capmatrix.py, probe.py",
+               tests=["syrax.test_ledger_publish::*", "syrax.test_rise::*", "syrax.test_capmatrix::*", "syrax.test_matrix_publish::*"],
+               live=["ledger_published"], note="M3; regenerated daily from the journal, the test suite and live probes, released like any own change"),
+    Capability("codebench", "Code-change benchmark per brain", CURRENT, "backend/syrax/codebench.py, routing.py (preferred_for_code)",
+               tests=["syrax.test_codebench::*"], live=["codebench_runs"],
+               note="M2; release objectives start on the brain that finishes code changes best"),
     Capability("skills", "Skill / tool creation (skill_create, tests, registry)", CURRENT, "backend/syrax/skills.py, skillevo.py",
                tools=["skill_create", "skill_test", "make_docx", "make_xlsx", "make_pptx", "make_pdf"],
                tests=["syrax.test_skills::*", "syrax.test_skill_safety::*", "syrax.test_skillevo::*"], live=["skills_verified"]),
@@ -169,6 +180,12 @@ def read_journal(path: Path, now: Optional[float] = None) -> Dict[str, Any]:
             "permission_authorized": c.execute("SELECT COUNT(*) FROM events WHERE type='permission.authorized' AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
             "permission_refused": c.execute("SELECT COUNT(*) FROM events WHERE type='permission.refused' AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
             "brains_answered": c.execute("SELECT COUNT(DISTINCT json_extract(payload,'$.provider')) FROM events WHERE type='brain.answered' AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            "isolated_commits": c.execute("SELECT COUNT(*) FROM events e WHERE e.type='commit.created' AND e.ts>? AND e.task_id IN "
+                                          "(SELECT task_id FROM events WHERE type='isolation.started')", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            "ledger_published": c.execute("SELECT COUNT(*) FROM tasks WHERE status='SUCCESS' AND goal LIKE '[MAINTENANCE] publish the rise ledger%' AND created>?",
+                                          (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            "codebench_runs": c.execute("SELECT COUNT(*) FROM events WHERE type='codebench.completed' AND json_extract(payload,'$.graded')>0 AND ts>?",
+                                        (now - WINDOW_DAYS * 86400,)).fetchone()[0],
             "desktop_screenshot": c.execute("SELECT COUNT(*) FROM events WHERE type='tool.completed' AND json_extract(payload,'$.name')='desktop' AND id IN "
                                             "(SELECT e2.id FROM events e2 JOIN events e1 ON e1.task_id=e2.task_id AND json_extract(e1.payload,'$.id')=json_extract(e2.payload,'$.id') "
                                             "WHERE e1.type='tool.started' AND json_extract(e1.payload,'$.args.action')='screenshot')").fetchone()[0],
@@ -276,9 +293,12 @@ def live_checks(evidence: Optional[dict], gate: Optional[dict], journal: Dict[st
         out["gate"] = out["gate_frontend"] = (None, "")
     counts = journal.get("counts") or {}
     for key, label in (("tasks_recent", "SUCCESS tasks"), ("checkpoints", "checkpoints"), ("cancelled_tasks", "cancelled tasks"),
-                       ("recoveries", "recoveries"), ("cycles", "cycles"), ("brains_answered", "providers answered"), ("desktop_screenshot", "desktop screenshots")):
+                       ("recoveries", "recoveries"), ("cycles", "cycles"), ("brains_answered", "providers answered"), ("desktop_screenshot", "desktop screenshots"),
+                       ("isolated_commits", "own commits landed from a worktree"), ("ledger_published", "self-published ledgers"),
+                       ("codebench_runs", "code benchmark runs")):
         n = counts.get(key, 0)
-        out[key] = ("pass", f"{n} {label}" + (f" in {WINDOW_DAYS} d" if key in ("tasks_recent", "cycles", "brains_answered") else "")) if n else (None, f"0 {label}")
+        windowed = ("tasks_recent", "cycles", "brains_answered", "isolated_commits", "ledger_published", "codebench_runs")
+        out[key] = ("pass", f"{n} {label}" + (f" in {WINDOW_DAYS} d" if key in windowed else "")) if n else (None, f"0 {label}")
     pa, pr = counts.get("permission_authorized", 0), counts.get("permission_refused", 0)
     # the gate is proven at runtime only when it has both let a named action through and refused one
     out["permissions"] = ("pass" if pa and pr else None, f"{pa} authorized / {pr} refused decisions in {WINDOW_DAYS} d")
@@ -383,14 +403,25 @@ def map_coverage(repo: Path = REPO_ROOT) -> dict:
     return {"modules": len(mods), "referenced": len(mods) - len(missing), "missing": missing, "components": [c["component"] for c in m["components"]]}
 
 
+def gate_from_verification(v: Optional[dict]) -> Optional[dict]:
+    """A journaled verification (Journal.verifications) in read_gate's shape."""
+    if not v:
+        return None
+    return {"status": v.get("status"), "gates": {g.get("name"): g.get("status") for g in v.get("gates") or [] if g.get("name")}}
+
+
 def build(journal_path: Path, junit: Optional[Path] = None, evidence: Optional[Path] = None, gate: Optional[Path] = None,
-          head: str = "?", repo: Path = REPO_ROOT, now: Optional[float] = None) -> tuple:
+          head: str = "?", repo: Path = REPO_ROOT, now: Optional[float] = None, evidence_data: Optional[dict] = None,
+          gate_data: Optional[dict] = None, journal_label: Optional[str] = None) -> tuple:
+    """Rows and the rendered matrix. Evidence and the gate come from files (the CLI)
+    or in memory (the daily publish: syrax.probe and the journal's last verification)."""
     journal = read_journal(journal_path, now)
     tests = read_junit(junit)
-    ev = json.loads(Path(evidence).read_text(encoding="utf-8")) if evidence and Path(evidence).exists() else None
-    live = live_checks(ev, read_gate(gate), journal)
+    ev = evidence_data if evidence_data is not None else (
+        json.loads(Path(evidence).read_text(encoding="utf-8")) if evidence and Path(evidence).exists() else None)
+    live = live_checks(ev, gate_data if gate_data is not None else read_gate(gate), journal)
     rows = [evaluate(c, journal, tests, live, now) for c in CAPABILITIES]
-    return rows, render(rows, head, str(journal_path), junit_totals(junit), map_coverage(repo))
+    return rows, render(rows, head, journal_label or str(journal_path), junit_totals(junit), map_coverage(repo))
 
 
 def main(argv: Optional[List[str]] = None) -> int:

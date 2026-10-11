@@ -689,7 +689,8 @@ class Autonomy:
                 if ledger.due(self.journal):
                     # M3: the evidence publishes itself, through SYRAX's own isolated release
                     try:
-                        res = await ledger.publish(self.journal, reviewer=getattr(getattr(self.core, "devloop", None), "reviewer", None))
+                        res = await ledger.publish(self.journal, reviewer=getattr(getattr(self.core, "devloop", None), "reviewer", None),
+                                                   matrix=True)
                         rep.outcome, rep.reason = "RAN", f"published the rise ledger: {res.get('outcome')}"
                     except Exception as e:
                         logger.warning(f"publishing the rise ledger failed: {e}")

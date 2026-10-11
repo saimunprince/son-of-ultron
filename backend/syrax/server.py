@@ -213,8 +213,9 @@ def objective_check_problem(check: Optional[dict]) -> Optional[str]:
 class Session:
     """One WebSocket connection: observes the core, routes commands to it."""
 
-    def __init__(self, ws: WebSocket):
+    def __init__(self, ws: WebSocket, probe: bool = False):
         self.ws = ws
+        self.probe = probe  # syrax.probe checking the service: the human's briefing is not for it
         self.id = uuid.uuid4().hex[:12]
         self.core = get_core()
         self.closed = False
@@ -257,7 +258,8 @@ class Session:
             }
         )
         await self.send({"type": "brains", **get_router().describe()})
-        await self._daily_briefing()
+        if not self.probe:
+            await self._daily_briefing()
         if snap["running"]:
             # Reconnect while a task runs: replay what happened so far, then the live state.
             tid = snap["running"]["task_id"]
@@ -588,7 +590,7 @@ async def ws_endpoint(ws: WebSocket):
         return
 
     await ws.accept()
-    session = Session(ws)
+    session = Session(ws, probe=ws.query_params.get("probe") == "1")
     try:
         await session.boot()
         while True:
