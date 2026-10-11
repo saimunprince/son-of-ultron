@@ -84,7 +84,10 @@ def test_the_service_launcher_turns_isolation_on(tmp_path, monkeypatch):
                         ("setup", lambda verbose=False: None), ("check_config", lambda: None),
                         ("port_in_use", lambda port: False), ("ui_is_stale", lambda: False)):
         monkeypatch.setattr(mod, name, value)
-    monkeypatch.delenv("SYRAX_ISOLATE", raising=False)
+    # setenv first so monkeypatch remembers the variable's original state: launch() sets it
+    # with setdefault, and a bare delenv of an absent variable would let that leak into later tests
+    monkeypatch.setenv("SYRAX_ISOLATE", "placeholder")
+    monkeypatch.delenv("SYRAX_ISOLATE")
     monkeypatch.setenv("SYRAX_OPEN_UI", "0")
     seen = []
 
