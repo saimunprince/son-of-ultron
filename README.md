@@ -60,6 +60,7 @@ python syrax.py --gate             # run the release gate
 Open http://localhost:3000. Ctrl+C stops everything, including SYRAX's browser.
 Both servers listen on 127.0.0.1 only. `SYRAX_PORT` / `SYRAX_UI_PORT` move
 the ports; `SYRAX_OPEN_UI=1` opens the browser once both answer.
+When you move the UI with `SYRAX_UI_PORT`, set `SYRAX_ALLOWED_ORIGINS` to the same port too (for example `http://localhost:3001,http://127.0.0.1:3001`), otherwise the core refuses the UI (HTTP 403); and if another program holds the UI port, the service launcher now refuses to start and names the port in syrax.log.
 
 ## Start at login
 
