@@ -45,6 +45,9 @@ class Gate:
     required: bool = True
     env: Optional[Dict[str, str]] = None
     timeout: float = 900.0
+    # inherited variables with these prefixes are dropped before env applies: the
+    # tests must not see this machine's local SYRAX configuration
+    drop_env_prefixes: Sequence[str] = ()
 
 
 @dataclass
@@ -93,7 +96,8 @@ def run_gate(gate: Gate) -> GateResult:
             int((time.monotonic() - started) * 1000), _tail(evidence), "<python>",
         )
     cmd = [str(c) for c in gate.cmd]
-    env = {**os.environ, **(gate.env or {})}
+    inherited = {k: v for k, v in os.environ.items() if not any(k.startswith(p) for p in gate.drop_env_prefixes)}
+    env = {**inherited, **(gate.env or {})}
     try:
         proc = subprocess.run(
             cmd, cwd=str(gate.cwd), env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=gate.timeout
@@ -363,7 +367,12 @@ def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None) ->
 
     return [
         Gate("py_compile", [py, "-m", "compileall", "-q", "syrax"], cwd=backend),
-        Gate("pytest", [py, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider"], cwd=backend, env=test_env),
+        # Live 2026-10-11: after the UI moved to port 3001 (SYRAX_ALLOWED_ORIGINS set for the user),
+        # the running SYRAX's gate passed that to the tests, whose test server then refused their
+        # localhost:3000 origin with 403: 62 failures, every release blocked. The tests run on
+        # their own settings only.
+        Gate("pytest", [py, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider"], cwd=backend, env=test_env,
+             drop_env_prefixes=("SYRAX_",)),
         fe("tsc", tsc),
         fe("eslint", eslint),
         fe("node_test", node_test),
