@@ -218,6 +218,7 @@ METRICS: List[Metric] = [
     Metric("knowledge_used", "Memory", "Conclusions read back", "higher", "count", "Stored conclusions whose last use falls in the window: memory that was used, not only kept.", knowledge_used),
     Metric("knowledge_settled", "Memory", "Conclusions reinforced or contradicted", "-", "count", "knowledge.reinforced and knowledge.contradiction: memory checked against new evidence.", knowledge_settled),
     Metric("unbacked_claims", "Evidence", "Final answers claiming work not done", "lower", "count", "Own tasks whose final answer claims a change (the agent's CLAIM and OWN_WORK_CLAIM patterns) while the task changed, committed and learned nothing.", unbacked_claims),
+    Metric("claims_rejected", "Evidence", "False claims sent back", "-", "count", "claim.rejected: a final answer claimed work its task did not do and was sent back to be rewritten (journaled since M3).", _count_events("claim.rejected")),
     Metric("weak_closures", "Evidence", "Objectives closed on words", "lower", "%", "Objectives closed DONE whose check was only task_success.", weak_closures),
     Metric("gate_green", "Evidence", "Gate verdicts GREEN", "higher", "%", "Journaled verifications that were GREEN.", gate_green),
     Metric("guard_refusals", "Evidence", "Guards that held", "-", "count", "Releases refused for touching a judge or an existing test, and calls refused by the permission gate.", guard_refusals),

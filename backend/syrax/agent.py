@@ -278,6 +278,8 @@ class SyraxAgent(Manus):
         if self.last_reply and not self.changed and (
             CLAIM.search(self.last_reply) or (self.task_kind == "autonomous" and OWN_WORK_CLAIM.search(self.last_reply))
         ):
+            # M3: the journal counts what was sent back, not only what got through
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
             await self._final_answer(CLAIM_ASK)
         self.task_goal, self.task_kind = "", "conversation"  # the core sets them again for the next task
         return self.last_reply or "Done."

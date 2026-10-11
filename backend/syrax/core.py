@@ -58,6 +58,8 @@ def _journal_type(event: dict) -> Optional[str]:
         return f"brain.{event['event']}"
     if t == "permission" and event.get("event") in ("authorized", "refused"):
         return f"permission.{event['event']}"
+    if t == "claim" and event.get("event") == "rejected":
+        return "claim.rejected"
     if t in ("think", "ask", "final"):
         return t
     return None

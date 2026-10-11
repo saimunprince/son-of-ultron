@@ -683,6 +683,17 @@ class Autonomy:
                 logger.warning(f"technology radar failed: {e}")
         if objective is None:
             rep.outcome, rep.reason = "IDLE", "no open objective"
+            if os.getenv("SYRAX_PUBLISH_RISE", "0") == "1":
+                from syrax import ledger
+
+                if ledger.due(self.journal):
+                    # M3: the evidence publishes itself, through SYRAX's own isolated release
+                    try:
+                        res = await ledger.publish(self.journal, reviewer=getattr(getattr(self.core, "devloop", None), "reviewer", None))
+                        rep.outcome, rep.reason = "RAN", f"published the rise ledger: {res.get('outcome')}"
+                    except Exception as e:
+                        logger.warning(f"publishing the rise ledger failed: {e}")
+                    return await self._finish(rep)
             if self.journal.maintenance_due(MAINTENANCE_EVERY_S):
                 # useful idle work: keep the journal bounded (measured, journaled)
                 try:

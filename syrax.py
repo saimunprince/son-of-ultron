@@ -353,6 +353,8 @@ def launch(dev: bool, service: bool) -> int:
     env_ui = ["--hostname", "127.0.0.1", "--port", str(UI_PORT)]
     # M1, isolated evolution: the running SYRAX does its own work in worktrees (SYRAX_ISOLATE=0 turns it off)
     os.environ.setdefault("SYRAX_ISOLATE", "1")
+    # M3: the rise ledger publishes itself once a day through the same release path
+    os.environ.setdefault("SYRAX_PUBLISH_RISE", "1")
     comps: List[Component] = []
     stopping = False
 
