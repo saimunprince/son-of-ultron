@@ -25,6 +25,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
@@ -177,6 +178,8 @@ class DevLoop:
         self.isolated: Optional[Path] = None
         self.worktrees_dir = Path(worktrees_dir or (self.live_root / ".syrax" / "worktrees"))
         self.live_baseline: Dict[str, str] = {}
+        # per task: what each failed gate run failed on (gate names, failing tests)
+        self.failures: Dict[Optional[str], List[tuple]] = {}
         # async (info, summary, author_brains) -> {approve, reasons, reviewer} | {skipped};
         # set by the core: a different brain must approve an autonomous change
         self.reviewer: Optional[Callable[..., Any]] = None
@@ -188,6 +191,13 @@ class DevLoop:
         # may only release, and may only roll back, what it changed itself; a
         # human's uncommitted work is never touched.
         self.baseline: Dict[str, str] = {}
+
+    @staticmethod
+    def failure_signature(report: Dict[str, Any]) -> tuple:
+        """What a failed gate run failed on: the gates and the failing test ids."""
+        failing = report.get("failing") or []
+        text = " ".join(str(f.get("evidence") or "") for f in failing)
+        return (tuple(sorted(f.get("name") or "" for f in failing)), tuple(sorted(set(re.findall(r"FAILED (\S+)", text)))))
 
     def begin_task(self) -> Dict[str, str]:
         """Record the pre-existing working-tree changes when a task starts."""
@@ -424,13 +434,28 @@ class DevLoop:
                     "an autonomous release needs a change plan; missing: " + ", ".join(missing)
                     + ". why = the evidence or objective it answers; risk = what could break; tests = which tests prove it"
                 )
+        seen = self.failures.get(task_id) or []
+        if len(seen) >= 2 and seen[-1] == seen[-2] and any(seen[-1]):
+            # Live 2026-10-11: one attempt re-released a README change five times, ~4 minutes of
+            # gate each, every run failing the same 62 tests that had nothing to do with it.
+            gates, tests = seen[-1]
+            raise ValueError(
+                f"refused: the gate failed twice in this task with the same failures ({', '.join(gates)}"
+                + (f"; {len(tests)} failing tests, e.g. {tests[0]}" if tests else "") + "). They do not change with your "
+                "edits, so a third run will fail the same way. Stop releasing and report what blocks you."
+            )
         impact = impact_of(info["files"], self.root)
         await self.journal.record("release.planned", {"summary": summary, "plan": plan, **impact}, task_id=task_id)
         snap = await asyncio.to_thread(self.snapshot, info)
         await self.journal.record(
             "code.changed", {"files": info["files"], "stat": info["stat"], "head": info["head"], "snapshot": str(snap)}, task_id=task_id,
         )
-        verification: Verification = await asyncio.to_thread(run_gates, self.gates(), self.journal, task_id)
+        cancel = threading.Event()
+        try:
+            verification: Verification = await asyncio.to_thread(run_gates, self.gates(), self.journal, task_id, cancel, info["head"])
+        except asyncio.CancelledError:
+            cancel.set()  # the task was stopped: its gate stops too, process tree and all
+            raise
         vid = self.journal.verifications(limit=1)[0]["id"]
         report: Dict[str, Any] = {
             "summary": summary,
@@ -444,6 +469,7 @@ class DevLoop:
             "failing": [{"name": g.name, "status": g.status, "evidence": g.evidence[-1500:]} for g in verification.gates if g.required and g.status != "PASS"],
         }
         if verification.status != "GREEN":
+            self.failures.setdefault(task_id, []).append(self.failure_signature(report))
             rb = await asyncio.to_thread(self.rollback, info)
             await self.journal.record("rollback.created", {"reason": "verification BLOCKED", "verification_id": vid, **rb, "snapshot": str(snap)}, task_id=task_id)
             report.update({"outcome": "ROLLED_BACK", "rollback": rb, "snapshot": str(snap)})

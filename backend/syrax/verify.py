@@ -21,6 +21,7 @@ import shutil
 import re
 import subprocess
 import sys
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -82,7 +83,26 @@ def _tail(text: str, lines: int = TAIL_LINES) -> str:
     return "\n".join(parts[-lines:])
 
 
-def run_gate(gate: Gate) -> GateResult:
+def _kill_tree(proc: "subprocess.Popen") -> None:
+    """Stop a gate and everything it started (pytest runs skill tests in their own processes)."""
+    try:
+        if WINDOWS:
+            subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"], capture_output=True, timeout=30)
+        else:
+            import signal
+
+            os.killpg(proc.pid, signal.SIGKILL)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def run_gate(gate: Gate, cancel: Optional[threading.Event] = None) -> GateResult:
+    """Run one gate. A command gate stops, with its whole process tree, when
+    ``cancel`` is set (live 2026-10-11: a stopped task's gate pytest kept
+    running for minutes inside the removed worktree)."""
     started = time.monotonic()
     if callable(gate.cmd):
         try:
@@ -98,21 +118,36 @@ def run_gate(gate: Gate) -> GateResult:
     cmd = [str(c) for c in gate.cmd]
     inherited = {k: v for k, v in os.environ.items() if not any(k.startswith(p) for p in gate.drop_env_prefixes)}
     env = {**inherited, **(gate.env or {})}
+    group = {} if WINDOWS else {"start_new_session": True}
     try:
-        proc = subprocess.run(
-            cmd, cwd=str(gate.cwd), env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=gate.timeout
+        proc = subprocess.Popen(
+            cmd, cwd=str(gate.cwd), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace", **group,
         )
     except FileNotFoundError as e:
         return GateResult(
             gate.name, gate.required, "NOT_VERIFIED", None,
             int((time.monotonic() - started) * 1000), f"cannot start: {e}", " ".join(cmd),
         )
-    except subprocess.TimeoutExpired:
-        return GateResult(
-            gate.name, gate.required, "NOT_VERIFIED", None,
-            int((time.monotonic() - started) * 1000), f"timeout after {gate.timeout}s", " ".join(cmd),
-        )
-    out = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+    deadline = started + gate.timeout
+    while True:
+        try:
+            stdout, stderr = proc.communicate(timeout=0.5)
+            break
+        except subprocess.TimeoutExpired:
+            stopped = cancel is not None and cancel.is_set()
+            if stopped or time.monotonic() > deadline:
+                _kill_tree(proc)
+                try:
+                    proc.communicate(timeout=30)
+                except Exception:
+                    pass
+                why = "cancelled: the task was stopped" if stopped else f"timeout after {gate.timeout}s"
+                return GateResult(
+                    gate.name, gate.required, "NOT_VERIFIED", None,
+                    int((time.monotonic() - started) * 1000), why, " ".join(cmd),
+                )
+    out = (stdout or "") + ("\n" + stderr if stderr else "")
     return GateResult(
         gate.name, gate.required, "PASS" if proc.returncode == 0 else "FAIL", proc.returncode,
         int((time.monotonic() - started) * 1000), _tail(out), " ".join(cmd),
@@ -120,17 +155,26 @@ def run_gate(gate: Gate) -> GateResult:
 
 
 def run_gates(
-    gates: Sequence[Gate], journal: Optional[Journal] = None, task_id: Optional[str] = None
+    gates: Sequence[Gate], journal: Optional[Journal] = None, task_id: Optional[str] = None,
+    cancel: Optional[threading.Event] = None, git_head: Optional[str] = None,
 ) -> Verification:
-    results = [run_gate(g) for g in gates]
-    green = all(r.status == "PASS" for r in results if r.required)
+    """Run the gates in order. ``git_head`` is the revision the checked tree is
+    based on (a task's worktree, not the running tree). A cancelled run starts
+    no further gate and is not journaled: its task is gone."""
+    results = []
+    for g in gates:
+        if cancel is not None and cancel.is_set():
+            break
+        results.append(run_gate(g, cancel))
+    cancelled = cancel is not None and cancel.is_set()
+    green = not cancelled and all(r.status == "PASS" for r in results if r.required)
     v = Verification(
         status="GREEN" if green else "BLOCKED",
         ts=time.time(),
-        git_head=_git_head(REPO_ROOT),
+        git_head=git_head or _git_head(REPO_ROOT),
         gates=results,
     )
-    if journal is not None:
+    if journal is not None and not cancelled:
         journal.record_verification_sync(v.to_dict(), task_id=task_id)
     return v
 
