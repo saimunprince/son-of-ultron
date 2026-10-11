@@ -13,6 +13,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
                     skills | presentation | benchmarks {limit?} | experiments {limit?} |
                     quality_run {only?, brain?} | quality_runs {limit?} | compare_brains {a, b, only?} |
+                    codebench_run {brains?} |
                     presentation_feedback {presentation_id, action?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
@@ -327,6 +328,12 @@ class Session:
             a, b = str(msg.get("a") or ""), str(msg.get("b") or "")
             only = msg.get("only") if isinstance(msg.get("only"), list) else None
             self.spawn(self._compare_brains(a, b, only), detached=True)
+        elif kind == "codebench_run":
+            if self.core.busy:
+                await self.send({"type": "notice", "text": "Already executing. Stop it first."})
+                return
+            brains = [str(b) for b in msg.get("brains")] if isinstance(msg.get("brains"), list) else None
+            self.spawn(self._codebench(brains), detached=True)
         elif kind == "presentation_feedback":
             pid = str(msg.get("presentation_id") or "")
             if not await self.core.presentation.feedback(pid, str(msg.get("action") or "dismiss")):
@@ -484,6 +491,16 @@ class Session:
             await self.send({"type": "notice", "text": str(e)})
             return
         await self.core.broadcast({"type": "notice", "text": render_exp(row)})
+
+    async def _codebench(self, brains) -> None:
+        from syrax import codebench
+
+        try:
+            res = await codebench.run_all(self.core, brains=brains)
+        except JournalError as e:
+            await self.send({"type": "notice", "text": str(e)})
+            return
+        await self.core.broadcast({"type": "notice", "text": f"CODE BENCHMARK · {codebench.summary(res)}"})
 
     async def _quality(self, only, brain=None) -> None:
         from syrax.quality import format_report

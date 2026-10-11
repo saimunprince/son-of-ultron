@@ -84,5 +84,25 @@ def preferred(journal: Journal, kind: str, order: List[str]) -> Optional[str]:
     return None
 
 
+def preferred_for_code(journal: Journal, order: List[str]) -> Optional[str]:
+    """M2: the brain to try first for a release objective (a code change that must
+    land), from the code benchmark (syrax.codebench), or None to keep the human's
+    order. Only cases a brain answered itself count; the human's first brain must
+    itself be measured, and the other must lead by codebench.MIN_GAP."""
+    from syrax import codebench
+
+    if not order:
+        return None
+    stats = codebench.table(journal)
+    measured = [p for p in order if (stats.get(p) or {}).get("graded", 0) >= codebench.MIN_GRADED]
+    first = order[0]
+    if first not in measured:
+        return None
+    best = max(measured, key=lambda p: (stats[p]["pass_rate"], -order.index(p)))
+    if best != first and stats[best]["pass_rate"] - stats[first]["pass_rate"] >= codebench.MIN_GAP:
+        return best
+    return None
+
+
 def clear_cache() -> None:
     _cache.clear()

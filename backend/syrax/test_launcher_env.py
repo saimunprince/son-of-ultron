@@ -43,19 +43,20 @@ def run(mod, monkeypatch):
 
 
 def test_the_core_gets_the_service_defaults_and_nothing_leaks(tmp_path, monkeypatch):
-    for k in ("SYRAX_ISOLATE", "SYRAX_PUBLISH_RISE"):
+    for k in ("SYRAX_ISOLATE", "SYRAX_PUBLISH_RISE", "SYRAX_CODEBENCH"):
         monkeypatch.delenv(k, raising=False)
     mod = load(tmp_path, monkeypatch)
     seen = run(mod, monkeypatch)
-    assert seen["core"] == {"SYRAX_ISOLATE": "1", "SYRAX_PUBLISH_RISE": "1"}
-    assert seen["ui"] == {"SYRAX_ISOLATE": None, "SYRAX_PUBLISH_RISE": None}  # only the core needs them
-    assert "SYRAX_ISOLATE" not in os.environ and "SYRAX_PUBLISH_RISE" not in os.environ  # restored
+    assert seen["core"] == {"SYRAX_ISOLATE": "1", "SYRAX_PUBLISH_RISE": "1", "SYRAX_CODEBENCH": "1"}
+    assert seen["ui"] == {"SYRAX_ISOLATE": None, "SYRAX_PUBLISH_RISE": None, "SYRAX_CODEBENCH": None}  # only the core needs them
+    assert not {"SYRAX_ISOLATE", "SYRAX_PUBLISH_RISE", "SYRAX_CODEBENCH"} & set(os.environ)  # restored
 
 
 def test_an_explicit_setting_wins_and_stays(tmp_path, monkeypatch):
     monkeypatch.setenv("SYRAX_PUBLISH_RISE", "0")
     monkeypatch.delenv("SYRAX_ISOLATE", raising=False)
+    monkeypatch.delenv("SYRAX_CODEBENCH", raising=False)
     mod = load(tmp_path, monkeypatch)
     seen = run(mod, monkeypatch)
-    assert seen["core"] == {"SYRAX_ISOLATE": "1", "SYRAX_PUBLISH_RISE": "0"}
+    assert seen["core"] == {"SYRAX_ISOLATE": "1", "SYRAX_PUBLISH_RISE": "0", "SYRAX_CODEBENCH": "1"}
     assert os.environ.get("SYRAX_PUBLISH_RISE") == "0" and "SYRAX_ISOLATE" not in os.environ

@@ -694,6 +694,17 @@ class Autonomy:
                     except Exception as e:
                         logger.warning(f"publishing the rise ledger failed: {e}")
                     return await self._finish(rep)
+            if os.getenv("SYRAX_CODEBENCH", "0") == "1":
+                from syrax import codebench
+
+                if await asyncio.to_thread(codebench.due, self.journal):
+                    # M2: measure which brain finishes code changes, so releases start on it
+                    try:
+                        res = await codebench.run_all(self.core)
+                        rep.outcome, rep.reason = "RAN", f"code benchmark: {codebench.summary(res)}"
+                    except Exception as e:
+                        logger.warning(f"the code benchmark failed: {e}")
+                    return await self._finish(rep)
             if self.journal.maintenance_due(MAINTENANCE_EVERY_S):
                 # useful idle work: keep the journal bounded (measured, journaled)
                 try:

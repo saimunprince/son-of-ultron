@@ -84,6 +84,13 @@ class Running:
 AGENT_CREATE_TIMEOUT_S = float(os.getenv("SYRAX_AGENT_CREATE_TIMEOUT_S", "240"))
 
 
+def _is_release(goal: str) -> bool:
+    """An autonomous brief for an objective that closes only on a landed commit."""
+    from syrax.autonomy import RELEASE_MARK
+
+    return RELEASE_MARK in (goal or "")
+
+
 class Core:
     def __init__(self, journal: Optional[Journal] = None):
         self.journal = journal or get_journal()
@@ -283,7 +290,7 @@ class Core:
                 except Exception as e:
                     logger.warning(f"could not isolate task {task_id}: {e}")
                     await self.journal.record("isolation.failed", {"error": str(e)[:300]}, task_id=task_id)
-            await self._route(said or goal, task_id)
+            await self._route(said or goal, task_id, release=kind == "autonomous" and _is_release(goal))
             self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind)
             if self.agent is not None:  # permissions: the kind and the human's own words (not the brief)
                 self.agent.task_kind = kind
@@ -310,15 +317,20 @@ class Core:
             self.current.task = asyncio.create_task(self._run(goal, said))
             return task_id
 
-    async def _route(self, text: str, task_id: str) -> None:
-        """Phase 7: try first the brain measured best at this kind of work."""
+    async def _route(self, text: str, task_id: str, release: bool = False) -> None:
+        """Phase 7: try first the brain measured best at this kind of work.
+        M2: a release objective's task goes by the code benchmark instead."""
         from syrax import routing
 
         router = get_router()
         try:
             order = [p for p in router.store.order if router.store.enabled(p)]
-            kind = routing.kind_of(text)
-            router.routed = await asyncio.to_thread(routing.preferred, self.journal, kind, order)
+            if release:
+                kind = "code_change"
+                router.routed = await asyncio.to_thread(routing.preferred_for_code, self.journal, order)
+            else:
+                kind = routing.kind_of(text)
+                router.routed = await asyncio.to_thread(routing.preferred, self.journal, kind, order)
         except Exception as e:  # routing is an optimisation; the human's order always works
             logger.warning(f"routing failed: {e}")
             router.routed = None

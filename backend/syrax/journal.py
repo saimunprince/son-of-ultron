@@ -1460,6 +1460,16 @@ class Journal:
             ).fetchall()
         return [Event(r["id"], r["ts"], r["task_id"], r["type"], r["seq"], _loads(r["payload"], {})) for r in rows]
 
+    def events_of_type(self, type_: str, since: float = 0.0, limit: int = 500) -> List[dict]:
+        """The newest `limit` events of one type since `since`, oldest first."""
+        limit = max(1, min(int(limit), 5000))
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, ts, task_id, type, payload, seq FROM events WHERE type=? AND ts>=? ORDER BY id DESC LIMIT ?",
+                (type_, since, limit),
+            ).fetchall()
+        return [{**dict(r), "payload": _loads(r["payload"], {})} for r in reversed(rows)]
+
     def events_between(self, ts_from: float, ts_to: Optional[float] = None, limit: int = 2000) -> List[dict]:
         """All events (task-bound and task-less) in a time window, oldest first.
         This is what a daily replay is generated from; nothing is synthesised."""

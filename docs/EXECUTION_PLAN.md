@@ -79,6 +79,15 @@ self-change incident touched the live tree: 111 lines deleted from
   (`docs/evidence/2026-10-10/gate-worktree-as-root.txt`). Known gap:
   `python_execute` writing into the running tree is not blocked (the guard
   protects files, not folders); the post-task safety net rolls it back.
+- **Status 2026-10-11: proven live.** Objective 111 ran in
+  `.syrax/worktrees/<task>`; every edit was isolated, the running tree did not
+  change before landing, gate #14 passed, a second brain approved, and SYRAX's
+  commit `a7b6345` was fast-forwarded in (experiment #9; #1 to #8 are the
+  blocked attempts). The gaps it exposed are closed: a stopped task stops its
+  gate (`f335d9e`), the same gate failure twice refuses a third release, the
+  verdict names the checked tree, and python cannot write the running tree
+  while a task is isolated (`cb30b4a`). The exit clock (5 isolated attempts,
+  a week at 0) runs from here.
 
 ### M2 · A brain that finishes code (Brain)
 
@@ -90,6 +99,16 @@ measures best (Phase 7 routing already chooses by kind).
 - **Exit**: Releases that landed at or above 60 % over the next 10
   attempts; Machine-checked objectives done back at or above 90 %;
   Experiments run above 0.
+- **Status 2026-10-11: built.** `syrax/codebench.py` (a judge file): four
+  cases, two one-file and two two-file, each a scratch project with a visible
+  check and a hidden test written only at grading time; editing the check is a
+  fail. A case counts for a brain only when that brain answered most of its
+  steps. Each brain's run is journaled (`codebench.completed`) and compared
+  with the human's first brain as an experiment. A release objective's task
+  starts on the brain that leads by 25 points over at least 4 of its own
+  cases (`routing.preferred_for_code`, journaled as `brain.routed` with kind
+  `code_change`). The service runs it weekly when the human has been quiet
+  for 30 minutes (`SYRAX_CODEBENCH=1`), or on demand (`codebench_run`).
 
 ### M3 · Evidence without gaps (Evidence)
 
@@ -101,6 +120,14 @@ measures best (Phase 7 routing already chooses by kind).
   default `task_success` needs the human's explicit choice.
 - **Exit**: Final answers claiming work not done at 2 or fewer per week;
   Objectives closed on words at 0 %; matrix age at 7 days or less.
+- **Status 2026-10-11: ledger live, matrix pending.** A claim sent back is
+  journaled as `claim.rejected` and counted in RISE. The ledger publishes
+  itself daily through an isolated release (`42bdb41`, `f6cd355`); first live
+  run: maintenance worktree, gate #15 GREEN on all eight checks, a second
+  brain approved, SYRAX commit `90ffbdf` landed and was pushed. Objectives
+  without a check are refused outright since `c2f7dec` (stricter than the
+  proposal in the third bullet). Still to do: daily matrix regeneration,
+  which needs a JUnit report from the gate and the live probes.
 
 ### M4 · Experiments before releases (Evolution)
 
