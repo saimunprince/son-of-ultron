@@ -201,9 +201,10 @@ CATALOG: List[Feature] = [
     Feature("memory_panel", "See and delete what it remembers", "Memory", HAVE, "A panel listing every remembered fact, each deletable.",
             "MIND panel, MEMORY tab: every fact the human told SYRAX to remember, with a FORGET button (memories, memory_forget)",
             risk="WRITE", seen_in="Mark-LV"),
-    Feature("proactive", "Speaks up when useful", "Memory", TODO, "After a long silence, offers something useful, or stays quiet.",
-            "a check-in with a silence gate and a cooldown, from memory and open objectives; may choose silence", risk="READ_ONLY",
-            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("proactive", "Speaks up when useful", "Memory", HAVE, "After a long silence, offers something useful, or stays quiet.",
+            "proactive.py: after two quiet hours, in the day, at most every four hours; what SYRAX built or closed on its own, a "
+            "reminder within the hour, alerts; nothing to say means silence. Built from the journal, no model call",
+            seen_in="Mark-LV"),
     Feature("clipboard_actions", "Act on copied text", "Memory", HAVE, "Copy text, then translate, summarise, explain or fix it.",
             "the CLIP button by the command line: one click sends the task; SYRAX reads the clipboard only then (never watches it)",
             seen_in="Mark-LV"),

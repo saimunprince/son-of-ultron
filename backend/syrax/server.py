@@ -104,6 +104,9 @@ async def lifespan(_: FastAPI):
     from syrax import alerts
 
     alert_loop = asyncio.create_task(alerts.loop(journal))  # spoken warnings when the machine is in trouble
+    from syrax import proactive
+
+    checkin_loop = asyncio.create_task(proactive.loop(journal))  # speaks up when it has something useful
     logger.info(f"SYRAX online at ws://{HOST}:{PORT}/ws")
     # Warm the local ear in the background so the first voice command is fast.
     warm = asyncio.create_task(asyncio.to_thread(_warm_whisper))
@@ -111,6 +114,7 @@ async def lifespan(_: FastAPI):
     watchdog.stop()
     reminder_loop.cancel()
     alert_loop.cancel()
+    checkin_loop.cancel()
     warm.cancel()
     await core.shutdown()
     browser.shutdown()

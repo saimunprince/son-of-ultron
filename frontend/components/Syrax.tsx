@@ -344,6 +344,12 @@ export default function Syrax() {
             say(`News on ${e.topic}: ${e.items[0].title}`, { followUp: false });
           }
           break;
+        case "checkin":
+          if (e.event === "made") {
+            push({ kind: "notice", id: nextId++, text: `CHECK-IN · ${e.text}` });
+            say(e.text, { followUp: false });
+          }
+          break;
         case "alert":
           if (e.event === "raised") {
             push({ kind: "notice", id: nextId++, text: `SYSTEM ALERT · ${e.detail}` });
