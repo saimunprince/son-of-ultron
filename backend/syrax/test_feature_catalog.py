@@ -94,7 +94,8 @@ def test_the_idle_cycle_promotes_a_feature_only_when_the_service_asks(tmp_path, 
 
 
 def test_the_catalog_document_is_generated_from_the_code():
-    doc = (ROOT / "docs" / "FEATURE_CATALOG.md").read_text(encoding="utf-8")
+    # git may check docs out with CRLF (core.autocrlf): compare the text, not the line endings
+    doc = (ROOT / "docs" / "FEATURE_CATALOG.md").read_bytes().decode("utf-8").replace("\r\n", "\n")
     assert doc == catalog.render()
     assert "no code was taken" in doc and "**auto**" in doc
 
