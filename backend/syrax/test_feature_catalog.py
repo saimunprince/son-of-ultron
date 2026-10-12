@@ -40,8 +40,9 @@ def test_every_entry_is_well_formed_and_says_where_or_how():
 def test_the_prebuilt_features_are_marked_have_and_exist():
     shipped = {d.name for d in prebuilt.shipped()}
     assert {"weather", "screen_brightness", "wallpaper"} <= shipped
-    have = {f.id for f in catalog.CATALOG if f.status == catalog.HAVE and f.syrax.startswith("prebuilt skill ")}
-    assert have == {"weather", "brightness", "wallpaper"}
+    cited = {f.id: f.syrax.split()[2] for f in catalog.CATALOG if f.status == catalog.HAVE and f.syrax.startswith("prebuilt skill ")}
+    assert {"weather", "brightness", "wallpaper"} <= set(cited)
+    assert all(name in shipped for name in cited.values()), cited  # a HAVE that names a prebuilt skill names one that ships
 
 
 def test_a_todo_becomes_one_objective_with_its_own_check(tmp_path):
@@ -110,13 +111,13 @@ def factory(tmp_path):
 def test_shipped_skills_are_installed_verified_and_registered(tmp_path):
     j, f = factory(tmp_path)
     done = asyncio.run(prebuilt.install(f))
-    assert {d["skill"]: d["outcome"] for d in done} == {"weather": "VERIFIED", "screen_brightness": "VERIFIED", "wallpaper": "VERIFIED"}
+    assert {d["skill"]: d["outcome"] for d in done} == {d.name: "VERIFIED" for d in prebuilt.shipped()}
     assert {"weather", "screen_brightness", "wallpaper"} <= set(f.collection.tool_map)
     assert permissions.level_of_tool("weather") == permissions.EXTERNAL_READ
     assert permissions.level_of_tool("screen_brightness") == permissions.SYSTEM and permissions.level_of_tool("wallpaper") == permissions.SYSTEM
     assert j.skill("weather")["purpose"].startswith("Current weather and a short forecast")
     ev = [e for e in j.recent_events(50) if e["type"] == "skill.prebuilt"]
-    assert len(ev) == 1 and len(ev[0]["payload"]["skills"]) == 3
+    assert len(ev) == 1 and len(ev[0]["payload"]["skills"]) == len(prebuilt.shipped())
     again = asyncio.run(prebuilt.install(f))
     assert {d["outcome"] for d in again} == {"CURRENT"}  # nothing re-run
 

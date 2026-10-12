@@ -246,7 +246,7 @@ class DesktopControl(BaseTool):
         "files, check battery/CPU/RAM/disk, lock the screen. On Windows also: type text into the focused window "
         "(type_text), press keys (hotkey, e.g. ctrl+c, alt+tab), click at screen pixels (click), switch dark mode "
         "(dark_mode) and turn the display off (display_off); the human stops typing and clicking by moving the "
-        "mouse to the top-left corner. (Use the browser_* tools only when YOU need to read or operate a web page.)"
+        "mouse to the top-left corner. To delete the human's own files, use trash: it goes to the Recycle Bin and can be restored. (Use the browser_* tools only when YOU need to read or operate a web page.)"
     )
     parameters: dict = {
         "type": "object",
@@ -256,10 +256,10 @@ class DesktopControl(BaseTool):
                 "enum": [
                     "open", "launch_app", "list_apps", "volume", "media", "screenshot",
                     "notify", "clipboard_get", "clipboard_set", "find_files", "system_info", "lock_screen", "window",
-                    "type_text", "hotkey", "click", "dark_mode", "display_off",
+                    "type_text", "hotkey", "click", "dark_mode", "display_off", "trash",
                 ],
             },
-            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name. find_files: name pattern. click: 'x,y' screen pixels."},
+            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name. find_files: name pattern. click: 'x,y' screen pixels. trash: the file or folder to move to the Recycle Bin."},
             "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: play, pause, toggle, next, previous, status. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
@@ -622,6 +622,20 @@ class DesktopControl(BaseTool):
         from syrax import wininput
 
         return await self._hands(wininput.dark_mode, value or "get")
+
+    async def _do_trash(self, target: str, **_) -> ToolResult:
+        """Move a file or folder to the Recycle Bin (Send2Trash), so it can be restored."""
+        if not target:
+            return ToolResult(error="trash needs the file or folder in target.")
+        p = Path(os.path.expanduser(target))
+        if not p.exists():
+            return ToolResult(error=f"Nothing to move: {target} does not exist.")
+        from send2trash import send2trash
+
+        await asyncio.to_thread(send2trash, str(p))
+        if p.exists():
+            return ToolResult(error=f"{p} is still there; the Recycle Bin did not take it.")
+        return ToolResult(output=f"Moved {p} to the Recycle Bin; restore it from there if it was a mistake.")
 
     async def _do_display_off(self, **_) -> ToolResult:
         from syrax import wininput

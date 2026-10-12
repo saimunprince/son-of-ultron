@@ -70,7 +70,7 @@ EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 # Stems, so "removal", "deleting", "wiped" count as naming the action too
 # (live 2026-10-03: SYRAX asked "confirm the removal of the folder X?", the
 # human said yes, and the gate asked again because only "remove" matched).
-DESTRUCTIVE_VERBS = re.compile(r"\b(delet\w*|remov\w*|eras\w*|wip(e|ed|es|ing)|clear\w*|drop\w*|purg\w*|uninstall\w*|rm|unlink\w*|force[- ]push\w*|reset\w*|discard\w*|overwrit\w*|format\w*|muchh?e\w*|mochh?e\w*|felo|fele)\b", re.I)
+DESTRUCTIVE_VERBS = re.compile(r"\b(delet\w*|remov\w*|trash\w*|recycl\w*|eras\w*|wip(e|ed|es|ing)|clear\w*|drop\w*|purg\w*|uninstall\w*|rm|unlink\w*|force[- ]push\w*|reset\w*|discard\w*|overwrit\w*|format\w*|muchh?e\w*|mochh?e\w*|felo|fele)\b", re.I)
 SEND_VERBS = re.compile(r"\b(send\w*|sent|email\w*|mail\w*|messag\w*|text\w*|post\w*|tweet\w*|publish\w*|pay\w*|paid|buy\w*|bought|order\w*|subscrib\w*|transfer\w*|pathao|pathiye|pathano)\b", re.I)
 AFFIRMATIVE = re.compile(r"^\s*(y|yes|yeah|yep|ok|okay|sure|do it|go ahead|go|proceed|confirm(ed)?|affirmative|approved|allow(ed)?|ha|haan|hya|kor|koro|thik ache)\b", re.I)
 PATH_LITERAL = re.compile(r"""(?:r|rb|b)?['"]([^'"\n]{3,})['"]""")
@@ -219,6 +219,8 @@ def classify(name: str, args: Any) -> Decision:
     if name == "desktop":
         action = str(a.get("action") or "")
         target = str(a.get("target") or "")
+        if action == "trash":  # recoverable, but it still takes a file away from the human
+            return Decision(name, DESTRUCTIVE, f"moves {Path(target).name or '?'} to the Recycle Bin", [target] if target else [])
         if action in DESKTOP_READ or (action == "window" and str(a.get("value") or "list") == "list"):
             return Decision(name, READ_ONLY, f"desktop {action}", [target] if target else [])
         return Decision(name, SYSTEM, f"desktop {action or '?'}" + (f" {target}" if target else ""), [target] if target else [])

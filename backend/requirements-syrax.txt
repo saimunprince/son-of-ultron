@@ -10,3 +10,8 @@ python-docx>=1.1,<2
 openpyxl>=3.1,<4
 python-pptx>=1.0,<2
 fpdf2>=2.8,<3
+# feature catalog (approved by the owner, 2026-10-12: "i need everything"); each one a release at least
+# two weeks old: Recycle Bin deletes, PDF text, YouTube captions
+Send2Trash==2.1.0
+pypdf==6.19.0
+youtube-transcript-api==1.2.4
