@@ -32,6 +32,7 @@ import re
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -165,6 +166,41 @@ def load_skill(skill_dir: Path) -> BaseTool:
     return tool
 
 
+# A registered skill runs in a worker thread with its own event loop. SYRAX writes its
+# skills, and one blocking call froze the whole server live on 2026-10-12: disk_usage ran
+# os.walk("C:\\") inside its async execute(), and WebSocket, voice and /health all stopped
+# (stall-20261012-163219.txt). Now a skill can block only its own thread, and after
+# SKILL_CALL_TIMEOUT_S the agent gets an error back while the thread finishes on its own.
+SKILL_CALL_TIMEOUT_S = 180.0
+_SKILL_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="syrax-skill")
+
+
+def _run_in_own_loop(tool: BaseTool, kwargs: dict) -> Any:
+    return asyncio.run(tool.execute(**kwargs))
+
+
+class IsolatedSkill(BaseTool):
+    """The live tool for a skill: same name, description and schema, executed off the server's loop."""
+
+    inner: Any = Field(default=None, exclude=True)
+
+    @classmethod
+    def wrap(cls, tool: BaseTool) -> "IsolatedSkill":
+        return cls(name=tool.name, description=tool.description, parameters=tool.parameters, inner=tool)
+
+    @property
+    def risk(self) -> str:
+        return str(getattr(self.inner, "risk", "") or "")
+
+    async def execute(self, **kwargs) -> Any:
+        job = asyncio.get_running_loop().run_in_executor(_SKILL_POOL, _run_in_own_loop, self.inner, kwargs)
+        try:
+            return await asyncio.wait_for(asyncio.shield(job), SKILL_CALL_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            return ToolResult(error=f"`{self.name}` did not finish within {int(SKILL_CALL_TIMEOUT_S)} s, so SYRAX stopped waiting "
+                                    "(the call keeps running in the background and its result is dropped). Try a smaller input.")
+
+
 def schema_problems(tool: BaseTool) -> List[str]:
     """Arguments of execute() that its JSON schema does not declare. A model only
     knows the arguments the schema shows (live 2026-10-12: SYRAX built disk_usage
@@ -216,10 +252,11 @@ class SkillFactory:
         if problems:
             raise ValueError("a model could not call it: " + "; ".join(problems))
         self._unregister(name)
-        self.collection.add_tool(tool)
-        self.loaded[name] = tool
+        live = IsolatedSkill.wrap(tool)
+        self.collection.add_tool(live)
+        self.loaded[name] = live
         permissions.declare(name, self.risk_of(name, tool))
-        return tool
+        return live
 
     def risk_of(self, name: str, tool: Optional[BaseTool] = None) -> str:
         """A skill's permission level: what its source shows, raised (never
