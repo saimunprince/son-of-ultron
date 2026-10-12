@@ -29,6 +29,7 @@ from app.schema import Message
 
 from syrax.agent import SyraxAgent
 from syrax.brains import get_router
+from syrax import phases
 from syrax.devloop import REPO_ROOT, DevLoop, ReleaseTool
 from syrax.experiments import ExperimentEngine, ExperimentTool
 from syrax.journal import Event, Journal, JournalError, get_journal
@@ -74,6 +75,8 @@ class Running:
     steps: List[dict] = field(default_factory=list)  # completed tool steps, in order
     unjournaled: int = 0
     kind: str = "conversation"
+    phase: Optional[str] = None  # F4: understand | plan | act | observe | verify (phases.py)
+    tools_run: int = 0
 
 
 # Live 2026-10-03: right after boot the autonomy cycle and a human "hi" both
@@ -229,8 +232,14 @@ class Core:
             self.current.steps.append(
                 {"step": event.get("step"), "tool": event.get("name"), "id": event.get("id"), "ok": bool(event.get("ok"))}
             )
+        nxt = phases.after(self.current.phase, kind, event, self.current.tools_run)
+        if kind == "tool.started":
+            self.current.tools_run += 1
         try:
             await self.journal.record(kind, payload, task_id=self.current.task_id, volatile=volatile)
+            if nxt is not None:
+                self.current.phase = nxt["phase"]
+                await self._record_phase(nxt)
             if kind == "tool.completed" and event.get("name") == "str_replace_editor":
                 edit = _repo_edit(self.current.steps, self._last_tool_args)
                 if edit:
@@ -240,6 +249,14 @@ class Core:
             self.current.unjournaled += 1
             logger.warning(f"journal refused {kind} for {self.current.task_id}: {e}")
             await self.broadcast({**event, "unjournaled": True, "task_id": self.current.task_id})
+
+    async def _record_phase(self, payload: dict) -> None:
+        """F4: tell the UI about a phase transition. It is not stored: the phase
+        is a pure function of the journaled events (phases.path), so the
+        journal stays the one record and the past can always be recomputed."""
+        if self.current is None:
+            return
+        await self.broadcast({"type": "phase", "event": "changed", **payload, "task_id": self.current.task_id})
 
     async def _checkpoint(self, stage: str, verified: Optional[dict] = None, next_action: Optional[str] = None) -> None:
         if self.current is None or self.agent is None:
@@ -294,7 +311,8 @@ class Core:
                     logger.warning(f"could not isolate task {task_id}: {e}")
                     await self.journal.record("isolation.failed", {"error": str(e)[:300]}, task_id=task_id)
             await self._route(said or goal, task_id, release=kind == "autonomous" and _is_release(goal))
-            self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind)
+            self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind, phase="understand")
+            await self._record_phase({"phase": "understand", "from": None})
             if self.agent is not None:  # permissions: the kind and the human's own words (not the brief)
                 self.agent.task_kind = kind
                 self.agent.task_goal = said or goal
@@ -362,6 +380,10 @@ class Core:
         try:
             reply = await self.agent.run(request)
             await self.journal.record("final", {"text": reply}, task_id=self.current.task_id)
+            nxt = phases.after(self.current.phase, "final", {}, self.current.tools_run)
+            if nxt is not None:
+                self.current.phase = nxt["phase"]
+                await self._record_phase(nxt)
             await self._checkpoint("final", verified={"final": True}, next_action=None)
             status = "PARTIAL" if self.agent.step_limit_hit or getattr(self.agent, "loop_stopped", False) else "SUCCESS"
             await self.journal.record(
@@ -560,6 +582,7 @@ class Core:
                 "stage": row.get("stage"),
                 "step": row.get("current_step", 0),
                 "status": row.get("status"),
+                "phase": self.current.phase,
             }
         interrupted = [
             _interrupted_summary(t) for t in self.journal.tasks(limit=10, status="INTERRUPTED")

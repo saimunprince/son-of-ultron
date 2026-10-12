@@ -13,6 +13,8 @@ import {
   type LinkState,
   type AutonomyStatus,
   type StartupStatus,
+  type TaskPhase,
+  TASK_PHASES,
   type JournalEvent,
   type PresentationElement,
   type SelfModelSummary,
@@ -135,6 +137,7 @@ export default function Syrax() {
   const [mind, setMind] = useState<MindData>({ briefing: null, objectives: null, proposals: null, skills: null, scorecard: null });
   const [autonomy, setAutonomy] = useState<AutonomyStatus | null>(null);
   const [startup, setStartup] = useState<StartupStatus | null>(null);
+  const [phase, setPhase] = useState<{ phase: TaskPhase; tool?: string; target?: string } | null>(null);
   const [consoleTab, setConsoleTab] = useState<ConsoleTab>("live");
   const [historyTasks, setHistoryTasks] = useState<TaskSummary[] | null>(null);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
@@ -300,6 +303,7 @@ export default function Syrax() {
             });
           }
           if (e.running) push({ kind: "notice", id: nextId++, text: `RUNNING · "${e.running.goal.slice(0, 80)}" · step ${e.running.step}` });
+          setPhase(e.running?.phase ? { phase: e.running.phase } : null);
           setAutonomy(e.autonomy);
           setStartup(e.startup ?? null);
           setStage(e.presentation.elements);
@@ -317,6 +321,9 @@ export default function Syrax() {
           break;
         case "presentation_plan":
           setStage(e.elements);
+          break;
+        case "phase":
+          if (e.event === "changed") setPhase({ phase: e.phase, tool: e.tool, target: e.target });
           break;
         case "startup_status": {
           const { type: _s, ...status } = e;
@@ -424,6 +431,7 @@ export default function Syrax() {
           setReplayEvents(e.events);
           break;
         case "task":
+          if (e.event === "completed" || e.event === "failed" || e.event === "cancelled" || e.event === "interrupted") setPhase(null);
           if (e.event !== "started" && consoleTabRef.current !== "live") {
             clientRef.current?.send(consoleTabRef.current === "history" ? { type: "history", limit: 50 } : { type: "replay", since: startOfToday() });
           }
@@ -920,6 +928,21 @@ export default function Syrax() {
           <span className="status-dot" />
           {statusText}
         </div>
+        {link === "online" && phase && (
+          <div className="status-meta status-phase" aria-label={`task phase: ${phase.phase}`}>
+            {TASK_PHASES.map((p) => (
+              <span key={p} className={p === phase.phase ? "on" : undefined}>
+                {p.toUpperCase()}
+              </span>
+            ))}
+            {phase.target && (
+              <div className="phase-target">
+                {phase.tool ? `${phase.tool} · ` : ""}
+                {phase.target.length > 60 ? `…${phase.target.slice(-59)}` : phase.target}
+              </div>
+            )}
+          </div>
+        )}
         {link === "online" && brainLine && (
           <button type="button" className="status-meta status-brain" onClick={openBrain} title="Brain settings (B)">
             BRAIN · {brainLine} · {toolCount} TOOLS

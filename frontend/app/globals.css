@@ -371,6 +371,24 @@ body {
   color: var(--text-dim);
 }
 
+/* F4: the task phase strip (understand · plan · act · observe · verify) */
+.status-phase span {
+  margin-left: 10px;
+  opacity: 0.4;
+}
+
+.status-phase span.on {
+  opacity: 1;
+  color: var(--accent-hot);
+}
+
+.phase-target {
+  margin-top: 4px;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  word-break: break-all;
+}
+
 .status-brain {
   display: inline-block;
   background: none;

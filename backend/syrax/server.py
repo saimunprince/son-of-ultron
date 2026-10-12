@@ -13,7 +13,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
                     skills | presentation | benchmarks {limit?} | experiments {limit?} |
                     quality_run {only?, brain?} | quality_runs {limit?} | compare_brains {a, b, only?} |
-                    codebench_run {brains?} | features | feature_promote {id} | startup {enabled?} |
+                    codebench_run {brains?} | features | feature_promote {id} | startup {enabled?} | task_phases {task_id} |
                     presentation_feedback {presentation_id, action?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
@@ -316,6 +316,12 @@ class Session:
             limit = _limit(msg.get("limit"), 20)
             tasks = await asyncio.to_thread(journal.tasks, limit)
             await self.send({"type": "history", "tasks": tasks})
+        elif kind == "task_phases":
+            from syrax import phases
+
+            tid = str(msg.get("task_id") or "")
+            events = await asyncio.to_thread(journal.events, tid, 5000)
+            await self.send({"type": "task_phases", "task_id": tid, "phases": phases.path(events)})
         elif kind == "task_events":
             tid = str(msg.get("task_id") or "")
             events = await asyncio.to_thread(journal.events, tid)

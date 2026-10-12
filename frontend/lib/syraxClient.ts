@@ -73,12 +73,17 @@ export interface InterruptedTask {
   when: number | null;
 }
 
+/** F4 (backend/syrax/phases.py): what SYRAX is doing, read from what it does. */
+export type TaskPhase = "understand" | "plan" | "act" | "observe" | "verify";
+export const TASK_PHASES: TaskPhase[] = ["understand", "plan", "act", "observe", "verify"];
+
 export interface RunningTask {
   task_id: string;
   goal: string;
   stage: string | null;
   step: number;
   status: TaskStatus | null;
+  phase?: TaskPhase | null;
 }
 
 export interface JournalEvent {
@@ -436,6 +441,7 @@ export type ServerEvent =
   | { type: "proposals"; proposals: Proposal[] }
   | ({ type: "autonomy_status" } & AutonomyStatus)
   | ({ type: "startup_status" } & StartupStatus)
+  | ({ type: "phase"; event: "changed"; phase: TaskPhase; from: TaskPhase | null; step?: number; tool?: string; target?: string } & Journaled)
   | ({
       type: "permission";
       event: "authorized" | "refused";

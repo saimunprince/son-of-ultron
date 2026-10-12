@@ -125,6 +125,8 @@ JUDGES = (
     "backend/syrax/codebench.py", "backend/syrax/probe.py",
     # and what decides which features exist and which ones SYRAX may build on its own
     "backend/syrax/catalog.py", "backend/syrax/prebuilt.py",
+    # and what shows the human what SYRAX is doing
+    "backend/syrax/phases.py",
 )
 
 
