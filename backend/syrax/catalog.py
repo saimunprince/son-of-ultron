@@ -175,11 +175,12 @@ CATALOG: List[Feature] = [
     Feature("flight_finder", "Find flights", "Web", TODO, "Best flights between two cities on a date.",
             "the browser reads a flight search page, a brain extracts the options", risk="EXTERNAL_READ",
             check={"kind": "change_released"}, seen_in="Mark-LV"),
-    Feature("topic_monitor", "Watch a topic", "Web", TODO, "Tells the human once a day when a topic has news.",
-            "a daily job like the briefing: research per watched topic, remember what was already reported", risk="EXTERNAL_READ",
-            check={"kind": "change_released"}, seen_in="Mark-LV"),
-    Feature("morning_briefing", "Morning briefing", "Web", PARTIAL, "Greets with yesterday's recap and today's news.",
-            "briefing.py composes the day from the journal. Missing: news", risk="EXTERNAL_READ", seen_in="Mark-LV"),
+    Feature("topic_monitor", "Watch a topic", "Web", HAVE, "Tells the human once a day when a topic has news.",
+            "the watch_topic tool and topics.py: once a day per topic when idle, only stories not reported before; journaled, "
+            "shown, spoken and in the briefing", risk="EXTERNAL_READ", seen_in="Mark-LV"),
+    Feature("morning_briefing", "Morning briefing", "Web", HAVE, "Greets with yesterday's recap and today's news.",
+            "briefing.py composes the day from the journal, with the new stories on the watched topics", risk="EXTERNAL_READ",
+            seen_in="Mark-LV"),
     # ——— Communication ———
     Feature("send_message", "Send messages (WhatsApp, Telegram…)", "Communication", TODO, "Sends a message as the human.",
             "only through a way that can verify delivery (an official API, or reading the chat back); never blind typing into a window",

@@ -336,6 +336,12 @@ export default function Syrax() {
         case "phase":
           if (e.event === "changed") setPhase({ phase: e.phase, tool: e.tool, target: e.target });
           break;
+        case "topic":
+          if (e.event === "news" && e.items?.length) {
+            push({ kind: "notice", id: nextId++, text: `NEWS · ${e.topic}: ${e.items.length} new · ${e.items[0].title}` });
+            say(`News on ${e.topic}: ${e.items[0].title}`, { followUp: false });
+          }
+          break;
         case "alert":
           if (e.event === "raised") {
             push({ kind: "notice", id: nextId++, text: `SYSTEM ALERT · ${e.detail}` });

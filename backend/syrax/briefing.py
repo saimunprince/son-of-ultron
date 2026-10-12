@@ -48,6 +48,12 @@ def compose(journal: Journal, since: Optional[float] = None, now: Optional[float
     if learned:
         lines.append(f"- new skills: {', '.join(learned)}")
 
+    from syrax import topics
+
+    news = topics.briefing_lines(journal, since)
+    if news:
+        lines.append("- news on watched topics:" + "".join(f"\n{n}" for n in news))
+
     commits = [e["payload"] for e in events if e["type"] == "commit.created"]
     if commits:
         lines.append(f"- self-modifications released: {len(commits)}" + "".join(f"\n    {str(c.get('commit'))[:8]} {str(c.get('summary'))[:70]}" for c in commits[:3]))

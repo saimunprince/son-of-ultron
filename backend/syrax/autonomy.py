@@ -727,6 +727,17 @@ class Autonomy:
                     except Exception as e:
                         logger.warning(f"the code benchmark failed: {e}")
                     return await self._finish(rep)
+            if os.getenv("SYRAX_FEATURES", "0") == "1":
+                from syrax import topics
+
+                if await asyncio.to_thread(topics.due, self.journal):
+                    # the human's watched topics, once a day: only stories not reported before
+                    try:
+                        found = await topics.check(self.journal)
+                        rep.outcome, rep.reason = "RAN", f"watched topics: {sum(len(f['items']) for f in found)} new stories"
+                    except Exception as e:
+                        logger.warning(f"watched topics failed: {e}")
+                    return await self._finish(rep)
             if self.journal.maintenance_due(MAINTENANCE_EVERY_S):
                 # useful idle work: keep the journal bounded (measured, journaled)
                 try:
