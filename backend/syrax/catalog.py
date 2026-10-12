@@ -174,9 +174,10 @@ CATALOG: List[Feature] = [
     Feature("aircraft_nearby", "Planes overhead", "Web", TODO, "Which aircraft are flying near a place right now.",
             "a skill on the OpenSky REST API (no key) for a box around given coordinates", risk="EXTERNAL_READ",
             check=skill("aircraft_nearby"), auto=True, seen_in="AI-Assistant"),
-    Feature("flight_finder", "Find flights", "Web", TODO, "Best flights between two cities on a date.",
-            "the browser reads a flight search page, a brain extracts the options", risk="EXTERNAL_READ",
-            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("flight_finder", "Find flights", "Web", HAVE, "Best flights between two cities on a date.",
+            "prebuilt skill flight_search reads Google Flights in a headless Chrome (playwright, already a dependency) and parses "
+            "each row's description into price, airline, stops, times and layovers, cheapest first; one way or round trip; "
+            "it never books", risk="EXTERNAL_READ", seen_in="Mark-LV"),
     Feature("topic_monitor", "Watch a topic", "Web", HAVE, "Tells the human once a day when a topic has news.",
             "the watch_topic tool and topics.py: once a day per topic when idle, only stories not reported before; journaled, "
             "shown, spoken and in the briefing", risk="EXTERNAL_READ", seen_in="Mark-LV"),
