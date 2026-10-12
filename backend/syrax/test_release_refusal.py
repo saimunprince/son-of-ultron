@@ -55,3 +55,15 @@ def test_the_ranking_no_longer_calls_release_broken_for_refusals(tmp_path):
 def test_the_brief_says_a_skill_needs_no_release():
     assert "needs no release" in autonomy.AUTONOMOUS_BRIEF
     assert "Do not call `release`" in autonomy.BRIEF_HINTS["skill_verified"]
+
+
+def test_refusals_journaled_before_the_flag_are_read_from_their_words(tmp_path):
+    j = Journal(tmp_path / "j.db")
+    t = j.start_task_sync("[AUTONOMOUS OBJECTIVE] build a skill", kind="autonomous")
+    for i in range(13):  # what the live journal held: old refusals with no flag
+        j.record_sync("tool.failed", {"id": f"o{i}", "name": "release", "ok": False,
+                                      "output": OBSERVED + "Error: release refused: nothing to release: the working tree has no changes"}, task_id=t)
+    assert "release" not in recent_tool_stats(j)  # nothing left to count: no broken release tool
+    j.record_sync("tool.failed", {"id": "x", "name": "python_execute", "ok": False,
+                                  "output": OBSERVED + "Error: release refused: quoted text"}, task_id=t)
+    assert recent_tool_stats(j)["python_execute"]["failures"] == 1  # only release's own words count

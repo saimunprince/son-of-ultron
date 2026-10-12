@@ -54,6 +54,16 @@ def tool_failures(journal: Journal, tool: str, limit: int = 5) -> List[dict]:
     return rows
 
 
+def refused(payload: dict) -> bool:
+    """A call a guard turned down never ran as the tool: the permission gate, or `release`
+    refusing its plan. Events journaled before the flag existed (0c77fab) carry only the
+    words, so the ranking reads those too; without that, 13 old refusals kept `release`
+    ranked first as a broken tool (2026-10-12)."""
+    if payload.get("refused"):
+        return True
+    return payload.get("name") == "release" and "Error: release refused:" in str(payload.get("output") or "")
+
+
 def recent_tool_stats(journal: Journal, per_tool: int = RECENT_USES) -> Dict[str, dict]:
     """successes/failures over each tool's latest ``per_tool`` outcomes.
     Live: str_replace_editor was 5 % in the last 4 h after its fix but still
@@ -62,8 +72,8 @@ def recent_tool_stats(journal: Journal, per_tool: int = RECENT_USES) -> Dict[str
     for e in reversed(journal.recent_events(5000)):
         if e["type"] not in ("tool.completed", "tool.failed"):
             continue
-        if e["payload"].get("refused"):
-            continue  # a call refused by permissions never ran; it is not the tool failing
+        if refused(e["payload"]):
+            continue  # a call a guard refused never ran as the tool; it is not the tool failing
         name = e["payload"].get("name")
         lst = outcomes.setdefault(name, [])
         if len(lst) < per_tool:
