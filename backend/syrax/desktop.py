@@ -243,8 +243,10 @@ class DesktopControl(BaseTool):
         "Control the human's own computer (GNOME/Linux, Windows or macOS). Use this when they want something to happen "
         "on THEIR screen: open a website in their browser, open a file/folder/app, set volume, "
         "play/pause music, take a screenshot, show a notification, read/write the clipboard, find "
-        "files, check battery/CPU/RAM/disk, lock the screen. (Use the browser_* tools only when YOU "
-        "need to read or operate a web page.)"
+        "files, check battery/CPU/RAM/disk, lock the screen. On Windows also: type text into the focused window "
+        "(type_text), press keys (hotkey, e.g. ctrl+c, alt+tab), click at screen pixels (click), switch dark mode "
+        "(dark_mode) and turn the display off (display_off); the human stops typing and clicking by moving the "
+        "mouse to the top-left corner. (Use the browser_* tools only when YOU need to read or operate a web page.)"
     )
     parameters: dict = {
         "type": "object",
@@ -254,10 +256,11 @@ class DesktopControl(BaseTool):
                 "enum": [
                     "open", "launch_app", "list_apps", "volume", "media", "screenshot",
                     "notify", "clipboard_get", "clipboard_set", "find_files", "system_info", "lock_screen", "window",
+                    "type_text", "hotkey", "click", "dark_mode", "display_off",
                 ],
             },
-            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name. find_files: name pattern."},
-            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: play, pause, toggle, next, previous, status. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title)."},
+            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name. find_files: name pattern. click: 'x,y' screen pixels."},
+            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: play, pause, toggle, next, previous, status. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
         "required": ["action"],
@@ -590,6 +593,40 @@ class DesktopControl(BaseTool):
             return ToolResult(output="Screen locked.") if code == 0 else ToolResult(error=err or "lock failed")
         code, _, err = await _run("loginctl", "lock-session")
         return ToolResult(output="Screen locked.") if code == 0 else ToolResult(error=err or "lock failed")
+
+    # ——— hands (Windows, syrax/wininput.py): SYSTEM level, a human conversation only ———
+    async def _hands(self, fn, *args) -> ToolResult:
+        from syrax import wininput
+
+        try:
+            return ToolResult(output=await asyncio.to_thread(fn, *args))
+        except (ValueError, RuntimeError, wininput.Stopped) as e:
+            return ToolResult(error=str(e))
+
+    async def _do_type_text(self, value: str, **_) -> ToolResult:
+        from syrax import wininput
+
+        return await self._hands(wininput.type_text, value)
+
+    async def _do_hotkey(self, value: str, **_) -> ToolResult:
+        from syrax import wininput
+
+        return await self._hands(wininput.hotkey, value)
+
+    async def _do_click(self, target: str, value: str = "", **_) -> ToolResult:
+        from syrax import wininput
+
+        return await self._hands(wininput.click, target, value or "left")
+
+    async def _do_dark_mode(self, value: str, **_) -> ToolResult:
+        from syrax import wininput
+
+        return await self._hands(wininput.dark_mode, value or "get")
+
+    async def _do_display_off(self, **_) -> ToolResult:
+        from syrax import wininput
+
+        return await self._hands(wininput.display_off)
 
 
 def _find(root: Path, needle: str, limit: int, budget_s: float) -> List[str]:
