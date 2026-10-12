@@ -415,7 +415,10 @@ def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None) ->
         # the running SYRAX's gate passed that to the tests, whose test server then refused their
         # localhost:3000 origin with 403: 62 failures, every release blocked. The tests run on
         # their own settings only.
-        Gate("pytest", [py, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider"], cwd=backend, env=test_env,
+        # a test that runs past faulthandler_timeout prints every thread's stack into the evidence
+        # (live 2026-10-12: the suite hung twice past the gate's timeout and nothing said where)
+        Gate("pytest", [py, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider", "-o", "faulthandler_timeout=300"],
+             cwd=backend, env=test_env,
              drop_env_prefixes=("SYRAX_",)),
         fe("tsc", tsc),
         fe("eslint", eslint),

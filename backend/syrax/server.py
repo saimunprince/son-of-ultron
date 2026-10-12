@@ -87,6 +87,10 @@ async def lifespan(_: FastAPI):
     core = get_core()
     for tid in await core.auto_resume():
         logger.warning(f"auto-resumed task {tid}")
+    from syrax import stallwatch
+
+    # if the event loop ever blocks, the stacks of every thread are kept (live 2026-10-12: two silent stalls)
+    watchdog = stallwatch.Watchdog(asyncio.get_running_loop(), journal).start()
     if core.autonomy.enabled:
         core.autonomy.start()
         logger.info("autonomy loop started")
@@ -102,6 +106,7 @@ async def lifespan(_: FastAPI):
     # Warm the local ear in the background so the first voice command is fast.
     warm = asyncio.create_task(asyncio.to_thread(_warm_whisper))
     yield
+    watchdog.stop()
     reminder_loop.cancel()
     alert_loop.cancel()
     warm.cancel()
