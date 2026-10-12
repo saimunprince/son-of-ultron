@@ -219,13 +219,28 @@ class LiveBridge:
             return "SYRAX is already running a task. Tell the human to wait for it, or to say stop."
         # permissions judge the human's own words (transcribed), never Gemini's paraphrase
         words = "".join(self.heard).strip() or self.last_heard or request
-        task_id = await self.core.submit(request + TASK_HINT, said=words, session_id=f"live-{self.id}")
+        # Gemini gets its answer at once and speaks while the task starts: live 2026-10-12 the
+        # first task after a restart took 8.7 s to start (building the agent), all of it silence.
+        self._later(self._start(request, words))
+        return "Starting it now. Say so in a few words; the result follows as a TASK RESULT message."
+
+    async def _start(self, request: str, words: str) -> None:
+        try:
+            task_id = await self.core.submit(request + TASK_HINT, said=words, session_id=f"live-{self.id}")
+        except Exception as e:
+            await self.text(f"TASK RESULT (failed): SYRAX could not start it: {self._scrub(str(e))[:300]}")
+            return
         if task_id is None:
-            return "SYRAX is already running a task. Tell the human to wait for it, or to say stop."
-        self.tasks.add(task_id)
+            await self.text("TASK RESULT (failed): SYRAX was already busy with another task, so nothing was started.")
+            return
+        self.tasks.add(task_id)  # before any await: the task's own events can only come after this
         self.started += 1
         await self.send({"type": "live", "event": "task", "task_id": task_id, "text": request})
-        return "Started. Say so in a few words; the result follows as a TASK RESULT message."
+
+    def _later(self, coro) -> None:
+        job = asyncio.create_task(coro)
+        self._pending.add(job)
+        job.add_done_callback(self._pending.discard)
 
     async def stop_task(self) -> str:
         running = self.core.current
@@ -248,9 +263,7 @@ class LiveBridge:
             note = f"TASK RESULT ({ev['event']}): {str(ev.get('result') or ev.get('error') or 'no text')[:RESULT_CHARS]}"
         else:
             return
-        job = asyncio.create_task(self.text(note))  # never hold up the core's other observers
-        self._pending.add(job)
-        job.add_done_callback(self._pending.discard)
+        self._later(self.text(note))  # never hold up the core's other observers
 
     async def close(self, reason: str) -> None:
         if self.ws is None:

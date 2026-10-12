@@ -151,6 +151,7 @@ def test_a_task_goes_to_the_agent_on_the_humans_words_and_its_result_is_spoken()
     async def go():
         await bridge.on_gemini({"serverContent": {"inputTranscription": {"text": "delete notes.txt on my desktop"}}})
         await bridge.on_gemini({"toolCall": {"functionCalls": [{"id": "fc1", "name": "run_task", "args": {"request": "Remove the notes file"}}]}})
+        await asyncio.gather(*bridge._pending)  # the task starts in the background
         await bridge.on_core_event({"type": "ask", "question": "Delete notes.txt?", "task_id": "t1"})
         await bridge.on_core_event({"type": "task", "event": "completed", "result": "Other task", "task_id": "t9"})
         await bridge.on_core_event({"type": "task", "event": "completed", "result": "Deleted notes.txt.", "task_id": "t1"})
@@ -160,7 +161,7 @@ def test_a_task_goes_to_the_agent_on_the_humans_words_and_its_result_is_spoken()
     assert sub["goal"].startswith("Remove the notes file") and live.TASK_HINT in sub["goal"]
     assert sub["said"] == "delete notes.txt on my desktop" and sub["session"] == f"live-{bridge.id}"
     reply = next(m for m in gem.sent if "toolResponse" in m)["toolResponse"]["functionResponses"][0]
-    assert reply["id"] == "fc1" and reply["name"] == "run_task" and reply["response"]["result"].startswith("Started.")
+    assert reply["id"] == "fc1" and reply["name"] == "run_task" and reply["response"]["result"].startswith("Starting it now.")
     spoken = [m["realtimeInput"]["text"] for m in gem.sent if "text" in m.get("realtimeInput", {})]
     assert spoken == ["SYRAX ASKS: Delete notes.txt? (the human answers on screen)", "TASK RESULT (completed): Deleted notes.txt."]
     assert {"type": "live", "event": "task", "task_id": "t1", "text": "Remove the notes file"} in out
@@ -208,3 +209,23 @@ def test_no_key_or_a_second_window_gets_a_plain_error(script, monkeypatch):
     monkeypatch.setattr(live, "_open", object())
     with TestClient(server.app).websocket_connect("/live", headers=ORIGIN) as ws:
         assert ws.receive_json()["text"] == "Live talk is already open in another window."
+
+
+def test_gemini_is_answered_before_the_task_starts_and_a_start_that_fails_is_spoken():
+    class Slow(FakeCore):
+        async def submit(self, goal, said=None, session_id=None, kind="conversation"):
+            await asyncio.sleep(0.5)  # the first task after a restart builds the agent
+            return None  # and someone else got there first
+
+    bridge, core, gem, out = opened(Slow())
+
+    async def go():
+        started = asyncio.get_running_loop().time()
+        await bridge.on_gemini({"toolCall": {"functionCalls": [{"id": "fc2", "name": "run_task", "args": {"request": "open notepad"}}]}})
+        answered = asyncio.get_running_loop().time() - started
+        await asyncio.gather(*bridge._pending)
+        return answered
+    assert asyncio.run(go()) < 0.2  # Gemini was not kept waiting for the start
+    spoken = [m["realtimeInput"]["text"] for m in gem.sent if "text" in m.get("realtimeInput", {})]
+    assert spoken == ["TASK RESULT (failed): SYRAX was already busy with another task, so nothing was started."]
+    assert bridge.tasks == set() and bridge.started == 0
