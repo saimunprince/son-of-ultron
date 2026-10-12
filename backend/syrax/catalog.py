@@ -148,9 +148,9 @@ CATALOG: List[Feature] = [
     Feature("screen_vision", "Describe the screen", "Computer control", HAVE, "'What is on my screen?'",
             "desktop screenshot hands the image to the brain in the same step (base64_image); brains with vision (gemini, "
             "openrouter, ...) read it. The image goes to that brain's provider", risk="EXTERNAL_READ", seen_in="Mark-LV, Mark-XXXIX-OR"),
-    Feature("webcam", "Look through the camera", "Computer control", TODO, "'Look at me' through the webcam.",
-            "capture one frame on request and show it; a camera light and a journal line every time", risk="SYSTEM",
-            needs="opencv (new dependency) and the owner's decision: the camera is private", check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("webcam", "Look through the camera", "Computer control", HAVE, "'Look at me' through the webcam.",
+            "desktop action camera (camera.py, opencv-python-headless, approved 2026-10-12): one frame on request, released at "
+            "once, journaled as camera.captured and shown in the UI; SYSTEM, so never in SYRAX's own work", risk="SYSTEM", seen_in="Mark-LV"),
     Feature("screen_debug", "Explain the error on screen", "Coding", HAVE, "Reads an error on the screen and explains it.",
             "a screenshot reaches the brain, which explains the error; a fix goes through the editor and the gate, never a silent "
             "overwrite", risk="EXTERNAL_READ", seen_in="Mark-LV"),
@@ -221,8 +221,9 @@ CATALOG: List[Feature] = [
     # ——— Interface ———
     Feature("hud", "Sci-fi interface", "Interface", HAVE, "A living interface with state, logs and panels.", "frontend: orb, console, MIND/SELF/BRAIN panels", seen_in="Mark-LV"),
     Feature("typed_input", "Typed commands", "Interface", HAVE, "Type instead of speaking.", "the console input", seen_in="Mark-LV"),
-    Feature("theme", "Recolour the interface", "Interface", TODO, "Pick the interface colour.", "a hue setting in the UI", risk="WRITE",
-            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("theme", "Recolour the interface", "Interface", HAVE, "Pick the interface colour.",
+            "the ULTRON / CLASSIC button switches the whole look (UI and orb), remembered in the browser; two looks, no free colour wheel",
+            seen_in="Mark-LV"),
     Feature("autostart", "Start with Windows", "Interface", HAVE, "SYRAX runs after every boot.", "Startup SYRAX.vbs, syrax.py service mode", seen_in="Mark-LV"),
     # ——— Scheduling ———
     Feature("reminders", "Reminders", "Scheduling", HAVE, "'Remind me at 5 to call Rahim.'",

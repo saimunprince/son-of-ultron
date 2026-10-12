@@ -344,6 +344,9 @@ export default function Syrax() {
             say(`News on ${e.topic}: ${e.items[0].title}`, { followUp: false });
           }
           break;
+        case "camera":
+          if (e.event === "captured") push({ kind: "notice", id: nextId++, text: `CAMERA USED · one photo saved to ${e.path}` });
+          break;
         case "checkin":
           if (e.event === "made") {
             push({ kind: "notice", id: nextId++, text: `CHECK-IN · ${e.text}` });

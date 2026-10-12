@@ -246,7 +246,7 @@ class DesktopControl(BaseTool):
         "files, check battery/CPU/RAM/disk, lock the screen. On Windows also: type text into the focused window "
         "(type_text), press keys (hotkey, e.g. ctrl+c, alt+tab), click at screen pixels (click), switch dark mode "
         "(dark_mode) and turn the display off (display_off); the human stops typing and clicking by moving the "
-        "mouse to the top-left corner. To delete the human's own files, use trash: it goes to the Recycle Bin and can be restored. (Use the browser_* tools only when YOU need to read or operate a web page.)"
+        "mouse to the top-left corner. To delete the human's own files, use trash: it goes to the Recycle Bin and can be restored. camera takes one photo with the webcam when the human asks to be seen; you see the photo. (Use the browser_* tools only when YOU need to read or operate a web page.)"
     )
     parameters: dict = {
         "type": "object",
@@ -256,7 +256,7 @@ class DesktopControl(BaseTool):
                 "enum": [
                     "open", "launch_app", "list_apps", "volume", "media", "screenshot",
                     "notify", "clipboard_get", "clipboard_set", "find_files", "system_info", "lock_screen", "window",
-                    "type_text", "hotkey", "click", "dark_mode", "display_off", "trash",
+                    "type_text", "hotkey", "click", "dark_mode", "display_off", "trash", "camera",
                 ],
             },
             "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name. find_files: name pattern. click: 'x,y' screen pixels. trash: the file or folder to move to the Recycle Bin."},
@@ -636,6 +636,26 @@ class DesktopControl(BaseTool):
         if p.exists():
             return ToolResult(error=f"{p} is still there; the Recycle Bin did not take it.")
         return ToolResult(output=f"Moved {p} to the Recycle Bin; restore it from there if it was a mistake.")
+
+    async def _do_camera(self, value: str = "", **_) -> ToolResult:
+        """One photo from the webcam (camera.py), saved in the workspace, journaled and shown to the brain."""
+        from syrax import camera
+        from syrax.journal import get_journal
+
+        try:
+            index = int(value) if str(value or "").strip().isdigit() else 0
+            png = await asyncio.to_thread(camera.capture, index)
+        except Exception as e:
+            return ToolResult(error=f"camera: {e}")
+        shots = Path(config.workspace_root) / "camera"
+        shots.mkdir(parents=True, exist_ok=True)
+        path = shots / f"cam-{time.strftime('%Y%m%d-%H%M%S')}.png"
+        path.write_bytes(png)
+        try:
+            await get_journal().record("camera.captured", {"path": str(path), "bytes": len(png)})
+        except Exception:
+            pass  # the photo is taken; the record is best effort, the UI still shows the tool call
+        return ToolResult(output=f"Took one photo with the camera: {path}", base64_image=base64.b64encode(png).decode())
 
     async def _do_display_off(self, **_) -> ToolResult:
         from syrax import wininput
