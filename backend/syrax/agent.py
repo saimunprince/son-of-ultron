@@ -92,6 +92,14 @@ _OBSERVED = re.compile(r"^Observed output of cmd `[^`]*` executed:\n")
 _SUCCESS_FLAG = re.compile(r"'success': (True|False)\}\s*$")
 
 
+def _refused(name: str, result: str) -> bool:
+    """A call that a guard turned down: the permission gate, or `release` refusing its plan
+    (nothing to release, a judge file, outside the scope). The tool did its job, so this is
+    not the tool failing (limits, skillevo and follow-ups skip it); RISE still counts the call."""
+    body = _OBSERVED.sub("", result, count=1)
+    return result.startswith("Error: refused") or (name == "release" and body.startswith("Error: release refused:"))
+
+
 def _succeeded(result: str) -> bool:
     body = _OBSERVED.sub("", result, count=1).lstrip()
     flag = _SUCCESS_FLAG.search(body)
@@ -433,7 +441,7 @@ class SyraxAgent(Manus):
             "truncated": len(result) > RESULT_PREVIEW_CHARS,
             "step": self.current_step,
         }
-        if result.startswith("Error: refused"):
+        if _refused(name, result):
             event["refused"] = True
         if self._current_base64_image:
             event["image"] = self._current_base64_image

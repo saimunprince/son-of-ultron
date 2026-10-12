@@ -68,7 +68,8 @@ AUTONOMOUS_BRIEF = (
     "Permission levels: in autonomous work a call that deletes, acts on the host (launch, volume, shell), sends, or writes outside "
     "the repository and workspace is refused with `Error: refused`; that is final, so do not plan such steps: do the rest and name what a human would have to do.\n"
     "You cannot run the quality suite or start another SYRAX core from a task (the core is busy with you, "
-    "and the journal refuses a second core): fix, `release`, and finish; the next cycle runs the quality suite.\n"
+    "and the journal refuses a second core): fix, `release`, and finish; the next cycle runs the quality suite. "
+    "`release` is for repository changes only: a skill made with `skill_create` is live once VERIFIED and needs no release.\n"
     "Do the work with your tools. Your completion is judged from the journal evidence "
     "(which tools ran and whether they succeeded), not from what you say. Do not claim "
     "success you did not produce. Be economical: every step costs a model call; take the "
@@ -84,7 +85,7 @@ RELEASE_MARK = "closes only when your `release` creates a commit"
 
 BRIEF_HINTS = {
     "change_released": f" The objective {RELEASE_MARK}. You have {RELEASE_STEPS} steps: view only the regions you change, edit, run the tests, fix, then `release`.",
-    "skill_verified": " Build it with `skill_create` (code + pytest tests, dependencies listed); the objective closes only when the skill `{name}` is VERIFIED by its own tests. Write files only inside the workspace.",
+    "skill_verified": " Build it with `skill_create` (code + pytest tests, dependencies listed); the objective closes only when the skill `{name}` is VERIFIED by its own tests. Write files only inside the workspace. Do not call `release`: a skill is not in the repository.",
     "tool_verified": " For this objective one call of the `{tool}` tool with a harmless read-only action is enough; report its output and finish.",
     "knowledge_stored": " Use `research` once on the stated topic, then `learn` one verified conclusion citing the knowledge_ids, then finish.",
     "tool_reliability": " Follow the plan in the goal step by step. The objective closes only when new uses of `{tool}` show the lower failure rate, so finish by using it as the plan says.",

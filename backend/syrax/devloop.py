@@ -558,6 +558,8 @@ class ReleaseTool(BaseTool):
             return ToolResult(error="release loop unavailable")
         try:
             report = await self.loop.release(summary, {"why": why, "risk": risk, "tests": tests})
-        except (ValueError, JournalError, RuntimeError) as e:
+        except ValueError as e:  # the plan was refused (nothing to release, a judge, outside the scope): the guard held
             return ToolResult(error=f"release refused: {e}")
+        except (JournalError, RuntimeError) as e:  # something broke (git, the journal): a real failure
+            return ToolResult(error=f"release failed: {e}")
         return ToolResult(output=render(report))
