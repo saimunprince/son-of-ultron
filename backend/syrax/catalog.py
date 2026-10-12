@@ -138,9 +138,9 @@ CATALOG: List[Feature] = [
     Feature("disk_usage", "Largest files and disk usage", "Computer control", TODO, "'What is filling my disk?'",
             "a read-only skill walking a folder for the largest files and folder sizes", risk="READ_ONLY",
             check=skill("disk_usage"), auto=True, seen_in="Mark-LV"),
-    Feature("file_processor", "Work on a dropped file", "Computer control", PARTIAL, "Summarise, convert or analyse any file.",
-            "python_execute, the make_docx/xlsx/pptx/pdf skills, Pillow for images, and the prebuilt pdf_text skill (pypdf). "
-            "Missing: a drop zone in the UI", risk="WRITE", seen_in="Mark-LV, Mark-XXXIX-OR"),
+    Feature("file_processor", "Work on a dropped file", "Computer control", HAVE, "Summarise, convert or analyse any file.",
+            "drop a file on the UI: /upload keeps it in workspace/uploads and names it in the command line; python_execute, the "
+            "make_* skills, Pillow, pdf_text and image_tools work on it", risk="WRITE", seen_in="Mark-LV, Mark-XXXIX-OR"),
     Feature("image_tools", "Resize, compress and convert images", "Computer control", TODO, "Makes images smaller or another format.",
             "a skill on Pillow (installed) writing only new files", risk="WRITE", check=skill("image_tools"), auto=True, seen_in="Mark-LV"),
     Feature("json_tools", "Validate, format and convert JSON", "Computer control", TODO, "Checks a JSON file, pretty-prints it, turns it into CSV.",

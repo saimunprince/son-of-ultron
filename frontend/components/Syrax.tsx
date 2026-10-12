@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createOrbScene, PALETTES, type OrbMode, type OrbSceneApi, type OrbTheme } from "@/lib/orbScene";
 import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
 import {
+  API_BASE,
   DEFAULT_WS_URL,
   SyraxClient,
   type BrainChange,
@@ -146,6 +147,7 @@ export default function Syrax() {
   const [autonomy, setAutonomy] = useState<AutonomyStatus | null>(null);
   const [startup, setStartup] = useState<StartupStatus | null>(null);
   const [clipOpen, setClipOpen] = useState(false);
+  const [dropping, setDropping] = useState(false);
   const [voicePick, setVoicePick] = useState<VoiceStatus | null>(null);
   const [phase, setPhase] = useState<{ phase: TaskPhase; tool?: string; target?: string } | null>(null);
   const [consoleTab, setConsoleTab] = useState<ConsoleTab>("live");
@@ -696,6 +698,49 @@ export default function Syrax() {
     if (audioReady()) say(AWAKENINGS[Math.floor(Math.random() * AWAKENINGS.length)], { followUp: false });
   }, [say]);
 
+  // Drop a file anywhere on SYRAX: it is saved in the workspace and named in the command line,
+  // so the human only says what to do with it (feature catalog: file_processor).
+  useEffect(() => {
+    const hasFiles = (e: DragEvent) => !!e.dataTransfer && Array.from(e.dataTransfer.types).includes("Files");
+    const over = (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      setDropping(true);
+    };
+    const leave = (e: DragEvent) => {
+      if (e.relatedTarget === null) setDropping(false);
+    };
+    const drop = async (e: DragEvent) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      setDropping(false);
+      const file = e.dataTransfer?.files[0];
+      if (!file) return;
+      try {
+        const res = await fetch(`${API_BASE}/upload?name=${encodeURIComponent(file.name)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: file,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { path } = (await res.json()) as { path: string };
+        push({ kind: "notice", id: nextId++, text: `FILE · ${file.name} saved to ${path}` });
+        setInput((v) => `${v ? `${v} ` : ""}I dropped the file ${path}. `);
+        inputRef.current?.focus();
+      } catch (err) {
+        push({ kind: "error", id: nextId++, text: `UPLOAD · ${file.name} failed (${String(err)})` });
+      }
+    };
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
+  }, [push]);
+
   // Screen reacts while SYRAX speaks (glitch, scanlines, red bleed).
   useEffect(() => {
     document.documentElement.dataset.speaking = speaking ? "true" : "false";
@@ -950,6 +995,7 @@ export default function Syrax() {
     <>
       <div ref={containerRef} className="orb-root" />
 
+      {dropping && <div className="drop-overlay">DROP THE FILE · SYRAX KEEPS IT IN THE WORKSPACE</div>}
       <div className="overlay-vignette" />
       <div className="overlay-grain" />
       <div className="overlay-scanlines" />

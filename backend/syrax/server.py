@@ -41,7 +41,9 @@ import asyncio
 import dataclasses
 import json
 import os
+import re
 import time
+from pathlib import Path
 import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -151,6 +153,32 @@ async def stt(request: Request):
     except Exception as e:
         logger.exception("STT failed")
         raise HTTPException(status_code=500, detail=f"speech recognition failed: {str(e)[:200]}")
+
+
+UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+
+
+def upload_dir() -> Path:
+    from app.config import config
+
+    return Path(config.workspace_root) / "uploads"
+
+
+@app.post("/upload")
+async def upload(request: Request, name: str = ""):
+    """A file the human dropped on the UI, saved in the workspace for SYRAX to work on
+    (feature catalog: file_processor). Same origin rule as the voice endpoints."""
+    _check_origin(request)
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=400, detail="empty file")
+    if len(data) > UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"files up to {UPLOAD_MAX_BYTES // (1024 * 1024)} MB")
+    safe = re.sub(r"[^\w.\- ]", "_", Path(str(name or "")).name).strip(" .")[:120] or "file"
+    dest = upload_dir() / f"{time.strftime('%Y%m%d-%H%M%S')}-{safe}"
+    await asyncio.to_thread(lambda: (dest.parent.mkdir(parents=True, exist_ok=True), dest.write_bytes(data)))
+    await get_journal().record("file.uploaded", {"path": str(dest), "bytes": len(data), "name": safe})
+    return {"path": str(dest), "bytes": len(data)}
 
 
 @app.post("/tts")
