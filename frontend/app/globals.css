@@ -371,6 +371,21 @@ body {
   color: var(--text-dim);
 }
 
+/* clipboard actions above the command row */
+.clip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+}
+
+.clip-label {
+  color: var(--text-dim);
+}
+
 /* F4: the task phase strip (understand · plan · act · observe · verify) */
 .status-phase span {
   margin-left: 10px;

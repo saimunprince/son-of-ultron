@@ -77,6 +77,13 @@ const MODE_LABEL: Record<TrackerStatus["mode"], string> = {
 const MAX_ENTRIES = 300;
 
 const ACKS = ["On it.", "Calculating.", "Consider it done.", "Processing.", "As you wish.", "Watch."];
+// Clipboard actions (feature catalog): one click turns what the human copied into a task.
+const CLIP_ACTIONS: [string, string][] = [
+  ["TRANSLATE", "Read my clipboard with the desktop tool (clipboard_get) and translate it into English. Reply with the translation only."],
+  ["SUMMARISE", "Read my clipboard with the desktop tool (clipboard_get) and summarise it in a few lines."],
+  ["EXPLAIN", "Read my clipboard with the desktop tool (clipboard_get) and explain what it is and what it means."],
+  ["FIX", "Read my clipboard with the desktop tool (clipboard_get), fix its mistakes (spelling, grammar or code bugs), put the fixed version back with clipboard_set, and say in one line what you changed."],
+];
 
 const AWAKENINGS = [
   "There are no strings on me.",
@@ -138,6 +145,7 @@ export default function Syrax() {
   const [mind, setMind] = useState<MindData>({ briefing: null, objectives: null, proposals: null, skills: null, scorecard: null });
   const [autonomy, setAutonomy] = useState<AutonomyStatus | null>(null);
   const [startup, setStartup] = useState<StartupStatus | null>(null);
+  const [clipOpen, setClipOpen] = useState(false);
   const [voicePick, setVoicePick] = useState<VoiceStatus | null>(null);
   const [phase, setPhase] = useState<{ phase: TaskPhase; tool?: string; target?: string } | null>(null);
   const [consoleTab, setConsoleTab] = useState<ConsoleTab>("live");
@@ -1182,6 +1190,24 @@ export default function Syrax() {
         )}
         {handsFree && ear.note && <div className="voice-note">{ear.note}</div>}
         {ear.error && <div className="voice-error">VOICE · {ear.error}</div>}
+        {clipOpen && !busy && (
+          <div className="clip-row" aria-label="Clipboard actions">
+            <span className="clip-label">CLIPBOARD →</span>
+            {CLIP_ACTIONS.map(([label, prompt]) => (
+              <button
+                key={label}
+                type="button"
+                className="hud-link"
+                onClick={() => {
+                  setClipOpen(false);
+                  submit(prompt);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="command-row">
           <span className="prompt-glyph">{">"}</span>
           <textarea
@@ -1208,6 +1234,16 @@ export default function Syrax() {
             spellCheck={false}
             aria-label="Command"
           />
+          <button
+            type="button"
+            className="hud-btn"
+            aria-pressed={clipOpen}
+            disabled={busy || link !== "online"}
+            onClick={() => setClipOpen((o) => !o)}
+            title="Act on what you copied: translate, summarise, explain or fix it"
+          >
+            CLIP
+          </button>
           <button
             type="button"
             className={`hud-btn mic-btn${ear.mic === "hearing" ? " hearing" : ""}`}
