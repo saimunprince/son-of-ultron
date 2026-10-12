@@ -39,8 +39,8 @@ def real_use(journal: Journal, limit_events: int = 5000) -> Dict[str, dict]:
             continue
         name = e["payload"].get("name")
         st = out.get(name)
-        if st is None or e["ts"] < st["since"]:
-            continue
+        if st is None or e["ts"] < st["since"] or e["payload"].get("refused"):
+            continue  # a refused call never ran: it says nothing about the skill
         st["uses"] += 1
         if e["type"] == "tool.failed" or not e["payload"].get("ok", True):
             st["failures"] += 1

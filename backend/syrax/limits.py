@@ -62,6 +62,8 @@ def recent_tool_stats(journal: Journal, per_tool: int = RECENT_USES) -> Dict[str
     for e in reversed(journal.recent_events(5000)):
         if e["type"] not in ("tool.completed", "tool.failed"):
             continue
+        if e["payload"].get("refused"):
+            continue  # a call refused by permissions never ran; it is not the tool failing
         name = e["payload"].get("name")
         lst = outcomes.setdefault(name, [])
         if len(lst) < per_tool:

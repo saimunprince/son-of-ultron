@@ -39,6 +39,12 @@ def derive(journal: Journal, objective: dict) -> List[dict]:
         return []
     oid = objective["id"]
     events = [e for t in plan.task_ids_of(objective) for e in journal.events(t)]
+    tool = spec.get("tool")
+    if tool and any(e["type"] == "permission.refused" and e["payload"].get("tool") == tool for e in events):
+        # blocked by a refusal by design, not by not knowing how: learning and
+        # retrying cannot change the permission (live 2026-10-12: two skills drew
+        # twelve objectives this way). The human uses the tool; that verifies it.
+        return []
     commits = [e for e in events if e["type"] == "commit.created"]
     learned = [e for e in events if e["type"] == "knowledge.stored"]
     log = ((objective.get("progress") or {}).get("attempts_log")) or []

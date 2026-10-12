@@ -124,6 +124,15 @@ def levels_for(names: Iterable[str]) -> Dict[str, str]:
     return {n: level_of_tool(n) for n in sorted(set(names))}
 
 
+def autonomous_refuses(name: str) -> bool:
+    """A skill whose declared level autonomous work may never use: every call
+    of it from SYRAX's own work is refused by design, so its own work can
+    neither verify nor repair it (live 2026-10-12: screen_brightness and
+    wallpaper drew verify, retry and repair objectives that could only be
+    refused). Built-in tools are refined per call and are not judged here."""
+    return DECLARED.get(name) in (SYSTEM, EXTERNAL_WRITE, DESTRUCTIVE)
+
+
 def declare(name: str, level: str) -> None:
     DECLARED[name] = level if level in ORDER else DEFAULT_UNKNOWN
 

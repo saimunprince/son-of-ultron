@@ -289,10 +289,12 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
         for o in journal.objectives(limit=500, status=["OPEN", "ACTIVE", "BLOCKED"])
         if (o.get("check_spec") or {}).get("kind") == "tool_verified"
     }
+    from syrax import permissions
+
     for c in caps:
         name = c["capability"]
-        if not c["registered"] or name in NOT_AUTO_VERIFIED or name in targeted:
-            continue
+        if not c["registered"] or name in NOT_AUTO_VERIFIED or name in targeted or permissions.autonomous_refuses(name):
+            continue  # a tool own work may not call is verified by the human using it
         if c["status"] == "NOT_TESTED":
             ok = journal.add_objective_sync(
                 goal=f"Verify that the `{name}` tool works on this machine by calling it with a harmless, read-only action and reporting exactly what it returned.",
@@ -654,6 +656,13 @@ class Autonomy:
             await self.journal.run(rejudge_blocked, self.journal)
         except Exception as e:
             logger.warning(f"re-judging blocked objectives failed: {e}")
+        if os.getenv("SYRAX_FEATURES", "0") == "1":
+            try:  # every cycle, not only when idle: a feature that broke is open work
+                from syrax import catalog
+
+                await self.journal.run(catalog.reopen_regressed, self.journal)
+            except Exception as e:
+                logger.warning(f"re-checking catalog features failed: {e}")
         objective = self._pick()
         if objective is None and self.reflect:
             # Phase 1: nothing is failing loudly, so ask what limits SYRAX most
@@ -672,9 +681,7 @@ class Autonomy:
             try:
                 from syrax import catalog
 
-                if await self.journal.run(catalog.reopen_regressed, self.journal):
-                    objective = self._pick()  # a feature that broke comes before a new one
-                feature = None if objective is not None else await self.journal.run(catalog.next_auto, self.journal)
+                feature = await self.journal.run(catalog.next_auto, self.journal)
                 if feature is not None:
                     await self.journal.run(catalog.promote, self.journal, feature.id, "catalog")
                     rep.derived += 1
