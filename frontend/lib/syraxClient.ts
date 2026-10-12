@@ -193,6 +193,13 @@ export interface ResourceSnapshot {
   quiet_hours: { window: [number, number] | null; active: boolean };
 }
 
+/** Start with Windows (backend/syrax/startup.py): the next login only, never this run. */
+export interface StartupStatus {
+  supported: boolean;
+  enabled: boolean;
+  how: string;
+}
+
 export interface AutonomyStatus {
   enabled: boolean;
   running_loop: boolean;
@@ -367,6 +374,7 @@ export type ServerEvent =
       running: RunningTask | null;
       recent: TaskSummary[];
       autonomy: AutonomyStatus;
+      startup?: StartupStatus;
       presentation: PresentationPlan;
     }
   | ({ type: "brains" } & BrainsState)
@@ -427,6 +435,7 @@ export type ServerEvent =
   | { type: "briefing"; text: string }
   | { type: "proposals"; proposals: Proposal[] }
   | ({ type: "autonomy_status" } & AutonomyStatus)
+  | ({ type: "startup_status" } & StartupStatus)
   | ({
       type: "permission";
       event: "authorized" | "refused";
@@ -479,6 +488,7 @@ export type ClientMessage =
   | { type: "briefing"; hours?: number }
   | { type: "proposals"; limit?: number }
   | { type: "autonomy"; enabled?: boolean }
+  | { type: "startup"; enabled?: boolean }
   | { type: "cycle_now" }
   | { type: "task_detail"; task_id: string }
   | { type: "replay"; since?: number; until?: number }

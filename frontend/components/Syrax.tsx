@@ -12,6 +12,7 @@ import {
   type ClientMessage,
   type LinkState,
   type AutonomyStatus,
+  type StartupStatus,
   type JournalEvent,
   type PresentationElement,
   type SelfModelSummary,
@@ -133,6 +134,7 @@ export default function Syrax() {
   const [mindTab, setMindTab] = useState<MindTab | null>(null);
   const [mind, setMind] = useState<MindData>({ briefing: null, objectives: null, proposals: null, skills: null, scorecard: null });
   const [autonomy, setAutonomy] = useState<AutonomyStatus | null>(null);
+  const [startup, setStartup] = useState<StartupStatus | null>(null);
   const [consoleTab, setConsoleTab] = useState<ConsoleTab>("live");
   const [historyTasks, setHistoryTasks] = useState<TaskSummary[] | null>(null);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
@@ -299,6 +301,7 @@ export default function Syrax() {
           }
           if (e.running) push({ kind: "notice", id: nextId++, text: `RUNNING · "${e.running.goal.slice(0, 80)}" · step ${e.running.step}` });
           setAutonomy(e.autonomy);
+          setStartup(e.startup ?? null);
           setStage(e.presentation.elements);
           break;
         case "presentation":
@@ -315,6 +318,13 @@ export default function Syrax() {
         case "presentation_plan":
           setStage(e.elements);
           break;
+        case "startup_status": {
+          const { type: _s, ...status } = e;
+          void _s;
+          setStartup(status);
+          push({ kind: "notice", id: nextId++, text: status.enabled ? "BOOT ON · SYRAX starts with Windows." : "BOOT OFF · SYRAX will not start with Windows." });
+          break;
+        }
         case "autonomy_status": {
           const { type: _t, ...rest } = e;
           void _t;
@@ -1203,6 +1213,17 @@ export default function Syrax() {
           >
             {autonomy?.enabled ? `AUTO ON · ${autonomy.objectives.OPEN} OPEN${autonomy.pressure ? " · PAUSED" : ""}` : "AUTO OFF"}
           </button>
+          {startup?.supported && (
+            <button
+              type="button"
+              className="hud-btn"
+              aria-pressed={startup.enabled}
+              onClick={() => clientRef.current?.send({ type: "startup", enabled: !startup.enabled })}
+              title="Start SYRAX when Windows starts (the next login; this run keeps going)"
+            >
+              {startup.enabled ? "BOOT ON" : "BOOT OFF"}
+            </button>
+          )}
           <button
             type="button"
             className="hud-btn"

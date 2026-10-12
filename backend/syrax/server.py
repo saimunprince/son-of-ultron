@@ -13,7 +13,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
                     skills | presentation | benchmarks {limit?} | experiments {limit?} |
                     quality_run {only?, brain?} | quality_runs {limit?} | compare_brains {a, b, only?} |
-                    codebench_run {brains?} | features | feature_promote {id} |
+                    codebench_run {brains?} | features | feature_promote {id} | startup {enabled?} |
                     presentation_feedback {presentation_id, action?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
@@ -57,6 +57,7 @@ from syrax import browser, voice
 from syrax.brains import PROVIDERS, get_router
 from syrax.core import get_core
 from syrax import permissions
+from syrax import startup
 from syrax.journal import JournalError, get_journal
 
 VOICE_HINT = (
@@ -255,6 +256,7 @@ class Session:
                 "running": snap["running"],
                 "recent": snap["recent"],
                 "autonomy": await asyncio.to_thread(self.core.autonomy.status),
+                "startup": startup.status(),
                 "presentation": snap["presentation"],
             }
         )
@@ -331,6 +333,16 @@ class Session:
             a, b = str(msg.get("a") or ""), str(msg.get("b") or "")
             only = msg.get("only") if isinstance(msg.get("only"), list) else None
             self.spawn(self._compare_brains(a, b, only), detached=True)
+        elif kind == "startup":
+            # the human's switch: does SYRAX start at the next login (never stops this run)
+            if "enabled" in msg:
+                try:
+                    st = await asyncio.to_thread(startup.set_enabled, bool(msg.get("enabled")))
+                except (RuntimeError, OSError) as e:
+                    await self.send({"type": "notice", "text": f"start with Windows: {e}"})
+                    return
+                await journal.record("startup.toggled", {"enabled": st["enabled"], "how": st["how"]})
+            await self.send({"type": "startup_status", **startup.status()})
         elif kind == "features":
             from syrax import catalog
 
