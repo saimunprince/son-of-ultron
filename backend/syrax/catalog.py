@@ -1,0 +1,306 @@
+"""The feature catalog: what a JARVIS-class assistant does, and where SYRAX stands.
+
+Built on 2026-10-12 from a survey of eight public JARVIS-style assistants
+(github.com/FatihMakes: Mark-LV, Mark-XXXIX-OR, Mark-X family, AI-Assistant).
+Their code is not reused: Mark-LV is CC BY-NC 4.0 and the others carry no
+licence, so only ideas are taken, and every feature is built SYRAX's way
+(permissions, tests, the gate, the journal).
+
+Every entry says what the feature does for the human and one of:
+  HAVE      SYRAX does it today (where)
+  PARTIAL   SYRAX does part of it (what is missing)
+  TODO      not built: how to build it, its permission level, what it needs
+            (a new dependency, a key or an owner decision), and the machine
+            check that proves it done
+  REJECTED  not wanted: why (a risk SYRAX does not take, or not applicable)
+
+A TODO becomes an objective with `promote` (by the human, or by SYRAX itself
+for entries marked auto: low risk, nothing new to install, buildable as a
+skill with tests). Statuses are typed here, so a HAVE must name where it lives.
+
+    python -m syrax.catalog --out ../docs/FEATURE_CATALOG.md
+"""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from syrax.journal import BACKEND_ROOT, Journal
+
+REPO_ROOT = BACKEND_ROOT.parent
+HAVE, PARTIAL, TODO, REJECTED = "HAVE", "PARTIAL", "TODO", "REJECTED"
+STATUSES = (HAVE, PARTIAL, TODO, REJECTED)
+AREAS = ("Voice", "Brain", "Computer control", "Web", "Communication", "Memory", "Coding", "Interface", "Scheduling")
+SOURCE = "FatihMakes JARVIS assistants (ideas only)"
+
+
+@dataclass(frozen=True)
+class Feature:
+    id: str
+    title: str
+    area: str
+    status: str
+    value: str                      # what it does for the human
+    syrax: str                      # HAVE/PARTIAL: where; TODO: how to build it; REJECTED: why not
+    risk: str = ""                  # permission level of the finished feature (permissions.py)
+    needs: str = ""                 # new dependency, key or owner decision; empty means nothing new
+    check: Optional[Dict[str, Any]] = None  # the objective check that proves it done
+    auto: bool = False              # SYRAX may promote and build it itself
+    seen_in: str = ""
+
+
+def skill(name: str) -> Dict[str, Any]:
+    return {"kind": "skill_verified", "name": name}
+
+
+CATALOG: List[Feature] = [
+    # ——— Voice ———
+    Feature("wake_word", "Wake word", "Voice", HAVE, "Listens for its name hands-free.", "frontend/lib/wake.ts, useHandsFree.ts", seen_in="Mark-LV"),
+    Feature("stt", "Speech to text, cloud and offline", "Voice", HAVE, "Understands speech, with a local fallback.",
+            "voice.py /stt: Groq Whisper with a key, local faster-whisper without", seen_in="Mark-X family, AI-Assistant"),
+    Feature("tts", "Neural voice output", "Voice", HAVE, "Speaks answers in a natural voice.", "voice.py /tts (edge-tts)", seen_in="Mark-X.1, AI-Assistant"),
+    Feature("echo_guard", "Does not answer its own voice", "Voice", HAVE, "The microphone ignores SYRAX's own speech.",
+            "frontend/lib/mic.ts (browser echo cancellation)", seen_in="Mark-LV"),
+    Feature("voice_picker", "Voice picker", "Voice", PARTIAL, "Choose the voice SYRAX speaks with.",
+            "SYRAX_TTS_VOICE sets it at start; missing: a choice in the UI that applies live", risk="WRITE", seen_in="Mark-LV"),
+    Feature("live_voice", "Real-time duplex voice", "Voice", TODO, "Talk and be answered with almost no delay, and interrupt.",
+            "a streaming voice session (Gemini Live) beside the task loop; tasks still go through the agent and its permissions",
+            risk="EXTERNAL_READ", needs="new dependency google-genai (owner approval); the microphone streams to Google while a session is open",
+            check={"kind": "change_released"}, seen_in="Mark-LV, Mark-XXXIX-OR"),
+    Feature("speech_interrupt", "Stop speaking on command", "Voice", TODO, "Saying 'stop' cuts SYRAX's speech at once.",
+            "the UI stops TTS playback when the wake recogniser hears stop/quiet while SYRAX speaks", risk="READ_ONLY",
+            check={"kind": "change_released"}, seen_in="Mark-X family, Mark-LV"),
+    Feature("language_follow", "Answers in the human's language", "Voice", TODO, "Replies in the language the human last used.",
+            "a persona rule plus remembering the language as a fact", risk="WRITE", check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("lip_sync", "Lip-synced face", "Voice", REJECTED, "An animated face that moves its mouth.",
+            "SYRAX's face is the orb; the orb already reacts to speech", seen_in="Mark-LV"),
+    # ——— Brain ———
+    Feature("tool_calling", "Tools called by the model", "Brain", HAVE, "The model acts through tools instead of describing actions.",
+            "OpenManus tool calls through SyraxAgent, every call journaled", seen_in="Mark-LV, Mark-XXXIX-OR"),
+    Feature("brain_failover", "Model ladder with cooldowns", "Brain", HAVE, "Survives quota limits and outages by moving to the next brain.",
+            "brains.py BrainRouter: failover chain, per-error cooldowns, smaller-model fallback; routing.py per kind of work", seen_in="Mark-LV"),
+    Feature("free_model_pool", "Pool of free models", "Brain", PARTIAL, "More free requests by spreading them over many models.",
+            "OpenRouter is one brain with one model; radar.py tests new free models. Missing: rotating several free models inside one provider",
+            risk="EXTERNAL_READ", seen_in="Mark-XXXIX-OR"),
+    Feature("slot_filling", "Asks for what is missing", "Brain", HAVE, "'Who should I send it to?' when a detail is missing.",
+            "ask_human through the UI", seen_in="Mark-X family"),
+    Feature("self_knowledge", "Knows what it can do", "Brain", HAVE, "Answers about its own abilities and limits from evidence.",
+            "selfmodel.py, self_inspect, the capability matrix", seen_in="Mark-LV"),
+    Feature("instant_ack", "Says one sentence before slow work", "Brain", TODO, "No silence while a slow tool runs.",
+            "the UI speaks a short status line when a tool has run longer than a few seconds (from the tool.started event)",
+            risk="READ_ONLY", check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("multi_step", "Multi-step goals", "Brain", HAVE, "'Research X and save it to a file' as one request.",
+            "the agent loop, plan.py, objectives with machine checks", seen_in="Mark-XXXIX-OR"),
+    # ——— Computer control ———
+    Feature("open_apps", "Open apps and links", "Computer control", HAVE, "Opens any app, file or website by name.",
+            "desktop.py: open, launch_app, list_apps", seen_in="all"),
+    Feature("volume_media", "Volume and media keys", "Computer control", HAVE, "Volume, mute, play/pause.", "desktop.py: volume, media", seen_in="Mark-LV"),
+    Feature("windows", "Window control", "Computer control", HAVE, "Focus, minimise or list windows.", "desktop.py: window (winctl.py)", seen_in="Mark-LV"),
+    Feature("clipboard", "Clipboard read and write", "Computer control", HAVE, "Reads or fills the clipboard.", "desktop.py: clipboard_get, clipboard_set", seen_in="Mark-LV"),
+    Feature("screenshot", "Screenshots", "Computer control", HAVE, "Captures the screen.", "desktop.py: screenshot; browser_screenshot", seen_in="Mark-LV"),
+    Feature("lock_notify", "Lock screen and notifications", "Computer control", HAVE, "Locks the PC; shows desktop notifications.",
+            "desktop.py: lock_screen, notify", seen_in="Mark-LV"),
+    Feature("system_info", "System information", "Computer control", HAVE, "CPU, RAM, disk, battery, GPU.", "desktop.py: system_info (sysinfo.py)", seen_in="Mark-LV"),
+    Feature("brightness", "Screen brightness", "Computer control", HAVE, "Reads or sets the screen brightness, with the old level for undo.",
+            "prebuilt skill screen_brightness", risk="SYSTEM", seen_in="Mark-LV"),
+    Feature("wallpaper", "Wallpaper", "Computer control", HAVE, "Shows or changes the wallpaper, with the old one for undo.",
+            "prebuilt skill wallpaper", risk="SYSTEM", seen_in="Mark-LV"),
+    Feature("dark_mode", "Dark mode", "Computer control", TODO, "Switches Windows between light and dark.",
+            "a desktop action writing HKCU\\...\\Themes\\Personalize (AppsUseLightTheme, SystemUsesLightTheme), reporting the old value; "
+            "registry writes are refused in skills, so a human adds it to desktop.py", risk="SYSTEM", check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("display_sleep", "Turn the display off", "Computer control", TODO, "Turns the screen off until the mouse moves.",
+            "a desktop action sending SC_MONITORPOWER", risk="SYSTEM", check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("power", "Shut down or restart the PC", "Computer control", REJECTED, "Powers the machine off.",
+            "refused by design for every task kind (guard.HOST_HARM): only the human powers the machine off", seen_in="Mark-LV, Mark-XXXIX-OR"),
+    Feature("wifi_toggle", "Wi-Fi on and off", "Computer control", REJECTED, "Switches the network adapter.",
+            "turning Wi-Fi off cuts SYRAX off its own brains, and needs admin rights", seen_in="Mark-LV"),
+    Feature("keyboard_mouse", "Type, click and press keys", "Computer control", TODO, "Types text, presses hotkeys, clicks for the human.",
+            "desktop actions type_text, hotkey, click (SendInput through ctypes, no new package); SYSTEM level, so conversation only, "
+            "never autonomous; a failsafe corner stops it", risk="SYSTEM", check={"kind": "change_released"}, seen_in="Mark-LV, Mark-XXXIX-OR"),
+    Feature("click_by_sight", "Click what it sees", "Computer control", TODO, "'Click the Save button' found on the screen.",
+            "screenshot to a vision brain that returns coordinates, then click; needs keyboard_mouse first", risk="SYSTEM",
+            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("undo", "Undo the last action", "Computer control", PARTIAL, "'Undo' reverses what SYRAX just did.",
+            "code changes roll back (devloop) and editor edits undo (undo_edit); skills report the old value. Missing: one undo stack "
+            "for desktop and file actions", risk="WRITE", seen_in="Mark-LV"),
+    Feature("recycle_bin", "Delete to the Recycle Bin", "Computer control", TODO, "Deleted files can be restored.",
+            "file deletes go through the Windows shell (IFileOperation, FOF_ALLOWUNDO) instead of os.remove", risk="DESTRUCTIVE",
+            needs="or the send2trash package (new dependency, owner approval)", check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("organize_desktop", "Tidy the desktop", "Computer control", TODO, "Sorts desktop files into folders by type or month.",
+            "a skill that moves files and journals every move so it can be undone; needs undo first", risk="WRITE",
+            check=skill("organize_desktop"), seen_in="Mark-LV"),
+    Feature("disk_usage", "Largest files and disk usage", "Computer control", TODO, "'What is filling my disk?'",
+            "a read-only skill walking a folder for the largest files and folder sizes", risk="READ_ONLY",
+            check=skill("disk_usage"), auto=True, seen_in="Mark-LV"),
+    Feature("file_processor", "Work on a dropped file", "Computer control", PARTIAL, "Summarise, convert or analyse any file.",
+            "python_execute and the make_docx/xlsx/pptx/pdf skills; Pillow for images. Missing: reading PDFs (pypdf, new dependency) and a drop zone in the UI",
+            risk="WRITE", needs="pypdf (owner approval) for PDFs", seen_in="Mark-LV, Mark-XXXIX-OR"),
+    Feature("image_tools", "Resize, compress and convert images", "Computer control", TODO, "Makes images smaller or another format.",
+            "a skill on Pillow (installed) writing only new files", risk="WRITE", check=skill("image_tools"), auto=True, seen_in="Mark-LV"),
+    Feature("json_tools", "Validate, format and convert JSON", "Computer control", TODO, "Checks a JSON file, pretty-prints it, turns it into CSV.",
+            "a skill on the standard library writing only new files", risk="WRITE", check=skill("json_tools"), auto=True, seen_in="Mark-LV"),
+    Feature("screen_vision", "Describe the screen", "Computer control", PARTIAL, "'What is on my screen?'",
+            "screenshots exist; a brain with vision can read them. Missing: one action that captures and asks in a single step",
+            risk="EXTERNAL_READ", seen_in="Mark-LV, Mark-XXXIX-OR"),
+    Feature("webcam", "Look through the camera", "Computer control", TODO, "'Look at me' through the webcam.",
+            "capture one frame on request and show it; a camera light and a journal line every time", risk="SYSTEM",
+            needs="opencv (new dependency) and the owner's decision: the camera is private", check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("screen_debug", "Explain the error on screen", "Coding", TODO, "Reads an error on the screen and explains it.",
+            "explain only; a fix goes through the editor and the gate, never a silent overwrite", risk="EXTERNAL_READ",
+            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("system_alerts", "Spoken system alerts", "Computer control", TODO, "Warns when CPU, RAM or temperature stay too high.",
+            "resources.py already measures; add thresholds with a cooldown and a spoken notice", risk="READ_ONLY",
+            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("game_updater", "Game updates (Steam, Epic)", "Computer control", REJECTED, "Installs and updates games, then shuts down.",
+            "scheduled tasks and an unattended shutdown; little value for the risk", seen_in="Mark-LV"),
+    # ——— Web ———
+    Feature("web_research", "Web search and research", "Web", HAVE, "Searches, reads sources, answers with citations.", "research tool, knowledge store", seen_in="all"),
+    Feature("browser", "Browser automation", "Web", HAVE, "Opens sites, clicks, fills forms, reads pages.", "browser-use MCP (browser_exec, browser_screenshot)", seen_in="Mark-LV"),
+    Feature("weather", "Weather", "Web", HAVE, "Current weather and forecast for any place.", "prebuilt skill weather (Open-Meteo, no key)",
+            risk="EXTERNAL_READ", seen_in="all (theirs only opened a search)"),
+    Feature("youtube_open", "Play on YouTube", "Web", TODO, "'Play lo-fi music on YouTube.'",
+            "a skill that opens the YouTube results page for the words in the default browser", risk="SYSTEM",
+            check=skill("youtube_open"), auto=True, seen_in="Mark-LV"),
+    Feature("youtube_summary", "Summarise a YouTube video", "Web", TODO, "Summary of a video from its transcript.",
+            "fetch the transcript, summarise with a brain", risk="EXTERNAL_READ", needs="youtube-transcript-api (owner approval)",
+            check=skill("youtube_summary"), seen_in="Mark-LV"),
+    Feature("aircraft_nearby", "Planes overhead", "Web", TODO, "Which aircraft are flying near a place right now.",
+            "a skill on the OpenSky REST API (no key) for a box around given coordinates", risk="EXTERNAL_READ",
+            check=skill("aircraft_nearby"), auto=True, seen_in="AI-Assistant"),
+    Feature("flight_finder", "Find flights", "Web", TODO, "Best flights between two cities on a date.",
+            "the browser reads a flight search page, a brain extracts the options", risk="EXTERNAL_READ",
+            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("topic_monitor", "Watch a topic", "Web", TODO, "Tells the human once a day when a topic has news.",
+            "a daily job like the briefing: research per watched topic, remember what was already reported", risk="EXTERNAL_READ",
+            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("morning_briefing", "Morning briefing", "Web", PARTIAL, "Greets with yesterday's recap and today's news.",
+            "briefing.py composes the day from the journal. Missing: news", risk="EXTERNAL_READ", seen_in="Mark-LV"),
+    # ——— Communication ———
+    Feature("send_message", "Send messages (WhatsApp, Telegram…)", "Communication", TODO, "Sends a message as the human.",
+            "only through a way that can verify delivery (an official API, or reading the chat back); never blind typing into a window",
+            risk="EXTERNAL_WRITE", needs="the owner's choice of channel and its credentials", check={"kind": "change_released"}, seen_in="Mark-LV, Mark-X family"),
+    Feature("mail_calendar", "Email and calendar", "Communication", TODO, "Reads mail and calendar; drafts replies.",
+            "read first; sending is EXTERNAL_WRITE and asks the human", risk="EXTERNAL_WRITE", needs="Google OAuth (owner decision)",
+            check={"kind": "change_released"}, seen_in="Mark-LV (mentioned only)"),
+    Feature("phone_remote", "Control from the phone", "Communication", TODO, "Sends commands to SYRAX from the phone on the home network.",
+            "the existing UI over HTTPS on the LAN with real authentication; no admin elevation, no firewall changes by SYRAX",
+            risk="SYSTEM", needs="the owner's decision: it opens SYRAX to the network", check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("smart_home", "Smart lights and devices", "Communication", TODO, "Turns lights on and off.",
+            "a skill per device API", risk="EXTERNAL_WRITE", needs="devices and their keys", check={"kind": "change_released"}, seen_in="Mark-LV (mentioned only)"),
+    # ——— Memory ———
+    Feature("long_memory", "Long-term memory", "Memory", HAVE, "Remembers facts, preferences and projects across days.",
+            "remember / recall / forget, the knowledge store, the journal", seen_in="all"),
+    Feature("session_recap", "Remembers yesterday", "Memory", HAVE, "'Yesterday we talked about…'", "briefing.py and the journal", seen_in="Mark-LV"),
+    Feature("memory_panel", "See and delete what it remembers", "Memory", TODO, "A panel listing every remembered fact, each deletable.",
+            "a UI panel over recall/forget", risk="WRITE", check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("proactive", "Speaks up when useful", "Memory", TODO, "After a long silence, offers something useful, or stays quiet.",
+            "a check-in with a silence gate and a cooldown, from memory and open objectives; may choose silence", risk="READ_ONLY",
+            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("clipboard_actions", "Act on copied text", "Memory", TODO, "Copy text, then translate, summarise or explain it.",
+            "a UI action reading the clipboard on request (never watching it)", risk="READ_ONLY", check={"kind": "change_released"}, seen_in="Mark-LV"),
+    # ——— Coding ———
+    Feature("code_runner", "Write and run code", "Coding", HAVE, "Writes code, runs it, fixes it.", "python_execute, the editor, release with the gate", seen_in="Mark-LV"),
+    Feature("project_builder", "Build a whole project", "Coding", PARTIAL, "Builds a multi-file project from a description.",
+            "the agent writes files and runs them. Never installs packages a model picked: new dependencies need the owner", seen_in="Mark-LV"),
+    Feature("plugins", "Add skills as plugins", "Coding", HAVE, "New abilities as self-contained tools.",
+            "skills.py: skill_create with tests, the registry, skillevo; prebuilt skills from backend/prebuilt", seen_in="Mark-LV"),
+    Feature("llm_exec", "Run model-written code without checks", "Coding", REJECTED, "Executes code a model wrote, in a weak sandbox.",
+            "SYRAX runs code only through python_execute with its guard and permissions", seen_in="Mark-LV, Mark-XXXIX-OR"),
+    Feature("auto_pip", "Install packages a model names", "Coding", REJECTED, "pip installs whatever an error message suggests.",
+            "a supply-chain risk (typosquatting); new dependencies need the owner", seen_in="Mark-LV"),
+    # ——— Interface ———
+    Feature("hud", "Sci-fi interface", "Interface", HAVE, "A living interface with state, logs and panels.", "frontend: orb, console, MIND/SELF/BRAIN panels", seen_in="Mark-LV"),
+    Feature("typed_input", "Typed commands", "Interface", HAVE, "Type instead of speaking.", "the console input", seen_in="Mark-LV"),
+    Feature("theme", "Recolour the interface", "Interface", TODO, "Pick the interface colour.", "a hue setting in the UI", risk="WRITE",
+            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("autostart", "Start with Windows", "Interface", HAVE, "SYRAX runs after every boot.", "Startup SYRAX.vbs, syrax.py service mode", seen_in="Mark-LV"),
+    # ——— Scheduling ———
+    Feature("reminders", "Reminders", "Scheduling", TODO, "'Remind me at 5 to call Rahim.'",
+            "reminders kept in the journal and fired by SYRAX's own loop (a notification and a spoken line); no OS scheduled tasks",
+            risk="WRITE", check={"kind": "change_released"}, seen_in="Mark-LV"),
+]
+
+
+def by_id() -> Dict[str, Feature]:
+    return {f.id: f for f in CATALOG}
+
+
+def counts() -> Dict[str, int]:
+    return {s: sum(1 for f in CATALOG if f.status == s) for s in STATUSES}
+
+
+def objective_key(f: Feature) -> str:
+    return f"feature:{f.id}"
+
+
+def goal_of(f: Feature) -> str:
+    how = f"Build the feature '{f.title}' ({f.value}) How: {f.syrax}."
+    if f.check and f.check.get("kind") == "skill_verified":
+        how += f" Make it a skill named `{f.check['name']}` with tests (skill_create); it closes when the skill is VERIFIED."
+    return how + f" Its permission level is {f.risk or 'WRITE'}; stay inside it."
+
+
+def promote(journal: Journal, feature_id: str, source: str = "human", priority: int = 4) -> dict:
+    """Turn a TODO entry into an objective with the entry's own check (idempotent)."""
+    f = by_id().get(feature_id)
+    if f is None:
+        raise KeyError(f"no feature {feature_id!r}")
+    if f.status != TODO:
+        raise ValueError(f"{feature_id} is {f.status}: only a TODO feature becomes an objective")
+    if f.needs and source != "human":
+        raise ValueError(f"{feature_id} needs {f.needs}: only the human promotes it")
+    row = journal.add_objective_sync(goal_of(f), f"feature catalog: {f.title}", priority, source, f.check, key=objective_key(f))
+    return row or {"duplicate": True, "key": objective_key(f)}
+
+
+def next_auto(journal: Journal) -> Optional[Feature]:
+    """The first auto feature not yet promoted, while no other feature objective is open."""
+    open_keys = {o.get("key") for o in journal.objectives(status=["OPEN", "ACTIVE"])}
+    if any(str(k or "").startswith("feature:") for k in open_keys):
+        return None
+    taken = {o.get("key") for o in journal.objectives(limit=500)}
+    for f in CATALOG:
+        if f.status == TODO and f.auto and not f.needs and objective_key(f) not in taken:
+            return f
+    return None
+
+
+def render() -> str:
+    c = counts()
+    lines = ["# SYRAX feature catalog", "",
+             f"What a JARVIS-class assistant does and where SYRAX stands: {len(CATALOG)} features, "
+             + " · ".join(f"{s} {c[s]}" for s in STATUSES) + ".", "",
+             f"Built 2026-10-12 from a survey of {SOURCE}: Mark-LV is CC BY-NC 4.0 and the other repositories carry no "
+             "licence, so no code was taken; every feature is built SYRAX's way (permissions, tests, the gate, the journal).", "",
+             "A TODO becomes an objective with its own machine check (`feature_promote` over WebSocket). Entries marked "
+             "**auto** are low risk, need nothing new and fit in a skill, so SYRAX may take them up itself when it is idle. "
+             "Anything that needs a new dependency, a key or the owner's decision waits for the owner.", "",
+             "Generated by `python -m syrax.catalog`; edit `backend/syrax/catalog.py`, not this file.", ""]
+    for area in AREAS:
+        rows = [f for f in CATALOG if f.area == area]
+        if not rows:
+            continue
+        lines += [f"## {area}", "", "| Feature | Status | What it does | SYRAX | Risk | Needs | Done when |", "|---|---|---|---|---|---|---|"]
+        for f in rows:
+            done = ""
+            if f.check:
+                done = f"skill `{f.check['name']}` verified" if f.check.get("kind") == "skill_verified" else "change released through the gate"
+            lines.append(f"| {f.title}{' **auto**' if f.auto else ''} | {f.status} | {f.value} | {f.syrax} | {f.risk or '—'} | {f.needs or '—'} | {done or '—'} |")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    ap = argparse.ArgumentParser(description="Render the feature catalog")
+    ap.add_argument("--out", default=str(REPO_ROOT / "docs" / "FEATURE_CATALOG.md"))
+    a = ap.parse_args(argv)
+    Path(a.out).write_text(render(), encoding="utf-8", newline="\n")
+    print(f"{a.out}: " + " ".join(f"{s}={n}" for s, n in counts().items()))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -198,6 +198,9 @@ class Core:
         loaded = self.skills.attach(tools)  # VERIFIED skills from the registry become live tools
         if loaded:
             logger.info(f"registered {loaded} skill(s) from the registry")
+        if os.getenv("SYRAX_FEATURES", "0") == "1":
+            # prebuilt skills shipped in git are installed and verified like SYRAX's own (off the boot path)
+            self._prebuilt = asyncio.ensure_future(self._install_prebuilt())
         return agent
 
     def current_task_id(self) -> Optional[str]:
@@ -316,6 +319,17 @@ class Core:
                 self._human_context = None
             self.current.task = asyncio.create_task(self._run(goal, said))
             return task_id
+
+    async def _install_prebuilt(self) -> None:
+        from syrax import prebuilt
+
+        try:
+            done = await prebuilt.install(self.skills)
+            changed = [d for d in done if d.get("outcome") not in ("CURRENT", "KEPT")]
+            if changed:
+                logger.info("prebuilt skills: " + ", ".join(f"{d['skill']} {d['outcome']}" for d in changed))
+        except Exception as e:  # a feature pack never stops SYRAX
+            logger.warning(f"prebuilt skills not installed: {e}")
 
     async def _route(self, text: str, task_id: str, release: bool = False) -> None:
         """Phase 7: try first the brain measured best at this kind of work.

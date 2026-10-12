@@ -667,6 +667,18 @@ class Autonomy:
                     objective = self._pick()
             except Exception as e:  # choosing must never kill the cycle
                 logger.warning(f"limitation ranking failed: {e}")
+        if objective is None and self.reflect and os.getenv("SYRAX_FEATURES", "0") == "1":
+            # nothing limits SYRAX right now: take up the next low-risk feature from the catalog
+            try:
+                from syrax import catalog
+
+                feature = await self.journal.run(catalog.next_auto, self.journal)
+                if feature is not None:
+                    await self.journal.run(catalog.promote, self.journal, feature.id, "catalog")
+                    rep.derived += 1
+                    objective = self._pick()
+            except Exception as e:
+                logger.warning(f"feature catalog failed: {e}")
         if objective is None and self.reflect and os.getenv("SYRAX_RADAR", "1") != "0":
             # Phase 6: idle time is when SYRAX looks outward (new models on its brains)
             try:

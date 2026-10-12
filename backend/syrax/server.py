@@ -13,7 +13,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
                     skills | presentation | benchmarks {limit?} | experiments {limit?} |
                     quality_run {only?, brain?} | quality_runs {limit?} | compare_brains {a, b, only?} |
-                    codebench_run {brains?} |
+                    codebench_run {brains?} | features | feature_promote {id} |
                     presentation_feedback {presentation_id, action?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
@@ -38,6 +38,7 @@ durable journal first and fanned out to every connected session; ``state``,
 """
 
 import asyncio
+import dataclasses
 import json
 import os
 import time
@@ -330,6 +331,23 @@ class Session:
             a, b = str(msg.get("a") or ""), str(msg.get("b") or "")
             only = msg.get("only") if isinstance(msg.get("only"), list) else None
             self.spawn(self._compare_brains(a, b, only), detached=True)
+        elif kind == "features":
+            from syrax import catalog
+
+            taken = {o.get("key"): o for o in await asyncio.to_thread(journal.objectives, 500)}
+            rows = [{**dataclasses.asdict(f), "objective": (taken.get(catalog.objective_key(f)) or {}).get("id"),
+                     "objective_status": (taken.get(catalog.objective_key(f)) or {}).get("status")} for f in catalog.CATALOG]
+            await self.send({"type": "features", "features": rows, "counts": catalog.counts()})
+        elif kind == "feature_promote":
+            from syrax import catalog
+
+            try:
+                row = await journal.run(catalog.promote, journal, str(msg.get("id") or ""), "human")
+            except (KeyError, ValueError) as e:
+                await self.send({"type": "notice", "text": f"feature_promote: {e}"})
+                return
+            text = "already an objective" if row.get("duplicate") else f"objective #{row.get('id')} created"
+            await self.send({"type": "notice", "text": f"feature {msg.get('id')}: {text}"})
         elif kind == "codebench_run":
             if self.core.busy:
                 await self.send({"type": "notice", "text": "Already executing. Stop it first."})

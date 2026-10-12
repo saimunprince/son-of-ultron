@@ -123,6 +123,8 @@ JUDGES = (
     # and what measures it: a system that reports its own rise must not edit the ruler
     "backend/syrax/rise.py", "backend/syrax/capmatrix.py", "backend/syrax/contracts.py", "backend/syrax/ledger.py",
     "backend/syrax/codebench.py", "backend/syrax/probe.py",
+    # and what decides which features exist and which ones SYRAX may build on its own
+    "backend/syrax/catalog.py", "backend/syrax/prebuilt.py",
 )
 
 

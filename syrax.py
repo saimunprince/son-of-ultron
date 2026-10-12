@@ -334,9 +334,10 @@ def start_detached() -> int:
 
 # What the running service turns on (each can be turned off by setting it to 0):
 # M1, isolated evolution (SYRAX's own work happens in worktrees), M3, the rise
-# ledger publishing itself once a day through the same release path, and M2,
-# the weekly code benchmark that decides which brain starts release work.
-SERVICE_DEFAULTS = {"SYRAX_ISOLATE": "1", "SYRAX_PUBLISH_RISE": "1", "SYRAX_CODEBENCH": "1"}
+# ledger publishing itself once a day through the same release path, M2, the
+# weekly code benchmark that decides which brain starts release work, and the
+# feature catalog (prebuilt skills installed; low-risk features taken up when idle).
+SERVICE_DEFAULTS = {"SYRAX_ISOLATE": "1", "SYRAX_PUBLISH_RISE": "1", "SYRAX_CODEBENCH": "1", "SYRAX_FEATURES": "1"}
 
 
 @contextmanager
