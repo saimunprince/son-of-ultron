@@ -441,6 +441,7 @@ export type ServerEvent =
   | { type: "proposals"; proposals: Proposal[] }
   | ({ type: "autonomy_status" } & AutonomyStatus)
   | ({ type: "startup_status" } & StartupStatus)
+  | ({ type: "reminder"; event: "created" | "fired" | "cancelled"; id: string; text?: string; due_ts?: number; late_s?: number } & Journaled)
   | ({ type: "phase"; event: "changed"; phase: TaskPhase; from: TaskPhase | null; step?: number; tool?: string; target?: string } & Journaled)
   | ({
       type: "permission";

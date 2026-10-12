@@ -90,10 +90,15 @@ async def lifespan(_: FastAPI):
     if core.autonomy.enabled:
         core.autonomy.start()
         logger.info("autonomy loop started")
+    from syrax import reminders
+
+    # reminders fire from SYRAX's own loop (journaled; the UI shows and speaks them)
+    reminder_loop = asyncio.create_task(reminders.loop(journal, reminders.desktop_notify))
     logger.info(f"SYRAX online at ws://{HOST}:{PORT}/ws")
     # Warm the local ear in the background so the first voice command is fast.
     warm = asyncio.create_task(asyncio.to_thread(_warm_whisper))
     yield
+    reminder_loop.cancel()
     warm.cancel()
     await core.shutdown()
     browser.shutdown()

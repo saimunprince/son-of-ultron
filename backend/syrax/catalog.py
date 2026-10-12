@@ -218,9 +218,9 @@ CATALOG: List[Feature] = [
             check={"kind": "change_released"}, seen_in="Mark-LV"),
     Feature("autostart", "Start with Windows", "Interface", HAVE, "SYRAX runs after every boot.", "Startup SYRAX.vbs, syrax.py service mode", seen_in="Mark-LV"),
     # ——— Scheduling ———
-    Feature("reminders", "Reminders", "Scheduling", TODO, "'Remind me at 5 to call Rahim.'",
-            "reminders kept in the journal and fired by SYRAX's own loop (a notification and a spoken line); no OS scheduled tasks",
-            risk="WRITE", check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("reminders", "Reminders", "Scheduling", HAVE, "'Remind me at 5 to call Rahim.'",
+            "the remind tool (reminders.py): kept in the journal, fired by SYRAX's own loop with a spoken line, a notice and a "
+            "desktop notification, also after a restart; no OS scheduled tasks", risk="WRITE", seen_in="Mark-LV"),
 ]
 
 

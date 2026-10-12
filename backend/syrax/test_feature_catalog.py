@@ -155,9 +155,9 @@ def test_the_ws_lists_features_and_the_human_promotes_one(script):
         ws.send_json({"type": "features"})
         msg, _ = recv_until(ws, "features")
         assert len(msg["features"]) == len(catalog.CATALOG) and msg["counts"] == catalog.counts()
-        ws.send_json({"type": "feature_promote", "id": "reminders"})
+        ws.send_json({"type": "feature_promote", "id": "topic_monitor"})
         note, _ = recv_until(ws, "notice")
-        assert note["text"].startswith("feature reminders: objective #")
+        assert note["text"].startswith("feature topic_monitor: objective #")
         ws.send_json({"type": "feature_promote", "id": "power"})
         note, _ = recv_until(ws, "notice")
         assert "REJECTED" in note["text"]
