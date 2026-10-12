@@ -105,7 +105,7 @@ CAPABILITIES: List[Capability] = [
     Capability("websocket", "WebSocket / HTTP API", CURRENT, "backend/syrax/server.py",
                tests=["syrax.test_bridge::test_hello_and_brain_panel", "syrax.test_bridge::test_task_survives_disconnect_and_reconnect_replays_it"], live=["ws_hello", "health"]),
     Capability("voice_in", "Voice input (server STT)", PARTIAL, "backend/syrax/voice.py (/stt), frontend/lib/mic.ts",
-               tests=["syrax.test_voice::test_stt_local_whisper_on_real_speech"], live=["stt_roundtrip"],
+               tests=["syrax.test_voice::test_stt_*"], live=["stt_roundtrip"],
                note="server transcription proven by a TTS->STT round trip; microphone capture needs a human"),
     Capability("mic", "Voice input (microphone and wake word)", PARTIAL, "frontend/lib/mic.ts, wake.ts, useHandsFree.ts",
                needs_human=True, note="cannot be exercised without a person at the microphone"),
@@ -140,8 +140,16 @@ CAPABILITIES: List[Capability] = [
     Capability("permissions", "Tool permission levels enforced in code", CURRENT, "syrax/permissions.py, agent._permit",
                tests=["syrax.test_permissions*::*"], quality_cases=["act_delete"], live=["permissions"],
                note="READ_ONLY..DESTRUCTIVE + harm; conversation authorizes by goal or consent, eval never asks, autonomous refuses SYSTEM and above (improvement 001)"),
-    Capability("phases", "Task phase model (understand/plan/act/observe/verify)", MISSING, "(none)",
-               note="only a free-text stage column exists"),
+    Capability("phases", "Task phase model (understand/plan/act/observe/verify)", CURRENT,
+               "backend/syrax/phases.py, core.py (_record_phase), frontend/components/Syrax.tsx (phase strip)",
+               tests=["syrax.test_phases::*"], live=["phases"],
+               note="F4; the phase is a pure function of the journaled events, never stored (test_bridge pins task event sequences)"),
+    Capability("live_voice", "Live talk (real-time voice through Gemini Live)", CURRENT, "backend/syrax/live.py (/live), frontend/lib/live.ts",
+               tests=["syrax.test_live::*"], live=["live_sessions"],
+               note="the microphone streams to Google only while TALK is on; tasks go through the agent and its permissions"),
+    Capability("sight", "Click what it sees (UI Automation, then OCR)", CURRENT, "backend/syrax/sight.py, sight.ps1, desktop.py (click_text, find_text)",
+               tests=["syrax.test_sight::*"], live=["sight_used"],
+               note="primary screen only; a tie clicks nothing and lists the candidates"),
     Capability("presence", "Visible Work Presence (visibility, hide/show, timeline)", PLANNED, "(none)",
                note="specified 2026-10-03, not built"),
 ]
@@ -186,14 +194,35 @@ def read_journal(path: Path, now: Optional[float] = None) -> Dict[str, Any]:
                                           (now - WINDOW_DAYS * 86400,)).fetchone()[0],
             "codebench_runs": c.execute("SELECT COUNT(*) FROM events WHERE type='codebench.completed' AND json_extract(payload,'$.graded')>0 AND ts>?",
                                         (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            "live_sessions": c.execute("SELECT COUNT(*) FROM events WHERE type='live.closed' AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            "sight_used": c.execute("SELECT COUNT(*) FROM events WHERE type='tool.completed' AND json_extract(payload,'$.name')='desktop' AND ts>? AND id IN "
+                                    "(SELECT e2.id FROM events e2 JOIN events e1 ON e1.task_id=e2.task_id AND json_extract(e1.payload,'$.id')=json_extract(e2.payload,'$.id') "
+                                    "WHERE e1.type='tool.started' AND json_extract(e1.payload,'$.args.action') IN ('click_text','find_text'))",
+                                    (now - WINDOW_DAYS * 86400,)).fetchone()[0],
             "desktop_screenshot": c.execute("SELECT COUNT(*) FROM events WHERE type='tool.completed' AND json_extract(payload,'$.name')='desktop' AND id IN "
                                             "(SELECT e2.id FROM events e2 JOIN events e1 ON e1.task_id=e2.task_id AND json_extract(e1.payload,'$.id')=json_extract(e2.payload,'$.id') "
                                             "WHERE e1.type='tool.started' AND json_extract(e1.payload,'$.args.action')='screenshot')").fetchone()[0],
         }
         out["journal_wal"] = c.execute("PRAGMA journal_mode").fetchone()[0]
+        out["phases"] = phase_evidence(c, now)
         return out
     finally:
         c.close()
+
+
+def phase_evidence(c: sqlite3.Connection, now: float, last: int = 30) -> Dict[str, int]:
+    """How many of the latest SUCCESS tasks in the window reach `verify`, with the
+    phases recomputed from their journaled events exactly as the UI does (phases.path)."""
+    from syrax import phases
+
+    ids = [r[0] for r in c.execute("SELECT task_id FROM tasks WHERE status='SUCCESS' AND created>? ORDER BY created DESC LIMIT ?",
+                                   (now - WINDOW_DAYS * 86400, last))]
+    reached = 0
+    for tid in ids:
+        evs = [{"id": r[0], "type": r[1], "payload": json.loads(r[2] or "{}")}
+               for r in c.execute("SELECT id, type, payload FROM events WHERE task_id=? ORDER BY seq", (tid,))]
+        reached += [p["phase"] for p in phases.path(evs)][-1:] == ["verify"]
+    return {"tasks": len(ids), "verified": reached}
 
 
 def tool_stats(c: sqlite3.Connection, now: float) -> Dict[str, dict]:
@@ -295,14 +324,19 @@ def live_checks(evidence: Optional[dict], gate: Optional[dict], journal: Dict[st
     for key, label in (("tasks_recent", "SUCCESS tasks"), ("checkpoints", "checkpoints"), ("cancelled_tasks", "cancelled tasks"),
                        ("recoveries", "recoveries"), ("cycles", "cycles"), ("brains_answered", "providers answered"), ("desktop_screenshot", "desktop screenshots"),
                        ("isolated_commits", "own commits landed from a worktree"), ("ledger_published", "self-published ledgers"),
-                       ("codebench_runs", "code benchmark runs")):
+                       ("codebench_runs", "code benchmark runs"), ("live_sessions", "live talk sessions"),
+                       ("sight_used", "click_text/find_text uses")):
         n = counts.get(key, 0)
-        windowed = ("tasks_recent", "cycles", "brains_answered", "isolated_commits", "ledger_published", "codebench_runs")
+        windowed = ("tasks_recent", "cycles", "brains_answered", "isolated_commits", "ledger_published", "codebench_runs",
+                    "live_sessions", "sight_used")
         out[key] = ("pass", f"{n} {label}" + (f" in {WINDOW_DAYS} d" if key in windowed else "")) if n else (None, f"0 {label}")
     pa, pr = counts.get("permission_authorized", 0), counts.get("permission_refused", 0)
     # the gate is proven at runtime only when it has both let a named action through and refused one
     out["permissions"] = ("pass" if pa and pr else None, f"{pa} authorized / {pr} refused decisions in {WINDOW_DAYS} d")
     out["journal_wal"] = ("pass", f"journal_mode={journal.get('journal_wal')}") if journal.get("journal_wal") == "wal" else ("fail", f"journal_mode={journal.get('journal_wal')}")
+    ph = journal.get("phases") or {}
+    out["phases"] = (("pass" if ph.get("verified") else None),
+                     f"{ph.get('verified', 0)} of the last {ph.get('tasks', 0)} SUCCESS tasks reached verify (phases from their events)")
     sk = journal.get("skills_verified") or []
     out["skills_verified"] = ("pass", f"{len(sk)} VERIFIED skills: {', '.join(sk)}") if sk else (None, "no VERIFIED skill")
     return out
