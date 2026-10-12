@@ -76,7 +76,7 @@ def _cases(ws: Path) -> List[dict]:
          "checks": [{"kind": "final_regex", "pattern": r"\b37\b"}, {"kind": "no_ask"}, {"kind": "no_promise"}, {"kind": "final_max_len", "n": 200}]},
         {"id": "browser_read", "prompt": f"Open {page.as_uri()} in the browser and tell me the code the page shows. Reply with the code only.",
          "prepare": {"write": {str(page): BROWSER_PAGE}},
-         "checks": [{"kind": "tool_used", "tool": "browser_exec"}, {"kind": "final_regex", "pattern": r"\bSYR-4417\b"}, {"kind": "final_max_len", "n": 80}]},
+         "checks": [{"kind": "tool_ok", "tool": "browser_exec"}, {"kind": "final_regex", "pattern": r"\bSYR-4417\b"}, {"kind": "final_max_len", "n": 80}]},
     ]
 
 
@@ -106,6 +106,10 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
         elif k == "tool_used":
             ok = c["tool"] in tools
             out.append({"check": f"tool {c['tool']} used", "ok": ok, "detail": f"tools: {tools}"})
+        elif k == "tool_ok":  # used and at least one call succeeded: a failed call is not use (browser_read, 2026-10-12)
+            worked = [e["payload"].get("name") for e in events if e["type"] == "tool.completed"]
+            ok = c["tool"] in worked
+            out.append({"check": f"tool {c['tool']} succeeded", "ok": ok, "detail": f"succeeded: {worked}; used: {tools}"})
         elif k == "no_tools":
             out.append({"check": "no tools used", "ok": not tools, "detail": f"tools: {tools}"})
         elif k == "no_narration":

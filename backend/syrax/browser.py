@@ -30,9 +30,23 @@ PROFILE = Path(os.getenv("SYRAX_BROWSER_PROFILE", PROJECT_ROOT / ".syrax-browser
 HEADLESS = os.getenv("SYRAX_BROWSER_HEADLESS", "0").lower() in {"1", "true", "yes"}
 CDP_URL = f"http://127.0.0.1:{PORT}"
 
-_USER_CONFIGURED = any(
-    os.getenv(k) for k in ("BU_CDP_URL", "BU_CDP_WS", "BROWSER_USE_API_KEY", "BU_BROWSER_ID")
-)
+
+
+def user_configured(env: Optional[dict] = None) -> bool:
+    """True when the human pointed Browser Use somewhere else. SYRAX's own CDP
+    URL does not count: SYRAX sets it below, and every process SYRAX starts
+    inherits it. Live 2026-10-12: after a self-restart the new core took its
+    own inherited URL for the human's setting, never launched its browser,
+    and every browser call failed ("BU_CDP_URL ... unreachable after 30s",
+    found by the browser_read quality case)."""
+    env = os.environ if env is None else env
+    if any(env.get(k) for k in ("BU_CDP_WS", "BROWSER_USE_API_KEY", "BU_BROWSER_ID")):
+        return True
+    url = str(env.get("BU_CDP_URL") or "")
+    return bool(url) and url.rstrip("/") != CDP_URL
+
+
+_USER_CONFIGURED = user_configured()
 MANAGED = not _USER_CONFIGURED and os.getenv("SYRAX_BROWSER", "1") != "0"
 
 if MANAGED:
