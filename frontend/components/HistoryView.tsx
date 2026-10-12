@@ -155,6 +155,7 @@ export function WhyView({ detail, onBack, onResume }: { detail: TaskDetail; onBa
   );
   const reflection = detail.events.find((e) => e.type === "reflection.created");
   const rec = (t.recovery ?? null) as { state?: string; operation_state?: string; checks?: unknown } | null;
+  const opCheck = (rec?.checks as { operation?: { reason?: string; targets?: string[] } } | undefined)?.operation;
   return (
     <div className="why">
       <button type="button" className="hud-link" onClick={onBack}>
@@ -197,6 +198,8 @@ export function WhyView({ detail, onBack, onResume }: { detail: TaskDetail; onBa
       {rec && (
         <p className="why-dim">
           Recovery: {rec.state} (operation {rec.operation_state})
+          {opCheck?.reason ? ` · ${opCheck.reason}` : ""}
+          {opCheck?.targets?.length ? ` · it may have touched: ${opCheck.targets.join(", ")}` : ""}
         </p>
       )}
       <h5>WHAT IT LEARNED</h5>

@@ -80,6 +80,12 @@ TERMINAL_OK = frozenset({"verification.completed", "reflection.created", "knowle
 
 # Tools whose side effects can be verified against the filesystem after a crash.
 CHECKABLE_TOOLS = frozenset({"str_replace_editor"})
+# F5: a call whose permission level only reads changed nothing, so repeating it after a crash
+# is safe (live 2026-10-12: disk_usage on C:\ stayed UNCERTAIN and became a BLOCKED objective).
+# Tools that run arbitrary code or page scripts are left out: their level is read from the code
+# by patterns, which cannot rule out a side effect (python stays UNCERTAIN, test_journal).
+NO_EFFECT_LEVELS = frozenset({"READ_ONLY", "EXTERNAL_READ"})
+CODE_TOOLS = frozenset({"python_execute", "skill_create"})
 
 MAX_CONTEXT_CHARS = 200_000
 MAX_MESSAGE_CHARS = 8_000
@@ -754,11 +760,13 @@ class Journal:
 
     # ——— recovery ———
 
-    def verify_operation(self, op: Optional[dict]) -> dict:
+    def verify_operation(self, op: Optional[dict], cur: Optional[sqlite3.Cursor] = None) -> dict:
         """Compare a persisted in-flight operation with reality.
 
-        Returns {"state": COMPLETED|NOT_STARTED|PARTIAL|UNCERTAIN|NONE, "checks": {...}}.
-        Only filesystem edits are checkable; anything else is UNCERTAIN.
+        Returns {"state": COMPLETED|NOT_STARTED|PARTIAL|HARMLESS|UNCERTAIN|NONE, "checks": {...}}.
+        Filesystem edits are checked against the files. A call that only reads is HARMLESS.
+        Anything else is UNCERTAIN, with its permission level and the targets it names, so
+        a human sees exactly what it may have touched.
         """
         if not op:
             return {"state": "NONE", "checks": {}}
@@ -767,7 +775,10 @@ class Journal:
         if name == "ask_human":
             return {"state": "BLOCKED", "checks": {"question": args.get("inquire")}}
         if name not in CHECKABLE_TOOLS:
-            return {"state": "UNCERTAIN", "checks": {"reason": f"{name} side effects cannot be inspected"}}
+            seen = self._effects_of(name, args, cur)
+            if seen["level"] in NO_EFFECT_LEVELS and not seen["harm"] and name not in CODE_TOOLS and not name.startswith("browser_"):
+                return {"state": "HARMLESS", "checks": {**seen, "reason": f"{name} only reads ({seen['level']}); repeating it changes nothing"}}
+            return {"state": "UNCERTAIN", "checks": {**seen, "reason": f"{name} side effects cannot be inspected"}}
         cmd = str(args.get("command") or "")
         path = Path(str(args.get("path") or ""))
         checks: Dict[str, Any] = {"command": cmd, "path": str(path), "exists": path.is_file()}
@@ -796,6 +807,27 @@ class Journal:
                 return {"state": "NOT_STARTED", "checks": checks}
             return {"state": "UNCERTAIN", "checks": checks}
         return {"state": "UNCERTAIN", "checks": checks}
+
+    def _effects_of(self, name: str, args: dict, cur: Optional[sqlite3.Cursor] = None) -> dict:
+        """The permission level, targets and harm of a call (permissions.py). A skill's level
+        comes from its registry row, because at recovery the skills are not declared yet.
+        Recovery passes its own cursor: it holds the journal lock, and self.skill() would wait on it."""
+        from syrax import permissions  # permissions imports this module
+
+        try:
+            d = permissions.classify(name, args)
+            level, targets, harm = d.level, [str(t) for t in d.targets][:20], list(d.harm)
+        except Exception:
+            level, targets, harm = permissions.SYSTEM, [], []
+        if cur is not None:
+            found = cur.execute("SELECT * FROM skills WHERE name=?", (name,)).fetchone()
+            row = self._skill_dict(found) if found else None
+        else:
+            row = self.skill(name)
+        if row is not None:
+            risk = str((row.get("evidence") or {}).get("risk") or "")
+            level = risk if row.get("status") == "VERIFIED" and risk in permissions.ORDER else permissions.SYSTEM
+        return {"level": level, "targets": targets, "harm": harm}
 
     def recover_interrupted(self) -> List[dict]:
         """Mark tasks left active by a previous process as INTERRUPTED, after
@@ -863,11 +895,11 @@ class Journal:
             (row["task_id"],),
         ).fetchone()
         op = _loads(row["operation"])
-        verdict = self.verify_operation(op)
+        verdict = self.verify_operation(op, cur)
         op_state = verdict["state"]
         if row["status"] == "BLOCKED" or op_state == "BLOCKED":
             state = "BLOCKED"
-        elif op_state in ("NONE", "COMPLETED", "NOT_STARTED"):
+        elif op_state in ("NONE", "COMPLETED", "NOT_STARTED", "HARMLESS"):
             state = "RESUMABLE"
         else:
             state = "UNCERTAIN"

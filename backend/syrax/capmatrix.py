@@ -99,7 +99,7 @@ CAPABILITIES: List[Capability] = [
                note="not exercised live during the audit (it would create a task)"),
     Capability("recovery", "Recovery / resume after a crash", PARTIAL, "backend/syrax/journal.py (recover_interrupted), core.py (resume)",
                tests=["syrax.test_journal::test_recovery_*", "syrax.test_bridge::test_resume_continues_interrupted_task_with_restored_context"],
-               live=["recoveries"], note="only str_replace_editor operations are verified against reality; others stay UNCERTAIN for a human"),
+               live=["recoveries"], note="edits are checked against the files and calls that only read resume safely; code, browser and writing calls stay UNCERTAIN, listed with their level and targets for a human"),
     Capability("frontend", "Frontend (orb, console, panels)", CURRENT, "frontend/components/*.tsx",
                tests=["syrax.test_bridge::test_rejects_foreign_origin"], live=["ui", "gate_frontend"], note="one frontend unit test file (wake words)"),
     Capability("websocket", "WebSocket / HTTP API", CURRENT, "backend/syrax/server.py",
