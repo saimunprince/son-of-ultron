@@ -239,7 +239,8 @@ def objective_key(f: Feature) -> str:
 def goal_of(f: Feature) -> str:
     how = f"Build the feature '{f.title}' ({f.value}) How: {f.syrax}."
     if f.check and f.check.get("kind") == "skill_verified":
-        how += f" Make it a skill named `{f.check['name']}` with tests (skill_create); it closes when the skill is VERIFIED."
+        how += (f" Make it a skill named `{f.check['name']}` with tests (skill_create), declaring every argument of "
+                "execute() in `parameters`; it closes when the skill is VERIFIED.")
     return how + f" Its permission level is {f.risk or 'WRITE'}; stay inside it."
 
 
@@ -254,6 +255,25 @@ def promote(journal: Journal, feature_id: str, source: str = "human", priority: 
         raise ValueError(f"{feature_id} needs {f.needs}: only the human promotes it")
     row = journal.add_objective_sync(goal_of(f), f"feature catalog: {f.title}", priority, source, f.check, key=objective_key(f))
     return row or {"duplicate": True, "key": objective_key(f)}
+
+
+def reopen_regressed(journal: Journal) -> List[int]:
+    """A feature objective closed on `skill_verified` whose skill is no longer
+    VERIFIED is opened again, with the reason, so the feature gets fixed (live
+    2026-10-12: disk_usage was verified by its own tests but declared no
+    arguments; the factory now refuses that, and the objective must not stay DONE)."""
+    reopened = []
+    for o in journal.objectives(limit=500, status="DONE"):
+        check = o.get("check_spec") or {}
+        if not str(o.get("key") or "").startswith("feature:") or check.get("kind") != "skill_verified":
+            continue
+        row = journal.skill(str(check.get("name") or ""))
+        if row and row.get("status") == "VERIFIED":
+            continue
+        why = f"skill `{check.get('name')}` is {(row or {}).get('status') or 'missing'} now, so the feature is not done"
+        journal.reopen_objective_sync(o["id"], why)
+        reopened.append(o["id"])
+    return reopened
 
 
 def next_auto(journal: Journal) -> Optional[Feature]:

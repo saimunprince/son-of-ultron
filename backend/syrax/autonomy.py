@@ -672,7 +672,9 @@ class Autonomy:
             try:
                 from syrax import catalog
 
-                feature = await self.journal.run(catalog.next_auto, self.journal)
+                if await self.journal.run(catalog.reopen_regressed, self.journal):
+                    objective = self._pick()  # a feature that broke comes before a new one
+                feature = None if objective is not None else await self.journal.run(catalog.next_auto, self.journal)
                 if feature is not None:
                     await self.journal.run(catalog.promote, self.journal, feature.id, "catalog")
                     rep.derived += 1

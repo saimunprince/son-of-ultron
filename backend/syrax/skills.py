@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import inspect
 import json
 import os
 import py_compile
@@ -162,6 +163,26 @@ def load_skill(skill_dir: Path) -> BaseTool:
     return tool
 
 
+def schema_problems(tool: BaseTool) -> List[str]:
+    """Arguments of execute() that its JSON schema does not declare. A model only
+    knows the arguments the schema shows (live 2026-10-12: SYRAX built disk_usage
+    with execute(path, top_n) and no `parameters`; its own tests passed, and no
+    model could have called it)."""
+    params = getattr(tool, "parameters", None)
+    params = params if isinstance(params, dict) else {}
+    props = set((params.get("properties") or {}).keys()) if isinstance(params.get("properties"), dict) else set()
+    required = set(params.get("required") or [])
+    out = []
+    for name, p in inspect.signature(tool.execute).parameters.items():
+        if p.kind in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
+            continue
+        if name not in props:
+            out.append(f"execute() takes `{name}` but `parameters.properties` does not declare it")
+        elif p.default is p.empty and name not in required:
+            out.append(f"`{name}` has no default but is not in `parameters.required`")
+    return out
+
+
 class SkillFactory:
     def __init__(self, journal: Journal, root: Optional[Path] = None, task_id_provider: Optional[Callable[[], Optional[str]]] = None):
         self.journal = journal
@@ -189,6 +210,9 @@ class SkillFactory:
     def _register(self, name: str) -> BaseTool:
         assert self.collection is not None
         tool = load_skill(self.root / name)
+        problems = schema_problems(tool)
+        if problems:
+            raise ValueError("a model could not call it: " + "; ".join(problems))
         self._unregister(name)
         self.collection.add_tool(tool)
         self.loaded[name] = tool
@@ -307,6 +331,8 @@ class SkillCreateTool(BaseTool):
         "Build a new reusable tool for yourself. Provide Python code defining `class Skill(BaseTool)` "
         "(from app.tool.base import BaseTool, ToolResult) with `name` equal to the skill name, a "
         "`description`, JSON-schema `parameters`, and `async def execute(self, **kwargs) -> ToolResult`; "
+        "every argument of execute() must be declared in `parameters` (properties, and `required` when it has no default) "
+        "or the skill is not registered; "
         "optionally `risk: str` (READ_ONLY, WRITE, EXTERNAL_READ, SYSTEM, EXTERNAL_WRITE, DESTRUCTIVE) stating honestly what it may do, "
         "which can only raise the level its source already shows; "
         "plus pytest tests (test_code) that import it via "
