@@ -53,7 +53,9 @@ class WebAskHuman(BaseTool):
 
 
 import multiprocessing  # noqa: E402
+import sys  # noqa: E402
 import time  # noqa: E402
+from io import StringIO  # noqa: E402
 from typing import Dict  # noqa: E402
 
 from app.tool.python_execute import PythonExecute  # noqa: E402
@@ -80,6 +82,13 @@ def _kill_quietly(proc) -> None:
         pass
 
 
+# Live 2026-10-11 (objective 117): six python_execute failures in a week were
+# "name 'os' is not defined": a brain imported os in one call and used it in the
+# next, as if the calls shared a session. Each call is a fresh process; these are
+# imported in it already, and the tool says so.
+PRELOADED = ("os", "sys", "json", "re", "math", "time", "datetime", "shutil", "subprocess", "glob", "pathlib")
+
+
 class AsyncPythonExecute(PythonExecute):
     """python_execute that does not freeze the event loop.
 
@@ -94,7 +103,9 @@ class AsyncPythonExecute(PythonExecute):
         "properties": {
             "code": {
                 "type": "string",
-                "description": "The Python code to execute. Only print() output is visible.",
+                "description": "The Python code to execute. Only print() output is visible. Every call starts "
+                               "fresh: nothing defined in an earlier call exists. os, sys, json, re, math, time, "
+                               "datetime, shutil, subprocess, glob, pathlib and Path are already imported.",
             },
             "timeout": {
                 "type": "integer",
@@ -117,6 +128,11 @@ class AsyncPythonExecute(PythonExecute):
             import builtins
 
             safe_globals["__builtins__"] = builtins.__dict__.copy()  # the copy made before the guard holds the unguarded open
+            import importlib
+
+            for name in PRELOADED:  # the same (guarded) modules the code would get by importing them
+                safe_globals.setdefault(name, importlib.import_module(name))
+            safe_globals.setdefault("Path", safe_globals["pathlib"].Path)
             self._run_code(code, result, safe_globals)
         except Exception as e:  # the guard itself failed; the code never ran
             result["observation"] = f"{type(e).__name__}: {e}"
@@ -126,6 +142,23 @@ class AsyncPythonExecute(PythonExecute):
             except Exception:
                 pass
             conn.close()
+
+    def _run_code(self, code: str, result_dict: dict, safe_globals: dict) -> None:
+        """Upstream's, with the exception's type in the observation: "name 'os' is
+        not defined" alone does not say it was a NameError. SystemExit is still
+        not caught (a code that exits did not finish)."""
+        original_stdout = sys.stdout
+        try:
+            output_buffer = StringIO()
+            sys.stdout = output_buffer
+            exec(code, safe_globals, safe_globals)
+            result_dict["observation"] = output_buffer.getvalue()
+            result_dict["success"] = True
+        except Exception as e:
+            result_dict["observation"] = f"{type(e).__name__}: {e}"
+            result_dict["success"] = False
+        finally:
+            sys.stdout = original_stdout
 
     async def execute(self, code: str, timeout: int = 60) -> Dict:
         """One worker process and a pipe; nothing here blocks the event loop.

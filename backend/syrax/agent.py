@@ -83,8 +83,17 @@ def _args_of(call: ToolCall) -> Any:
 _OBSERVED = re.compile(r"^Observed output of cmd `[^`]*` executed:\n")
 
 
+# Live 2026-10-11: five python_execute calls that succeeded ('success': True) were
+# counted as failures because the code printed the traceback of a test it ran
+# itself. A tool that reports its own success flag is taken at its word.
+_SUCCESS_FLAG = re.compile(r"'success': (True|False)\}\s*$")
+
+
 def _succeeded(result: str) -> bool:
     body = _OBSERVED.sub("", result, count=1).lstrip()
+    flag = _SUCCESS_FLAG.search(body)
+    if flag and not body.startswith("Error"):
+        return flag.group(1) == "True"
     head = body[:600]
     return not (
         body.startswith("Error")
