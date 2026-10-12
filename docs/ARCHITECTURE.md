@@ -185,6 +185,28 @@ Each component below uses its exact name from [`system_map.json`](system_map.jso
 - **Persistence:** journal tables.
 - **Failure behavior:** both arms fail → `INCONCLUSIVE`; benchmark regression → reported and an objective is created; quality suite is on demand only and never part of the release gate.
 
+### Proactive loops
+- **Status:** CURRENT (2026-10-12)
+- **Purpose:** SYRAX speaks first when it has something useful, and stays quiet otherwise: reminders, machine alerts, news on watched topics, check-ins after long silence.
+- **Entry point:** one asyncio loop each, started in the server lifespan: [`reminders.py`](../backend/syrax/reminders.py), [`alerts.py`](../backend/syrax/alerts.py), [`topics.py`](../backend/syrax/topics.py), [`proactive.py`](../backend/syrax/proactive.py).
+- **Important files:** the four modules above; `server.py` (lifespan); `components/Syrax.tsx` (shows and speaks them).
+- **Dependencies:** the journal, `sysinfo` (alerts), the research engine (topics).
+- **Inputs:** `remind` / `watch_topic` calls; machine readings; the time of the human's last message.
+- **Outputs:** `reminder.*`, `alert.raised`, `topic.news`, `checkin.made` events; a Windows toast for a due reminder.
+- **Persistence:** journal events only.
+- **Failure behavior:** a loop error is logged and the loop goes on; cooldowns keep one episode from being reported twice.
+
+### Feature catalog
+- **Status:** CURRENT (2026-10-12)
+- **Purpose:** Every surveyed JARVIS-style feature (ideas only) with what SYRAX has, how a missing one is built, its risk and its check; prebuilt skills that ship in git.
+- **Entry point:** [`catalog.py`](../backend/syrax/catalog.py) (`promote`, `next_auto`, `reopen_regressed`, `render`), [`prebuilt.py`](../backend/syrax/prebuilt.py) (`install`).
+- **Important files:** `catalog.py`, `prebuilt.py`, `backend/prebuilt/<name>/`, `docs/FEATURE_CATALOG.md` (generated).
+- **Dependencies:** the skill factory (verify, register), the journal (objectives, skills).
+- **Inputs:** WS `features` / `feature_promote`; idle cycles (one `auto` feature at a time).
+- **Outputs:** feature objectives with their own checks; `skill.prebuilt` events; VERIFIED skills.
+- **Persistence:** the skills folder and the journal's skills table.
+- **Failure behavior:** a prebuilt skill that fails its tests stays FAILED and unregistered; features that need the owner are promoted only by the human.
+
 ### Agent layer
 
 ### SyraxAgent
@@ -255,6 +277,17 @@ Each component below uses its exact name from [`system_map.json`](system_map.jso
 - **Persistence:** Hugging Face model cache only.
 - **Failure behavior:** offline → `/tts` 502 (UI falls back to browser voice); Whisper load error → `/stt` 500; hallucinated transcripts filtered by `_clean`.
 
+### Live talk
+- **Status:** CURRENT (2026-10-12; proven live: a weather request spoken, run as a SYRAX task, the result spoken back)
+- **Purpose:** A real-time spoken conversation through Gemini Live, beside the task loop. Gemini only talks; anything to do goes through `run_task` into an ordinary SYRAX task with the agent, permissions and journal.
+- **Entry point:** [`live.py`](../backend/syrax/live.py) `serve` / `LiveBridge`, mounted at `/live` in `server.py`; the TALK button and [`lib/live.ts`](../frontend/lib/live.ts) in the browser.
+- **Important files:** `live.py`, `server.py` (`/live`), `frontend/lib/live.ts`, `frontend/lib/livePcm.ts`, `components/Syrax.tsx`.
+- **Dependencies:** `websockets` (the raw Live protocol, no SDK), the Gemini key from the brain store, `Core.submit` / `cancel` and its observers.
+- **Inputs:** 16 kHz PCM16 microphone chunks and `{type: text|stop}`; Gemini's audio, transcripts and tool calls.
+- **Outputs:** 24 kHz PCM16 audio and `live` events to the browser; tasks whose permission check gets the human's transcribed words; `live.opened` / `live.closed` events.
+- **Persistence:** journal events only (no audio, no transcripts).
+- **Failure behavior:** no key or a second window gets a plain error; a refused model hands over to the next; a question a task asks is spoken but answered on screen, so a model never consents for the human.
+
 ### Verification gate
 - **Status:** CURRENT ([map](SYSTEM_MAP.md#verification-gate))
 - **Purpose:** Runs real gates (`py_compile`, `pytest`, `tsc`, `eslint`, `node_test`, isolated `next_build`, `diff_scan`, optional `performance`) and records `GREEN/BLOCKED` with per-gate evidence; the exit code decides, never the output.
@@ -290,9 +323,9 @@ Each component below uses its exact name from [`system_map.json`](system_map.jso
 - **Persistence:** the login service definition; `syrax.pid`, `syrax.log` at the repo root.
 - **Failure behavior:** either child exiting makes the launcher stop the other and exit; systemd restarts after 5 s on failure, launchd on unsuccessful exit; on Windows the task or `SYRAX.vbs` starts SYRAX again at the next login (no restart-on-failure supervisor). A service start that finds the ports busy steps aside quietly.
 
-## 4. Modules not yet in the system map
+## 4. Supporting modules
 
-All CURRENT and tested (`test_<name>.py` beside each), but not yet audited into `system_map.json`.
+All CURRENT and tested (`test_<name>.py` beside each). Since 2026-10-12 every module in `backend/syrax` is referenced by `system_map.json`; the matrix footer checks it daily.
 
 **Objective engine** (used by Autonomy):
 - [`limits.py`](../backend/syrax/limits.py) ranks SYRAX's limitations from journal counts (impact × confidence) and turns the strongest into an objective with a plan and a check; the ranking is journaled as `limitation.ranked`.
@@ -319,7 +352,6 @@ All CURRENT and tested (`test_<name>.py` beside each), but not yet audited into 
 
 ## 5. PLANNED (not built)
 
-- **Task phase model** (understand / plan / act / observe / verify): tasks today are an undifferentiated OpenManus step loop; checkpoints carry a `stage` string but no phase machine exists.
 - **Visible Work Presence**: visibility levels, hide/show of SYRAX's own windows, observation of the human's active window. `winctl.py` can list and focus windows; nothing decides when SYRAX should be visible.
 - **Sandboxed self-modification**: the dev loop edits the live working tree and relies on gate + rollback; skills and `python_execute` run in-process or as plain child processes.
 - **Embeddings / semantic recall**: `know`, `recall` and consolidation use keyword overlap only.

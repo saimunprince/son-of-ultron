@@ -1,6 +1,6 @@
 {
   "name": "SYRAX",
-  "generated": "2026-09-30 (all 12 phases have a first real implementation; runs on Linux and Windows)",
+  "generated": "2026-09-30 (all 12 phases have a first real implementation; runs on Linux and Windows); 2026-10-12: every backend/syrax module mapped (proactive loops, live talk, feature catalog, desktop hands)",
   "source": "hand-audited from source code; regenerate when components change",
   "components": [
     {
@@ -123,7 +123,9 @@
         "brain events from a running task are journaled only while current is set"
       ],
       "code": [
-        "backend/syrax/core.py"
+        "backend/syrax/core.py",
+        "backend/syrax/phases.py (task phase model, recomputed from events)",
+        "backend/syrax/stallwatch.py (event-loop watchdog, stack dumps)"
       ],
       "tests": [
         "backend/syrax/test_bridge.py (journal + core section)"
@@ -262,7 +264,8 @@
         "backend/syrax/followup.py",
         "backend/syrax/radar.py",
         "backend/syrax/scorecard.py",
-        "backend/syrax/briefing.py"
+        "backend/syrax/briefing.py",
+        "backend/syrax/contracts.py (completion contract: evidence and attribution)"
       ],
       "tests": [
         "backend/syrax/test_autonomy.py",
@@ -508,7 +511,8 @@
         "backend/syrax/bench.py",
         "backend/syrax/experiments.py",
         "backend/syrax/quality.py",
-        "backend/syrax/versions.py"
+        "backend/syrax/versions.py",
+        "backend/syrax/codebench.py (code-change benchmark per brain)"
       ],
       "tests": [
         "backend/syrax/test_bench.py",
@@ -667,7 +671,11 @@
         "backend/app/tool/*",
         "backend/syrax/editor.py",
         "backend/syrax/journal_query.py",
-        "backend/syrax/winctl.py"
+        "backend/syrax/winctl.py",
+        "backend/syrax/wininput.py (SendInput typing, keys, clicks; corner failsafe)",
+        "backend/syrax/sight.py + sight.ps1 (click_text / find_text: UI Automation, then OCR)",
+        "backend/syrax/camera.py (one webcam frame on request)",
+        "backend/syrax/undo.py (reversible actions from the journal)"
       ],
       "tests": [
         "backend/syrax/test_desktop.py",
@@ -783,7 +791,9 @@
       "code": [
         "backend/syrax/verify.py",
         "backend/syrax/capmatrix.py",
-        "backend/syrax/rise.py"
+        "backend/syrax/rise.py",
+        "backend/syrax/ledger.py (daily self-published ledger and matrix)",
+        "backend/syrax/probe.py (live probes for the matrix)"
       ],
       "tests": [
         "backend/syrax/test_verify.py"
@@ -853,13 +863,146 @@
         "one instance per machine"
       ],
       "code": [
-        "syrax.sh"
+        "syrax.sh",
+        "backend/syrax/startup.py (BOOT on/off: start at login)"
       ],
       "tests": [
         "none (manual)"
       ],
       "failure_modes": [
         "either process exiting stops both; systemd restarts after 5 s"
+      ]
+    },
+    {
+      "component": "Proactive loops",
+      "purpose": "SYRAX speaks first when it has something useful: reminders at their time, warnings when the machine is in trouble, news on watched topics once a day, a check-in after long human silence",
+      "dependencies": [
+        "syrax.journal",
+        "syrax.sysinfo (alerts)",
+        "syrax.research (topics)",
+        "server lifespan (one asyncio loop each)"
+      ],
+      "inputs": [
+        "remind / watch_topic tool calls",
+        "machine readings (CPU, RAM, disk, battery, temperature)",
+        "the journal's last human message time"
+      ],
+      "outputs": [
+        "reminder.* / alert.raised / topic.news / checkin.made events, shown and spoken by the UI",
+        "Windows toast for a due reminder"
+      ],
+      "state": "none in memory beyond each loop's cooldowns; everything else is derived from the journal",
+      "persistence": "journal events only (reminders and watched topics are events, not tables)",
+      "capabilities": [
+        "remind at a time or after a delay, listed and cancellable",
+        "alerts with streaks and a cooldown, never twice for one episode",
+        "topic news once a day when idle, listed in the briefing",
+        "check-ins only 08-22, after 2 h of silence, at most every 4 h"
+      ],
+      "limitations": [
+        "a reminder due while SYRAX is off fires at the next start, late",
+        "topic news depends on the research engine's free sources"
+      ],
+      "code": [
+        "backend/syrax/reminders.py",
+        "backend/syrax/alerts.py",
+        "backend/syrax/topics.py",
+        "backend/syrax/proactive.py"
+      ],
+      "tests": [
+        "backend/syrax/test_reminders.py",
+        "backend/syrax/test_alerts.py",
+        "backend/syrax/test_topics.py",
+        "backend/syrax/test_proactive.py"
+      ],
+      "failure_modes": [
+        "a loop error is logged and the loop continues; it never stops the server"
+      ]
+    },
+    {
+      "component": "Live talk",
+      "purpose": "Real-time spoken conversation through Gemini Live: the browser streams the microphone over /live, SYRAX relays it with the key from the brain store and streams the spoken answer back; anything to do becomes an ordinary SYRAX task",
+      "dependencies": [
+        "websockets (raw Gemini Live protocol, no SDK)",
+        "syrax.brains (the Gemini key)",
+        "syrax.core (submit, cancel, observers)"
+      ],
+      "inputs": [
+        "16 kHz PCM16 microphone chunks and {type: text|stop} over /live",
+        "Gemini audio, transcripts and tool calls"
+      ],
+      "outputs": [
+        "24 kHz PCM16 audio and live events (open, turn, task, interrupted, closed) to the browser",
+        "tasks submitted with the human's transcribed words as `said`",
+        "live.opened / live.closed events (no audio, no transcripts)"
+      ],
+      "state": "one open session at a time; per session the tasks it started and the current turn's transcripts",
+      "persistence": "journal events only",
+      "capabilities": [
+        "first audio in under a second (gemini-3.1-flash-live-preview, measured 0.66 s)",
+        "barge-in: talking over SYRAX drops the queued audio",
+        "run_task / stop_task functions; results and questions are spoken back, questions answered on screen",
+        "the next model is tried when one is refused"
+      ],
+      "limitations": [
+        "needs a Gemini key; the free tier's Live quota is unknown",
+        "the microphone streams to Google while TALK is on",
+        "echo cancellation is the browser's; headphones help"
+      ],
+      "code": [
+        "backend/syrax/live.py",
+        "backend/syrax/server.py (/live)",
+        "frontend/lib/live.ts",
+        "frontend/lib/livePcm.ts",
+        "frontend/components/Syrax.tsx (TALK)"
+      ],
+      "tests": [
+        "backend/syrax/test_live.py",
+        "frontend/lib/livePcm.test.ts"
+      ],
+      "failure_modes": [
+        "no key or a second window: a plain error event",
+        "Gemini closing the session: closed event with its reason; the key never appears in errors"
+      ]
+    },
+    {
+      "component": "Feature catalog",
+      "purpose": "Every JARVIS-style feature surveyed (ideas only, no code copied) with what SYRAX has, how a missing one would be built, its risk and its check; prebuilt skills ship in git and are installed and verified by the skill factory",
+      "dependencies": [
+        "syrax.skills (verify, register)",
+        "syrax.journal (objectives, skills)"
+      ],
+      "inputs": [
+        "WS features / feature_promote",
+        "idle autonomy cycles (one auto feature at a time)",
+        "backend/prebuilt/<name>/ skill folders"
+      ],
+      "outputs": [
+        "docs/FEATURE_CATALOG.md (generated)",
+        "feature objectives with their own checks",
+        "skill.prebuilt events, VERIFIED skills"
+      ],
+      "state": "the catalog is code; status of SYRAX-built features is the journal's",
+      "persistence": "skills folder + journal skills table",
+      "capabilities": [
+        "promote a TODO into an objective; features that need the owner are promoted only by the human",
+        "reopen a feature objective whose skill is no longer VERIFIED",
+        "install prebuilt skills when the agent is built, verified like SYRAX's own"
+      ],
+      "limitations": [
+        "prebuilt skills install when the agent is built (first UI connect or task after a restart), not at process start"
+      ],
+      "code": [
+        "backend/syrax/catalog.py",
+        "backend/syrax/prebuilt.py",
+        "backend/prebuilt/*"
+      ],
+      "tests": [
+        "backend/syrax/test_feature_catalog.py",
+        "backend/prebuilt/*/test_skill.py"
+      ],
+      "failure_modes": [
+        "a prebuilt skill that fails its tests stays FAILED and is not registered; the others still install"
       ]
     }
   ]
