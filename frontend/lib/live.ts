@@ -129,7 +129,7 @@ export class LiveTalk {
     if (!ctx || !buf.byteLength) return;
     const samples = pcm16ToFloat(buf);
     const audio = ctx.createBuffer(1, samples.length, OUT_RATE);
-    audio.copyToChannel(samples, 0);
+    audio.getChannelData(0).set(samples);
     const src = ctx.createBufferSource();
     src.buffer = audio;
     src.connect(ctx.destination);
