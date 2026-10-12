@@ -123,7 +123,9 @@ def run_skill_tests(skill_dir: Path, timeout: float = TEST_TIMEOUT_S) -> dict:
     _clean_bytecode(skill_dir)  # py_compile above wrote a .pyc
     try:
         proc = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", str(skill_dir / "test_skill.py")],
+            # --rootdir: pytest lists every folder between its rootdir and the test; under %TEMP% that
+            # once tripped over a Chrome temp folder vanishing mid-listing (2026-10-12) and failed good skills
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--rootdir", str(skill_dir), str(skill_dir / "test_skill.py")],
             cwd=str(BACKEND_ROOT), capture_output=True, text=True, timeout=timeout, env=env,
         )
     except subprocess.TimeoutExpired:
