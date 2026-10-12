@@ -20,6 +20,39 @@ import httpx
 from app.logger import logger
 
 TTS_VOICE = os.getenv("SYRAX_TTS_VOICE", "en-US-ChristopherNeural")
+# The voices the human can pick in the UI (feature catalog: voice_picker). English
+# only: the persona speaks English. The choice is kept in the journal's meta.
+VOICES = [
+    "en-US-ChristopherNeural", "en-US-GuyNeural", "en-US-EricNeural", "en-US-AndrewMultilingualNeural",
+    "en-GB-RyanNeural", "en-AU-WilliamNeural", "en-US-AriaNeural", "en-GB-SoniaNeural",
+]
+VOICE_KEY = "tts_voice"
+ACTIVE_VOICE: Optional[str] = None  # the human's pick, loaded by the server (load_voice); None = TTS_VOICE
+
+
+def current_voice(journal=None) -> str:
+    """The human's pick from the UI, else SYRAX_TTS_VOICE."""
+    try:
+        picked = journal.get_meta(VOICE_KEY) if journal is not None else None
+    except Exception:
+        picked = None
+    return picked if picked in VOICES else TTS_VOICE
+
+
+def set_voice(journal, name: str) -> str:
+    global ACTIVE_VOICE
+    if name not in VOICES:
+        raise ValueError(f"unknown voice {name!r}; one of {', '.join(VOICES)}")
+    journal.set_meta(VOICE_KEY, name)
+    ACTIVE_VOICE = name
+    return name
+
+
+def load_voice(journal) -> str:
+    """At start: speak with the voice the human picked last time."""
+    global ACTIVE_VOICE
+    ACTIVE_VOICE = current_voice(journal)
+    return ACTIVE_VOICE
 TTS_RATE = os.getenv("SYRAX_TTS_RATE", "-10%")
 TTS_PITCH = os.getenv("SYRAX_TTS_PITCH", "-14Hz")
 WHISPER_MODEL = os.getenv("SYRAX_WHISPER_MODEL", "small.en")
@@ -50,7 +83,7 @@ async def synthesize(text: str) -> bytes:
     text = speakable(text)
     if not text:
         return b""
-    communicate = edge_tts.Communicate(text, TTS_VOICE, rate=TTS_RATE, pitch=TTS_PITCH)
+    communicate = edge_tts.Communicate(text, ACTIVE_VOICE or TTS_VOICE, rate=TTS_RATE, pitch=TTS_PITCH)
     audio = bytearray()
     async for chunk in communicate.stream():
         if chunk.get("type") == "audio":

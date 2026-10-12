@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { BrainScore, ClientMessage, Objective, ObjectiveCheck, ObjectiveStatus, Proposal, SkillRow } from "@/lib/syraxClient";
+import type { BrainScore, ClientMessage, Objective, ObjectiveCheck, ObjectiveStatus, Proposal, SkillRow, MemoryFact } from "@/lib/syraxClient";
 
 /** What proves an objective done. A task's own words never do. */
 const CHECKS: { kind: string; label: string; field: string | null }[] = [
@@ -14,13 +14,14 @@ const CHECKS: { kind: string; label: string; field: string | null }[] = [
   { kind: "skill_verified", label: "a skill is verified", field: "name" },
 ];
 
-export type MindTab = "briefing" | "objectives" | "proposals" | "skills" | "brains";
+export type MindTab = "briefing" | "objectives" | "proposals" | "skills" | "memory" | "brains";
 
 export interface MindData {
   briefing: string | null;
   objectives: Objective[] | null;
   proposals: Proposal[] | null;
   skills: SkillRow[] | null;
+  memories?: MemoryFact[] | null;
   scorecard: Record<string, BrainScore> | null;
   /** per kind of work: {kind: {brain: {graded, ok, quality}}} (Phase 7 routing evidence) */
   byKind?: Record<string, Record<string, { graded: number; ok: number; quality: number }>> | null;
@@ -39,6 +40,7 @@ const TABS: [MindTab, string][] = [
   ["objectives", "OBJECTIVES"],
   ["proposals", "PROPOSALS"],
   ["skills", "SKILLS"],
+  ["memory", "MEMORY"],
   ["brains", "BRAINS"],
 ];
 
@@ -53,6 +55,8 @@ export function mindRequest(tab: MindTab): ClientMessage {
       return { type: "proposals", limit: 10 };
     case "skills":
       return { type: "skills" };
+    case "memory":
+      return { type: "memories" };
     case "brains":
       return { type: "self_model", section: "brains" };
   }
@@ -254,6 +258,27 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
                   ))}
                 </p>
               )}
+            </li>
+          ))}
+        </ul>
+      );
+  } else if (tab === "memory") {
+    body =
+      data.memories == null ? (
+        <div className="brain-empty">Reading memory…</div>
+      ) : data.memories.length === 0 ? (
+        <div className="brain-empty">Nothing remembered yet. Say &quot;remember that …&quot; and it appears here.</div>
+      ) : (
+        <ul className="brain-list mind-list">
+          {data.memories.map((f) => (
+            <li key={f.id} className="mind-card">
+              <div className="mind-obj-main">
+                <span className="mind-obj-goal">{f.text}</span>
+                <span className="mind-obj-meta">since {ago(f.created ?? null)}</span>
+                <button type="button" className="hud-link" onClick={() => send({ type: "memory_forget", id: f.id })}>
+                  FORGET
+                </button>
+              </div>
             </li>
           ))}
         </ul>

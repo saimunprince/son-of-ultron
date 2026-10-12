@@ -13,6 +13,7 @@ import {
   type LinkState,
   type AutonomyStatus,
   type StartupStatus,
+  type VoiceStatus,
   type TaskPhase,
   TASK_PHASES,
   type JournalEvent,
@@ -137,6 +138,7 @@ export default function Syrax() {
   const [mind, setMind] = useState<MindData>({ briefing: null, objectives: null, proposals: null, skills: null, scorecard: null });
   const [autonomy, setAutonomy] = useState<AutonomyStatus | null>(null);
   const [startup, setStartup] = useState<StartupStatus | null>(null);
+  const [voicePick, setVoicePick] = useState<VoiceStatus | null>(null);
   const [phase, setPhase] = useState<{ phase: TaskPhase; tool?: string; target?: string } | null>(null);
   const [consoleTab, setConsoleTab] = useState<ConsoleTab>("live");
   const [historyTasks, setHistoryTasks] = useState<TaskSummary[] | null>(null);
@@ -306,6 +308,7 @@ export default function Syrax() {
           setPhase(e.running?.phase ? { phase: e.running.phase } : null);
           setAutonomy(e.autonomy);
           setStartup(e.startup ?? null);
+          setVoicePick(e.voice ?? null);
           setStage(e.presentation.elements);
           break;
         case "presentation":
@@ -337,6 +340,15 @@ export default function Syrax() {
             push({ kind: "notice", id: nextId++, text: `REMINDER · ${e.text}${late}` });
             say(`Reminder: ${e.text}`);
           }
+          break;
+        case "voice_status": {
+          const { type: _v, ...status } = e;
+          void _v;
+          setVoicePick(status);
+          break;
+        }
+        case "memories":
+          setMind((m) => ({ ...m, memories: e.facts }));
           break;
         case "startup_status": {
           const { type: _s, ...status } = e;
@@ -1271,6 +1283,19 @@ export default function Syrax() {
           <button type="button" className="hud-btn" aria-pressed={voiceOn} onClick={() => setVoiceOn((v) => !v)}>
             {voiceOn ? "SPEAK ON" : "SPEAK OFF"}
           </button>
+          {voicePick && voicePick.voices.length > 1 && (
+            <button
+              type="button"
+              className="hud-btn"
+              title={`Voice: ${voicePick.current} (click for the next one)`}
+              onClick={() => {
+                const i = voicePick.voices.indexOf(voicePick.current);
+                clientRef.current?.send({ type: "voice_set", voice: voicePick.voices[(i + 1) % voicePick.voices.length] });
+              }}
+            >
+              VOICE · {voicePick.current.split("-")[2]?.replace(/Multilingual|Neural/g, "").toUpperCase() || voicePick.current}
+            </button>
+          )}
           <button
             type="button"
             className="hud-btn"

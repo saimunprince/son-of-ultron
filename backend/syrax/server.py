@@ -13,7 +13,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
                     skills | presentation | benchmarks {limit?} | experiments {limit?} |
                     quality_run {only?, brain?} | quality_runs {limit?} | compare_brains {a, b, only?} |
-                    codebench_run {brains?} | features | feature_promote {id} | startup {enabled?} | task_phases {task_id} |
+                    codebench_run {brains?} | features | feature_promote {id} | startup {enabled?} | task_phases {task_id} | memories | memory_forget {id} | voice_set {voice} |
                     presentation_feedback {presentation_id, action?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
@@ -90,6 +90,7 @@ async def lifespan(_: FastAPI):
     if core.autonomy.enabled:
         core.autonomy.start()
         logger.info("autonomy loop started")
+    voice.load_voice(journal)  # the voice the human picked in the UI last time
     from syrax import reminders
 
     # reminders fire from SYRAX's own loop (journaled; the UI shows and speaks them)
@@ -266,6 +267,7 @@ class Session:
                 "recent": snap["recent"],
                 "autonomy": await asyncio.to_thread(self.core.autonomy.status),
                 "startup": startup.status(),
+                "voice": {"current": voice.current_voice(get_journal()), "voices": voice.VOICES},
                 "presentation": snap["presentation"],
             }
         )
@@ -348,6 +350,25 @@ class Session:
             a, b = str(msg.get("a") or ""), str(msg.get("b") or "")
             only = msg.get("only") if isinstance(msg.get("only"), list) else None
             self.spawn(self._compare_brains(a, b, only), detached=True)
+        elif kind == "memories":
+            from syrax.memory import get_memory
+
+            await self.send({"type": "memories", "facts": await asyncio.to_thread(get_memory().facts)})
+        elif kind == "memory_forget":
+            # the human removes one remembered fact from the memory panel (by its id)
+            from syrax.memory import get_memory
+
+            fid = str(msg.get("id") or "").strip()
+            gone = await asyncio.to_thread(get_memory().forget, fid) if fid.isdigit() else []
+            await self.send({"type": "notice", "text": f"Forgot: {gone[0]}" if gone else f"No remembered fact {fid!r}."})
+            await self.send({"type": "memories", "facts": await asyncio.to_thread(get_memory().facts)})
+        elif kind == "voice_set":
+            try:
+                await asyncio.to_thread(voice.set_voice, journal, str(msg.get("voice") or ""))
+            except ValueError as e:
+                await self.send({"type": "notice", "text": str(e)})
+                return
+            await self.send({"type": "voice_status", "current": voice.current_voice(journal), "voices": voice.VOICES})
         elif kind == "startup":
             # the human's switch: does SYRAX start at the next login (never stops this run)
             if "enabled" in msg:

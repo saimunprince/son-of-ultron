@@ -198,6 +198,20 @@ export interface ResourceSnapshot {
   quiet_hours: { window: [number, number] | null; active: boolean };
 }
 
+/** The voice SYRAX speaks with (backend/syrax/voice.py VOICES), picked in the UI. */
+export interface VoiceStatus {
+  current: string;
+  voices: string[];
+}
+
+/** One fact the human told SYRAX to remember (memory.py). */
+export interface MemoryFact {
+  id: string;
+  text: string;
+  created?: number;
+  updated?: number | null;
+}
+
 /** Start with Windows (backend/syrax/startup.py): the next login only, never this run. */
 export interface StartupStatus {
   supported: boolean;
@@ -380,6 +394,7 @@ export type ServerEvent =
       recent: TaskSummary[];
       autonomy: AutonomyStatus;
       startup?: StartupStatus;
+      voice?: VoiceStatus;
       presentation: PresentationPlan;
     }
   | ({ type: "brains" } & BrainsState)
@@ -441,6 +456,8 @@ export type ServerEvent =
   | { type: "proposals"; proposals: Proposal[] }
   | ({ type: "autonomy_status" } & AutonomyStatus)
   | ({ type: "startup_status" } & StartupStatus)
+  | ({ type: "voice_status" } & VoiceStatus)
+  | { type: "memories"; facts: MemoryFact[] }
   | ({ type: "reminder"; event: "created" | "fired" | "cancelled"; id: string; text?: string; due_ts?: number; late_s?: number } & Journaled)
   | ({ type: "alert"; event: "raised"; kind: string; detail: string } & Journaled)
   | ({ type: "phase"; event: "changed"; phase: TaskPhase; from: TaskPhase | null; step?: number; tool?: string; target?: string } & Journaled)
@@ -497,6 +514,9 @@ export type ClientMessage =
   | { type: "proposals"; limit?: number }
   | { type: "autonomy"; enabled?: boolean }
   | { type: "startup"; enabled?: boolean }
+  | { type: "memories" }
+  | { type: "memory_forget"; id: string }
+  | { type: "voice_set"; voice: string }
   | { type: "cycle_now" }
   | { type: "task_detail"; task_id: string }
   | { type: "replay"; since?: number; until?: number }
