@@ -176,6 +176,16 @@ class Provider:
     # hard cap on prompt + completion tokens per request (free-tier TPM limits,
     # local context windows); None = the model's own context is the limit
     max_request_tokens: Optional[int] = None
+    # free model pool: each model has its own free quota, so when the chosen one
+    # is rate limited the provider's other chat models are tried before failing over
+    pool: bool = False
+
+
+# Feature catalog (free_model_pool), 2026-10-12. Models that cannot chat with tools are never pooled.
+POOL_DENY = re.compile(r"image|tts|audio|live|embed|veo|imagen|aqa|banana|robotics|computer-use|learnlm|gemma|guard|native|transcri", re.I)
+POOL_TRIES = 3
+POOL_CACHE_S = 6 * 3600.0
+POOL_MODEL_COOLDOWN_S = 300.0
 
 
 PROVIDERS: Dict[str, Provider] = {
@@ -191,6 +201,7 @@ PROVIDERS: Dict[str, Provider] = {
             # lite model is the default; pick another model in BRAIN when one runs out.
             default_model="gemini-3.5-flash-lite",
             vision=True,
+            pool=True,
             signup_url="https://aistudio.google.com/apikey",
             note="Free tier. Strong tool use. Each model has its own small free quota (20 requests on 2.5 models); switch model in BRAIN when one is exhausted.",
         ),
@@ -231,6 +242,7 @@ PROVIDERS: Dict[str, Provider] = {
             signup_url="https://openrouter.ai/settings/keys",
             note="Free key. Only ':free' models are listed, so it never bills.",
             model_filter=r":free$",
+            pool=True,
         ),
         Provider(
             id="mistral",
@@ -468,6 +480,11 @@ class BrainRouter(LLM):
     def __init__(self, store: Optional[BrainStore] = None):
         self.store = store or BrainStore.load()
         self.health: Dict[str, Health] = {pid: Health() for pid in PROVIDERS}
+        # free model pool: per-model cooldowns, the pool listing, and the model that answered last
+        self.model_cooldown: Dict[tuple, float] = {}
+        self._pool: Dict[str, tuple] = {}
+        self.pool_used: Dict[str, str] = {}
+        self.last_model: Dict[str, str] = {}
         self.listeners: set = set()
         self.model = "syrax-router"
         self.max_tokens = 8192
@@ -663,7 +680,7 @@ class BrainRouter(LLM):
                 formatted = self._format(messages, system_msgs, PROVIDERS[pid].vision)
                 try:
                     try:
-                        msg = await self._call(pid, formatted, tools, tool_choice, images=True)
+                        msg = await self._call(pid, formatted, tools, tool_choice, images=True, model=self._model_for(pid))
                     except BrainError as e:
                         # Reasoning-only / empty replies are usually one-off glitches.
                         if "empty response" not in str(e):
@@ -678,6 +695,8 @@ class BrainRouter(LLM):
                         # falling over to a slower brain.
                         if _out_of_memory(e) and PROVIDERS[pid].fallback_models:
                             msg = await self._smaller_model(pid, formatted, tools, tool_choice, e)
+                        elif isinstance(e, RateLimitError) and PROVIDERS[pid].pool:
+                            msg = await self._pool_model(pid, formatted, tools, tool_choice, e)
                         elif e.status_code in (500, 502, 503, 504):
                             logger.info(f"brain {pid} HTTP {e.status_code}, retrying once")
                             await asyncio.sleep(1.5)
@@ -691,7 +710,7 @@ class BrainRouter(LLM):
                     logger.warning(f"brain {pid} failed: {reason}")
                     await self._emit({"type": "brain", "event": "failover", "provider": pid, "reason": reason})
                     continue
-                self.health[pid] = Health(last_ok=time.time(), last_model=self.store.model(pid))
+                self.health[pid] = Health(last_ok=time.time(), last_model=self.last_model.get(pid) or self.store.model(pid))
                 if self.active != pid:
                     self.active = pid
                 await self._emit(
@@ -700,7 +719,7 @@ class BrainRouter(LLM):
                         "event": "answered",
                         "provider": pid,
                         "label": PROVIDERS[pid].label,
-                        "model": self.store.model(pid),
+                        "model": self.last_model.get(pid) or self.store.model(pid),
                     }
                 )
                 return msg
@@ -727,6 +746,7 @@ class BrainRouter(LLM):
         model: Optional[str] = None, extra: Optional[Dict[str, Any]] = None,
     ):
         p = PROVIDERS[pid]
+        self.last_model[pid] = model or self.store.model(pid)
         params: Dict[str, Any] = {
             "model": model or self.store.model(pid),
             "messages": messages,
@@ -812,6 +832,53 @@ class BrainRouter(LLM):
             self.total_input_tokens += resp.usage.prompt_tokens or 0
             self.total_completion_tokens += resp.usage.completion_tokens or 0
         return msg
+
+    def _model_for(self, pid: str) -> Optional[str]:
+        """While the chosen model is out of quota, keep using the pool model that answered."""
+        now = time.time()
+        if self.model_cooldown.get((pid, self.store.model(pid)), 0) > now:
+            other = self.pool_used.get(pid)
+            if other and self.model_cooldown.get((pid, other), 0) <= now:
+                return other
+        return None
+
+    async def pool_models(self, pid: str) -> List[str]:
+        """The provider's chat models, listed live and kept for a few hours."""
+        hit = self._pool.get(pid)
+        if hit and time.time() - hit[0] < POOL_CACHE_S:
+            return hit[1]
+        try:
+            ids = [m for m in await asyncio.wait_for(self.list_models(pid), 20) if not POOL_DENY.search(m)]
+        except Exception:
+            ids = []
+        self._pool[pid] = (time.time(), ids)
+        return ids
+
+    async def _pool_model(self, pid, formatted, tools, tool_choice, original: Exception):
+        """The chosen model is rate limited: each model has its own free quota, so try the
+        provider's other chat models (at most POOL_TRIES) before the provider fails over."""
+        tried_model = self.last_model.get(pid) or self.store.model(pid)
+        self.model_cooldown[(pid, tried_model)] = time.time() + (_retry_after(original) or POOL_MODEL_COOLDOWN_S)
+        tries = 0
+        for candidate in await self.pool_models(pid):
+            if tries >= POOL_TRIES:
+                break
+            if candidate == tried_model or self.model_cooldown.get((pid, candidate), 0) > time.time():
+                continue
+            tries += 1
+            try:
+                msg = await self._call(pid, formatted, tools, tool_choice, images=True, model=candidate)
+            except RateLimitError as e:
+                self.model_cooldown[(pid, candidate)] = time.time() + (_retry_after(e) or POOL_MODEL_COOLDOWN_S)
+                continue
+            except (NotFoundError, BadRequestError):
+                self.model_cooldown[(pid, candidate)] = time.time() + 3600.0
+                continue
+            if self.pool_used.get(pid) != candidate:
+                await self._emit({"type": "notice", "text": f"{PROVIDERS[pid].label}: {tried_model} is out of free quota; answering with {candidate}."})
+            self.pool_used[pid] = candidate
+            return msg
+        raise original
 
     async def _smaller_model(self, pid, formatted, tools, tool_choice, original: Exception):
         """Local model does not fit in RAM: step down to a smaller installed one."""

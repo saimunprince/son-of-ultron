@@ -85,8 +85,9 @@ CATALOG: List[Feature] = [
             "OpenManus tool calls through SyraxAgent, every call journaled", seen_in="Mark-LV, Mark-XXXIX-OR"),
     Feature("brain_failover", "Model ladder with cooldowns", "Brain", HAVE, "Survives quota limits and outages by moving to the next brain.",
             "brains.py BrainRouter: failover chain, per-error cooldowns, smaller-model fallback; routing.py per kind of work", seen_in="Mark-LV"),
-    Feature("free_model_pool", "Pool of free models", "Brain", PARTIAL, "More free requests by spreading them over many models.",
-            "OpenRouter is one brain with one model; radar.py tests new free models. Missing: rotating several free models inside one provider",
+    Feature("free_model_pool", "Pool of free models", "Brain", HAVE, "More free requests by spreading them over many models.",
+            "brains.py: when Gemini's or OpenRouter's chosen model is rate limited, up to three of the provider's other chat models are "
+            "tried (each has its own free quota), with per-model cooldowns, before failing over to the next brain",
             risk="EXTERNAL_READ", seen_in="Mark-XXXIX-OR"),
     Feature("slot_filling", "Asks for what is missing", "Brain", HAVE, "'Who should I send it to?' when a detail is missing.",
             "ask_human through the UI", seen_in="Mark-X family"),
