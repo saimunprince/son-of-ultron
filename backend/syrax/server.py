@@ -719,6 +719,20 @@ async def ws_endpoint(ws: WebSocket):
         await session.close()
 
 
+@app.websocket("/live")
+async def live_endpoint(ws: WebSocket):
+    """Live talk (syrax/live.py): the microphone to Gemini Live and its voice back. Same origin rule as /ws."""
+    origin = ws.headers.get("origin")
+    if origin and origin not in ALLOWED_ORIGINS:
+        logger.warning(f"Rejected live WebSocket from origin {origin}")
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    from syrax import brains, live
+
+    await live.serve(ws, get_core(), brains.get_router().store.key("gemini"))
+
+
 def main() -> None:
     uvicorn.run(app, host=HOST, port=PORT, log_level="warning")
 

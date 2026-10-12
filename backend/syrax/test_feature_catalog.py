@@ -55,9 +55,10 @@ def test_a_todo_becomes_one_objective_with_its_own_check(tmp_path):
         catalog.promote(j, "weather")  # HAVE
     with pytest.raises(ValueError):
         catalog.promote(j, "power")  # REJECTED
+    needy = next(f.id for f in catalog.CATALOG if f.status == catalog.TODO and f.needs)  # e.g. an account or a device
     with pytest.raises(ValueError):
-        catalog.promote(j, "live_voice", "catalog")  # needs a new dependency: only the human
-    assert catalog.promote(j, "live_voice", "human")["key"] == "feature:live_voice"
+        catalog.promote(j, needy, "catalog")  # it needs something from the owner: only the human
+    assert catalog.promote(j, needy, "human")["key"] == f"feature:{needy}"
     with pytest.raises(KeyError):
         catalog.promote(j, "teleport")
 

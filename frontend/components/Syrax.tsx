@@ -36,6 +36,8 @@ import UltronEyes from "@/components/UltronEyes";
 import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
 import type { Heard } from "@/lib/wake";
 import { useHandsFree } from "@/components/useHandsFree";
+import { LiveTalk, type LiveEvent, type LiveState } from "@/lib/live";
+import { liveUrl } from "@/lib/livePcm";
 
 type CameraState = "off" | "starting" | "on" | "error";
 type AgentState = "booting" | "idle" | "thinking" | "acting";
@@ -126,6 +128,7 @@ export default function Syrax() {
   const armedUntilRef = useRef(0);
   const handsFreeRef = useRef(false);
   const voiceOnRef = useRef(true);
+  const talkRef = useRef<LiveTalk | null>(null);
   const pendingAskRef = useRef<string | null>(null);
 
   const [camera, setCamera] = useState<CameraState>("off");
@@ -165,6 +168,7 @@ export default function Syrax() {
   const [input, setInput] = useState("");
   const [speaking, setSpeaking] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
+  const [talk, setTalk] = useState<LiveState>("off");
   const [audioLive, setAudioLive] = useState(false);
   const [wakeWord, setWakeWord] = useState(false);
   const [hearLang, setHearLang] = useState<"en-IN" | "bn-BD" | "en-US">("en-IN");
@@ -273,6 +277,7 @@ export default function Syrax() {
   const say = useCallback(
     (text: string, opts: { followUp?: boolean } = {}) => {
       const followUp = opts.followUp ?? true;
+      if (talkRef.current) return; // live talk answers in its own voice
       if (!voiceOnRef.current || !text.trim()) {
         if (handsFreeRef.current && followUp) arm(8000);
         return;
@@ -343,6 +348,12 @@ export default function Syrax() {
             push({ kind: "notice", id: nextId++, text: `NEWS · ${e.topic}: ${e.items.length} new · ${e.items[0].title}` });
             say(`News on ${e.topic}: ${e.items[0].title}`, { followUp: false });
           }
+          break;
+        case "live":
+          if (e.event === "opened")
+            push({ kind: "notice", id: nextId++, text: `LIVE TALK ON · ${e.model} · the microphone streams to Google until TALK is pressed again` });
+          else if (e.event === "closed")
+            push({ kind: "notice", id: nextId++, text: `LIVE TALK OFF · ${e.reason ?? "closed"} · ${e.seconds ?? 0}s, ${e.tasks ?? 0} task(s)` });
           break;
         case "camera":
           if (e.event === "captured") push({ kind: "notice", id: nextId++, text: `CAMERA USED · one photo saved to ${e.path}` });
@@ -836,6 +847,43 @@ export default function Syrax() {
     }
   }, [arm, earStart, earStop, say]);
 
+  // Live talk (Gemini Live through /live): one microphone at a time, so hands-free stops first.
+  const toggleTalk = useCallback(() => {
+    if (talkRef.current) {
+      talkRef.current.stop();
+      return;
+    }
+    stopSpeaking();
+    if (handsFreeRef.current) {
+      handsFreeRef.current = false;
+      setHandsFree(false);
+      arm(0);
+      earStop();
+    }
+    const live = new LiveTalk(liveUrl(DEFAULT_WS_URL), {
+      onState: (s, detail) => {
+        setTalk(s);
+        if (s === "off" || s === "error") talkRef.current = null;
+        if (s === "error") push({ kind: "error", id: nextId++, text: `LIVE TALK · ${detail ?? "failed"}` });
+      },
+      onEvent: (e: LiveEvent) => {
+        if (e.event !== "turn") return;
+        if (e.heard) push({ kind: "user", id: nextId++, text: e.heard, voice: true });
+        if (e.said) push({ kind: "reply", id: nextId++, text: e.said });
+      },
+      onLevel: (l) => sceneRef.current?.setLevel(l),
+    });
+    talkRef.current = live;
+    void live.start();
+  }, [arm, earStop, push]);
+
+  useEffect(() => {
+    return () => {
+      talkRef.current?.stop();
+      talkRef.current = null;
+    };
+  }, []);
+
   useEffect(() => {
     if (ear.error && handsFreeRef.current && !ear.active) {
       handsFreeRef.current = false;
@@ -1307,8 +1355,19 @@ export default function Syrax() {
           </button>
           <button
             type="button"
+            className={`hud-btn mic-btn${talk === "on" ? " hearing" : ""}`}
+            aria-pressed={talk === "on"}
+            disabled={link !== "online" || talk === "connecting"}
+            onClick={toggleTalk}
+            title="Live talk: a real-time conversation through Gemini Live; talk over it to interrupt. While it is on, the microphone streams to Google."
+          >
+            {talk === "connecting" ? "…" : talk === "on" ? "◉ TALKING" : "TALK"}
+          </button>
+          <button
+            type="button"
             className={`hud-btn mic-btn${ear.mic === "hearing" ? " hearing" : ""}`}
             aria-pressed={handsFree}
+            disabled={talk === "on" || talk === "connecting"}
             onClick={toggleHandsFree}
             title="Hands-free voice (M)"
           >

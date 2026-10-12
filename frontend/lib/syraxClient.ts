@@ -462,6 +462,7 @@ export type ServerEvent =
   | ({ type: "alert"; event: "raised"; kind: string; detail: string } & Journaled)
   | ({ type: "checkin"; event: "made"; text: string; items: string[] } & Journaled)
   | ({ type: "camera"; event: "captured"; path: string; bytes: number } & Journaled)
+  | ({ type: "live"; event: "opened" | "closed"; model: string; session: string; seconds?: number; tasks?: number; reason?: string } & Journaled)
   | ({ type: "topic"; event: "watched" | "unwatched" | "news"; topic: string; items?: { title: string; url: string; source?: string; date?: string }[] } & Journaled)
   | ({ type: "phase"; event: "changed"; phase: TaskPhase; from: TaskPhase | null; step?: number; tool?: string; target?: string } & Journaled)
   | ({

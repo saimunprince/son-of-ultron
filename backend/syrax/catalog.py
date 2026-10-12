@@ -67,10 +67,12 @@ CATALOG: List[Feature] = [
     Feature("voice_picker", "Voice picker", "Voice", HAVE, "Choose the voice SYRAX speaks with.",
             "the VOICE button in the UI cycles eight English neural voices (voice.VOICES); the pick is kept in the journal and applies "
             "to the next sentence", risk="WRITE", seen_in="Mark-LV"),
-    Feature("live_voice", "Real-time duplex voice", "Voice", TODO, "Talk and be answered with almost no delay, and interrupt.",
-            "a streaming voice session (Gemini Live) beside the task loop; tasks still go through the agent and its permissions",
-            risk="EXTERNAL_READ", needs="new dependency google-genai (owner approval); the microphone streams to Google while a session is open",
-            check={"kind": "change_released"}, seen_in="Mark-LV, Mark-XXXIX-OR"),
+    Feature("live_voice", "Real-time duplex voice", "Voice", HAVE, "Talk and be answered with almost no delay, and interrupt.",
+            "live.py + the TALK button: the browser streams the microphone over /live, SYRAX relays it to Gemini Live (raw "
+            "websocket, no SDK, the key stays on the server), first audio in under a second, barge-in; anything to do goes "
+            "through run_task into an ordinary task, judged on the human's own words; results and questions are spoken back, "
+            "questions answered on screen. The microphone streams to Google only while TALK is on (journaled)",
+            risk="EXTERNAL_READ", seen_in="Mark-LV, Mark-XXXIX-OR"),
     Feature("speech_interrupt", "Stop speaking on command", "Voice", HAVE, "Saying 'stop' cuts SYRAX's speech at once.",
             "frontend/lib/wake.ts: stop, quiet, chup, thamo (also in Bangla script) while SYRAX speaks stop the voice or the task",
             seen_in="Mark-X family, Mark-LV"),
