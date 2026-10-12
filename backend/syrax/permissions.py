@@ -64,7 +64,7 @@ PREFIX_DEFAULTS: Tuple[Tuple[str, str], ...] = (("browser_", EXTERNAL_READ), ("m
 DEFAULT_UNKNOWN = SYSTEM  # an MCP tool the human configured, a skill nothing declared
 DECLARED: Dict[str, str] = {}  # dynamic skills, set by SkillFactory at registration
 
-DESKTOP_READ = {"list_apps", "system_info", "screenshot", "find_files", "clipboard_get"}
+DESKTOP_READ = {"list_apps", "system_info", "screenshot", "find_files", "clipboard_get", "find_text"}
 EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 
 # Stems, so "removal", "deleting", "wiped" count as naming the action too

@@ -244,7 +244,7 @@ class DesktopControl(BaseTool):
         "on THEIR screen: open a website in their browser, open a file/folder/app, set volume, "
         "play/pause music, take a screenshot, show a notification, read/write the clipboard, find "
         "files, check battery/CPU/RAM/disk, lock the screen. On Windows also: type text into the focused window "
-        "(type_text), press keys (hotkey, e.g. ctrl+c, alt+tab), click at screen pixels (click), switch dark mode "
+        "(type_text), press keys (hotkey, e.g. ctrl+c, alt+tab), click at screen pixels (click) or on what the screen shows by its words (click_text: a button, menu, tab, link or text; find_text only says where it is), switch dark mode "
         "(dark_mode) and turn the display off (display_off); the human stops typing and clicking by moving the "
         "mouse to the top-left corner. To delete the human's own files, use trash: it goes to the Recycle Bin and can be restored. camera takes one photo with the webcam when the human asks to be seen; you see the photo. (Use the browser_* tools only when YOU need to read or operate a web page.)"
     )
@@ -256,10 +256,10 @@ class DesktopControl(BaseTool):
                 "enum": [
                     "open", "launch_app", "list_apps", "volume", "media", "screenshot",
                     "notify", "clipboard_get", "clipboard_set", "find_files", "system_info", "lock_screen", "window",
-                    "type_text", "hotkey", "click", "dark_mode", "display_off", "trash", "camera",
+                    "type_text", "hotkey", "click", "click_text", "find_text", "dark_mode", "display_off", "trash", "camera",
                 ],
             },
-            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name. find_files: name pattern. click: 'x,y' screen pixels. trash: the file or folder to move to the Recycle Bin."},
+            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name. find_files: name pattern. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin."},
             "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: play, pause, toggle, next, previous, status. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
@@ -617,6 +617,43 @@ class DesktopControl(BaseTool):
         from syrax import wininput
 
         return await self._hands(wininput.click, target, value or "left")
+
+    async def _sight(self, target: str):
+        from syrax import sight, wininput
+
+        if not str(target or "").strip():
+            raise ValueError("find_text and click_text need the words to look for in target, e.g. Save.")
+        return await asyncio.to_thread(sight.find, str(target).strip(), wininput.backend().screen())
+
+    async def _do_find_text(self, target: str = "", **_) -> ToolResult:
+        """Where a control or some words are on the screen (sight.py); nothing is clicked."""
+        try:
+            spot, seen = await self._sight(target)
+        except (ValueError, RuntimeError, subprocess.TimeoutExpired) as e:
+            return ToolResult(error=f"find_text: {e}")
+        if not seen:
+            return ToolResult(output=f'Nothing on the primary screen reads "{target}" (UI Automation and OCR).')
+        head = f"Best: {spot.say()}." if spot else "Several places match equally well."
+        return ToolResult(output=f"{head} Seen: " + "; ".join(s.say() for s in seen))
+
+    async def _do_click_text(self, target: str = "", value: str = "", **_) -> ToolResult:
+        """Click a control or words seen on the screen: UI Automation first, then OCR (sight.py)."""
+        from syrax import wininput
+
+        try:
+            spot, seen = await self._sight(target)
+        except (ValueError, RuntimeError, subprocess.TimeoutExpired) as e:
+            return ToolResult(error=f"click_text: {e}")
+        if spot is None and not seen:
+            return ToolResult(error=f'Nothing on the primary screen reads "{target}" (UI Automation and OCR); nothing was clicked. '
+                                    "Take a screenshot to see what is there.")
+        if spot is None:
+            return ToolResult(error=f'"{target}" matches several places equally well; nothing was clicked. '
+                                    "Choose one and use click with its x,y: " + "; ".join(s.say() for s in seen))
+        done = await self._hands(wininput.click, f"{spot.x},{spot.y}", value or "left")
+        if done.error:
+            return done
+        return ToolResult(output=f"{done.output} That is {spot.label}, found by {spot.how}.")
 
     async def _do_dark_mode(self, value: str, **_) -> ToolResult:
         from syrax import wininput

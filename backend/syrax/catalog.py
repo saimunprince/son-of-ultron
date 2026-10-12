@@ -125,9 +125,10 @@ CATALOG: List[Feature] = [
     Feature("keyboard_mouse", "Type, click and press keys", "Computer control", HAVE, "Types text, presses hotkeys, clicks for the human.",
             "desktop actions type_text, hotkey, click (wininput.py, SendInput, no new package); SYSTEM level, so conversation only, "
             "never autonomous; the mouse in the top-left corner stops it", risk="SYSTEM", seen_in="Mark-LV, Mark-XXXIX-OR"),
-    Feature("click_by_sight", "Click what it sees", "Computer control", PARTIAL, "'Click the Save button' found on the screen.",
-            "possible now: a screenshot reaches a vision brain, which can call desktop click at x,y. Missing: grounding that makes "
-            "the coordinates reliable (no dedicated model; accuracy depends on the brain)", risk="SYSTEM", seen_in="Mark-LV"),
+    Feature("click_by_sight", "Click what it sees", "Computer control", HAVE, "'Click the Save button' found on the screen.",
+            "desktop click_text / find_text (sight.py): Windows UI Automation finds the control by its name (foreground window "
+            "first), Windows OCR reads the screen when no control matches; scaled to the click's pixels, primary screen only, "
+            "and a tie clicks nothing but lists the candidates. No new dependency", risk="SYSTEM", seen_in="Mark-LV"),
     Feature("undo", "Undo the last action", "Computer control", HAVE, "'Undo' reverses what SYRAX just did.",
             "the undo tool (undo.py): the newest reversible actions (brightness, wallpaper, dark mode, file edits) from the journal, "
             "and the exact reversing call, which the brain makes through permissions; code changes roll back (devloop). "
