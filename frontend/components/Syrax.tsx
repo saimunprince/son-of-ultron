@@ -325,6 +325,12 @@ export default function Syrax() {
         case "phase":
           if (e.event === "changed") setPhase({ phase: e.phase, tool: e.tool, target: e.target });
           break;
+        case "alert":
+          if (e.event === "raised") {
+            push({ kind: "notice", id: nextId++, text: `SYSTEM ALERT · ${e.detail}` });
+            say(`Warning: ${e.detail}.`, { followUp: false });
+          }
+          break;
         case "reminder":
           if (e.event === "fired" && e.text) {
             const late = (e.late_s ?? 0) >= 120 ? ` (late by ${Math.round((e.late_s ?? 0) / 60)} min)` : "";

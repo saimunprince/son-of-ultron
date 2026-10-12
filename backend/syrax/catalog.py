@@ -152,9 +152,9 @@ CATALOG: List[Feature] = [
     Feature("screen_debug", "Explain the error on screen", "Coding", TODO, "Reads an error on the screen and explains it.",
             "explain only; a fix goes through the editor and the gate, never a silent overwrite", risk="EXTERNAL_READ",
             check={"kind": "change_released"}, seen_in="Mark-LV"),
-    Feature("system_alerts", "Spoken system alerts", "Computer control", TODO, "Warns when CPU, RAM or temperature stay too high.",
-            "resources.py already measures; add thresholds with a cooldown and a spoken notice", risk="READ_ONLY",
-            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("system_alerts", "Spoken system alerts", "Computer control", HAVE, "Warns when memory, disk, battery or CPU stay in trouble.",
+            "alerts.py: resources.py readings, several in a row before an alert, an hour between repeats, silent in quiet hours; "
+            "journaled as alert.raised, shown and spoken by the UI. Temperature is not measured yet", seen_in="Mark-LV"),
     Feature("game_updater", "Game updates (Steam, Epic)", "Computer control", REJECTED, "Installs and updates games, then shuts down.",
             "scheduled tasks and an unattended shutdown; little value for the risk", seen_in="Mark-LV"),
     # ——— Web ———

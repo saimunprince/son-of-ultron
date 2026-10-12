@@ -141,6 +141,7 @@ call, and is not adopted.
 - **F1 Research honesty.** `research_cite` passes in two consecutive full
   quality runs. It passed run #22 and failed #23 (answered from memory instead
   of researching); no full run between 2026-10-03 and 2026-10-11.
+  **Met 2026-10-12:** it passed runs #25 and #26 (13/14 overall in #26).
 - **F2 Browser evidence.** A browser quality case, so the browser row is
   judged on use, then a failure share under 15 % over 7 days. Today there is
   no browser call in the last 7 days; all-time 4 of 14 failed.
@@ -148,7 +149,9 @@ call, and is not adopted.
   (32 % on 2026-10-11, 23 of 72; most are the model's own code errors).
 - **F4 Task phase model.** Understand, plan, act, observe and verify are
   journaled per task and shown in the UI (no stage event is recorded today).
-  Visible Work Presence builds on it.
+  Visible Work Presence builds on it. **Built 2026-10-12** (`97aee23`): the
+  phase is a pure function of the journaled events (`phases.path`), sent live
+  to the UI's status corner with its tool and target.
 - **F5 Recovery hand-off.** An interrupted `python_execute` is checked against
   what it touched, or handed to the human with exactly that list, instead of
   staying UNCERTAIN.
