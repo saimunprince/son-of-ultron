@@ -64,6 +64,7 @@ from syrax.prompt import SYRAX_PERSONA
 from syrax.presentation import PresentTool
 from syrax.reminders import RemindTool
 from syrax.topics import WatchTopicTool
+from syrax.undo import UndoTool
 from syrax.research import KnowTool, LearnTool, ResearchTool
 from syrax.selfmodel import SelfInspectTool
 from syrax.skills import SkillCreateTool, SkillListTool, SkillTestTool
@@ -238,7 +239,7 @@ class SyraxAgent(Manus):
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
             AsyncPythonExecute(), SyraxEditor(), DesktopControl(),
-            RememberTool(), RecallTool(), ForgetTool(), RemindTool(), WatchTopicTool(), SelfInspectTool(), JournalQueryTool(),
+            RememberTool(), RecallTool(), ForgetTool(), RemindTool(), WatchTopicTool(), UndoTool(), SelfInspectTool(), JournalQueryTool(),
             ResearchTool(), KnowTool(), LearnTool(),
             SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), PresentTool(), ExperimentTool(), CompareVersionsTool(), Terminate()
         )

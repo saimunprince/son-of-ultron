@@ -122,12 +122,13 @@ CATALOG: List[Feature] = [
     Feature("keyboard_mouse", "Type, click and press keys", "Computer control", HAVE, "Types text, presses hotkeys, clicks for the human.",
             "desktop actions type_text, hotkey, click (wininput.py, SendInput, no new package); SYSTEM level, so conversation only, "
             "never autonomous; the mouse in the top-left corner stops it", risk="SYSTEM", seen_in="Mark-LV, Mark-XXXIX-OR"),
-    Feature("click_by_sight", "Click what it sees", "Computer control", TODO, "'Click the Save button' found on the screen.",
-            "screenshot to a vision brain that returns coordinates, then click; needs keyboard_mouse first", risk="SYSTEM",
-            check={"kind": "change_released"}, seen_in="Mark-LV"),
-    Feature("undo", "Undo the last action", "Computer control", PARTIAL, "'Undo' reverses what SYRAX just did.",
-            "code changes roll back (devloop) and editor edits undo (undo_edit); skills report the old value. Missing: one undo stack "
-            "for desktop and file actions", risk="WRITE", seen_in="Mark-LV"),
+    Feature("click_by_sight", "Click what it sees", "Computer control", PARTIAL, "'Click the Save button' found on the screen.",
+            "possible now: a screenshot reaches a vision brain, which can call desktop click at x,y. Missing: grounding that makes "
+            "the coordinates reliable (no dedicated model; accuracy depends on the brain)", risk="SYSTEM", seen_in="Mark-LV"),
+    Feature("undo", "Undo the last action", "Computer control", HAVE, "'Undo' reverses what SYRAX just did.",
+            "the undo tool (undo.py): the newest reversible actions (brightness, wallpaper, dark mode, file edits) from the journal, "
+            "and the exact reversing call, which the brain makes through permissions; code changes roll back (devloop). "
+            "Editor history does not survive a restart; the Recycle Bin restores trashed files", risk="WRITE", seen_in="Mark-LV"),
     Feature("recycle_bin", "Delete to the Recycle Bin", "Computer control", HAVE, "Deleted files can be restored.",
             "desktop action trash (Send2Trash 2.1.0, approved 2026-10-12); DESTRUCTIVE, so it runs only when the human named the file",
             risk="DESTRUCTIVE", seen_in="Mark-LV"),
@@ -150,9 +151,9 @@ CATALOG: List[Feature] = [
     Feature("webcam", "Look through the camera", "Computer control", TODO, "'Look at me' through the webcam.",
             "capture one frame on request and show it; a camera light and a journal line every time", risk="SYSTEM",
             needs="opencv (new dependency) and the owner's decision: the camera is private", check={"kind": "change_released"}, seen_in="Mark-LV"),
-    Feature("screen_debug", "Explain the error on screen", "Coding", TODO, "Reads an error on the screen and explains it.",
-            "explain only; a fix goes through the editor and the gate, never a silent overwrite", risk="EXTERNAL_READ",
-            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("screen_debug", "Explain the error on screen", "Coding", HAVE, "Reads an error on the screen and explains it.",
+            "a screenshot reaches the brain, which explains the error; a fix goes through the editor and the gate, never a silent "
+            "overwrite", risk="EXTERNAL_READ", seen_in="Mark-LV"),
     Feature("system_alerts", "Spoken system alerts", "Computer control", HAVE, "Warns when memory, disk, battery or CPU stay in trouble.",
             "alerts.py: resources.py readings, several in a row before an alert, an hour between repeats, silent in quiet hours; "
             "journaled as alert.raised, shown and spoken by the UI. Temperature is not measured yet", seen_in="Mark-LV"),
