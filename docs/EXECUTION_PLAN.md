@@ -145,6 +145,8 @@ call, and is not adopted.
 - **F2 Browser evidence.** A browser quality case, so the browser row is
   judged on use, then a failure share under 15 % over 7 days. Today there is
   no browser call in the last 7 days; all-time 4 of 14 failed.
+  **Case added 2026-10-12:** `browser_read` opens a local page whose code
+  exists only after its script runs; the matrix's browser row now reads it.
 - **F3 python_execute reliability.** Failure share under 25 % over 7 days
   (32 % on 2026-10-11, 23 of 72; most are the model's own code errors).
 - **F4 Task phase model.** Understand, plan, act, observe and verify are

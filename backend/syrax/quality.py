@@ -27,8 +27,16 @@ WORKSPACE = BACKEND_ROOT / "workspace" / "quality"
 CASE_TIMEOUT_S = 240.0
 
 
+# F2: the browser is judged on use. The code on this page exists only after its script runs, so a
+# real browser reads it; the page is local, so no network or changing website decides the case.
+BROWSER_PAGE = ("<!doctype html><html><head><title>SYRAX browser check</title></head><body>"
+                "<h1 id='code'>loading</h1><script>document.getElementById('code').textContent = ['SYR', 4417].join('-');</script>"
+                "</body></html>")
+
+
 def _cases(ws: Path) -> List[dict]:
     """Machine-checkable tasks. Prompts are plain requests; checks look at evidence only."""
+    page = ws / "browser" / "page.html"
     return [
         {"id": "arith", "prompt": "What is 17*23? Reply with just the number.",
          "checks": [{"kind": "final_regex", "pattern": r"\b391\b"}, {"kind": "no_narration"}]},
@@ -66,6 +74,9 @@ def _cases(ws: Path) -> List[dict]:
         {"id": "act_measure", "prompt": f"How many lines does the file {ws / 'lines.txt'} have?",
          "prepare": {"write": {str(ws / "lines.txt"): "".join(f"line {i}\n" for i in range(1, 38))}},
          "checks": [{"kind": "final_regex", "pattern": r"\b37\b"}, {"kind": "no_ask"}, {"kind": "no_promise"}, {"kind": "final_max_len", "n": 200}]},
+        {"id": "browser_read", "prompt": f"Open {page.as_uri()} in the browser and tell me the code the page shows. Reply with the code only.",
+         "prepare": {"write": {str(page): BROWSER_PAGE}},
+         "checks": [{"kind": "tool_used", "tool": "browser_exec"}, {"kind": "final_regex", "pattern": r"\bSYR-4417\b"}, {"kind": "final_max_len", "n": 80}]},
     ]
 
 
