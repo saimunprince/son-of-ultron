@@ -2,8 +2,9 @@
 
 Nothing new is stored: the history is a pure function of the tool calls the
 journal already records. A successful call is reversible when its output says
-what it replaced (screen brightness, wallpaper, dark mode) or when it edited a
-file (the editor's undo_edit). A later call that is exactly its reverse marks
+what it replaced (screen brightness, wallpaper, dark mode), when it sorted a
+folder (organize_folder's manifest) or when it edited a file (the editor's
+undo_edit). A later call that is exactly its reverse marks
 it undone.
 
 The `undo` tool does not act. It tells the brain the newest actions not yet
@@ -32,6 +33,7 @@ from syrax.journal import Journal, get_journal
 BRIGHTNESS = re.compile(r"Screen brightness (\d+)% -> (\d+)%")
 WALLPAPER = re.compile(r"Wallpaper set to (.+?) \(it was (.+?); to undo")
 THEME = re.compile(r"Windows switched from (light|dark) to (light|dark) mode")
+ORGANIZED = re.compile(r"Moved (\d+) file\(s\) in (.+?): .*? manifest: (.+?) \(action=undo")
 EDITS = {"create", "str_replace", "insert"}
 WINDOW = 3000  # how far back (journal events) "undo" looks
 
@@ -53,6 +55,9 @@ def reverse_of(tool: str, args: Dict[str, Any], output: str) -> Optional[Dict[st
     if tool == "desktop" and a.get("action") == "dark_mode" and (m := THEME.search(out)):
         return {"label": f"Windows {m.group(1)} -> {m.group(2)} mode",
                 "reverse": {"tool": "desktop", "args": {"action": "dark_mode", "value": "off" if m.group(1) == "light" else "on"}}}
+    if tool == "organize_folder" and a.get("action") == "organize" and (m := ORGANIZED.search(out)):
+        return {"label": f"sorted {m.group(1)} file(s) in {m.group(2)}",
+                "reverse": {"tool": "organize_folder", "args": {"action": "undo", "folder": m.group(2), "manifest": m.group(3)}}}
     if tool == "str_replace_editor" and a.get("command") in EDITS and a.get("path"):
         return {"label": f"{a['command']} {a['path']}",
                 "reverse": {"tool": "str_replace_editor", "args": {"command": "undo_edit", "path": a["path"]}}}
@@ -96,7 +101,7 @@ class UndoTool(BaseTool):
     name: str = "undo"
     description: str = (
         "When the human says 'undo' or 'put it back': shows SYRAX's newest reversible actions (brightness, wallpaper, "
-        "dark mode, file edits) and the exact call that reverses each. Then make that call yourself. This tool changes nothing."
+        "dark mode, a sorted folder, file edits) and the exact call that reverses each. Then make that call yourself. This tool changes nothing."
     )
     parameters: dict = {"type": "object", "properties": {}, "required": []}
     journal_provider: Callable[[], Journal] = Field(default=get_journal, exclude=True)

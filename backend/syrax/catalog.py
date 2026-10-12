@@ -133,9 +133,9 @@ CATALOG: List[Feature] = [
     Feature("recycle_bin", "Delete to the Recycle Bin", "Computer control", HAVE, "Deleted files can be restored.",
             "desktop action trash (Send2Trash 2.1.0, approved 2026-10-12); DESTRUCTIVE, so it runs only when the human named the file",
             risk="DESTRUCTIVE", seen_in="Mark-LV"),
-    Feature("organize_desktop", "Tidy the desktop", "Computer control", TODO, "Sorts desktop files into folders by type or month.",
-            "a skill that moves files and journals every move so it can be undone; needs undo first", risk="WRITE",
-            check=skill("organize_desktop"), seen_in="Mark-LV"),
+    Feature("organize_desktop", "Tidy the desktop", "Computer control", HAVE, "Sorts desktop files into folders by type or month.",
+            "prebuilt skill organize_folder with a preview first, nothing overwritten, shortcuts left, a manifest of every move, and "
+            "undo (also through the undo tool); it deletes nothing, so it stays WRITE", risk="WRITE", seen_in="Mark-LV"),
     Feature("disk_usage", "Largest files and disk usage", "Computer control", TODO, "'What is filling my disk?'",
             "a read-only skill walking a folder for the largest files and folder sizes", risk="READ_ONLY",
             check=skill("disk_usage"), auto=True, seen_in="Mark-LV"),

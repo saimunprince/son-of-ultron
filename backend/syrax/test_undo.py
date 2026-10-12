@@ -34,6 +34,11 @@ def test_reversible_calls_name_their_reverse():
     assert undo.reverse_of("str_replace_editor", {"command": "view", "path": "C:/x/a.txt"}, "") is None
     assert undo.reverse_of("screen_brightness", {"action": "get"}, "Screen brightness is 40%.") is None
     assert undo.reverse_of("wallpaper", {"action": "set", "path": "a"}, "Wallpaper set to a (it was (none); to undo...") is None
+    o = undo.reverse_of("organize_folder", {"action": "organize"},
+                        "Moved 6 file(s) in C:/Users/p/Desktop: 2 to Documents. manifest: C:/Users/p/Desktop/.syrax-organize-1.json (action=undo puts them back).")
+    assert o["reverse"] == {"tool": "organize_folder", "args": {"action": "undo", "folder": "C:/Users/p/Desktop",
+                                                                 "manifest": "C:/Users/p/Desktop/.syrax-organize-1.json"}}
+    assert undo.reverse_of("organize_folder", {"action": "preview"}, "Preview for x: 2 file(s) would move") is None
 
 
 def test_the_newest_pending_comes_first_and_a_reverse_marks_it_done(tmp_path):
