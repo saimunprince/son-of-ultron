@@ -793,7 +793,8 @@
         "backend/syrax/capmatrix.py",
         "backend/syrax/rise.py",
         "backend/syrax/ledger.py (daily self-published ledger and matrix)",
-        "backend/syrax/probe.py (live probes for the matrix)"
+        "backend/syrax/probe.py (live probes for the matrix)",
+        "backend/syrax/devlog.py (daily devlog from the journal and git)"
       ],
       "tests": [
         "backend/syrax/test_verify.py"

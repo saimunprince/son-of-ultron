@@ -145,7 +145,7 @@ def test_the_matrix_is_published_with_the_ledger_from_tests_probes_and_the_last_
     text = (root / "docs" / "CAPABILITY_MATRIX.md").read_text(encoding="utf-8")
     assert text.startswith("# SYRAX capability matrix") and "Test suite: 2 passed" in text and "journal `j.db`" in text
     assert "Self-published evidence" in text and "Code-change benchmark per brain" in text
-    assert sorted(git(root, "show", "--name-only", "--format=", "HEAD").split()) == ["docs/CAPABILITY_MATRIX.md", "docs/RISE.md"]
+    assert sorted(git(root, "show", "--name-only", "--format=", "HEAD").split()) == ["docs/CAPABILITY_MATRIX.md", "docs/DEVLOG.md", "docs/RISE.md"]
     assert git(root, "log", "-1", "--format=%s").endswith(ledger.SUMMARY_WITH_MATRIX)
     assert git(root, "status", "--porcelain") == ""
     assert not any((root / ".syrax" / "maintenance").iterdir())  # no worktree and no JUnit file left behind
@@ -159,7 +159,7 @@ def test_without_a_test_report_the_old_matrix_stays_and_the_ledger_still_lands(t
                                      junit=lambda wt, xml: False, prober=fake_probe))
     assert rep["outcome"] == "COMMITTED" and rep["matrix"] is None
     assert (root / "docs" / "CAPABILITY_MATRIX.md").read_text() == "# old matrix\n"
-    assert git(root, "show", "--name-only", "--format=", "HEAD").split() == ["docs/RISE.md"]
+    assert sorted(git(root, "show", "--name-only", "--format=", "HEAD").split()) == ["docs/DEVLOG.md", "docs/RISE.md"]
 
 
 def test_the_gate_row_reads_the_journals_last_verification():

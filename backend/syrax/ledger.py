@@ -30,8 +30,8 @@ REPO_ROOT = BACKEND_ROOT.parent
 EVERY_S = 86400.0
 RETRY_S = 6 * 3600.0
 PUBLISHED, ATTEMPTED = "rise_published", "rise_attempted"
-SUMMARY = "docs(rise): the ledger, regenerated from the journal"
-SUMMARY_WITH_MATRIX = "docs(rise): the ledger and the capability matrix, regenerated from evidence"
+SUMMARY = "docs(rise): the ledger and the devlog, regenerated from the journal"
+SUMMARY_WITH_MATRIX = "docs(rise): the ledger, the devlog and the capability matrix, regenerated from evidence"
 PLAN = {"why": "the rise ledger is published daily from the journal (M3, evidence without gaps)",
         "risk": "docs only; every number is computed by syrax.rise, a judge file",
         "tests": "the full gate runs on the worktree"}
@@ -107,6 +107,10 @@ async def publish(journal: Journal, root: Path = REPO_ROOT, gates: Optional[Call
         data = await asyncio.to_thread(rise.measure, journal.path, now)
         (wt / "docs").mkdir(parents=True, exist_ok=True)
         (wt / "docs" / "RISE.md").write_text(rise.render(data, head), encoding="utf-8", newline="\n")
+        from syrax import devlog  # M6: one entry per day SYRAX ran, from the journal and git
+
+        days = await asyncio.to_thread(devlog.entries, journal, now, root)
+        (wt / "docs" / "DEVLOG.md").write_text(devlog.render(days, head), encoding="utf-8", newline="\n")
         counts = None
         if matrix:
             xml = root / ".syrax" / "maintenance" / f"{wt.name}-pytest.xml"  # beside the worktree, never committed
