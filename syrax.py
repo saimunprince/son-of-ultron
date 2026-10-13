@@ -356,6 +356,23 @@ def service_defaults():
             os.environ.pop(k, None)
 
 
+HUD = ROOT / "hud"
+
+
+def hud_exe() -> Optional[Path]:
+    """The desktop HUD's Electron, once `npm install` has run in hud/; None means open the browser UI."""
+    exe = HUD / "node_modules" / "electron" / "dist" / ("electron.exe" if os.name == "nt" else "electron")
+    return exe if exe.is_file() and os.getenv("SYRAX_HUD", "1") != "0" else None
+
+
+def open_hud(exe: Path) -> None:
+    """Start the HUD detached: it is its own window, outlives this launcher, and a second start
+    just focuses the first (single-instance lock in hud/main.js)."""
+    env = {k: v for k, v in os.environ.items() if k != "ELECTRON_RUN_AS_NODE"}  # VS Code leaks it; it makes Electron plain Node
+    flags = {"creationflags": getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)} if os.name == "nt" else {"start_new_session": True}
+    subprocess.Popen([str(exe), str(HUD)], cwd=str(HUD), env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **flags)
+
+
 def launch(dev: bool, service: bool) -> int:
     setup(verbose=False)
     check_config()
@@ -396,6 +413,8 @@ def launch(dev: bool, service: bool) -> int:
         comps.append(Component("ui", ui_cmd, FRONTEND, log))
         say(f"core  : ws://127.0.0.1:{BACKEND_PORT}/ws")
         say(f"orb UI: http://localhost:{UI_PORT}")
+        if hud_exe():
+            say(f"HUD   : http://127.0.0.1:{BACKEND_PORT}/hud (desktop app, hud/SYRAX.cmd)")
         PID_FILE.write_text(str(os.getpid()))
         # a login start opens the UI; a restart minutes or hours later does not
         open_ui = os.getenv("SYRAX_OPEN_UI") == "1" or (service and os.getenv("SYRAX_OPEN_UI") != "0" and _uptime_s() < 600)
@@ -417,7 +436,11 @@ def launch(dev: bool, service: bool) -> int:
                 say(f"ui exited {UI_MAX_RESTARTS} times in {UI_RESTART_WINDOW_S // 60} min; the core keeps running without it.")
                 ui_given_up = True
             if open_ui and time.time() - started < 120 and both_answer():
-                webbrowser.open(f"http://localhost:{UI_PORT}")
+                exe = hud_exe()  # the desktop HUD is the main face when it is installed; the browser UI otherwise
+                if exe:
+                    open_hud(exe)
+                else:
+                    webbrowser.open(f"http://localhost:{UI_PORT}")
                 open_ui = False
     finally:
         shutdown()

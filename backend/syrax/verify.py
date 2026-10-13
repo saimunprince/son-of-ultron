@@ -423,6 +423,8 @@ def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None) ->
         fe("tsc", tsc),
         fe("eslint", eslint),
         fe("node_test", node_test),
+        # the desktop HUD's link to the core (hud/link.js) is pure and tested with node --test, no install needed
+        Gate("hud_test", [_npm(), "test", "--silent"], cwd=root / "hud"),
         Gate("next_build", isolated_next_build if live else (lambda: isolated_next_build(frontend))),
         Gate("diff_scan", lambda: diff_scan(root)),
         Gate("performance", lambda: performance_gate(journal_path), required=False, timeout=600),

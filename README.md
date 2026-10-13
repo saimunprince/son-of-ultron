@@ -62,6 +62,33 @@ Both servers listen on 127.0.0.1 only. `SYRAX_PORT` / `SYRAX_UI_PORT` move
 the ports; `SYRAX_OPEN_UI=1` opens the browser once both answer.
 When you move the UI with `SYRAX_UI_PORT`, set `SYRAX_ALLOWED_ORIGINS` to the same port too (for example `http://localhost:3001,http://127.0.0.1:3001`), otherwise the core refuses the UI (HTTP 403); and if another program holds the UI port, the service launcher now refuses to start and names the port in syrax.log.
 
+## Desktop HUD (the main face)
+
+`hud/` is SYRAX's desktop app: an Electron shell around one canvas HUD that
+shows the core's **real** state, nothing invented. The core serves the page
+itself at `http://127.0.0.1:8765/hud`, so it talks to SYRAX from SYRAX's own
+origin; the shell shows its local copy while the core is down and reloads from
+the core once it answers.
+
+```powershell
+cd hud; npm install        # once: Electron + systeminformation
+.\SYRAX.cmd                # or: npm start
+```
+
+What is live on the HUD (all of it arrives over `/ws`, mapped in
+`hud/link.js`): link state, task state, phase and current tool; the brain in
+use and how many are ready; the running build, core uptime and whether a newer
+build waits on disk; open objectives, skills, memories, the last quality run;
+tool calls OK / failed / refused by SYRAX's own guard; the event log of what
+SYRAX does to itself (commits, rollbacks, skills, guard refusals, false claims
+sent back); the cognition panel streams the real steps and tool calls of the
+running task; replies are spoken with SYRAX's own voice (`/tts`, Kokoro) and
+the browser voice only when the core is silent. Machine telemetry (CPU, GPU,
+disks, processes) comes from the Electron main process. Type a command, or
+press **V** and speak; `stop` aborts the running task. When the HUD is
+installed, `python syrax.py --service` opens it at login instead of the
+browser UI (`SYRAX_HUD=0` keeps the browser).
+
 ## Start at login
 
 ```bash

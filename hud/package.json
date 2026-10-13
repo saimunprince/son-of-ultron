@@ -1,0 +1,17 @@
+{
+  "name": "syrax-hud",
+  "version": "1.0.0",
+  "description": "SYRAX desktop HUD: the Electron shell that shows SYRAX's real state",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "electron": "^44.5.1"
+  },
+  "dependencies": {
+    "systeminformation": "^5.33.15"
+  }
+}

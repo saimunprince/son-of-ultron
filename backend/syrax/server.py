@@ -51,7 +51,7 @@ from typing import Optional
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 from app.logger import logger
 
@@ -76,6 +76,13 @@ ALLOWED_ORIGINS = {
     ).split(",")
     if o.strip()
 }
+# A page this server serves (the HUD at /hud) talks to it from the server's own origin.
+ALLOWED_ORIGINS |= {f"http://{h}:{PORT}" for h in ("127.0.0.1", "localhost", HOST)}
+
+# The desktop HUD (hud/): served by SYRAX itself so it runs on the core's origin; only these
+# files, never the folder (node_modules and the Electron shell stay on disk).
+HUD_DIR = Path(__file__).resolve().parents[2] / "hud"
+HUD_FILES = {"hud.html": "text/html; charset=utf-8", "link.js": "text/javascript; charset=utf-8"}
 
 
 @asynccontextmanager
@@ -202,6 +209,18 @@ async def tts(request: Request):
     ms = int((asyncio.get_running_loop().time() - started) * 1000)
     logger.info(f"TTS {len(audio)} bytes in {ms}ms: {text[:60]!r}")
     return Response(content=audio, media_type="audio/mpeg")
+
+
+@app.get("/hud")
+async def hud_page():
+    return await hud_file("hud.html")
+
+
+@app.get("/hud/{name}")
+async def hud_file(name: str):
+    if name not in HUD_FILES or not (HUD_DIR / name).is_file():
+        raise HTTPException(status_code=404, detail="no such HUD file")
+    return FileResponse(HUD_DIR / name, media_type=HUD_FILES[name], headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/voice")

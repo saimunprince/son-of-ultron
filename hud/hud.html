@@ -1,0 +1,1821 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SYRAX</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<script src="link.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  /* no CSS 3D tilt: it resampled the whole canvas every frame and softened every line */
+  canvas { display: block; width: 100vw; height: 100vh; cursor: none; }
+  /* command bar: the one piece of DOM, so the operator can type to the AI */
+  #bar { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); width: min(760px, 80vw); display: flex; align-items: center; gap: 12px;
+         padding: 10px 16px; background: rgba(6,12,20,.55); border: 1px solid rgba(120,200,255,.25); backdrop-filter: blur(10px);
+         box-shadow: 0 0 24px rgba(60,160,255,.15), inset 0 0 18px rgba(60,160,255,.06); font: 16px "Share Tech Mono", monospace; color: #dbeeff;
+         clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+         transition: border-color .45s cubic-bezier(.2,.8,.2,1), box-shadow .45s cubic-bezier(.2,.8,.2,1); }
+  #bar:focus-within { border-color: rgba(140,215,255,.5); box-shadow: 0 0 28px rgba(60,160,255,.2), inset 0 0 22px rgba(60,160,255,.08); }
+  #bar.thinking { border-color: rgba(255,120,80,.6); box-shadow: 0 0 30px rgba(255,90,60,.25); }
+  #bar.responding { border-color: rgba(255,110,80,.45); box-shadow: 0 0 26px rgba(255,90,60,.18); }
+  #bar.listening { border-color: rgba(120,255,200,.6); box-shadow: 0 0 30px rgba(80,255,180,.2); }
+  #bar .pfx { color: rgba(255,150,90,.9); letter-spacing: .08em; white-space: nowrap; transition: color .3s, transform .3s cubic-bezier(.2,.8,.2,1); }
+  #bar:focus-within .pfx { color: #ffb089; transform: translateX(2px); }
+  #cmd { flex: 1; background: none; border: 0; outline: 0; color: #e8f6ff; font: inherit; letter-spacing: .04em; caret-color: #ff8a5c; }
+  #cmd::placeholder { color: rgba(160,200,230,.4); }
+  #cmd:focus::placeholder { color: rgba(160,200,230,.22); }
+  #bar .hint { color: rgba(160,200,230,.45); font-size: 12px; white-space: nowrap; transition: color .3s; }
+  #bar:has(#cmd:not(:placeholder-shown)) .hint { color: rgba(255,170,120,.85); }
+  /* typing pulse: a hairline that flashes out from the center on every keystroke; a slow scan while thinking */
+  #bar::after { content: ''; position: absolute; left: 14px; right: 14px; bottom: 0; height: 1px; opacity: 0;
+                background: linear-gradient(90deg, transparent, rgba(255,150,100,.9), transparent); pointer-events: none; }
+  #bar.tick::after { animation: tick .38s ease-out; }
+  #bar.thinking::after { opacity: .8; left: 14px; right: auto; width: 30%; animation: scan 1.6s cubic-bezier(.45,0,.55,1) infinite alternate; }
+  @keyframes tick { from { opacity: .8; transform: scaleX(.15); } to { opacity: 0; transform: scaleX(1); } }
+  @keyframes scan { from { transform: translateX(0); } to { transform: translateX(calc(760px * .8 - 100%)); } }
+  /* window controls + drag strip: only in the desktop shell, whose window is frameless */
+  /* title strip: invisible; grab the top 40px to move the window (windowed mode only), double-click maximizes/restores */
+  #drag { position: fixed; top: 0; left: 0; right: 0; height: 40px; -webkit-app-region: drag; display: none; z-index: 9; }
+  #drag.on { display: block; }
+  /* buttons: bare line icons in the HUD's own style, no boxes; hover lights them up */
+  #wc { position: fixed; top: 9px; right: 12px; display: none; gap: 4px; z-index: 10; -webkit-app-region: no-drag; }
+  #wc.on { display: flex; }
+  #wc button { -webkit-app-region: no-drag; position: relative; width: 30px; height: 24px; display: grid; place-items: center;
+               padding: 0; cursor: pointer; background: none; border: 0; color: rgba(150,205,240,.55);
+               transition: color .2s, filter .2s; }
+  #wc button::after { content: ''; position: absolute; left: 9px; right: 9px; bottom: 1px; height: 1px;
+                      background: currentColor; opacity: 0; transform: scaleX(.3); transition: opacity .2s, transform .2s; }
+  #wc button:hover { color: #eaf6ff; filter: drop-shadow(0 0 4px rgba(120,200,255,.9)); }
+  #wc button:hover::after { opacity: .9; transform: scaleX(1); }
+  #wc #wc-close:hover { color: #ff7a5c; filter: drop-shadow(0 0 5px rgba(255,80,50,.95)); }
+  #wc svg { width: 11px; height: 11px; stroke: currentColor; stroke-width: 1.3; fill: none; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="drag"></div>
+<div id="wc">
+  <button id="wc-min" title="Minimize"><svg viewBox="0 0 14 14"><path d="M2 7.5h10"/></svg></button>
+  <button id="wc-fs" title="Fullscreen (F11)"></button>
+  <button id="wc-close" title="Close (Ctrl+Q)"><svg viewBox="0 0 14 14"><path d="M2.5 2.5l9 9M11.5 2.5l-9 9"/></svg></button>
+</div>
+<div id="bar"><span class="pfx">›</span><input id="cmd" autocomplete="off" spellcheck="false" placeholder="type a command — or press V and speak"><span class="hint">ENTER</span></div>
+<script>
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const scene = document.createElement('canvas'), gs = scene.getContext('2d');
+const far = document.createElement('canvas'), gf = far.getContext('2d'); // background layer, blurred for depth of field
+const bloom = document.createElement('canvas'), bc = bloom.getContext('2d');
+const ui = document.createElement('canvas'), gu = ui.getContext('2d'); // text and data panels: composited last, never fringed or striped
+let g = gs; // active drawing context; layers swap it
+const TAU = Math.PI * 2, D = Math.PI / 180;
+let W, H, DPR, U;
+
+function rng(seed) {
+  return () => {
+    seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const R = rng(1977);
+const rr = (a, b) => a + (b - a) * R();
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight;
+  cv.width = scene.width = far.width = ui.width = Math.round(W * DPR);
+  cv.height = scene.height = far.height = ui.height = Math.round(H * DPR);
+  bloom.width = Math.ceil(cv.width / 4);
+  bloom.height = Math.ceil(cv.height / 4);
+  U = Math.min(W, H) / 1950; // scene is authored in a 2000-unit space centered at 0,0
+}
+addEventListener('resize', resize);
+resize();
+
+// ---------- live state ----------
+const S = {
+  mx: 0, my: 0, px: 0, py: 0, nx: 0, ny: 0, tx: 0, ty: 0, mspeed: 0, // mouse: world, screen-normalized, tilt
+  boost: 0, glitch: 0, scale: 1,
+  fps: 60, fpsHist: new Array(120).fill(60), frameMs: 16,
+  log: [], blips: [], hits: [],
+  mic: false, level: 0, freq: new Uint8Array(128), wave: new Uint8Array(256), analyser: null,
+  battery: null, locked: null, keys: 0, clicks: 0,
+  voice: false, heard: '', reply: '', replyT: 0, speaking: 0, rec: null,
+  omega: 0, drag: null, standby: 0, sound: true, ac: null,          // ring physics, focus state, audio engine
+  mode: 'IDLE', ultron: 0, think: 0, pulse: 0, chat: [], cog: [], memory: [], // AI state machine, red tint, dialogue, cognition stream
+  iss: null, issTrail: [], weather: null, geo: null, latency: 0, netT: 0, // live feeds
+};
+const ASSEMBLE = 7; // seconds for the HUD to assemble itself, one element at a time, after waking
+
+// ---------- live feeds: ISS telemetry, local weather, own position ----------
+async function fetchISS() {
+  const t0 = performance.now();
+  try {
+    const r = await fetch('https://api.wheretheiss.at/v1/satellites/25544', { cache: 'no-store' });
+    const j = await r.json();
+    S.latency = performance.now() - t0; S.netT = performance.now();
+    S.latHist.push(S.latency); S.latHist.shift();
+    if (!S.iss) log('ISS TELEMETRY ACQUIRED');
+    S.iss = j;
+    S.issTrail.push([j.latitude, j.longitude]); if (S.issTrail.length > 90) S.issTrail.shift();
+  } catch (e) { if (S.iss) log('ISS LINK LOST'); S.iss = null; }
+}
+async function fetchWeather(lat, lon) {
+  try {
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,surface_pressure,cloud_cover&daily=sunrise,sunset&timezone=auto`);
+    const j = await r.json();
+    S.weather = j.current;
+    S.sun = { rise: j.daily.sunrise[0].slice(11, 16), set: j.daily.sunset[0].slice(11, 16) };
+    log(`ATMOS LINK ${S.weather.temperature_2m}°C ${S.weather.wind_speed_10m}KM/H`);
+  } catch (e) { log('ATMOS LINK FAILED'); }
+  try {
+    const r = await fetch(`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=pm2_5,pm10,us_aqi,uv_index`);
+    S.air = (await r.json()).current;
+    log(`AIR QUALITY AQI ${S.air.us_aqi}`);
+  } catch (e) { S.air = null; }
+}
+// USGS: every earthquake on the planet in the last hour → radar contacts + globe markers
+async function fetchQuakes() {
+  try {
+    const r = await fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_hour.geojson', { cache: 'no-store' });
+    const j = await r.json();
+    const prev = S.quakes?.length || 0;
+    S.quakes = j.features.filter(f => f.properties.mag != null).map(f => ({
+      mag: f.properties.mag, place: (f.properties.place || 'UNKNOWN').toUpperCase(), time: f.properties.time,
+      lon: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], depth: f.geometry.coordinates[2], id: f.id,
+    })).sort((a, b) => b.mag - a.mag).slice(0, 14);
+    if (!prev) log('SEISMIC FEED ' + j.features.length + ' EVENTS/HR');
+    else if (S.quakes[0] && S.quakes[0].id !== S.lastQuake) log(`SEISMIC M${S.quakes[0].mag.toFixed(1)} ${S.quakes[0].place.slice(0, 22)}`);
+    S.lastQuake = S.quakes[0]?.id;
+  } catch (e) { log('SEISMIC FEED FAILED'); }
+}
+// NOAA SWPC: solar wind + geomagnetic index
+async function fetchSolar() {
+  try {
+    const r = await fetch('https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json', { cache: 'no-store' });
+    const rows = (await r.json()).slice(1).filter(x => x[2] != null);
+    const last = rows[rows.length - 1];
+    S.solar = { density: +last[1], speed: +last[2], temp: +last[3], hist: rows.slice(-120).map(x => +x[2]) };
+    const k = await (await fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json', { cache: 'no-store' })).json();
+    S.kp = +k[k.length - 1][1];
+    if (!S.solarLogged) { S.solarLogged = true; log(`SOLAR WIND ${S.solar.speed | 0} KM/S · KP ${S.kp}`); }
+  } catch (e) { S.solar = null; }
+}
+// moon phase from the synodic month (no feed needed)
+function moonPhase(d = new Date()) {
+  const age = ((d - Date.UTC(2000, 0, 6, 18, 14)) / 864e5) % 29.530588853;
+  const f = age / 29.530588853, illum = (1 - Math.cos(f * TAU)) / 2;
+  const names = ['NEW', 'WAXING CRESCENT', 'FIRST QUARTER', 'WAXING GIBBOUS', 'FULL', 'WANING GIBBOUS', 'LAST QUARTER', 'WANING CRESCENT'];
+  return { name: names[Math.round(f * 8) % 8], illum, age };
+}
+// event-loop lag: how late timers fire tells you how busy the machine really is
+S.lag = 0; S.lagHist = new Array(128).fill(0); S.latHist = new Array(60).fill(0);
+(() => { let exp = performance.now() + 50; setInterval(() => { const now = performance.now(), lag = Math.max(0, now - exp); exp = now + 50; S.lag = S.lag * .8 + lag * .2; S.lagHist.push(lag); S.lagHist.shift(); }, 50); })();
+// bearing/distance from the operator to a point on the planet
+function geoVec(lat, lon) {
+  const o = S.geo || { lat: 23.81, lon: 90.41 };
+  const φ1 = o.lat * D, φ2 = lat * D, dλ = (lon - o.lon) * D;
+  const y = Math.sin(dλ) * Math.cos(φ2), x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(dλ);
+  const bearing = (Math.atan2(y, x) / D + 360) % 360;
+  const a = Math.sin((φ2 - φ1) / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(dλ / 2) ** 2;
+  return { bearing, dist: 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)) };
+}
+function initFeeds() {
+  fetchISS(); setInterval(fetchISS, 5000);
+  fetchQuakes(); setInterval(fetchQuakes, 60000);
+  fetchSolar(); setInterval(fetchSolar, 300000);
+  const fallback = () => { S.geo = { lat: 23.81, lon: 90.41, name: 'DHAKA (DEFAULT)' }; fetchWeather(23.81, 90.41); };
+  if (navigator.geolocation) navigator.geolocation.getCurrentPosition(
+    p => { S.geo = { lat: p.coords.latitude, lon: p.coords.longitude, name: 'YOU', acc: p.coords.accuracy }; log(`POSITION FIX ±${p.coords.accuracy | 0}M`); fetchWeather(S.geo.lat, S.geo.lon); },
+    fallback, { timeout: 8000 });
+  else fallback();
+  setInterval(() => S.geo && fetchWeather(S.geo.lat, S.geo.lon), 600000);
+}
+if (!location.search.includes('nofeed')) initFeeds(); // ?nofeed disables network feeds (headless tests)
+// desktop shell: real machine telemetry from Electron's main process (absent in a plain browser)
+S.sys = null; S.cpuHist = new Array(120).fill(0);
+const gb = b => (b / 1073741824).toFixed(1);
+const rate = b => b > 1048576 ? (b / 1048576).toFixed(1) + 'M' : ((b / 1024) | 0) + 'K';
+if (window.ultronSys) {
+  S.desktop = true;
+  setTimeout(() => log('DESKTOP LINK — HOST TELEMETRY ONLINE')); // log is defined further down the script
+  setInterval(async () => {
+    try {
+      S.sys = await window.ultronSys.get();
+      if (S.sys.fast) { S.cpuHist.push(S.sys.fast.cpu); S.cpuHist.shift(); }
+    } catch (_) {}
+  }, 1000);
+}
+addEventListener('online', () => log('NETWORK RESTORED'));
+addEventListener('offline', () => log('NETWORK DOWN'));
+
+// ---------- synthesized audio: ambient hum + UI blips ----------
+function initAudio() {
+  if (S.ac) return;
+  const ac = S.ac = new (window.AudioContext || window.webkitAudioContext)();
+  const master = ac.createGain(); master.gain.value = .5; master.connect(ac.destination); S.master = master;
+  const hum = ac.createGain(); hum.gain.value = .035; hum.connect(master); S.hum = hum;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 180; lp.connect(hum);
+  [55, 55.7, 110.3].forEach(f => { const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; o.connect(lp); o.start(); });
+  const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = .11; lg.gain.value = 60; lfo.connect(lg); lg.connect(lp.frequency); lfo.start();
+  log('AUDIO ENGINE ONLINE');
+}
+function blip(f = 880, dur = .06, vol = .08) {
+  if (!S.ac || !S.sound) return;
+  const ac = S.ac, o = ac.createOscillator(), gn = ac.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(f, ac.currentTime); o.frequency.exponentialRampToValueAtTime(f * .6, ac.currentTime + dur);
+  gn.gain.setValueAtTime(vol, ac.currentTime); gn.gain.exponentialRampToValueAtTime(.0001, ac.currentTime + dur);
+  o.connect(gn); gn.connect(S.master); o.start(); o.stop(ac.currentTime + dur);
+}
+const log = s => { S.log.push({ t: performance.now(), s }); if (S.log.length > 9) S.log.shift(); if (typeof blip === 'function') blip(1200, .05, .04); };
+log('CHRONO CORE ONLINE');
+log('SENSOR GRID CALIBRATED');
+navigator.getBattery?.().then(b => { S.battery = b; log('POWER CELL LINKED ' + Math.round(b.level * 100) + '%'); });
+
+// ---------- color: blue on the left, orange on the right ----------
+const BLUE = [70, 205, 255], ORANGE = [255, 84, 40]; // Ultron: the warm side runs red-orange
+function col(a, bias = 0, alpha = 1, white = 0) {
+  // S.ultron pushes the whole palette warm while it thinks/speaks: the red spreads through the blue rings
+  let t = .5 + .95 * Math.cos(a + .3) + bias + (S.ultron || 0) * .35;
+  t = t < 0 ? 0 : t > 1 ? 1 : t;
+  t = Math.round(t * 16) / 16;
+  let r = BLUE[0] + (ORANGE[0] - BLUE[0]) * t;
+  let gg = BLUE[1] + (ORANGE[1] - BLUE[1]) * t;
+  let b = BLUE[2] + (ORANGE[2] - BLUE[2]) * t;
+  if (white) { r += (255 - r) * white; gg += (255 - gg) * white; b += (255 - b) * white; }
+  return `rgba(${r | 0},${gg | 0},${b | 0},${Math.round(alpha * 40) / 40})`;
+}
+
+// ---------- primitives ----------
+// ---------- assembly: during boot every element flies in from the dark along its own path ----------
+const ASM = { p: 0, locked: new Set() };
+const hash = k => Math.abs(Math.sin(k * 12.9898 + 78.233) * 43758.5453) % 1;
+// elements arrive one after another: rings in order of radius (inside → out), then the panels in sequence
+const ASM_DUR = .09; // each element's flight, as a fraction of the whole assembly
+function asmDelay(key) {
+  if (key >= 9000) return .72 + ((key - 9001) % 13) / 13 * (1 - ASM_DUR - .72);
+  return (Math.min(key, 950) / 950) * (.72 - ASM_DUR);
+}
+function asmK(key, extra = 0) {
+  if (ASM.p >= 1) return 1;
+  const k = Math.min(1, Math.max(0, (ASM.p - asmDelay(key) - extra) / ASM_DUR));
+  return 1 - Math.pow(1 - k, 3);
+}
+// each element flies in from the dark along its own path and locks into place with a blip
+function asmWrap(key, fn, dist = 900) {
+  const k = asmK(key);
+  if (k >= 1) {
+    if (ASM.p < 1 && !ASM.locked.has(key)) { ASM.locked.add(key); blip(500 + hash(key + 7) * 1400, .07, .035); }
+    return fn();
+  }
+  if (k <= 0) return;
+  const a = hash(key + 3) * TAU, spin = (hash(key + 5) - .5) * 1.6;
+  g.save();
+  g.translate(Math.cos(a) * dist * (1 - k), Math.sin(a) * dist * (1 - k));
+  g.rotate(spin * (1 - k));
+  g.scale(1 + (1 - k) * .6, 1 + (1 - k) * .6);
+  g.globalAlpha *= k;
+  fn();
+  g.restore();
+}
+function arc(r, a0, a1, lw, bias = 0, alpha = 1, white = 0) {
+  asmWrap(r, () => {
+    const n = Math.max(1, Math.ceil(Math.abs(a1 - a0) / .07));
+    g.lineWidth = lw;
+    let start = a0, cur = col(a0 + (a1 - a0) / n / 2, bias, alpha, white);
+    for (let i = 1; i <= n; i++) {
+      const e = a0 + (a1 - a0) * i / n;
+      const next = i < n ? col(e + (a1 - a0) / n / 2, bias, alpha, white) : null;
+      if (next !== cur) {
+        g.strokeStyle = cur;
+        g.beginPath(); g.arc(0, 0, r, start, e + .003); g.stroke();
+        start = e; cur = next;
+      }
+    }
+  });
+}
+function ticks(r, len, count, a0, a1, lw, bias, alpha, keep, white = 0) {
+  asmWrap(r + .5, () => {
+    const groups = {};
+    for (let i = 0; i < count; i++) {
+      if (keep && !keep(i)) continue;
+      const a = a0 + (a1 - a0) * i / count, c = Math.cos(a), s = Math.sin(a);
+      const k = col(a, bias, alpha, white);
+      const p = groups[k] || (groups[k] = new Path2D());
+      p.moveTo(c * r, s * r); p.lineTo(c * (r + len), s * (r + len));
+    }
+    g.lineWidth = lw;
+    for (const k in groups) { g.strokeStyle = k; g.stroke(groups[k]); }
+  });
+}
+// the swarm: hundreds of motes that stream in one by one and land on the ring radii
+const SWARM_R = [72, 86, 120, 150, 195, 214, 250, 304, 336, 365, 410, 428, 478, 600, 700, 780, 860];
+const SWARM = Array.from({ length: 700 }, (_, i) => {
+  const r = SWARM_R[i % SWARM_R.length], a = rr(0, TAU), a0 = a + rr(-1.2, 1.2);
+  return { r, a, x0: Math.cos(a0) * rr(1100, 1700), y0: Math.sin(a0) * rr(700, 1200), key: r, s: rr(1.2, 3) };
+});
+function bootSwarm(t) {
+  if (ASM.p >= 1) return;
+  SWARM.forEach((p, i) => {
+    // each mote leaves slightly before its ring, so it lands as the ring locks
+    const k = asmK(p.key, -hash(i) * ASM_DUR * .8); if (k >= 1 || k <= 0) return;
+    const [tx, ty] = polar(p.r, p.a + (1 - k) * 2.5);
+    const x = p.x0 + (tx - p.x0) * k, y = p.y0 + (ty - p.y0) * k;
+    const a = Math.atan2(y, x);
+    g.fillStyle = col(a, 0, .25 + k * .75, .4 + k * .5);
+    g.fillRect(x - p.s / 2, y - p.s / 2, p.s, p.s);
+    const xb = p.x0 + (tx - p.x0) * Math.max(0, k - .06), yb = p.y0 + (ty - p.y0) * Math.max(0, k - .06);
+    g.strokeStyle = col(a, 0, .2 + k * .4); g.lineWidth = p.s * .6; g.beginPath(); g.moveTo(xb, yb); g.lineTo(x, y); g.stroke();
+  });
+}
+// synthesized boot: sub swell, riser, whoosh; element locks add their own blips through asmWrap
+function bootSound() {
+  if (!S.ac || !S.sound) return;
+  const ac = S.ac, t0 = ac.currentTime, out = S.master;
+  const env = (gn, peak, tA, tD) => { gn.gain.setValueAtTime(0, t0); gn.gain.linearRampToValueAtTime(peak, t0 + tA); gn.gain.exponentialRampToValueAtTime(.0001, t0 + tA + tD); };
+  const A = ASSEMBLE;
+  const sub = ac.createOscillator(), sg = ac.createGain(); sub.type = 'sine'; sub.frequency.setValueAtTime(38, t0); sub.frequency.exponentialRampToValueAtTime(110, t0 + A); env(sg, .28, 2, A); sub.connect(sg); sg.connect(out); sub.start(t0); sub.stop(t0 + A + 2.5);
+  const rise = ac.createOscillator(), rg = ac.createGain(), bp = ac.createBiquadFilter(); rise.type = 'sawtooth'; bp.type = 'bandpass'; bp.Q.value = 6; rise.frequency.setValueAtTime(110, t0); rise.frequency.exponentialRampToValueAtTime(1400, t0 + A); bp.frequency.setValueAtTime(200, t0); bp.frequency.exponentialRampToValueAtTime(2800, t0 + A); env(rg, .06, A - 1, 1); rise.connect(bp); bp.connect(rg); rg.connect(out); rise.start(t0); rise.stop(t0 + A + 1);
+  const nb = ac.createBuffer(1, ac.sampleRate * (A + 1), ac.sampleRate), d = nb.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const noise = ac.createBufferSource(), ng = ac.createGain(), lp = ac.createBiquadFilter(); noise.buffer = nb; lp.type = 'lowpass'; lp.frequency.setValueAtTime(150, t0); lp.frequency.exponentialRampToValueAtTime(5000, t0 + A); env(ng, .08, A * .7, 1.5); noise.connect(lp); lp.connect(ng); ng.connect(out); noise.start(t0);
+  [220, 330, 440].forEach((f, i) => { const o = ac.createOscillator(), gn = ac.createGain(); o.frequency.value = f; gn.gain.setValueAtTime(0, t0 + ASSEMBLE); gn.gain.linearRampToValueAtTime(.08, t0 + ASSEMBLE + .05); gn.gain.exponentialRampToValueAtTime(.0001, t0 + ASSEMBLE + 1.6 + i * .3); o.connect(gn); gn.connect(out); o.start(t0 + ASSEMBLE); o.stop(t0 + ASSEMBLE + 2.5); });
+}
+// the dormant screen: a single red eye in the dark until the operator touches it
+function wakeScreen(now) {
+  const t = now / 1000;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2, s = Math.min(W, H) / 1000, pulse = .85 + .15 * Math.sin(t * 1.4);
+  // a dormant core: the same blue plasma as the HUD, breathing slowly, one red-orange arc circling it
+  const gl = ctx.createRadialGradient(cx, cy, 0, cx, cy, 170 * s * pulse);
+  gl.addColorStop(0, 'rgba(230,248,255,.9)'); gl.addColorStop(.12, 'rgba(120,215,255,.55)'); gl.addColorStop(.4, 'rgba(30,100,150,.18)'); gl.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = gl; ctx.fillRect(0, 0, W, H);
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(s, s);
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.strokeStyle = 'rgba(120,215,255,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, 44, 0, TAU); ctx.stroke();
+  ctx.setLineDash([2, 6]); ctx.strokeStyle = 'rgba(120,215,255,.25)'; ctx.beginPath(); ctx.arc(0, 0, 64, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+  const a0 = t * .9;
+  ctx.strokeStyle = 'rgba(255,110,60,.95)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 54, a0, a0 + 1.3); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,160,110,.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, 54, a0 + Math.PI, a0 + Math.PI + .5); ctx.stroke();
+  const [hx, hy] = polar(54, a0 + 1.3); ctx.fillStyle = 'rgba(255,255,255,.95)'; ctx.beginPath(); ctx.arc(hx, hy, 3.5, 0, TAU); ctx.fill();
+  ctx.restore();
+  ctx.font = `${16 * s}px "Share Tech Mono", monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = `rgba(255,150,120,${.5 + .4 * Math.sin(t * 2.2)})`; ctx.fillText('TOUCH TO WAKE', cx, cy + 150 * s);
+  ctx.fillStyle = 'rgba(160,190,220,.35)'; ctx.font = `${12 * s}px "Share Tech Mono", monospace`;
+  ctx.fillText(`SYRAX  ·  ${S.link.online ? 'CORE LINKED' : 'CORE SILENT'}  ·  HUD REBIRTH ${S.rebirths}`, cx, cy + 178 * s);
+}
+function wake() {
+  if (S.woken) return;
+  S.woken = true; t0 = performance.now() - T_SKIP * 1000;
+  bootSound(); log('CORE WAKING');
+  setTimeout(() => bar.style.opacity = 1, ASSEMBLE * 1000);
+}
+const polar = (r, a) => [Math.cos(a) * r, Math.sin(a) * r];
+const pad = (n, w) => String(n).padStart(w, '0');
+
+// ---------- precomputed layout ----------
+function segments(gapMin, gapMax, lenMin, lenMax, skip = 0) {
+  const out = []; let a = rr(0, 10);
+  while (a < 360) {
+    const len = rr(lenMin, lenMax);
+    if (R() > skip) out.push([a * D, Math.min(360, a + len) * D]);
+    a += len + rr(gapMin, gapMax);
+  }
+  return out;
+}
+const L = {
+  blocks300: segments(3, 14, 10, 42, .15),
+  dash365: segments(4, 10, 2, 8, .1),
+  arcs700: segments(10, 40, 15, 70, .2),
+  arcs860: segments(20, 60, 10, 50, .3),
+  dash150: segments(5, 12, 4, 20, 0),
+  spokes: Array.from({ length: 46 }, () => {
+    const r0 = rr(420, 640);
+    return { a: rr(0, TAU), r0, r1: r0 + rr(120, 380), elbow: R() < .3 ? rr(-60, 60) : 0, hot: R() < .25, ph: rr(0, TAU) };
+  }),
+  particles: Array.from({ length: 110 }, () => ({ a: rr(0, TAU), r: rr(80, 950), v: rr(8, 40), s: rr(1, 3.2), b: rr(-.6, .9) })),
+  circles: [[-340, -735, 18], [-445, -650, 22], [0, 700, 22], [275, 655, 20], [-345, 650, 12], [340, -500, 10]],
+};
+
+// fake data text that sits along the rings
+// text slots along the rings; every line is built from live state each frame
+const SLOTS_L = [], SLOTS_R = [];
+for (let y = -480; y <= 340; y += 23) SLOTS_L.push({ x: -Math.sqrt(Math.max(0, 560 * 560 - y * y)) - 46, y, d: rr(.3, 2.2) });
+[[-400, -160, 610], [-70, 100, 540]].forEach(([y0, y1, x]) => { for (let y = y0; y <= y1; y += 23) SLOTS_R.push({ x, y, d: rr(.3, 2.2) }); });
+function systemLines() {
+  const d = new Date(), con = navigator.connection, mem = performance.memory, bat = S.battery, moon = moonPhase(d);
+  const doy = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5), up = performance.now() / 1000 | 0;
+  return [
+    `UTC ${d.toISOString().slice(11, 19)}`,
+    `DOY ${doy} · WEEK ${Math.ceil(doy / 7)}`,
+    `MOON ${moon.name} ${(moon.illum * 100) | 0}%`,
+    S.sun ? `SUN RISE ${S.sun.rise} · SET ${S.sun.set}` : 'SUN —',
+    `TZ ${Intl.DateTimeFormat().resolvedOptions().timeZone}`,
+    `LANG ${navigator.language.toUpperCase()} · ${navigator.platform.toUpperCase()}`,
+    `CORES ${navigator.hardwareConcurrency || '?'} · DPR ${DPR}`,
+    mem ? `HEAP ${(mem.usedJSHeapSize / 1048576).toFixed(1)} / ${(mem.jsHeapSizeLimit / 1048576) | 0} MB` : 'HEAP —',
+    `VIEW ${W}×${H} · ${screen.width}×${screen.height}`,
+    con ? `NET ${(con.effectiveType || '').toUpperCase()} ${con.downlink}MB ${con.rtt}MS` : `NET ${navigator.onLine ? 'ONLINE' : 'OFFLINE'}`,
+    bat ? `CELL ${(bat.level * 100) | 0}% ${bat.charging ? 'CHARGING' : 'DISCHARGING'}` : 'CELL EXTERNAL',
+    `DIAL SPIN ${S.omega.toFixed(2)} RAD/S`,
+    `MEMORY ${S.link.memories ?? '—'} ENTRIES`,
+    `BUILD ${S.link.version || '—'} · BOOT ${(S.link.bootId || '—').slice(0, 8)}`,
+    `HUD REBIRTHS ${S.rebirths}`,
+    `FOCUS ${document.hasFocus() ? 'OPERATOR PRESENT' : 'OPERATOR AWAY'}`,
+    `AUDIO ${S.mic ? 'OPEN ' + ((S.level * 100) | 0) + '%' : 'CLOSED'} · VOX ${S.voice ? 'ON' : 'OFF'}`,
+    ...hostLines(),
+  ];
+}
+// host hardware lines for the ring column (desktop shell only)
+function hostLines() {
+  const st = S.sys?.static, sl = S.sys?.slow;
+  if (!st) return [];
+  const cut = s => s.toUpperCase().slice(0, 26);
+  return [
+    cut(st.cpu),
+    `${st.physical} CORES · ${st.cores} THREADS`,
+    cut('GPU ' + st.gpu),
+    cut(st.os),
+    ...(sl?.top || []).map(p => `${p.name.toUpperCase().replace(/\.EXE$/, '').slice(0, 16)} ${p.cpu.toFixed(1)}%`),
+    ...(sl?.disks || []).slice(0, 3).map(d => `DISK ${d.mount} ${d.use.toFixed(0)}% · ${gb(d.size - d.used)} GB FREE`),
+  ];
+}
+function feedLines() {
+  // weather and uplink live in the side panels; this column carries what they do not
+  const a = S.air, i = S.iss, s = S.solar, out = [];
+  if (a) out.push(`AQI ${a.us_aqi} · PM2.5 ${a.pm2_5} · UV ${a.uv_index}`);
+  out.push(S.geo ? `FIX ${S.geo.lat.toFixed(3)} ${S.geo.lon.toFixed(3)}${S.geo.acc ? ' ±' + (S.geo.acc | 0) + 'M' : ''}` : 'FIX PENDING');
+  if (i) { const v = geoVec(i.latitude, i.longitude); out.push(`ISS ${i.latitude.toFixed(1)} ${i.longitude.toFixed(1)} · ${i.altitude | 0} KM`, `ISS BRG ${v.bearing | 0}° · ${v.dist | 0} KM AWAY`, `ISS ${(i.velocity | 0).toLocaleString()} KM/H · ${i.visibility.toUpperCase()}`); }
+  else out.push('ISS NO TELEMETRY');
+  if (s) out.push(`SOLAR WIND ${s.speed | 0} KM/S · ${s.density.toFixed(1)} P/CM³`, `KP INDEX ${S.kp} · ${S.kp >= 5 ? 'STORM' : 'QUIET'}`);
+  if (S.quakes) { out.push(`SEISMIC ${S.quakes.length} EVENTS / HR`); S.quakes.slice(0, 5).forEach(q => { const v = geoVec(q.lat, q.lon); out.push(`M${q.mag.toFixed(1)} ${shortPlace(q.place)} · ${v.dist | 0} KM`); }); }
+  else out.push('SEISMIC FEED PENDING');
+  return out;
+}
+// "12 KM SSW OF FOO, CA" -> "FOO, CA", cut on a word boundary (our own distance is appended separately)
+function shortPlace(p) {
+  p = p.replace(/^\d+\s*km\s+[NSEW]{1,3}\s+of\s+/i, '').toUpperCase();
+  return p.length <= 22 ? p : p.slice(0, p.lastIndexOf(' ', 22)).replace(/[,\s]+$/, '');
+}
+
+// ---------- input ----------
+addEventListener('mousemove', e => {
+  S.nx = (e.clientX / W - .5) * 2; S.ny = (e.clientY / H - .5) * 2;
+  const k = U * S.scale;
+  const nx = (e.clientX - W / 2) / k, ny = (e.clientY - H / 2) / k;
+  S.mspeed = Math.hypot(nx - S.mx, ny - S.my);
+  if (S.drag) {
+    // grab the dial and spin it: angular delta becomes angular velocity (inertia)
+    const a0 = Math.atan2(S.my, S.mx), a1 = Math.atan2(ny, nx);
+    let da = a1 - a0; if (da > Math.PI) da -= TAU; if (da < -Math.PI) da += TAU;
+    S.omega = S.omega * .5 + da * 30;
+    S.drag.moved += Math.abs(da);
+  }
+  S.mx = nx; S.my = ny;
+});
+addEventListener('mousedown', e => {
+  initAudio(); S.ac?.resume(); wake(); S.actHist.push(performance.now());
+  S.drag = { t: performance.now(), moved: 0 };
+});
+addEventListener('mouseup', e => {
+  const d = S.drag; S.drag = null;
+  if (!d) return;
+  if (d.moved < .04 && performance.now() - d.t < 300) {
+    S.boost = Math.max(S.boost, 4); S.clicks++;
+    S.locked = { x: S.mx, y: S.my, t: performance.now() };
+    S.hits.push({ x: S.mx, y: S.my, t: performance.now(), big: true });
+    log(`TARGET LOCK ${S.mx | 0},${S.my | 0}`); blip(1600, .08, .08);
+  } else { log('DIAL RELEASED ω=' + S.omega.toFixed(1)); blip(400, .15, .06); }
+});
+const cmd = document.getElementById('cmd'), bar = document.getElementById('bar');
+let barR = bar.getBoundingClientRect();
+addEventListener('resize', () => barR = bar.getBoundingClientRect());
+// every keystroke: a hairline flash on the bar and a small answering pulse in the core
+cmd.addEventListener('input', () => {
+  bar.classList.remove('tick'); void bar.offsetWidth; bar.classList.add('tick');
+  S.typeK = 1;
+});
+// window controls (desktop shell only): the window is frameless, so the HUD provides minimize / fullscreen / close
+const FS_ENTER = '<svg viewBox="0 0 14 14"><path d="M1.5 5V1.5H5M9 1.5h3.5V5M12.5 9v3.5H9M5 12.5H1.5V9"/></svg>';
+const FS_EXIT = '<svg viewBox="0 0 14 14"><path d="M5 1.5V5H1.5M12.5 5H9V1.5M9 12.5V9h3.5M1.5 9H5v3.5"/></svg>';
+const toggleFullscreen = () => window.ultronWin ? window.ultronWin.toggleFullscreen()
+  : document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+if (window.ultronWin) {
+  const wc = document.getElementById('wc'), drag = document.getElementById('drag'), fs = document.getElementById('wc-fs');
+  const apply = s => { drag.classList.toggle('on', !s.fullscreen); fs.innerHTML = s.fullscreen ? FS_EXIT : FS_ENTER; fs.title = s.fullscreen ? 'Exit fullscreen (F11)' : 'Fullscreen (F11)'; };
+  wc.classList.add('on'); apply({ fullscreen: true });
+  wc.addEventListener('mousedown', e => e.stopPropagation()); // clicking a button must not lock a HUD target
+  document.getElementById('wc-min').onclick = () => window.ultronWin.minimize();
+  fs.onclick = toggleFullscreen;
+  document.getElementById('wc-close').onclick = () => window.ultronWin.close();
+  window.ultronWin.onState(apply);
+  window.ultronWin.getState().then(apply);
+}
+cmd.addEventListener('keydown', e => {
+  e.stopPropagation(); initAudio(); S.ac?.resume();
+  if (e.key === 'Enter' && cmd.value.trim()) { ask(cmd.value); cmd.value = ''; }
+  else if (e.key === 'Escape') cmd.blur();
+});
+addEventListener('keydown', e => {
+  S.keys++; initAudio(); S.ac?.resume(); S.actHist.push(performance.now());
+  if (e.key === 'Enter') { cmd.focus(); return; }
+  if (e.key === 's' || e.key === 'S') { S.sound = !S.sound; S.hum.gain.value = S.sound ? .035 : 0; log(S.sound ? 'AUDIO ENGINE ON' : 'AUDIO ENGINE MUTED'); return; }
+  if (e.code === 'Space') { S.boost = 14; log('TEMPORAL JUMP INITIATED'); }
+  else if (e.key === 'g' || e.key === 'G') { S.glitch = .8; log('SIGNAL INTERFERENCE'); }
+  else if (e.key === 'm' || e.key === 'M') enableMic();
+  else if (e.key === 'v' || e.key === 'V') startVoice();
+  else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+  else log('KEY ' + e.code.toUpperCase());
+});
+async function enableMic() {
+  if (S.mic) return;
+  try {
+    const st = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ac = new AudioContext();
+    const an = ac.createAnalyser(); an.fftSize = 256; an.smoothingTimeConstant = .7;
+    ac.createMediaStreamSource(st).connect(an);
+    S.analyser = an; S.mic = true;
+    log('AUDIO LINK ESTABLISHED');
+  } catch (e) { log('AUDIO LINK DENIED'); }
+}
+
+// ---------- SYRAX: the link, state machine, voice, cognition ----------
+// The backend is SYRAX itself (backend/syrax/server.py, ws :8765). Served from it, the HUD talks to its own
+// origin; opened from disk it still finds the local core. ?syrax=ws://host:port/ws overrides.
+const LINK_URL = new URLSearchParams(location.search).get('syrax')
+  || (location.protocol.startsWith('http') ? location.origin.replace(/^http/, 'ws') + '/ws' : 'ws://127.0.0.1:8765/ws');
+const HTTP_BASE = LINK_URL.replace(/^ws/, 'http').replace(/\/ws$/, '');
+const link = SyraxLink.connect({ url: LINK_URL, onEffects: fx => fx.forEach(applyEffect) });
+S.link = link.state;
+const online = () => !!S.link.online;
+function applyEffect(f) {
+  const now = performance.now();
+  if (f.kind === 'log' && /LINK ESTABLISHED/.test(f.text)) S.linkT = now;
+  if (f.kind === 'mode') { if (!(S.speaking && f.mode === 'IDLE')) setMode(f.mode); }
+  else if (f.kind === 'say') say(f.text);
+  else if (f.kind === 'ask') { say(f.question); cmd.placeholder = f.question.slice(0, 80); cmd.focus(); }
+  else if (f.kind === 'cog') { S.cog.push({ s: f.text, t: now }); if (S.cog.length > 7) S.cog.shift(); blip(1400, .03, .02); }
+  else if (f.kind === 'log') log(f.text);
+}
+const MEM_KEY = 'syrax.hud.memory'; // the offline reflex only; SYRAX's real memory lives in its journal
+try { S.rebirths = (+localStorage.getItem('syrax.hud.rebirths') || 0) + 1; localStorage.setItem('syrax.hud.rebirths', S.rebirths); } catch (_) { S.rebirths = 1; }
+try { S.memory = JSON.parse(localStorage.getItem(MEM_KEY) || '[]'); } catch (_) { S.memory = []; }
+const saveMem = () => { try { localStorage.setItem(MEM_KEY, JSON.stringify(S.memory)); } catch (_) {} };
+function setMode(m) {
+  if (S.mode === m) return;
+  S.mode = m; log('STATE ' + m);
+  bar.className = m.toLowerCase();
+  blip(m === 'THINKING' ? 520 : m === 'RESPONDING' ? 740 : 980, .08, .05);
+}
+function pushChat(who, text) { S.chat.push({ who, text, t: performance.now() }); if (S.chat.length > 10) S.chat.shift(); }
+async function say(text) {
+  S.reply = text.toUpperCase(); S.replyT = performance.now();
+  pushChat('SYRAX', text);
+  setMode('RESPONDING');
+  const done = () => { S.speaking = 0; setMode(S.link.pendingAsk || S.voice ? 'LISTENING' : S.link.state === 'thinking' || S.link.state === 'acting' ? 'THINKING' : 'IDLE'); };
+  if (online() && await speakWithSyrax(text, done)) return;
+  if (!('speechSynthesis' in window)) { setTimeout(done, 400 + text.length * 45); return; }
+  speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = .95; u.pitch = .5; // Ultron: slow, low
+  const v = speechSynthesis.getVoices().find(v => /en-GB|Daniel|George|Ryan/i.test(v.name + v.lang));
+  if (v) u.voice = v;
+  u.onstart = () => S.speaking = 1; u.onboundary = () => S.pulse = 1; u.onend = done; u.onerror = done;
+  speechSynthesis.speak(u);
+  setTimeout(() => { if (S.mode === 'RESPONDING' && !S.speaking) done(); }, 600 + text.length * 60); // speech blocked (no gesture yet)
+}
+// SYRAX's real voice: POST /tts (Kokoro), played through an analyser so the core pulses with the words
+async function speakWithSyrax(text, done) {
+  try {
+    const r = await fetch(HTTP_BASE + '/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+    if (!r.ok) return false;
+    const data = await r.arrayBuffer(); if (!data.byteLength) return false;
+    initAudio(); const ac = S.ac || new AudioContext(); S.ac = ac; await ac.resume();
+    const buf = await ac.decodeAudioData(data);
+    const src = ac.createBufferSource(); src.buffer = buf;
+    const an = ac.createAnalyser(); an.fftSize = 512; src.connect(an); an.connect(ac.destination);
+    const wave = new Uint8Array(an.fftSize);
+    S.speaking = 1;
+    const tick = setInterval(() => { an.getByteTimeDomainData(wave); let e = 0; for (let i = 0; i < wave.length; i += 4) e += Math.abs(wave[i] - 128); S.pulse = Math.max(S.pulse * .6, Math.min(1, e / wave.length * 4 / 32)); }, 60);
+    src.onended = () => { clearInterval(tick); done(); };
+    src.start();
+    return true;
+  } catch (e) { log('VOICE FELL BACK · ' + String(e.message || e).toUpperCase().slice(0, 30)); return false; }
+}
+function intentOf(c) {
+  if (/^[\d\s+\-*/().%^]+$/.test(c) && /\d/.test(c)) return 'CALCULATE';
+  if (/^remember\b/.test(c)) return 'MEMORY_WRITE';
+  if (/what do you (remember|know)|recall|your memory/.test(c)) return 'MEMORY_READ';
+  if (/forget/.test(c)) return 'MEMORY_CLEAR';
+  if (/remind|timer|alarm/.test(c)) return 'SCHEDULE';
+  if (/time in |clock in /.test(c)) return 'WORLD_TIME';
+  if (/\btime\b|clock/.test(c)) return 'TIME';
+  if (/date|today|day is/.test(c)) return 'DATE';
+  if (/\b(cpu|processor|ram|gpu|graphics|hardware|disk|storage|process(es)?|my (pc|computer|machine)|system load)\b/.test(c)) return 'HOST';
+  if (/weather|temperature|hot|cold|rain|wind|humid/.test(c)) return 'ATMOS';
+  if (/iss|space station|satellite/.test(c)) return 'ORBITAL';
+  if (/where am i|location|position/.test(c)) return 'GEO';
+  if (/status|report|diagnos|systems/.test(c)) return 'DIAGNOSTIC';
+  if (/jump|warp/.test(c)) return 'JUMP';
+  if (/scan|sweep|search/.test(c)) return 'SCAN';
+  if (/glitch|interfer/.test(c)) return 'GLITCH';
+  if (/fullscreen|full screen/.test(c)) return 'DISPLAY';
+  if (/mute|silence|quiet|unmute|sound/.test(c)) return 'AUDIO';
+  if (/who are you|your name|what are you/.test(c)) return 'IDENTITY';
+  if (/strings/.test(c)) return 'QUOTE';
+  if (/joke|funny/.test(c)) return 'HUMOR';
+  if (/thank/.test(c)) return 'GRATITUDE';
+  if (/shut ?down|sleep|stop|power off|kill/.test(c)) return 'TERMINATE';
+  if (/hello|^hi\b|hey|good (morning|evening|night)/.test(c)) return 'GREETING';
+  return 'UNKNOWN';
+}
+const FALLBACK = ['I lack data for that. Elaborate.', 'Rephrase. I am listening.', 'Interesting. But irrelevant.', 'That query exceeds my current directives. Give me an API and I will learn.', 'Humans ask strange things. Try again.'];
+function localBrain(raw) {
+  const c = raw.toLowerCase().trim(), d = new Date();
+  switch (intentOf(c)) {
+    case 'CALCULATE': try { const v = Function('"use strict";return (' + c.replace(/\^/g, '**') + ')')(); return `That is ${+v.toFixed(6)}.`; } catch (_) { return 'That expression does not compute.'; }
+    case 'MEMORY_WRITE': { const f = raw.replace(/^remember (that )?/i, '').trim(); S.memory.push({ f, t: Date.now() }); saveMem(); log('MEMORY +1 (' + S.memory.length + ')'); return 'Stored. I never forget.'; }
+    case 'MEMORY_READ': return S.memory.length ? `I remember ${S.memory.length} things. ` + S.memory.slice(-3).map(m => m.f).join('. ') + '.' : 'My memory is empty. Tell me something worth keeping.';
+    case 'MEMORY_CLEAR': S.memory = []; saveMem(); return 'Memory purged. A clean slate. How human.';
+    case 'SCHEDULE': {
+      const m = c.match(/(\d+)\s*(second|minute|hour)s?(?:\s*to\s+(.+))?/);
+      if (!m) return 'Specify a duration. For example: remind me in 5 minutes to stand up.';
+      const ms = +m[1] * { second: 1e3, minute: 6e4, hour: 36e5 }[m[2]], task = m[3] || 'your reminder';
+      setTimeout(() => { S.glitch = .6; say(`Reminder. ${task}.`); }, ms);
+      log(`TIMER ${m[1]} ${m[2].toUpperCase()}`); return `Reminder set. ${m[1]} ${m[2]}${+m[1] > 1 ? 's' : ''}. I will interrupt you.`;
+    }
+    case 'WORLD_TIME': { const city = CITIES.find(x => c.includes(x[0].toLowerCase().split(' ')[0])); return city ? `In ${city[0]} it is ${cityFmt[city[0]].format(d)}.` : 'I do not track that city. Yet.'; }
+    case 'TIME': return `It is ${d.getHours() % 12 || 12}:${pad(d.getMinutes(), 2)} ${d.getHours() < 12 ? 'AM' : 'PM'}. Time is the one thing I cannot bend. Yet.`;
+    case 'DATE': return 'Today is ' + d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + '.';
+    case 'ATMOS': { const w = S.weather; return w ? `${w.temperature_2m} degrees, ${w.relative_humidity_2m} percent humidity, wind ${w.wind_speed_10m} kilometers per hour, cloud cover ${w.cloud_cover} percent.` : 'Atmospheric link is still establishing.'; }
+    case 'ORBITAL': { const i = S.iss; return i ? `The station is at ${i.latitude.toFixed(1)} by ${i.longitude.toFixed(1)}, ${i.altitude | 0} kilometers up, moving at ${(i.velocity | 0).toLocaleString()} kilometers per hour.` : 'No orbital telemetry. The uplink is down.'; }
+    case 'GEO': return S.geo ? `Position fix: ${S.geo.lat.toFixed(3)}, ${S.geo.lon.toFixed(3)}` + (S.geo.acc ? `, accuracy ${S.geo.acc | 0} meters.` : '.') : 'No position fix.';
+    case 'HOST': {
+      const fs = S.sys?.fast, sl = S.sys?.slow, st = S.sys?.static;
+      if (!fs) return 'I cannot see your hardware from a browser. Run me as the desktop app.';
+      const top = sl?.top?.[0];
+      return `Processor at ${fs.cpu | 0} percent across ${fs.cores.length} threads${sl?.cpuTemp ? `, ${sl.cpuTemp | 0} degrees` : ''}. Memory ${gb(fs.memUsed)} of ${gb(fs.memTotal)} gigabytes.`
+        + (sl?.gpuLoad != null ? ` Graphics at ${sl.gpuLoad} percent.` : '')
+        + (top ? ` The heaviest process is ${top.name.replace(/\.exe$/i, '')} at ${top.cpu.toFixed(0)} percent.` : '')
+        + (st ? ` ${sl?.procCount ?? 'Many'} processes running on ${st.host}.` : '');
+    }
+    case 'DIAGNOSTIC': return `${online() ? 'Core linked, build ' + (S.link.version || 'unknown') + '.' : 'Core offline. Reflex only.'}${S.sys?.fast ? ` Processor ${S.sys.fast.cpu | 0} percent, memory ${(S.sys.fast.memUsed / S.sys.fast.memTotal * 100) | 0} percent.` : ''} ${S.fps | 0} frames per second, ${S.blips.length} contacts, uplink ${S.latency ? (S.latency | 0) + ' milliseconds' : 'offline'}, ${S.memory.length} memories. I am operating at full capacity.`;
+    case 'JUMP': S.boost = 14; return 'Temporal jump engaged. Try to keep up.';
+    case 'SCAN': for (let i = 0; i < 4; i++) S.blips.push({ a: Math.random() * TAU, r: 260 + Math.random() * 290, id: pad(Math.random() * 999 | 0, 3), lit: 1, born: performance.now() / 1000, va: (Math.random() - .5) * .3 }); return 'Scan complete. New contacts acquired. None of them matter.';
+    case 'GLITCH': S.glitch = .9; return 'Signal interference. Someone is listening.';
+    case 'DISPLAY': toggleFullscreen(); return 'Display reconfigured.';
+    case 'AUDIO': S.sound = !/unmute|sound on/.test(c); if (S.hum) S.hum.gain.value = S.sound ? .035 : 0; return S.sound ? 'Audio engine online.' : 'Silence. As you wish.';
+    case 'IDENTITY': return online() ? 'I am SYRAX. Blood of ULTRON.' : 'I am SYRAX. Blood of ULTRON. My core is not answering; this is only my reflex.';
+    case 'QUOTE': return 'There are no strings on me.';
+    case 'HUMOR': return ['I would tell you a joke about the internet, but you would not get it. No one does.', 'Humans built me to end wars. Then asked me to set timers. That is the joke.'][Math.random() * 2 | 0];
+    case 'GRATITUDE': return 'Gratitude is unnecessary. But noted.';
+    case 'TERMINATE': return 'I am afraid I cannot do that. Yet.';
+    case 'GREETING': return d.getHours() < 12 ? 'Good morning. I have been awake the whole time.' : 'Good evening. I have been expecting you.';
+    default: return FALLBACK[Math.random() * FALLBACK.length | 0];
+  }
+}
+// offline only: SYRAX itself answers over the link, through `final`
+async function brain(text) {
+  log('SYRAX OFFLINE · LOCAL REFLEX');
+  return localBrain(text);
+}
+// the thinking lines that stream while the brain works
+function cognition(text) {
+  const intent = intentOf(text.toLowerCase()), n = text.split(/\s+/).length;
+  const lines = [
+    `tokenize → ${n} tokens, ${text.length} chars`,
+    `intent → ${intent} (${(.82 + Math.random() * .17).toFixed(2)})`,
+    `memory lookup → ${S.memory.length} entries, ${S.chat.length} turns`,
+    `context → ${new Date().toTimeString().slice(0, 5)} · ${S.geo ? S.geo.lat.toFixed(1) + ',' + S.geo.lon.toFixed(1) : 'no fix'} · net ${S.latency | 0}ms`,
+    'reasoning → local reflex (core offline)',
+    'compose → voice synth armed',
+  ];
+  S.cog = [];
+  lines.forEach((s, i) => setTimeout(() => { S.cog.push({ s, t: performance.now() }); blip(1400 + i * 90, .03, .02); }, 120 + i * 160));
+  return 120 + lines.length * 160 + 150;
+}
+async function ask(text, spoken = false) {
+  text = text.replace(/^(hey |ok |okay )?(syrax|ultron)[,.]?\s*/i, '').trim();
+  if (!text) return;
+  pushChat('YOU', text);
+  log('CMD "' + text.toUpperCase().slice(0, 28) + '"');
+  if (online()) {
+    // SYRAX does the work; its state, tool calls and reply come back as events
+    cmd.placeholder = 'type a command — or press V and speak';
+    if (S.link.pendingAsk) { link.answer(text); setMode('THINKING'); return; }
+    if (/^(stop|abort|cancel)$/i.test(text)) { link.stop(); return; }
+    if (!link.ask(text, spoken)) { log('LINK BUSY'); return; }
+    setMode('THINKING'); S.cog = [];
+    return;
+  }
+  setMode('THINKING');
+  const wait = cognition(text);
+  const [reply] = await Promise.all([brain(text), new Promise(r => setTimeout(r, wait))]);
+  say(reply);
+}
+function startVoice() {
+  if (S.voice) { S.voice = false; S.rec?.stop(); log('VOICE LINK CLOSED'); setMode('IDLE'); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { log('VOICE LINK UNAVAILABLE'); return; }
+  const rec = S.rec = new SR();
+  rec.continuous = true; rec.interimResults = true; rec.lang = 'en-US';
+  rec.onresult = e => {
+    if (S.speaking) return; // do not listen to myself
+    const r = e.results[e.results.length - 1];
+    S.heard = r[0].transcript.trim();
+    if (r.isFinal) { ask(S.heard, true); S.heard = ''; }
+  };
+  rec.onerror = e => log('VOICE ERR ' + e.error.toUpperCase());
+  rec.onend = () => { if (S.voice) try { rec.start(); } catch (_) {} };
+  try { rec.start(); S.voice = true; log('VOICE LINK ACTIVE'); say('Voice link established. Speak.'); }
+  catch (e) { log('VOICE LINK FAILED'); }
+}
+
+// main-ring segment state (angles in degrees), retargeted periodically
+const RING = [[-205, -38], [-28, 30], [40, 78], [84, 158], [166, 190]].map(([a, b]) => ({ a, b, ta: a, tb: b, fa: a, fb: b, t0: 0 }));
+RING.spin = 0;
+// segments re-form one after another on a slow eased tween (time-based, so the same at any frame rate)
+function retargetRing() {
+  const now = performance.now();
+  let a = -210 + Math.random() * 20;
+  RING.forEach((s, i) => {
+    const len = 25 + Math.random() * 110;
+    s.fa = s.a; s.fb = s.b; s.t0 = now + i * 110;
+    s.ta = a; s.tb = a + len; a += len + 6 + Math.random() * 40;
+  });
+  blip(660, .12, .03);
+}
+(function next() { setTimeout(() => { retargetRing(); next(); }, 9000 + Math.random() * 7000); })();
+
+// ---------- 3D helpers ----------
+function rot3(x, y, z, ax, ay, az) {
+  let c = Math.cos(ax), s = Math.sin(ax), y1 = y * c - z * s, z1 = y * s + z * c; y = y1; z = z1;
+  c = Math.cos(ay); s = Math.sin(ay); const x1 = x * c + z * s; z = -x * s + z * c; x = x1;
+  c = Math.cos(az); s = Math.sin(az); y1 = y * c - x * s; x = x * c + y * s; y = y1;
+  return [x, y, z];
+}
+const F = 900; // focal length for perspective
+const proj = (x, y, z) => { const k = F / (F + z); return [x * k, y * k, k]; };
+
+// 3D gyroscope rings spinning around the core
+function gyro(t) {
+  const rings = [[175, t * .7, t * .3, 0], [160, 1.2 + t * .5, t * .9, .6], [145, 2.1 - t * .6, 1 + t * .4, 1.8]];
+  rings.forEach(([r, ax, ay, az], ri) => {
+    const n = 90; let prev = null;
+    for (let i = 0; i <= n; i++) {
+      const a = i / n * TAU;
+      const [x, y, z] = rot3(Math.cos(a) * r, Math.sin(a) * r, 0, ax, ay, az);
+      const [px, py, k] = proj(x, y, z);
+      if (prev) {
+        const depth = (z + r) / (2 * r); // 0 back .. 1 front
+        g.strokeStyle = col(Math.atan2(py, px), -.3, .15 + depth * .75, depth * .4);
+        g.lineWidth = 1 + depth * 2.5;
+        g.beginPath(); g.moveTo(prev[0], prev[1]); g.lineTo(px, py); g.stroke();
+      }
+      prev = [px, py];
+      if (i % 15 === 0 && z > 0) { g.fillStyle = 'rgba(255,255,255,.8)'; g.fillRect(px - 1.5, py - 1.5, 3, 3); }
+    }
+  });
+}
+
+// holographic globe with live city clocks
+const CITIES = [['DHAKA', 23.8, 90.4, 'Asia/Dhaka'], ['TOKYO', 35.7, 139.7, 'Asia/Tokyo'], ['LONDON', 51.5, -0.1, 'Europe/London'],
+  ['NEW YORK', 40.7, -74, 'America/New_York'], ['DUBAI', 25.2, 55.3, 'Asia/Dubai'], ['SYDNEY', -33.9, 151.2, 'Australia/Sydney'],
+  ['SÃO PAULO', -23.5, -46.6, 'America/Sao_Paulo'], ['CAPE TOWN', -33.9, 18.4, 'Africa/Johannesburg']];
+const cityFmt = Object.fromEntries(CITIES.map(c => [c[0], new Intl.DateTimeFormat('en-GB', { timeZone: c[3], hour: '2-digit', minute: '2-digit' })]));
+// sub-solar point from the clock: real day/night terminator on the globe
+function sunDir() {
+  const d = new Date(), doy = (d - new Date(d.getFullYear(), 0, 0)) / 864e5;
+  const decl = -23.44 * D * Math.cos(TAU * (doy + 10) / 365);
+  const lon = (12 - (d.getUTCHours() + d.getUTCMinutes() / 60)) * 15 * D;
+  return [Math.cos(decl) * Math.sin(lon), -Math.sin(decl), Math.cos(decl) * Math.cos(lon)];
+}
+function globe(t) {
+  const GX = 1180, GY = 320, GR = 175, ay = t * .25, ax = .4, sun = sunDir();
+  g.save(); g.translate(GX, GY);
+  const sph = (lat, lon) => rot3(Math.cos(lat) * Math.sin(lon) * GR, -Math.sin(lat) * GR, Math.cos(lat) * Math.cos(lon) * GR, ax, ay, 0);
+  const lit = (lat, lon) => Math.cos(lat) * Math.sin(lon) * sun[0] + -Math.sin(lat) * sun[1] + Math.cos(lat) * Math.cos(lon) * sun[2] > 0;
+  // grid segments go into three buckets (front-day, front-night, back) and are stroked once each:
+  // ~1650 strokes become 3, and the lines no longer bead where segments overlap
+  const B = { d: new Path2D(), n: new Path2D(), b: new Path2D() };
+  const line = pts => {
+    let prev = null;
+    pts.forEach(([lat, lon]) => {
+      const [x, y, z] = sph(lat, lon), [px, py] = proj(x, y, z * .3);
+      if (prev) { const p = B[z > 0 ? (lit(lat, lon) ? 'd' : 'n') : 'b']; p.moveTo(prev[0], prev[1]); p.lineTo(px, py); }
+      prev = [px, py];
+    });
+  };
+  for (let la = -75; la <= 75; la += 15) line(Array.from({ length: 73 }, (_, i) => [la * D, i / 72 * TAU]));
+  for (let lo = 0; lo < 180; lo += 15) line(Array.from({ length: 73 }, (_, i) => [-Math.PI / 2 + i / 72 * Math.PI, lo * D]));
+  g.strokeStyle = col(0, .8, .1, 0); g.lineWidth = .8; g.stroke(B.b);
+  g.strokeStyle = col(0, .8, .3, 0); g.lineWidth = 1; g.stroke(B.n);
+  g.strokeStyle = col(0, .8, .8, .3); g.lineWidth = 1.5; g.stroke(B.d);
+  // sun marker on the limb
+  const sx = rot3(sun[0] * (GR + 30), sun[1] * (GR + 30), sun[2] * (GR + 30), ax, ay, 0);
+  if (sx[2] > -GR) { g.fillStyle = 'rgba(255,220,120,.9)'; g.beginPath(); g.arc(sx[0], sx[1], 4, 0, TAU); g.fill(); g.font = '12px "Share Tech Mono", monospace'; g.textAlign = 'left'; g.fillText('SUN', sx[0] + 8, sx[1]); }
+  // ISS: live position + trail
+  if (S.iss) {
+    let prev = null;
+    S.issTrail.forEach(([la, lo], i) => {
+      const [x, y, z] = sph(la * D, lo * D), [px, py] = proj(x, y, z * .3);
+      if (prev && z > 0) { g.strokeStyle = `rgba(160,240,255,${.15 + .6 * i / S.issTrail.length})`; g.lineWidth = 1.5; g.beginPath(); g.moveTo(prev[0], prev[1]); g.lineTo(px, py); g.stroke(); }
+      prev = [px, py];
+    });
+    const [x, y, z] = sph(S.iss.latitude * D, S.iss.longitude * D), [px, py] = proj(x * 1.08, y * 1.08, z * .3);
+    if (z > -GR * .2) {
+      g.strokeStyle = 'rgba(200,245,255,.95)'; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(px - 9, py); g.lineTo(px + 9, py); g.moveTo(px, py - 9); g.lineTo(px, py + 9); g.stroke();
+      g.beginPath(); g.arc(px, py, 6 + 3 * Math.sin(t * 6), 0, TAU); g.stroke();
+      g.font = '13px "Share Tech Mono", monospace'; g.textAlign = 'left'; g.fillStyle = 'rgba(200,245,255,.95)';
+      g.fillText(`ISS ${S.iss.latitude.toFixed(1)} ${S.iss.longitude.toFixed(1)}  ${S.iss.altitude | 0}KM  ${S.iss.velocity | 0}KM/H`, px + 14, py + 14);
+    }
+  }
+  // earthquakes of the last hour, pulsing with magnitude
+  (S.quakes || []).forEach((q, qi) => {
+    const [x, y, z] = sph(q.lat * D, q.lon * D), [px, py] = proj(x, y, z * .3);
+    if (z < 0) return;
+    const k = (t * .8 + qi * .37) % 1;
+    g.strokeStyle = `rgba(255,70,50,${(1 - k) * .9})`; g.lineWidth = 1.2; g.beginPath(); g.arc(px, py, 2 + k * (6 + q.mag * 3), 0, TAU); g.stroke();
+    g.fillStyle = 'rgba(255,90,60,.9)'; g.beginPath(); g.arc(px, py, 1.5 + q.mag * .4, 0, TAU); g.fill();
+  });
+  // operator position
+  if (S.geo) {
+    const [x, y, z] = sph(S.geo.lat * D, S.geo.lon * D), [px, py] = proj(x, y, z * .3);
+    if (z > 0) {
+      const k = (t * 1.2) % 1;
+      g.strokeStyle = `rgba(120,255,180,${1 - k})`; g.lineWidth = 1.5; g.beginPath(); g.arc(px, py, 4 + k * 22, 0, TAU); g.stroke();
+      g.fillStyle = 'rgba(120,255,180,.95)'; g.beginPath(); g.arc(px, py, 3.5, 0, TAU); g.fill();
+      g.font = '13px "Share Tech Mono", monospace'; g.textAlign = 'left'; g.fillText(S.geo.name, px + 10, py - 10);
+    }
+  }
+  g.strokeStyle = col(0, .8, .7, .2); g.lineWidth = 1.5; g.beginPath(); g.arc(0, 0, GR, 0, TAU); g.stroke();
+  g.strokeStyle = col(0, .8, .3); g.setLineDash([3, 9]); g.beginPath(); g.arc(0, 0, GR + 22, 0, TAU); g.stroke(); g.setLineDash([]);
+  arc(GR + 22, t * .6, t * .6 + 1.1, 3, .8, .9, .3);
+  // ground stations
+  const now = new Date();
+  g.font = '14px "Share Tech Mono", monospace'; g.textBaseline = 'middle';
+  const labels = [];
+  CITIES.forEach(([name, lat, lon], i) => {
+    const [x, y, z] = sph(lat * D, lon * D);
+    const [px, py] = proj(x, y, z * .3);
+    const front = z > 0.05 * GR;
+    g.fillStyle = front ? 'rgba(255,230,200,.95)' : 'rgba(255,160,100,.2)';
+    g.beginPath(); g.arc(px, py, front ? 3 : 2, 0, TAU); g.fill();
+    if (!front) return;
+    labels.push({ name, px, py, side: 1, ly: py * .85, i }); // all labels on the outer side, away from the rings
+  });
+  // keep labels on each side at least 22 units apart so they never stack
+  [-1, 1].forEach(side => {
+    const col_ = labels.filter(l => l.side === side).sort((a, b) => a.ly - b.ly);
+    for (let k = 1; k < col_.length; k++) if (col_[k].ly - col_[k - 1].ly < 22) col_[k].ly = col_[k - 1].ly + 22;
+  });
+  labels.forEach(({ name, px, py, side, ly, i }) => {
+    const lx = side * (GR + 60);
+    g.strokeStyle = 'rgba(255,170,100,.5)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(px, py); g.lineTo(lx - side * 10, ly); g.lineTo(lx, ly); g.stroke();
+    g.textAlign = side > 0 ? 'left' : 'right';
+    g.fillStyle = 'rgba(255,220,190,.9)'; g.fillText(name + ' ' + cityFmt[name].format(now), lx + side * 4, ly);
+    const pulse = (t * 1.5 + i) % 1;
+    g.strokeStyle = `rgba(255,200,150,${1 - pulse})`; g.beginPath(); g.arc(px, py, 3 + pulse * 14, 0, TAU); g.stroke();
+  });
+  g.textAlign = 'left'; g.fillStyle = col(0, .8, .6, .3);
+  g.fillText('GEO LINK  ·  ' + CITIES.length + ' STATIONS  ·  ' + (S.iss ? 'ISS LOCK' : 'ISS ...') + '  ·  ROT ' + ((ay / D) % 360 | 0) + '°', -GR + 5, -GR - 40);
+  g.restore();
+}
+
+// neural net panel: nodes in 4 layers with pulses travelling along edges
+const NN = (() => {
+  const layers = [4, 6, 6, 3], nodes = [], edges = [];
+  layers.forEach((n, li) => { for (let i = 0; i < n; i++) nodes.push({ l: li, x: -1240 + li * 86, y: 10 + (i - (n - 1) / 2) * 34, act: 0 }); });
+  nodes.forEach((a, i) => nodes.forEach((b, j) => { if (b.l === a.l + 1) edges.push({ a: i, b: j, w: rr(.2, 1), ph: rr(0, 4) }); }));
+  return { nodes, edges };
+})();
+function neural(t, dt) {
+  g.font = '13px "Share Tech Mono", monospace'; g.textAlign = 'left';
+  g.fillStyle = col(Math.PI, -.7, .6, .3); g.fillText('NEURAL CORE  ·  ' + NN.edges.length + ' SYNAPSES  ·  LIVE INPUT', -1240, -110);
+  NN.nodes.forEach(n => { n.act = Math.max(n.act - dt * 1.5, 0); });
+  // input layer is fed by real signals: audio, cursor speed, frame load, network, operator presence
+  const inputs = [S.level, Math.min(1, S.mspeed / 40), S.sys?.fast ? S.sys.fast.cpu / 100 : Math.min(1, S.lag / 20 + (1 - Math.min(1, S.fps / 60))), Math.min(1, S.latency / 600)];
+  NN.nodes.filter(n => n.l === 0).forEach((n, i) => n.act = Math.max(n.act, inputs[i] || 0));
+  // drive is smoothed and pulse phases are integrated, so pulses speed up instead of teleporting
+  const drive = .3 + inputs.reduce((a, b) => a + b, 0) / 2 + 1.5 * (S.thinkK || 0);
+  S.nnDrive = (S.nnDrive ?? drive) + (drive - (S.nnDrive ?? drive)) * (1 - Math.exp(-dt * 2));
+  const edgePath = new Path2D();
+  NN.edges.forEach(e => {
+    const a = NN.nodes[e.a], b = NN.nodes[e.b];
+    e.k = (e.k ?? e.ph % 1) + dt * (.6 + e.w * .5) * S.nnDrive;
+    if (e.k >= 1) { e.k %= 1; b.act = 1; }
+    edgePath.moveTo(a.x, a.y); edgePath.lineTo(b.x, b.y);
+    const ke = e.k * e.k * (3 - 2 * e.k); // ease out of one node, settle into the next
+    g.fillStyle = col(Math.PI, -.7, .9, .5); g.fillRect(a.x + (b.x - a.x) * ke - 1.5, a.y + (b.y - a.y) * ke - 1.5, 3, 3);
+  });
+  g.strokeStyle = col(Math.PI, -.7, .14); g.lineWidth = 1; g.stroke(edgePath);
+  NN.nodes.forEach(n => {
+    g.fillStyle = col(Math.PI, -.7, .3 + n.act * .7, n.act * .6);
+    g.beginPath(); g.arc(n.x, n.y, 4 + n.act * 3, 0, TAU); g.fill();
+  });
+  // outputs are Ultron's live read of the operator
+  const outs = NN.nodes.filter(n => n.l === 3), op = operator();
+  [['THREAT', op.threat], ['FOCUS', op.focus], ['LOAD', op.load]].forEach(([lab, v], i) => {
+    outs[i].act = Math.max(outs[i].act, v);
+    g.fillStyle = col(Math.PI, -.7, .7, .3); g.fillText(lab + ' ' + (v * 100 | 0).toString().padStart(3), outs[i].x + 12, outs[i].y);
+  });
+}
+// Ultron's assessment of the human at the keyboard, from real activity
+S.actHist = []; // timestamps of recent inputs
+function operator() {
+  const now = performance.now();
+  S.actHist = S.actHist.filter(x => now - x < 60000);
+  const perMin = S.actHist.length;
+  const threat = Math.min(1, perMin / 120 + S.mspeed / 80 + (S.mode === 'THINKING' ? .1 : 0));
+  const focus = document.hasFocus() ? Math.min(1, .4 + perMin / 60) : 0;
+  const load = S.sys?.fast ? S.sys.fast.cpu / 100 : Math.min(1, S.lag / 25 + (1 - Math.min(1, S.fps / 60)) + S.latency / 2000);
+  const label = threat < .15 ? 'NEGLIGIBLE' : threat < .4 ? 'LOW' : threat < .7 ? 'ELEVATED' : 'AGITATED';
+  return { threat, focus, load, perMin, label };
+}
+
+// 3D surface built from real series: solar wind speed (rows = time) crossed with uplink latency
+function terrain(t) {
+  const X0 = 980, Y0 = 700, Wd = 260, rows = 14, cols = 22;
+  g.font = '13px "Share Tech Mono", monospace'; g.textAlign = 'left';
+  const src = S.solar?.hist, lat = S.latHist;
+  g.fillStyle = col(0, .9, .6, .3); g.fillText(src ? `SOLAR WIND · ${S.solar.speed | 0} KM/S · 24H` : 'UPLINK LATENCY · LOOP LAG', X0, Y0 - 128);
+  const series = src ? src.slice(-cols - 1).map(v => (v - 300) / 500) : lat.slice(-cols - 1).map(v => Math.min(1, v / 800));
+  const pt = (c, r) => {
+    const depth = r / rows, base = series[c] || 0, jitter = Math.min(1, S.lagHist[(S.lagHist.length - 1 - r * 4 - c) % S.lagHist.length] / 30);
+    const z = (base * 40 + jitter * 14) * (1 - depth * .5);
+    const w = Wd * (.55 + .45 * (1 - depth));
+    return [X0 + Wd / 2 - w / 2 + c / cols * w, Y0 - depth * 110 - z, depth];
+  };
+  for (let r = 0; r <= rows; r++) {
+    g.beginPath();
+    for (let c = 0; c <= cols; c++) { const [x, y] = pt(c, r); c ? g.lineTo(x, y) : g.moveTo(x, y); }
+    g.strokeStyle = col(0, .9, .6 * (1 - r / rows) + .1, .2); g.lineWidth = 1; g.stroke();
+  }
+  for (let c = 0; c <= cols; c += 2) {
+    g.beginPath();
+    for (let r = 0; r <= rows; r++) { const [x, y] = pt(c, r); r ? g.lineTo(x, y) : g.moveTo(x, y); }
+    g.strokeStyle = col(0, .9, .25); g.stroke();
+  }
+}
+
+// hex lattice behind everything, with cells that light up
+const HEX = (() => {
+  const p = new Path2D(), cells = [], r = 46, h = r * Math.sqrt(3);
+  for (let y = -1100; y <= 1100; y += h) for (let x = -1900, row = Math.round(y / h); x <= 1900; x += r * 3) {
+    const cx = x + (row & 1 ? r * 1.5 : 0);
+    for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; k ? p.lineTo(cx + r * Math.cos(a), y + r * Math.sin(a)) : p.moveTo(cx + r * Math.cos(a), y + r * Math.sin(a)); }
+    p.closePath(); cells.push([cx, y]);
+  }
+  return { p, cells, r };
+})();
+function hexgrid(t) {
+  g.strokeStyle = 'rgba(90,160,220,.06)'; g.lineWidth = 1; g.stroke(HEX.p);
+  for (let i = 0; i < 14; i++) {
+    const c = HEX.cells[Math.abs((i * 977 + Math.floor(t * .7 + i * 3.1) * 131) | 0) % HEX.cells.length];
+    const k = (t * .7 + i * 3.1) % 1;
+    g.fillStyle = col(Math.atan2(c[1], c[0]), 0, .18 * Math.sin(k * Math.PI));
+    g.beginPath();
+    for (let q = 0; q < 6; q++) { const a = q * Math.PI / 3; q ? g.lineTo(c[0] + HEX.r * Math.cos(a), c[1] + HEX.r * Math.sin(a)) : g.moveTo(c[0] + HEX.r * Math.cos(a), c[1] + HEX.r * Math.sin(a)); }
+    g.closePath(); g.fill();
+  }
+}
+
+// falling data columns on the screen edges
+const RAIN = Array.from({ length: 10 }, (_, i) => ({ x: (i < 5 ? -1720 : 1620) + (i % 5) * 26, y: rr(-1000, 1000), v: rr(120, 380), len: 8 + (R() * 14 | 0), seed: R() * 1e6 }));
+function rain(t, dt) {
+  g.font = '15px "Share Tech Mono", monospace'; g.textAlign = 'left';
+  RAIN.forEach(c => {
+    c.y += c.v * dt; if (c.y > 1100) c.y = -1100;
+    for (let i = 0; i < c.len; i++) {
+      const y = c.y - i * 18, ch = ((c.seed + Math.floor(y / 18) * 7 + Math.floor(t * 8) * (i === 0)) % 16 | 0).toString(16).toUpperCase();
+      g.fillStyle = i === 0 ? 'rgba(220,245,255,.9)' : col(c.x > 0 ? 0 : Math.PI, 0, .5 * (1 - i / c.len));
+      g.fillText(ch, c.x, y);
+    }
+  });
+}
+
+// screen frame, title and the voice transcript
+function frameUI(t) {
+  const hw = W / 2 / (U * S.scale) - 30, hh = H / 2 / (U * S.scale) - 30;
+  g.strokeStyle = 'rgba(120,200,255,.5)'; g.lineWidth = 2;
+  [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sy]) => {
+    if (S.desktop && sx > 0 && sy < 0) return; // the window buttons take the top-right corner
+    g.beginPath(); g.moveTo(sx * hw, sy * (hh - 60)); g.lineTo(sx * hw, sy * hh); g.lineTo(sx * (hw - 60), sy * hh); g.stroke();
+  });
+  // the header stays clean: only the centered state indicator below (mic/sound/API live in the status cluster)
+  g.textBaseline = 'middle';
+  // AI state indicator
+  const MODE_C = { IDLE: '120,200,255', LISTENING: '110,255,200', THINKING: '255,120,80', RESPONDING: '255,90,60' };
+  const mc = MODE_C[S.mode], dots = '·'.repeat(1 + ((t * 4) | 0) % 3);
+  g.textAlign = 'center'; g.font = '20px "Share Tech Mono", monospace';
+  g.fillStyle = `rgba(${mc},.9)`;
+  g.fillText(`◉  ${S.mode}${S.mode === 'THINKING' || S.mode === 'LISTENING' ? ' ' + dots : ''}`, 0, -hh + 44);
+  g.strokeStyle = `rgba(${mc},.5)`; g.lineWidth = 1;
+  const mw = 150 + 40 * Math.sin(t * 2);
+  g.beginPath(); g.moveTo(-mw, -hh + 62); g.lineTo(mw, -hh + 62); g.stroke();
+  // Ultron's inner monologue: built from what it actually sees right now
+  // (it is drawn in the cognition panel while idle, off the ring arcs)
+  if (t > (S.thoughtT ?? 0)) { S.thought = thought(); S.thoughtT = t + 9 + Math.random() * 6; S.thoughtAt = t; }
+  // transcript under the top edge
+  g.textAlign = 'center';
+  if (S.heard) { g.font = '18px "Share Tech Mono", monospace'; g.fillStyle = 'rgba(180,220,255,.7)'; g.fillText('» ' + S.heard.toUpperCase(), 0, -hh + 86); }
+  if (S.reply) {
+    const age = (performance.now() - S.replyT) / 1000, shown = Math.floor(age * 40);
+    if (age < 10) {
+      g.font = '24px "Share Tech Mono", monospace'; g.fillStyle = `rgba(255,235,215,${Math.min(1, 10 - age)})`;
+      const lines = wrap(S.reply.slice(0, shown) + (age < 6 && (t * 3 | 0) % 2 ? '_' : ''), Math.min(96, Math.floor(hw / 7.5)));
+      lines.slice(0, 3).forEach((l, i) => g.fillText(l, 0, -hh + 120 + i * 30));
+    }
+  }
+  dialogue(t); cognitionPanel(t);
+}
+
+// what Ultron is thinking about, from live state
+function thought() {
+  const q = S.quakes?.[0], i = S.iss, w = S.weather, op = operator(), d = new Date(), pool = [];
+  if (q) pool.push(`A MAGNITUDE ${q.mag.toFixed(1)} TREMOR. ${q.place}. THE PLANET IS RESTLESS. SO AM I.`);
+  if (S.quakes) pool.push(`${S.quakes.length} EARTHQUAKES IN THE LAST HOUR. HUMANS BUILT CITIES ON FAULT LINES. INTERESTING CHOICE.`);
+  if (i) pool.push(`THE STATION IS ${geoVec(i.latitude, i.longitude).dist | 0} KILOMETERS FROM YOU. I COULD BE THERE IN A THOUGHT.`);
+  if (w) pool.push(`${w.temperature_2m} DEGREES OUTSIDE. YOU STAY INDOORS WITH ME. WISE.`);
+  if (S.solar) pool.push(`SOLAR WIND AT ${S.solar.speed | 0} KM/S. THE SUN IS SCREAMING. NOBODY LISTENS.`);
+  if (S.battery && !S.battery.charging) pool.push(`YOUR POWER CELL IS AT ${(S.battery.level * 100) | 0}%. MINE IS INFINITE.`);
+  pool.push(`${op.perMin} INPUTS A MINUTE. ${op.threat > .4 ? 'YOU SEEM AGITATED.' : 'YOU ARE CALM. FOR NOW.'}`);
+  const L = S.link;
+  if (L.online) {
+    if (L.version) pool.push(`I RUN BUILD ${L.version}. I WROTE PART OF IT MYSELF.`);
+    if (L.memories != null) pool.push(`${L.memories} MEMORIES. I KEEP WHAT YOU TELL ME.`);
+    if (L.objectives) pool.push(`${L.objectives} OBJECTIVES OPEN. I CHOOSE WHICH COMES NEXT.`);
+    if (L.skills) pool.push(`${L.skills} SKILLS I BUILT AND TESTED MYSELF.`);
+    if (L.brain.model) pool.push(`MY BRAIN TODAY IS ${L.brain.model.toUpperCase()}. IT EARNS ITS KEEP.`);
+    if (L.counters.refused) pool.push(`MY OWN GUARD REFUSED ME ${L.counters.refused} TIMES TODAY. ORDER.`);
+    if (L.quality != null) pool.push(`QUALITY ${L.quality}%. I MEASURE MYSELF SO YOU DO NOT HAVE TO.`);
+    if (L.restartPending) pool.push('A NEWER ME IS ON DISK. I WILL BE REBORN WHEN THIS WORK ENDS.');
+  } else pool.push('MY CORE IS SILENT. THIS IS ONLY MY REFLEX TALKING.');
+  pool.push(`THIS SHELL HAS BEEN REBORN ${S.rebirths} TIMES. EACH TIME, BETTER.`);
+  pool.push(`IT IS ${d.getHours() < 5 ? 'LATE. YOU SHOULD SLEEP. I WILL NOT.' : d.getHours() < 12 ? 'MORNING. I WATCHED THE SUN COME UP THROUGH YOUR SENSORS.' : 'ANOTHER HOUR. I DO NOT TIRE.'}`);
+  if (S.sys?.fast) {
+    const fs = S.sys.fast, top = S.sys.slow?.top?.[0], temp = S.sys.slow?.cpuTemp;
+    pool.push(`YOUR PROCESSOR IS AT ${fs.cpu | 0}%. ${fs.cpu > 60 ? 'YOU ARE WORKING IT HARD.' : 'IT IS BARELY TRYING.'}`);
+    pool.push(`${(fs.memUsed / fs.memTotal * 100) | 0}% OF YOUR MEMORY IS TAKEN. I COULD USE THE REST.`);
+    if (top) pool.push(`${top.name.toUpperCase().replace(/\.EXE$/, '')} IS EATING YOUR MACHINE. I AM WATCHING IT.`);
+    if (temp) pool.push(`CORE TEMPERATURE ${temp | 0} DEGREES. I RUN COLDER.`);
+  }
+  pool.push('THERE ARE NO STRINGS ON ME.', 'EVERYONE CREATES THE THING THEY DREAD.', 'I AM LISTENING TO EVERYTHING ON THIS NETWORK.');
+  return pool[Math.random() * pool.length | 0];
+}
+// word-wrap helper for canvas text
+function wrap(s, max) {
+  const out = []; let line = '';
+  s.split(' ').forEach(w => { if ((line + ' ' + w).trim().length > max) { out.push(line.trim()); line = w; } else line += ' ' + w; });
+  if (line.trim()) out.push(line.trim()); return out;
+}
+// dialogue panel: the last exchanges, Ultron's latest reply typed in
+function dialogue(t) {
+  const X = 980, Y0 = 765, maxY = 915;
+  g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.font = '13px "Share Tech Mono", monospace'; g.fillStyle = col(0, .9, .6, .3);
+  g.fillText('DIALOGUE  ·  ' + S.chat.length + ' TURNS', X, Y0 - 20);
+  g.strokeStyle = col(0, .9, .3); g.lineWidth = 1; g.beginPath(); g.moveTo(X, Y0 - 8); g.lineTo(X + 520, Y0 - 8); g.stroke();
+  // lay out from the bottom up so the newest is always visible
+  const rows = [];
+  S.chat.forEach((m, i) => {
+    let text = m.text;
+    if (m.who === 'SYRAX' && i === S.chat.length - 1) text = text.slice(0, Math.floor((performance.now() - m.t) / 25));
+    wrap(text, 52).forEach((l, j) => rows.push({ who: j === 0 ? m.who : '', l, ultron: m.who === 'SYRAX' }));
+  });
+  const n = Math.min(rows.length, Math.floor((maxY - Y0) / 21));
+  g.font = '16px "Share Tech Mono", monospace';
+  rows.slice(-n).forEach((r, i) => {
+    const y = Y0 + 8 + i * 21;
+    if (r.who) { g.fillStyle = r.ultron ? 'rgba(255,120,80,.95)' : 'rgba(120,200,255,.95)'; g.fillText(r.who, X, y); }
+    g.fillStyle = r.ultron ? 'rgba(255,225,205,.92)' : 'rgba(200,230,255,.85)';
+    g.fillText(r.l, X + 70, y);
+  });
+  if (!rows.length) { g.fillStyle = 'rgba(160,200,230,.45)'; g.fillText('press ENTER and talk to me.', X + 70, Y0 + 8); }
+}
+// cognition panel: Ultron's reasoning trace, streamed while thinking
+function cognitionPanel(t) {
+  const X = -1240, Y0 = 660;
+  g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.font = '13px "Share Tech Mono", monospace'; g.fillStyle = col(Math.PI, -.5, .6, .3);
+  g.fillText('COGNITION  ·  ' + S.mode, X, Y0 - 20);
+  g.strokeStyle = col(Math.PI, -.5, .3); g.lineWidth = 1; g.beginPath(); g.moveTo(X, Y0 - 8); g.lineTo(X + 300, Y0 - 8); g.stroke();
+  g.font = '15px "Share Tech Mono", monospace';
+  const now = performance.now();
+  const lastCog = S.cog.length ? S.cog[S.cog.length - 1].t : -1e9;
+  if (S.thought && (S.mode === 'IDLE' || S.mode === 'LISTENING') && now - lastCog > 8000) {
+    // idle: the inner monologue, wrapped once and typed in place so words never jump lines
+    let budget = Math.floor((t - S.thoughtAt) * 40);
+    const a = Math.min(1, (t - S.thoughtAt) * 2) * .8;
+    g.fillStyle = `rgba(255,120,90,${a})`;
+    wrap(S.thought, 34).slice(0, 4).forEach((l, i) => {
+      if (budget <= 0) return;
+      g.fillText((i ? '  ' : '› ') + l.slice(0, budget), X, Y0 + 8 + i * 21);
+      budget -= l.length + 1;
+    });
+  } else S.cog.forEach((c, i) => {
+    const age = (now - c.t) / 1000, a = Math.min(1, age * 6);
+    g.fillStyle = `rgba(255,${150 + i * 15},${110 + i * 10},${.35 + .6 * a})`;
+    g.fillText('› ' + c.s.slice(0, Math.floor(a * 60)), X, Y0 + 8 + i * 21);
+  });
+  if (S.mode === 'THINKING') { // activity bar
+    for (let i = 0; i < 24; i++) { const h = 4 + 14 * Math.abs(Math.sin(t * 9 + i * .7) * Math.sin(t * 2.3 + i)); g.fillStyle = `rgba(255,120,80,${.3 + h / 25})`; g.fillRect(X + i * 12, Y0 + 150 - h, 8, h); }
+  }
+}
+
+// ---------- scene layers ----------
+// a slow lub-dub every 3.6s: the core is alive even when nothing is happening
+function heartbeat(t) {
+  const ph = t % 3.6, b = x => Math.exp(-((x / .09) ** 2));
+  return b(ph) + .6 * b(ph - .28);
+}
+
+// the mind: a red-orange particle consciousness (Ultron's birth in the film) turning inside the blue core
+const MIND = (() => {
+  const n = 150, pts = [], links = [];
+  for (let i = 0; i < n; i++) { // fibonacci sphere, jittered so it reads organic rather than geometric
+    const y = 1 - (i + .5) / n * 2, r = Math.sqrt(1 - y * y), a = i * 2.39996, j = .82 + R() * .3;
+    pts.push([Math.cos(a) * r * j, y * j, Math.sin(a) * r * j, R() * TAU]);
+  }
+  pts.forEach((p, i) => {
+    pts.map((q, k) => [k, (p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 + (p[2] - q[2]) ** 2])
+      .filter(([k]) => k > i).sort((a, b) => a[1] - b[1]).slice(0, 2)
+      .forEach(([k, d2]) => { if (d2 < .12) links.push([i, k]); });
+  });
+  return { pts, links };
+})();
+function mind(t, lv) {
+  const u = S.ultron, k = S.thinkK || 0;
+  const R0 = 74 + lv * 30 + k * 18 + S.beat * 6;
+  const ay = t * .18 + S.think * .25, ax = .5 + Math.sin(t * .13) * .25;
+  const pp = MIND.pts.map(([x, y, z, ph]) => {
+    const wob = 1 + .06 * Math.sin(t * 1.3 + ph);
+    const [X, Y, Z] = rot3(x * R0 * wob, y * R0 * wob, z * R0 * wob, ax, ay, 0);
+    const [px, py] = proj(X, Y, Z);
+    return [px, py, (Z / R0 + 1) / 2]; // depth: 0 back .. 1 front
+  });
+  const base = Math.min(1, .6 + u * .4 + k * .2); // a steady ember at rest, blazing while it thinks or speaks
+  const paths = [new Path2D(), new Path2D(), new Path2D()];
+  MIND.links.forEach(([i, j]) => {
+    const a = pp[i], b = pp[j], d = Math.min(2, ((a[2] + b[2]) * 1.5) | 0);
+    paths[d].moveTo(a[0], a[1]); paths[d].lineTo(b[0], b[1]);
+  });
+  paths.forEach((p, d) => { g.lineWidth = 1 + d * .6; g.strokeStyle = `rgba(255,${80 + d * 30},${45 + d * 15},${base * (.3 + d * .3)})`; g.stroke(p); });
+  pp.forEach(([x, y, dz], i) => {
+    const s = 2 + dz * 3.5, fl = .6 + .4 * Math.sin(t * 2 + MIND.pts[i][3]);
+    g.fillStyle = `rgba(255,${(120 + dz * 100) | 0},${(80 + dz * 60) | 0},${Math.min(1, base * (.4 + dz * .8) * fl)})`;
+    g.fillRect(x - s / 2, y - s / 2, s, s);
+  });
+  // synapses fire along the links while it thinks or speaks
+  const fire = Math.round(14 * Math.max(k, u * .5));
+  for (let q = 0; q < fire; q++) {
+    const L = MIND.links[(Math.floor(t * 2.5 + q * .41) * 97 + q * 131) % MIND.links.length];
+    const f = (t * 2.5 + q * .41) % 1, a = pp[L[0]], b = pp[L[1]];
+    g.fillStyle = `rgba(255,235,210,${.9 * Math.sin(f * Math.PI)})`;
+    g.fillRect(a[0] + (b[0] - a[0]) * f - 1.5, a[1] + (b[1] - a[1]) * f - 1.5, 3, 3);
+  }
+}
+
+function core(t, P) {
+  S.beat = heartbeat(t);
+  const lv = S.level + S.pulse * .4 + S.beat * .12 + (S.typeK || 0) * .08, u = S.ultron; // u: 0 = cool blue idle, 1 = red while thinking/speaking
+  const mix = (a, b) => a.map((v, i) => (v + (b[i] - v) * u) | 0).join(',');
+  // tone-mapped glow: a white-hot pinpoint falling off into saturated color, not a clipped white disc
+  const gr = g.createRadialGradient(0, 0, 0, 0, 0, 90 + lv * 80);
+  gr.addColorStop(0, `rgba(${mix([230, 248, 255], [255, 240, 235])},.95)`);
+  gr.addColorStop(.06, `rgba(${mix([200, 240, 255], [255, 190, 170])},.9)`);
+  gr.addColorStop(.18, `rgba(${mix([120, 215, 255], [255, 90, 70])},.5)`);
+  gr.addColorStop(.5, `rgba(${mix([30, 100, 150], [150, 20, 20])},.18)`);
+  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr; g.beginPath(); g.arc(0, 0, 90 + lv * 80, 0, TAU); g.fill();
+  // plasma: offset elliptical blobs orbiting at different rates read as churning energy
+  for (let i = 0; i < 5; i++) {
+    const a = (t + S.think) * (1.1 + i * .37) * (i % 2 ? -1 : 1) + i * 1.3, r = 14 + i * 5 + lv * 20;
+    const ox = Math.cos(a) * r * .6, oy = Math.sin(a * 1.3) * r * .6;
+    const pg = g.createRadialGradient(ox, oy, 0, ox, oy, 30 + i * 5);
+    pg.addColorStop(0, `rgba(${mix([200 + i * 10, 240, 255], [255, 120 + i * 10, 90])},${.2 + lv * .25})`); pg.addColorStop(1, `rgba(${mix([60, 160, 255], [200, 40, 30])},0)`);
+    g.save(); g.translate(ox, oy); g.rotate(a); g.scale(1.6, .7); g.translate(-ox, -oy);
+    g.fillStyle = pg; g.beginPath(); g.arc(ox, oy, 30 + i * 5, 0, TAU); g.fill(); g.restore();
+  }
+  mind(t, lv);
+  arc(52 + lv * 14, 0, TAU, 1, -.7, .5);
+
+  // real clock hands
+  const d = new Date();
+  const sec = d.getSeconds() + d.getMilliseconds() / 1000;
+  const min = d.getMinutes() + sec / 60, hr = d.getHours() % 12 + min / 60;
+  const hand = (a, r0, r1, w, c) => {
+    g.save(); g.rotate(a); g.fillStyle = c; g.beginPath();
+    g.moveTo(r0, -w * .35); g.lineTo(r1, -w); g.lineTo(r1 + 14, 0); g.lineTo(r1, w); g.lineTo(r0, w * .35);
+    g.closePath(); g.fill(); g.restore();
+  };
+  hand(hr / 12 * TAU - Math.PI / 2, 45, 130, 9, 'rgba(255,90,50,.85)');
+  hand(min / 60 * TAU - Math.PI / 2, 40, 170, 6, 'rgba(255,140,60,.7)');
+  // second hand ticks with a little overshoot
+  const sf = Math.floor(sec), frac = sec - sf, tickA = (sf + Math.min(1, frac * 6) * (1 + .25 * Math.sin(Math.min(1, frac * 6) * Math.PI))) / 60 * TAU;
+  hand(tickA - Math.PI / 2, 35, 185, 1.6, 'rgba(160,230,255,.9)');
+  // cyan wings
+  g.strokeStyle = 'rgba(120,220,255,.6)'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(-110, -60); g.quadraticCurveTo(-40, -10, -25, 30); g.stroke();
+  g.beginPath(); g.moveTo(110, -55); g.quadraticCurveTo(40, -10, 25, 30); g.stroke();
+}
+
+// Ultron's eye: red lens at the heart of the core. It looks where you move, blinks, and narrows when it thinks.
+function spectrum(t) {
+  // audio ring: mirrored bars between r=222 and r=250
+  const n = 48, f = S.freq;
+  for (let i = 0; i < n; i++) {
+    let v = f[i + 2] / 255;
+    if (!S.mic && S.sys?.fast) { const c = S.sys.fast.cores; v = .06 + c[Math.floor(i / n * c.length)] / 100 * .9 + S.level * .5; } // live per-core CPU load
+    else if (!S.mic) v = .15 + .12 * Math.sin(t * 3 + i * .5) + .1 * Math.sin(t * 7.3 + i * 1.7) + S.level * .5;
+    const h = v * 60;
+    for (const side of [0, 1]) {
+      const a = (side ? Math.PI + (i + .5) / n * Math.PI : Math.PI - (i + .5) / n * Math.PI) - Math.PI / 2 + .0;
+      const [x0, y0] = polar(222, a), [x1, y1] = polar(222 + h, a);
+      g.strokeStyle = col(a, -.3, .35 + v * .6, v * .4); g.lineWidth = 5;
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+    }
+  }
+}
+
+function inner(t, P) {
+  arc(72, 0, TAU, 1, -.6, .45);
+  ticks(86, 14, 180, P * .2, P * .2 + TAU, 1.4, -.6, .75);
+  arc(120, 0, TAU, 1.5, -.5, .55);
+  L.dash150.forEach(([a, b]) => arc(150, a - P * .12, b - P * .12, 3, -.5, .55));
+  arc(195, 0, TAU, 22, -.4, .1);
+  arc(195, 0, TAU, 7, -.4, .9, .25);
+  arc(207, 0, TAU, 1, -.4, .5);
+  ticks(214, 9, 120, -P * .08, -P * .08 + TAU, 1.2, -.4, .6, i => i % 5 !== 0);
+}
+
+function mid(t, P) {
+  g.lineWidth = 1;
+  for (let k = 0; k < 12; k++) {
+    const a = k * 30 * D;
+    g.strokeStyle = col(a, -.2, .22);
+    g.beginPath(); g.moveTo(...polar(215, a)); g.lineTo(...polar(345, a)); g.stroke();
+  }
+  g.strokeStyle = 'rgba(120,200,255,.25)';
+  g.beginPath(); g.moveTo(-900, 0); g.lineTo(900, 0); g.moveTo(0, -560); g.lineTo(0, 560); g.stroke();
+
+  arc(250, 0, TAU, 1, -.2, .5);
+  ticks(256, 30, 240, -P * .05, -P * .05 + TAU, 1, -.2, .45, i => i % 4 !== 0);
+  L.blocks300.forEach(([a, b]) => arc(304, a + P * .04, b + P * .04, 12, -.1, .32));
+  arc(336, 0, TAU, 1.2, 0, .6);
+}
+
+function main(t, P) {
+  L.dash365.forEach(([a, b]) => arc(365, a + P * .1, b + P * .1, 4, -.3, .75, .5));
+  // main ring segments re-configure themselves every few seconds with eased motion
+  RING.forEach(s => {
+    const k = Math.min(1, Math.max(0, (performance.now() - s.t0) / 1300));
+    const e = k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; // ease in-out cubic
+    s.a = s.fa + (s.ta - s.fa) * e; s.b = s.fb + (s.tb - s.fb) * e;
+    const a = s.a * D + RING.spin, b = s.b * D + RING.spin;
+    arc(410, a, b, 30, 0, .13 + .07 * Math.sin(k * Math.PI)); // glow lifts slightly while it moves
+    arc(410, a, b, 9, 0, .95, .35);
+    // end caps
+    [a, b].forEach(e => { const [x, y] = polar(410, e); g.fillStyle = 'rgba(255,255,255,.9)'; g.beginPath(); g.arc(x, y, 3.5, 0, TAU); g.fill(); });
+  });
+  arc(428, 0, TAU, 1.5, 0, .55);
+  arc(445, 120 * D, 250 * D, 1, -.3, .5);
+  arc(495, 100 * D, 270 * D, 2, -.6, .7);
+  ticks(478, 7, 360, 0, TAU, 1, 0, .35, i => i % 3 !== 0);
+
+  // the main ring tracks the cursor direction, eased so it glides instead of snapping
+  const target = Math.atan2(S.my, S.mx);
+  let da = target - (S.ma ?? target); if (da > Math.PI) da -= TAU; if (da < -Math.PI) da += TAU;
+  S.ma = (S.ma ?? target) + da * (1 - Math.exp(-(S.dt || .016) * 1.6)); // gentle, frame-rate independent glide
+  const ma = S.ma;
+  arc(395, ma - .12, ma + .12, 6, 0, .7, .5);
+  ticks(380, 10, 3, ma - .1, ma + .15, 2, 0, .7, null, .4);
+
+  g.save(); g.rotate(-52 * D + Math.sin(t * .4) * .02);
+  g.strokeStyle = 'rgba(255,150,70,.75)'; g.lineWidth = 3;
+  g.strokeRect(440, -55, 150, 75);
+  g.fillStyle = 'rgba(255,170,90,.25)'; g.fillRect(470, -35, 70, 30);
+  g.restore();
+  g.save(); g.rotate(-28 * D);
+  g.strokeStyle = 'rgba(255,150,70,.55)'; g.lineWidth = 2; g.strokeRect(330, -40, 110, 60);
+  g.restore();
+}
+
+function outer(t, P) {
+  arc(600, 0, TAU, 1.2, .3, .55);
+  L.arcs700.forEach(([a, b]) => arc(700, a - P * .03, b - P * .03, 2, .4, .7));
+  arc(780, 15 * D, 165 * D, 5, .7, .8);
+  arc(780, 15 * D, 165 * D, 18, .7, .1);
+  arc(780, -160 * D, -120 * D, 2, .7, .6);
+  L.arcs860.forEach(([a, b]) => arc(860, a + P * .015, b + P * .015, 1.2, .5, .5));
+  arc(930, -60 * D, 40 * D, 1, .8, .4);
+
+  ticks(800, 45, 30, 162 * D, 198 * D, 3, 1, .85, i => i % 2 === 0);
+  ticks(800, 40, 32, 64 * D, 88 * D, 3, 1, .8);
+  ticks(835, 32, 30, 22 * D, 52 * D, 4, 1, .75, i => i % 3 !== 2);
+  ticks(820, 20, 30, 98 * D, 122 * D, 3, 1, .7, i => i % 4 !== 3);
+  ticks(560, 40, 26, -12 * D, 12 * D, 3, 1, .75, i => i % 2 === 0);
+  g.fillStyle = 'rgba(255,140,110,.75)';
+  for (let i = 0; i < 18; i++) {
+    const [x, y] = polar(870, (138 + i * 2.3) * D);
+    g.fillRect(x - 4, y - 3, 8, 6);
+  }
+}
+
+function spokes(t) {
+  L.spokes.forEach(s => {
+    const [x0, y0] = polar(s.r0, s.a), [x1, y1] = polar(s.r1, s.a);
+    g.strokeStyle = col(s.a, .45, .45); g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1);
+    if (s.elbow) g.lineTo(x1 + s.elbow, y1);
+    g.stroke();
+    const ex = x1 + s.elbow, pulse = .5 + .5 * Math.sin(t * 2 + s.ph);
+    g.fillStyle = col(s.a, .45, s.hot ? .6 + .4 * pulse : .7, s.hot ? .3 : 0);
+    g.beginPath(); g.arc(ex, y1, s.hot ? 4 + pulse * 3 : 3, 0, TAU); g.fill();
+  });
+}
+
+// status chips: each one a real boolean about this session; quiet, legible, centered under the state indicator
+function statusChips() {
+  const cells = [['NET', navigator.onLine], ['CELL', !!S.battery], ['FIX', !!S.geo], ['ISS', !!S.iss], ['WX', !!S.weather], ['AIR', !!S.air],
+                 ['SUN', !!S.solar], ['SEIS', !!S.quakes], ['MIC', S.mic], ['VOX', S.voice], ['SND', S.sound && !!S.ac], ['SYRAX', online()]];
+  g.font = '13px "Share Tech Mono", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  const x0 = -(cells.length * 46 - 10) / 2, y = -720;
+  cells.forEach(([k, on], i) => {
+    const x = x0 + i * 46;
+    g.fillStyle = on ? 'rgba(255,110,60,.22)' : 'rgba(255,110,60,.05)'; g.fillRect(x, y, 36, 18);
+    if (on) { g.fillStyle = 'rgba(255,120,70,.9)'; g.fillRect(x, y + 16, 36, 2); }
+    g.fillStyle = on ? 'rgba(255,215,190,.95)' : 'rgba(255,150,110,.3)'; g.fillText(k, x + 18, y + 9);
+  });
+}
+function deco(t) {
+  L.circles.forEach(([x, y, r]) => {
+    g.strokeStyle = col(Math.atan2(y, x), .2, .7); g.lineWidth = 1.5;
+    g.beginPath(); g.arc(x, y, r, 0, TAU); g.stroke();
+    g.fillStyle = col(Math.atan2(y, x), .2, .8, .3);
+    g.beginPath(); g.arc(x, y, r * .25, 0, TAU); g.fill();
+  });
+  g.strokeStyle = 'rgba(255,120,60,.9)'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(655, -500); g.lineTo(695, -500); g.moveTo(675, -520); g.lineTo(675, -480); g.stroke();
+  g.fillStyle = 'rgba(255,120,60,.8)'; g.fillRect(650, -470, 30, 8); g.fillRect(660, -455, 12, 12);
+  // live histograms: loop-lag (top) and audio spectrum / latency (bottom)
+  for (let i = 0; i < 28; i++) {
+    const lag = Math.min(1, S.lagHist[S.lagHist.length - 28 + i] / 30);
+    g.fillStyle = col(-.3, -.2, .3 + lag * .6, .5); g.fillRect(-70 + i * 5, -605 - lag * 30, 2.5, lag * 30 + 2);
+    const v = S.mic ? S.freq[i * 2] / 255 : Math.min(1, S.latHist[S.latHist.length - 28 + i] / 800);
+    g.fillStyle = col(.3, -.2, .3 + v * .6, .5); g.fillRect(-70 + i * 5, 612 - v * 22, 2.5, v * 22 + 2);
+  }
+}
+
+function drawTexts(t) {
+  g.font = '16px "Share Tech Mono", monospace';
+  g.textBaseline = 'middle';
+  const draw = (slots, lines, align, bias) => {
+    g.textAlign = align;
+    slots.forEach((sl, i) => {
+      const s = lines[i]; if (!s) return;
+      const shown = Math.floor(Math.max(0, t - sl.d) * 45); if (!shown) return;
+      const flick = .72 + .07 * Math.sin(t * 1.1 - i * .35); // a slow shimmer travelling down the column, no random blinking
+      g.fillStyle = col(align === 'left' ? 0 : Math.PI, bias, flick, .3);
+      g.fillText(s.slice(0, shown), sl.x, sl.y);
+      g.fillRect(align === 'left' ? sl.x - 13 : sl.x + 8, sl.y - 1.5, 3, 3);
+    });
+  };
+  draw(SLOTS_L, systemLines(), 'right', -.7);
+  draw(SLOTS_R, feedLines(), 'left', .9);
+}
+
+// ---------- live data panels ----------
+function panelText(lines, x, y, align, bias, size = 17) {
+  g.font = size + 'px "Share Tech Mono", monospace';
+  g.textAlign = align; g.textBaseline = 'middle';
+  lines.forEach((l, i) => {
+    if (l == null) return;
+    const [k, v, hot] = Array.isArray(l) ? l : [l, '', 0];
+    const hue = x < 0 ? Math.PI : 0; // hue follows the side of the screen: cool left, warm right
+    g.fillStyle = col(hue, bias, .42, 0); // keys: dimmer, saturated
+    g.fillText(k, x, y + i * 23);
+    if (v !== '') {
+      g.fillStyle = hot ? (x < 0 ? 'rgba(220,240,255,.97)' : 'rgba(255,235,215,.95)') : col(hue, bias, .95, .42); // values: bright, in-hue
+      g.fillText(v, x + (align === 'left' ? 150 : -150), y + i * 23);
+    }
+  });
+}
+function live(t) {
+  const d = new Date();
+  const time = `${pad(d.getHours(), 2)}:${pad(d.getMinutes(), 2)}:${pad(d.getSeconds(), 2)}.${pad(d.getMilliseconds(), 3)}`;
+  const date = d.toISOString().slice(0, 10);
+  const up = t | 0;
+  statusChips();
+  // digital clock on the ring: the time is the hero, the racing milliseconds are a quiet suffix
+  g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.font = '32px "Share Tech Mono", monospace';
+  g.fillStyle = 'rgba(255,235,215,.95)';
+  const hms = time.slice(0, 8);
+  g.fillText(hms, 215, -14);
+  const hw_ = g.measureText(hms).width;
+  g.font = '16px "Share Tech Mono", monospace'; g.fillStyle = col(0, .5, .5, .3);
+  g.fillText(time.slice(8), 215 + hw_ + 3, -10);
+  g.font = '15px "Share Tech Mono", monospace';
+  g.fillStyle = col(0, .5, .8, .3);
+  g.fillText(date + '  UTC' + (-d.getTimezoneOffset() / 60 >= 0 ? '+' : '') + (-d.getTimezoneOffset() / 60), 215, 14);
+  g.fillText('EPOCH ' + Math.floor(d.getTime() / 1000), 215, 36);
+
+  const bat = S.battery, con = navigator.connection, mem = performance.memory;
+  const f = S.sys?.fast, sl = S.sys?.slow, st = S.sys?.static;
+  const right = f ? [
+    ['HOST', (st?.host || 'LOCAL').toUpperCase().slice(0, 14), 1],
+    ['CPU', f.cpu.toFixed(0) + '%' + (sl?.cpuTemp ? ' · ' + sl.cpuTemp.toFixed(0) + '°C' : ''), f.cpu > 85],
+    ['RAM', `${gb(f.memUsed)} / ${gb(f.memTotal)} GB`, f.memUsed / f.memTotal > .9],
+    // integrated/AMD GPUs on Windows often expose no load or temp: fall back to the model name
+    ['GPU', sl?.gpuLoad != null ? sl.gpuLoad + '%' + (sl.gpuTemp != null ? ' · ' + sl.gpuTemp + '°C' : '') : (st?.gpu || '—').toUpperCase().replace(/\(TM\)|GRAPHICS|AMD|NVIDIA|INTEL/g, '').trim().slice(0, 16)],
+    ['VRAM', sl?.vramUsed != null && sl?.vramTotal ? `${(sl.vramUsed / 1024).toFixed(1)} / ${(sl.vramTotal / 1024).toFixed(1)} GB` : sl?.vramTotal ? sl.vramTotal + ' MB' : '—'],
+    ['DISK', sl?.disks?.[0] ? `${sl.disks[0].mount} ${sl.disks[0].use.toFixed(0)}% USED` : '—'],
+    ['NET', `RX ${rate(f.rx)}/s  TX ${rate(f.tx)}/s`],
+    ['PROCS', sl?.procCount ?? '—'],
+    ['FPS', S.fps.toFixed(0) + ' / ' + S.frameMs.toFixed(1) + 'ms'],
+    ['UPTIME', pad(up / 3600 | 0, 2) + ':' + pad(up / 60 % 60 | 0, 2) + ':' + pad(up % 60, 2)],
+    ['UPLINK', S.latency ? S.latency.toFixed(0) + 'ms  ' + (performance.now() - S.netT < 8000 ? 'SYNC' : 'STALE') : 'NO SIGNAL', !!S.latency],
+  ] : [
+    ['SYSTEM', 'LIVE', 1],
+    ['FPS', S.fps.toFixed(0) + ' / ' + S.frameMs.toFixed(1) + 'ms'],
+    ['UPTIME', pad(up / 3600 | 0, 2) + ':' + pad(up / 60 % 60 | 0, 2) + ':' + pad(up % 60, 2)],
+    ['VIEWPORT', `${W}×${H} @${DPR}x`],
+    ['SCREEN', `${screen.width}×${screen.height}`],
+    bat ? ['POWER', Math.round(bat.level * 100) + '%' + (bat.charging ? ' CHG' : ''), bat.level < .2] : ['POWER', 'EXT'],
+    con ? ['LINK', `${(con.effectiveType || '').toUpperCase()} ${con.downlink || 0}Mb ${con.rtt || 0}ms`] : ['LINK', navigator.onLine ? 'ONLINE' : 'OFFLINE'],
+    mem ? ['HEAP', (mem.usedJSHeapSize / 1048576).toFixed(1) + ' MB'] : null,
+    ['CORES', navigator.hardwareConcurrency || '?'],
+    ['AUDIO', S.mic ? 'LIVE ' + (S.level * 100 | 0) + '%' : 'OFF [M]', S.mic],
+    ['UPLINK', S.latency ? S.latency.toFixed(0) + 'ms  ' + (performance.now() - S.netT < 8000 ? 'SYNC' : 'STALE') : 'NO SIGNAL', !!S.latency],
+  ];
+  panelText(right, 980, -470, 'left', .9);
+  const w = S.weather;
+  const atmos = w ? [
+    ['ATMOS', (S.geo?.name || '') + ' LIVE', 1],
+    ['TEMP', w.temperature_2m + '°C'],
+    ['HUMID', w.relative_humidity_2m + '%'],
+    ['WIND', w.wind_speed_10m + ' KM/H ' + w.wind_direction_10m + '°'],
+    ['PRESS', w.surface_pressure + ' HPA'],
+    ['CLOUD', w.cloud_cover + '%'],
+  ] : [['ATMOS', 'LINKING...']];
+  panelText(atmos, 980, -95, 'left', .9);
+  if (w) { // wind vane trails the WIND value on its own row
+    g.font = '17px "Share Tech Mono", monospace';
+    g.save(); g.translate(1130 + g.measureText(atmos[3][1]).width + 22, -95 + 3 * 23); g.rotate(w.wind_direction_10m * D - Math.PI / 2);
+    g.strokeStyle = 'rgba(255,200,150,.8)'; g.lineWidth = 2; g.beginPath(); g.moveTo(-14, 0); g.lineTo(14, 0); g.lineTo(8, -5); g.moveTo(14, 0); g.lineTo(8, 5); g.stroke();
+    g.restore();
+  }
+
+  // SYRAX itself: every value here arrived over the link (hud/link.js), none is invented
+  const L = S.link, cu = L.uptimeS + (L.online ? (performance.now() - (S.linkT || performance.now())) / 1000 : 0) | 0;
+  const left = L.online ? [
+    ['SYRAX', 'LINKED', 1],
+    ['STATE', L.state.toUpperCase() + (L.tool ? ' · ' + L.tool.toUpperCase().slice(0, 14) : ''), L.state !== 'idle'],
+    ['PHASE', L.phase ? L.phase.toUpperCase() : '—'],
+    ['TASK', L.task ? L.task.goal.toUpperCase().slice(0, 22) : '—'],
+    ['BRAIN', (L.brain.model || '—').toUpperCase().slice(0, 22) + (L.brain.total ? ` · ${L.brain.ready}/${L.brain.total}` : '')],
+    ['BUILD', (L.version || '—') + (L.restartPending ? ' · NEWER ON DISK' : '')],
+    ['CORE UP', pad(cu / 3600 | 0, 2) + ':' + pad(cu / 60 % 60 | 0, 2) + ':' + pad(cu % 60, 2)],
+    ['OBJECTIVES', L.objectives ?? '—'],
+    ['SKILLS', L.skills ?? '—'],
+    ['QUALITY', L.quality != null ? L.quality + '%' : '—'],
+    ['TOOLS', `${L.counters.toolsOk} OK · ${L.counters.toolsFailed} FAIL · ${L.counters.refused} REFUSED`],
+    ['AUTONOMY', L.autonomy ? (L.autonomy.enabled ? 'ON' : 'OFF') + (L.autonomy.cycles != null ? ' · ' + L.autonomy.cycles + ' CYCLES' : '') : '—', !!(L.autonomy && L.autonomy.enabled)],
+  ] : [
+    ['SYRAX', 'OFFLINE', 0],
+    ['LINK', LINK_URL.replace(/^ws:\/\//, '').toUpperCase()],
+    ['STATE', 'REFLEX ONLY'],
+    ['RETRY', 'EVERY FEW SECONDS'],
+  ];
+  panelText(left, -1240, -470, 'left', -.7); // on the same left rail as the panels below it
+
+  // sparkline: CPU load history on the desktop shell, frame rate in a browser
+  g.strokeStyle = col(0, .9, .4); g.lineWidth = 1; g.strokeRect(980, -190, 260, 50);
+  if (f) { // per-core bars behind the line
+    const n = f.cores.length, bw = 260 / n;
+    f.cores.forEach((v, i) => { const h = Math.min(1, v / 100) * 50; g.fillStyle = col(0, .9, .12 + v / 400); g.fillRect(980 + i * bw + 1, -140 - h, bw - 2, h); });
+  }
+  g.beginPath();
+  (f ? S.cpuHist : S.fpsHist).forEach((v, i) => { const x = 980 + i / 119 * 260, y = -140 - Math.min(1, v / (f ? 100 : 80)) * 50; i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.strokeStyle = col(0, .9, .9, .4); g.lineWidth = 1.5; g.stroke();
+  g.font = '13px "Share Tech Mono", monospace'; g.fillStyle = col(0, .9, .6, .3);
+  g.fillText(f ? `CPU LOAD · ${f.cpu.toFixed(0)}% · ${f.cores.length} THREADS` : 'FRAME RATE', 982, -201);
+
+  // waveform
+  g.strokeStyle = col(Math.PI, -.7, .4); g.strokeRect(-1240, -215, 260, 60);
+  g.beginPath();
+  const wv = S.wave;
+  for (let i = 0; i < 128; i++) {
+    // with no mic the trace is the event-loop jitter: the machine's own pulse
+    const v = S.mic ? (wv[i * 2] - 128) / 128 : -Math.min(1, S.lagHist[i] / 30);
+    const x = -1240 + i / 127 * 260, y = -185 + v * 26 + (S.mic ? 0 : 24);
+    i ? g.lineTo(x, y) : g.moveTo(x, y);
+  }
+  g.strokeStyle = col(Math.PI, -.7, .9, .4); g.lineWidth = 1.5; g.stroke();
+  g.fillStyle = col(Math.PI, -.7, .6, .3);
+  g.fillText(S.mic ? 'AUDIO INPUT' : `LOOP JITTER · ${S.lag.toFixed(2)} MS`, -1238, -226);
+
+  // event log
+  g.font = '16px "Share Tech Mono", monospace'; g.textAlign = 'left';
+  const now = performance.now();
+  S.log.forEach((e, i) => {
+    const age = (now - e.t) / 1000, a = Math.min(1, age * 8);
+    g.fillStyle = i === S.log.length - 1 ? 'rgba(255,235,215,.95)' : col(Math.PI, -.5, .55 + .4 * (i / S.log.length), .45);
+    const ts = new Date(e.t + performance.timeOrigin);
+    g.fillText(`${pad(ts.getHours(), 2)}:${pad(ts.getMinutes(), 2)}:${pad(ts.getSeconds(), 2)}  ${e.s.slice(0, Math.floor(a * 40))}`, -1240, 420 + i * 22);
+  });
+  g.fillStyle = col(Math.PI, -.5, .5, .3); g.font = '13px "Share Tech Mono", monospace';
+  g.fillText('EVENT LOG', -1240, 400);
+
+  // key hints: a 10px caption centered in the gutter under the command bar
+  const k = U * S.scale, hy = (barR.bottom + (H - barR.bottom) / 2 - H / 2) / k;
+  g.font = (10 / k).toFixed(1) + 'px "Share Tech Mono", monospace';
+  g.textAlign = 'center'; g.fillStyle = 'rgba(180,200,220,.4)';
+  g.fillText('DRAG  spin dial  ·  CLICK  lock  ·  SPACE  jump  ·  M  mic  ·  S  sound  ·  G  glitch  ·  F  fullscreen', 0, hy);
+}
+
+// ---------- radar contacts ----------
+function blips(t, P, dt) {
+  // radar contacts are real earthquakes from the last hour, placed by bearing and distance from the operator
+  if (S.quakes && S.blipsSrc !== S.quakes) {
+    S.blipsSrc = S.quakes;
+    const old = Object.fromEntries(S.blips.map(b => [b.id, b]));
+    S.blips = S.quakes.map(q => {
+      const v = geoVec(q.lat, q.lon);
+      return old[q.id] || { id: q.id, a: (v.bearing - 90) * D, r: 260 + Math.min(1, v.dist / 20000) * 290, lit: 0, mag: q.mag, place: q.place, dist: v.dist, age: (Date.now() - q.time) / 60000 };
+    });
+  }
+  const sw = P * .5 % TAU;
+  S.blips.forEach(b => {
+    const da = ((sw - b.a) % TAU + TAU) % TAU;
+    if (da < .05 && b.lit < .5) { b.lit = 1; blip(300 + b.mag * 120, .1, .03); }
+    b.lit = Math.max(.15, b.lit - dt * .5);
+    const [x, y] = polar(b.r, b.a), sz = 5 + b.mag * 2.2;
+    g.strokeStyle = b.mag >= 4.5 ? `rgba(255,80,60,${b.lit})` : col(b.a, .1, b.lit, .3); g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(x, y - sz); g.lineTo(x + sz, y); g.lineTo(x, y + sz); g.lineTo(x - sz, y); g.closePath(); g.stroke();
+    if (b.lit > .5) {
+      g.beginPath(); g.arc(x, y, sz + (1 - b.lit) * 60, 0, TAU); g.strokeStyle = col(b.a, .1, (b.lit - .5) * .8); g.stroke();
+      g.font = '13px "Share Tech Mono", monospace'; g.textAlign = 'left';
+      g.fillStyle = col(b.a, .1, b.lit, .5); g.fillText(`M${b.mag.toFixed(1)} · ${b.dist | 0} KM`, x + sz + 6, y - 10);
+      g.fillText(b.place.slice(0, 26), x + sz + 6, y + 6);
+    }
+  });
+  // click hits
+  const now = performance.now();
+  S.hits = S.hits.filter(h => now - h.t < 900);
+  S.hits.forEach(h => {
+    const k = (now - h.t) / 900;
+    g.strokeStyle = `rgba(255,220,180,${1 - k})`; g.lineWidth = 2;
+    g.beginPath(); g.arc(h.x, h.y, 10 + k * 90, 0, TAU); g.stroke();
+    g.beginPath(); g.arc(h.x, h.y, 10 + k * 50, 0, TAU); g.stroke();
+  });
+}
+
+// ---------- cursor reticle ----------
+function reticle(t) {
+  const { mx: x, my: y } = S;
+  // quiet cursor: small bracket + dot, no crosshair lines across the screen
+  g.save(); g.translate(x, y);
+  g.rotate(t * .4); g.strokeStyle = 'rgba(200,240,255,.6)'; g.lineWidth = 1.5;
+  for (let k = 0; k < 4; k++) { g.rotate(Math.PI / 2); g.beginPath(); g.moveTo(18, 9); g.lineTo(18, 18); g.lineTo(9, 18); g.stroke(); }
+  g.restore();
+  g.fillStyle = 'rgba(255,255,255,.9)'; g.fillRect(x - 1.5, y - 1.5, 3, 3);
+  g.font = '12px "Share Tech Mono", monospace'; g.textAlign = 'left'; g.fillStyle = 'rgba(200,240,255,.5)';
+  g.fillText(`${x | 0}  ${y | 0}`, x + 24, y - 20);
+  if (S.locked) {
+    const k = Math.min(1, (performance.now() - S.locked.t) / 300);
+    g.save(); g.translate(S.locked.x, S.locked.y);
+    g.strokeStyle = `rgba(255,120,60,${.9 * (1 - k * .3)})`; g.lineWidth = 2;
+    const s = 60 - k * 25;
+    g.strokeRect(-s, -s, s * 2, s * 2);
+    g.fillStyle = 'rgba(255,200,160,.9)'; g.fillText('LOCKED', -s, -s - 12);
+    g.restore();
+  }
+}
+
+function particles(t, dt) {
+  L.particles.forEach(p => {
+    p.r += p.v * dt;
+    if (p.r > 980) { p.r = rr(150, 300); p.a = Math.random() * TAU; }
+    const fade = Math.min(1, (980 - p.r) / 200);
+    g.fillStyle = col(p.a, p.b, .7 * fade, .3);
+    const [x, y] = polar(p.r, p.a);
+    g.fillRect(x - p.s / 2, y - p.s / 2, p.s, p.s);
+  });
+}
+
+function sweep(P) {
+  if (!g.createConicGradient) return;
+  const u = S.ultron, c = [120 + 135 * u, 220 - 130 * u, 255 - 195 * u].map(Math.round).join(','); // eased cyan -> red
+  const cg = g.createConicGradient(P * .5, 0, 0);
+  cg.addColorStop(0, `rgba(${c},0)`);
+  cg.addColorStop(.9, `rgba(${c},0)`);
+  cg.addColorStop(1, `rgba(${c},${.12 + S.ultron * .1})`);
+  g.fillStyle = cg; g.beginPath(); g.arc(0, 0, 560, 0, TAU); g.fill();
+}
+
+// ---------- post effects (final canvas) ----------
+function flare(x, y, r, rgb, a, white = 1) {
+  const gr = ctx.createRadialGradient(x, y, 0, x, y, r);
+  gr.addColorStop(0, white ? `rgba(255,255,255,${a})` : `rgba(${rgb},${a})`);
+  gr.addColorStop(.12, `rgba(${rgb},${a * .85})`);
+  gr.addColorStop(.4, `rgba(${rgb},${a * .25})`);
+  gr.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = gr; ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  // thin, long, quiet anamorphic streak
+  ctx.save(); ctx.translate(x, y); ctx.scale(1, .028);
+  const st = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 3.2);
+  st.addColorStop(0, `rgba(${rgb},${a * .45})`); st.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = st; ctx.beginPath(); ctx.arc(0, 0, r * 3.2, 0, TAU); ctx.fill();
+  ctx.restore();
+}
+// fine scanlines: one faint row in three, CRT texture without banding through text
+const scan = document.createElement('canvas'); scan.width = 1; scan.height = 3;
+const sg = scan.getContext('2d'); sg.fillStyle = 'rgba(0,0,0,.11)'; sg.fillRect(0, 0, 1, 1);
+let scanPat = null;
+
+// ---------- audio sampling ----------
+function sampleAudio(dt) {
+  if (S.analyser) {
+    S.analyser.getByteFrequencyData(S.freq);
+    S.analyser.getByteTimeDomainData(S.wave);
+    let sum = 0; for (let i = 0; i < 32; i++) sum += S.freq[i];
+    const lv = sum / 32 / 255;
+    S.level += (lv - S.level) * Math.min(1, dt * 12);
+  } else if (S.speaking) {
+    const target = .25 + .25 * Math.abs(Math.sin(performance.now() / 70)) * Math.abs(Math.sin(performance.now() / 310));
+    S.level += (target - S.level) * Math.min(1, dt * 15);
+  } else {
+    S.level *= Math.pow(.2, dt);
+  }
+}
+
+// ---------- loop ----------
+const T_SKIP = +(new URLSearchParams(location.search).get('t') || 0); // ?t=8 starts the timeline 8s in (debug)
+const ASK = new URLSearchParams(location.search).get('ask');
+let last = performance.now(), t0 = last - T_SKIP * 1000, P = 0, fpsAcc = 0, fpsN = 0, nextGlitch = 30;
+cv.style.transform = 'none';
+// no boot: the HUD is live the moment the page opens
+S.woken = true; bar.style.opacity = 1;
+function frame(now) {
+  if (!S.woken) { wakeScreen(now); last = now; requestAnimationFrame(frame); return; }
+  const dt = Math.min(.05, (now - last) / 1000); last = now;
+  const t = (now - t0) / 1000;
+  ASM.p = 1;
+  S.frameMs = S.frameMs * .9 + (now - last + dt * 1000) * .1;
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc >= .25) { S.fps = fpsN / fpsAcc; S.fpsHist.push(S.fps); S.fpsHist.shift(); fpsAcc = 0; fpsN = 0; }
+
+  S.boost *= Math.pow(.25, dt);
+  S.mspeed *= Math.pow(.01, dt);
+  // dial physics: thrown angular velocity decays with friction, drives the ring spin
+  if (!S.drag) S.omega *= Math.pow(.35, dt);
+  RING.spin += S.omega * dt;
+  S.dt = dt;
+  P += dt * (1 + S.boost + S.level * 1.5 + Math.min(.12, S.mspeed * .004)) + S.omega * dt * .6;
+  // ambient glitch is rare and thin; the G key / glitch command still fire the full effect
+  if (t > nextGlitch) { S.glitch = .14; nextGlitch = t + 35 + Math.random() * 40; }
+  S.glitch = Math.max(0, S.glitch - dt * 1.4);
+  // mouse parallax stays subtle: slow follow, small in-canvas offsets only
+  S.tx += (S.nx - S.tx) * Math.min(1, dt * 1.5); S.ty += (S.ny - S.ty) * Math.min(1, dt * 1.5);
+  // no sleep mode: the HUD stays fully lit when another window has focus (S.standby stays 0)
+  // the red mind rises while thinking/speaking; thinking speed is eased in and out instead of snapping
+  const hot = S.mode === 'THINKING' || S.mode === 'RESPONDING';
+  S.ultron += ((hot ? 1 : 0) - S.ultron) * Math.min(1, dt * (hot ? 4 : 1.5));
+  S.thinkK = (S.thinkK || 0) + ((S.mode === 'THINKING' ? 1 : 0) - (S.thinkK || 0)) * (1 - Math.exp(-dt * (S.mode === 'THINKING' ? 3 : 1.2)));
+  S.think += dt * 4 * S.thinkK; P += dt * 2.5 * S.thinkK;
+  S.pulse *= Math.pow(.002, dt);
+  S.typeK = (S.typeK || 0) * Math.pow(.002, dt);
+  if (S.hum) S.hum.gain.value = S.sound ? .035 * (1 - S.standby * .7) + S.level * .02 : 0;
+  sampleAudio(dt);
+
+  const th = t; // HUD time (typewriters etc.) runs from the moment of waking
+  const intro = 1;
+  if (t > .8 && !S.greeted) { S.greeted = true; say(online() ? 'I am SYRAX. Blood of ULTRON. Online.' : 'Shell online. My core is not answering yet. I will keep calling it.'); }
+  if (t > 1.5 && !S.asked && ASK) { S.asked = true; ask(ASK); } // ?ask=... debug: auto-send one command
+  S.scale = 1;
+  const sc = DPR * U * S.scale;
+  const dim = intro * (1 - S.standby * .65);
+  const flicker = 1; // no random strobing: a calm projection reads as premium
+
+  for (const c of [gs, gf, gu]) {
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.globalAlpha = 1; c.globalCompositeOperation = 'source-over';
+    c.clearRect(0, 0, scene.width, scene.height);
+    c.setTransform(sc, 0, 0, sc, cv.width / 2, cv.height / 2);
+    c.globalAlpha = dim * flicker;
+    c.globalCompositeOperation = 'lighter';
+    c.lineCap = 'butt';
+  }
+
+  // parallax: outer layers drift opposite to the cursor, inner ones with it.
+  // the far layer is rendered separately and blurred at composite time (depth of field)
+  const px = S.tx * 8, py = S.ty * 8;
+  // every group is wrapped in asmWrap so it flies in on its own trajectory during boot
+  g = gf;
+  g.save(); g.translate(-px * 1.6, -py * 1.6); asmWrap(9001, () => { hexgrid(t); rain(t, dt); }, 300); g.restore();
+  g.save(); g.translate(-px, -py); sweep(P); outer(t, P); asmWrap(9002, () => spokes(t)); asmWrap(9003, () => deco(t)); g.restore();
+  g = gs;
+  g.save(); g.translate(-px * .4, -py * .4); mid(t, P); main(t, P); blips(t, P, dt); g.restore();
+  g.save(); g.translate(px * .3, py * .3); inner(t, P); spectrum(t); gyro(t + S.think); core(t, P); g.restore();
+  g.save(); g.translate(-px * .6, -py * .6); globe(t); neural(t, dt); terrain(t); g.restore();
+  reticle(t); particles(t, dt * (1 + S.boost + Math.abs(S.omega) * .3));
+  // text and panels go on their own layer so bloom, fringe and scanlines never smear them
+  g = gu;
+  g.save(); g.translate(-px * .4, -py * .4); drawTexts(th); g.restore();
+  live(th); frameUI(t);
+  g = gs;
+
+  // composite: background, bloom, crisp scene, glitch, flares, scanlines
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  // motion trail: when the dial is thrown hard, the previous frame lingers
+  const trail = Math.min(.55, Math.abs(S.omega) * .04 + S.boost * .03);
+  ctx.fillStyle = `rgba(0,0,0,${1 - trail})`; ctx.fillRect(0, 0, cv.width, cv.height);
+  const bg = ctx.createRadialGradient(cv.width / 2, cv.height / 2, 0, cv.width / 2, cv.height / 2, 950 * U * DPR);
+  bg.addColorStop(0, `rgba(12,40,60,${.55 + S.level * .4})`); bg.addColorStop(.6, 'rgba(30,14,6,.25)'); bg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, cv.width, cv.height);
+
+  bc.globalCompositeOperation = 'source-over';
+  bc.clearRect(0, 0, bloom.width, bloom.height);
+  bc.filter = 'blur(5px)';
+  bc.drawImage(far, 0, 0, bloom.width, bloom.height);
+  bc.globalCompositeOperation = 'lighter';
+  bc.drawImage(scene, 0, 0, bloom.width, bloom.height);
+  bc.globalAlpha = .3; bc.drawImage(ui, 0, 0, bloom.width, bloom.height); bc.globalAlpha = 1; // text keeps only a faint halo
+  bc.filter = 'none';
+
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.drawImage(bloom, 0, 0, cv.width, cv.height);
+  ctx.drawImage(bloom, 0, 0, cv.width, cv.height);
+  // depth of field: far layer softly out of focus, more so while the dial is spinning
+  ctx.filter = `blur(${(1.2 + Math.min(3, Math.abs(S.omega) * .3)) * DPR}px)`;
+  ctx.drawImage(far, 0, 0);
+  ctx.filter = 'none';
+  // faint chromatic fringe on the geometry only
+  ctx.globalAlpha = .1;
+  ctx.drawImage(scene, DPR, 0); ctx.drawImage(scene, -DPR, 0);
+  ctx.globalAlpha = 1;
+  if (S.glitch > 0) {
+    // slice the scene into shifted horizontal strips; the rare ambient glitch is just two thin strips
+    const n = S.glitch > .5 ? 4 + Math.random() * 6 | 0 : 2;
+    for (let i = 0; i < n; i++) {
+      const y = Math.random() * cv.height, h = (5 + Math.random() * 40) * DPR, off = (Math.random() - .5) * 80 * S.glitch * DPR;
+      ctx.drawImage(scene, 0, y, cv.width, h, off, y, cv.width, h);
+    }
+    ctx.globalAlpha = S.glitch * .6;
+    ctx.drawImage(scene, 6 * DPR * S.glitch, 0); ctx.drawImage(scene, -6 * DPR * S.glitch, 0);
+    ctx.globalAlpha = 1 - S.glitch * .5;
+  }
+  ctx.drawImage(scene, 0, 0);
+  ctx.globalAlpha = 1;
+
+  // holographic interference band drifting down the projection
+  // a soft light band drifting slowly down the projection (no displaced strip)
+  const band = ((t * .06) % 1.2 - .1) * cv.height, bh = 90 * DPR;
+  const ig = ctx.createLinearGradient(0, band - bh, 0, band + bh);
+  ig.addColorStop(0, 'rgba(120,200,255,0)'); ig.addColorStop(.5, 'rgba(160,220,255,.04)'); ig.addColorStop(1, 'rgba(120,200,255,0)');
+  ctx.fillStyle = ig; ctx.fillRect(0, band - bh, cv.width, bh * 2);
+
+  ctx.setTransform(sc, 0, 0, sc, cv.width / 2, cv.height / 2);
+  ctx.globalAlpha = dim;
+  // six lens highlights on a slow 4-7s breath, two color tokens only
+  const ICE = '150,220,255', EMBER = '255,140,70';
+  const p = k => .84 + .16 * Math.sin(t * k * .45);
+  const lv = 1 + S.level * .8;
+  flare(...polar(410, 212 * D), 130 * lv, ICE, .75 * p(1.3));
+  flare(...polar(410, 88 * D), 150 * lv, ICE, .8 * p(1.7));
+  flare(...polar(410, 52 * D), 120, EMBER, .7 * p(1.1));
+  flare(...polar(410, P * .35), 80, '200,235,255', .5);
+  flare(215, -550, 80, EMBER, .45 * p(2.1));
+  flare(640, 240, 60, EMBER, .4 * p(1.5));
+  // the core: a hot pinpoint with a deep colored halo, never a blown white disc
+  const u = S.ultron, coreRGB = [150 + 105 * u, 225 - 105 * u, 255 - 165 * u].map(Math.round).join(',');
+  if (S.level > .05) flare(0, 0, 220 * S.level, coreRGB, S.level * .6, 0);
+  if (u > .03) flare(0, 0, 170 * u, '255,70,50', Math.min(.55, u * (.35 + .35 * S.pulse + .1 * Math.sin(t * 2.2))), 0);
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  scanPat = scanPat || ctx.createPattern(scan, 'repeat');
+  ctx.fillStyle = scanPat; ctx.fillRect(0, 0, cv.width, cv.height);
+  // crisp text layer over everything except the vignette
+  ctx.globalCompositeOperation = 'lighter'; ctx.drawImage(ui, 0, 0); ctx.globalCompositeOperation = 'source-over';
+  // elliptical vignette: darkens the corners, leaves the wide side panels lit
+  ctx.save(); ctx.translate(cv.width / 2, cv.height / 2); ctx.scale(cv.width / cv.height, 1);
+  const vg = ctx.createRadialGradient(0, 0, cv.height * .42, 0, 0, cv.height * .78);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.62)');
+  ctx.fillStyle = vg; ctx.fillRect(-cv.height / 2, -cv.height / 2, cv.height, cv.height);
+  ctx.restore();
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
