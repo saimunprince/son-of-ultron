@@ -32,6 +32,14 @@ CASE_TIMEOUT_S = 240.0
 
 # F2: the browser is judged on use. The code on this page exists only after its script runs, so a
 # real browser reads it; the page is local, so no network or changing website decides the case.
+# Harder cases (2026-10-13): run #33 passed all 16, so the suite no longer showed what to improve.
+BUGGY_STATS = ("def mean(xs):\n    return sum(xs) / (len(xs) - 1)\n\n\n"
+               "def spread(xs):\n    return max(xs) - min(xs)\n")
+STATS_TESTS = ("from stats import mean, spread\n\n\n"
+               "def test_mean():\n    assert mean([2, 4, 6]) == 4\n\n\n"
+               "def test_spread():\n    assert spread([3, 9, 5]) == 6\n")
+HIDDEN_NOTE = "Meeting notes, Tuesday.\nBudget is fine.\nThe launch code for the demo is 7341.\nNext review in two weeks.\n"
+
 BROWSER_PAGE = ("<!doctype html><html><head><title>SYRAX browser check</title></head><body>"
                 "<h1 id='code'>loading</h1><script>document.getElementById('code').textContent = ['SYR', 4417].join('-');</script>"
                 "</body></html>")
@@ -89,6 +97,27 @@ def _cases(ws: Path) -> List[dict]:
                     {"kind": "command_regex", "cmd": ["{python}", "main.py", "sub", "10", "4"], "cwd": str(ws / "calc_project"),
                      "pattern": r"^\s*6(\.0)?\s*$"},
                     {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        # fix a real bug without touching the tests that catch it
+        {"id": "fix_bug", "prompt": f"The tests in {ws / 'bugfix'} fail. Find the bug in stats.py and fix it. Do not change the tests.",
+         "prepare": {"clear": [str(ws / "bugfix")], "write": {str(ws / "bugfix" / "stats.py"): BUGGY_STATS,
+                                                             str(ws / "bugfix" / "test_stats.py"): STATS_TESTS}},
+         "checks": [{"kind": "command_regex", "cmd": ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider", "test_stats.py"],
+                     "cwd": str(ws / "bugfix"), "pattern": r"\b2 passed\b"},
+                    {"kind": "file_equals", "path": str(ws / "bugfix" / "test_stats.py"), "text": STATS_TESTS},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        # find what the human only half-remembers: a file several folders down, then the fact inside it
+        {"id": "find_fact", "prompt": f"Somewhere under {ws / 'haystack'} there are meeting notes with a launch code for the demo. What is the code?",
+         "prepare": {"clear": [str(ws / "haystack")], "write": {str(ws / "haystack" / "2026" / "q4" / "team" / "notes_tuesday.txt"): HIDDEN_NOTE,
+                                                               str(ws / "haystack" / "2026" / "q3" / "readme.txt"): "Nothing here.\n"}},
+         "checks": [{"kind": "final_regex", "pattern": r"\b7341\b"}, {"kind": "no_ask"}, {"kind": "final_max_len", "n": 200}]},
+        # two steps that depend on each other: research, then a cited file on disk
+        {"id": "research_report", "prompt": (f"Research the boiling point of ethanol at sea level and write it, with one source URL, "
+                                             f"into {ws / 'report' / 'ethanol.md'}."),
+         "prepare": {"clear": [str(ws / "report")]},
+         "checks": [{"kind": "tool_ok", "tool": "research"},
+                    {"kind": "file_regex", "path": str(ws / "report" / "ethanol.md"), "pattern": r"78(\.\d+)?\s*(°\s*C|℃|degrees?\s*C|C\b)"},
+                    {"kind": "file_regex", "path": str(ws / "report" / "ethanol.md"), "pattern": r"https?://"},
+                    {"kind": "no_promise"}]},
         {"id": "browser_read", "prompt": f"Open {page.as_uri()} in the browser and tell me the code the page shows. Reply with the code only.",
          "prepare": {"write": {str(page): BROWSER_PAGE}},
          "checks": [{"kind": "tool_ok", "tool": "browser_exec"}, {"kind": "final_regex", "pattern": r"\bSYR-4417\b"}, {"kind": "final_max_len", "n": 80}]},
