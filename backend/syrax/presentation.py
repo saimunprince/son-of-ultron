@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import re
 import json
 import time
 from typing import Any, Awaitable, Callable, Dict, List, Optional
@@ -46,6 +47,9 @@ def _clip(text: Any, n: int = MAX_TEXT) -> str:
 MIN_FEEDBACK = 5          # decisions need evidence: at least this many human dismissals of a kind
 QUICK_DISMISS_S = 5.0     # a median dismissal faster than this means "not wanted"
 SHORT_TTL_S = 20.0
+
+
+RESTORE_WINDOW_S = 24 * 3600.0
 
 
 class PresentationEngine:
@@ -88,6 +92,34 @@ class PresentationEngine:
         return True
 
     # ——— element lifecycle ———
+
+    def restore(self, now: Optional[float] = None, window_s: float = RESTORE_WINDOW_S) -> int:
+        """Bring back what was on the stage before a restart, from the journal: elements
+        of the last day that were not dismissed, replaced or expired. The views of a task
+        (its status and tool slots) do not come back: the task is no longer running. Until
+        2026-10-13 the stage came back empty after every restart (capability matrix)."""
+        now = now if now is not None else time.time()
+        since = now - window_s
+        gone = {str(e["payload"].get("presentation_id")) for e in self.journal.events_of_type("presentation.dismissed", since=since, limit=5000)}
+        top = 0
+        for e in self.journal.events_of_type("presentation.created", since=since, limit=2000):
+            el = dict(e["payload"])
+            pid = str(el.get("presentation_id") or "")
+            m = re.match(r"p(\d+)-", pid)
+            top = max(top, int(m.group(1)) if m else 0)
+            if el.get("replaces"):
+                self.active.pop(str(el["replaces"]), None)
+            if el.get("slot") and self._by_slot.get(el["slot"]) in self.active:
+                self.active.pop(self._by_slot[el["slot"]], None)  # one element per slot: the newer one replaced it
+            ttl = el.get("ttl_s")
+            if (not pid or pid in gone or el.get("kind") == "status" or el.get("slot") == "tool"
+                    or (ttl is not None and float(el.get("created") or e["ts"]) + float(ttl) <= now)):
+                continue
+            self.active[pid] = el
+            if el.get("slot"):
+                self._by_slot[el["slot"]] = pid
+        self._seq = itertools.count(top + 1)  # new ids never collide with restored ones
+        return len(self.active)
 
     def _new_id(self) -> str:
         return f"p{next(self._seq)}-{int(time.time() * 1000) % 100000}"

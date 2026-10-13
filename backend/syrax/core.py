@@ -121,6 +121,10 @@ class Core:
         self.devloop.reviewer = _cross_review
         self.versions = VersionComparer(self.journal, task_id_provider=self.current_task_id)
         self.presentation = PresentationEngine(self.journal, emit=self.broadcast)
+        try:
+            self.presentation.restore()  # the stage survives a restart
+        except Exception as e:
+            logger.warning(f"stage not restored: {e}")
         from syrax.quality import QualityRunner
 
         self.quality = QualityRunner(self)
