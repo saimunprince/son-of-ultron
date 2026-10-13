@@ -51,7 +51,7 @@ from typing import Optional
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from app.logger import logger
 
@@ -212,6 +212,13 @@ async def tts(request: Request):
 
 
 @app.get("/hud")
+async def hud_redirect():
+    # the page lives at /hud/ so its relative `link.js` resolves beside it (live 2026-10-13: at /hud the
+    # script loaded from /link.js, 404, and the HUD stayed black)
+    return RedirectResponse("/hud/", status_code=308)
+
+
+@app.get("/hud/")
 async def hud_page():
     return await hud_file("hud.html")
 

@@ -13,8 +13,9 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def test_the_hud_and_its_link_are_served_and_nothing_else():
     c = TestClient(server.app)
+    assert c.get("/hud", follow_redirects=False).status_code == 308  # to /hud/, where link.js resolves beside the page
     page = c.get("/hud")
-    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html") and str(page.url).endswith("/hud/")
     assert "<title>SYRAX</title>" in page.text and 'src="link.js"' in page.text
     js = c.get("/hud/link.js")
     assert js.status_code == 200 and "SyraxLink" in js.text and js.headers["content-type"].startswith("text/javascript")

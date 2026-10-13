@@ -7,6 +7,7 @@ const path = require('path');
 const si = require('systeminformation');
 
 const CORE = (process.env.SYRAX_URL || 'http://127.0.0.1:8765').replace(/\/$/, '');
+const HUD_URL = CORE + '/hud/'; // trailing slash: link.js is relative to the page
 
 // dark native chrome everywhere (window borders, context menus), never the light Windows theme
 nativeTheme.themeSource = 'dark';
@@ -66,7 +67,7 @@ const ASK = process.env.SYRAX_ASK;
 
 // the core serves the HUD page itself; a core too old to have /hud counts as down for loading (the local copy still links to it)
 async function coreUp() {
-  try { return (await fetch(CORE + '/hud', { method: 'HEAD', signal: AbortSignal.timeout(1500) })).ok; } catch (_) { return false; }
+  try { return (await fetch(HUD_URL, { signal: AbortSignal.timeout(1500) })).ok; } catch (_) { return false; }  // GET: the route has no HEAD (405)
 }
 
 function sendWinState(win, fullscreen) {
@@ -83,7 +84,7 @@ async function loadHud(win) {
   const query = ASK ? '?ask=' + encodeURIComponent(ASK) : '';
   if (await coreUp()) {
     win.fromCore = true;
-    try { await win.loadURL(CORE + '/hud' + query); return; } catch (e) { console.error('core page failed, local copy:', e.message); }
+    try { await win.loadURL(HUD_URL + query); return; } catch (e) { console.error('core page failed, local copy:', e.message); }
   }
   win.fromCore = false;
   await win.loadFile('hud.html', ASK ? { query: { ask: ASK } } : undefined);
@@ -93,7 +94,7 @@ async function loadHud(win) {
     if (win.fromCore || !(await coreUp())) return;
     clearInterval(retry);
     win.fromCore = true;
-    win.loadURL(CORE + '/hud' + query).catch(e => { win.fromCore = false; console.error('core page failed:', e.message); });
+    win.loadURL(HUD_URL + query).catch(e => { win.fromCore = false; console.error('core page failed:', e.message); });
   }, 5000);
 }
 
