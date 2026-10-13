@@ -423,6 +423,8 @@ class SyraxAgent(Manus):
                 seen[key] = self.current_step  # the same call again is a loop, not a second chance
             else:
                 result = await ToolCallAgent.execute_tool(self, command)
+                if name.startswith("browser_") and browser.never_ran(result) and await browser.ensure_browser() is None:
+                    result = await ToolCallAgent.execute_tool(self, command)  # once: the code never ran, so nothing repeats
                 if name == "release":
                     self.release_called = True
                 if name not in READ_ONLY_TOOLS:

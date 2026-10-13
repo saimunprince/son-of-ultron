@@ -13,6 +13,7 @@ import asyncio
 import atexit
 import glob
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -30,6 +31,16 @@ PROFILE = Path(os.getenv("SYRAX_BROWSER_PROFILE", PROJECT_ROOT / ".syrax-browser
 HEADLESS = os.getenv("SYRAX_BROWSER_HEADLESS", "0").lower() in {"1", "true", "yes"}
 CDP_URL = f"http://127.0.0.1:{PORT}"
 
+
+
+# Browser Use's daemon could not reach the browser, so the call's code never ran (live
+# 2026-10-13 10:07: the first call after a reboot, while Chrome restarted itself once).
+# A connection lost in the middle of a call is not here: its code may have run.
+NEVER_RAN = re.compile(r"unreachable after \d+s|daemon \S+ didn't come up")
+
+
+def never_ran(result: str) -> bool:
+    return bool(NEVER_RAN.search(str(result or "")))
 
 
 def user_configured(env: Optional[dict] = None) -> bool:
