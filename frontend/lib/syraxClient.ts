@@ -558,11 +558,14 @@ export class SyraxClient {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
+  // plain fields, not parameter properties: Node's type stripping runs this file in tests (F6)
+  private url: string;
+  private handlers: Handlers;
 
-  constructor(
-    private url: string,
-    private handlers: Handlers,
-  ) {}
+  constructor(url: string, handlers: Handlers) {
+    this.url = url;
+    this.handlers = handlers;
+  }
 
   connect() {
     this.stopped = false;
