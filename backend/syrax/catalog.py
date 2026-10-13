@@ -215,8 +215,10 @@ CATALOG: List[Feature] = [
             seen_in="Mark-LV"),
     # ——— Coding ———
     Feature("code_runner", "Write and run code", "Coding", HAVE, "Writes code, runs it, fixes it.", "python_execute, the editor, release with the gate", seen_in="Mark-LV"),
-    Feature("project_builder", "Build a whole project", "Coding", PARTIAL, "Builds a multi-file project from a description.",
-            "the agent writes files and runs them. Never installs packages a model picked: new dependencies need the owner", seen_in="Mark-LV"),
+    Feature("project_builder", "Build a whole project", "Coding", HAVE, "Builds a multi-file project from a description.",
+            "the agent writes the files, runs the tests, and proves the result by running it the way the human will (console rule; "
+            "quality case build_cli passed live 2026-10-13). Never installs packages a model picked: new dependencies need the owner",
+            seen_in="Mark-LV"),
     Feature("plugins", "Add skills as plugins", "Coding", HAVE, "New abilities as self-contained tools.",
             "skills.py: skill_create with tests, the registry, skillevo; prebuilt skills from backend/prebuilt", seen_in="Mark-LV"),
     Feature("llm_exec", "Run model-written code without checks", "Coding", REJECTED, "Executes code a model wrote, in a weak sandbox.",
