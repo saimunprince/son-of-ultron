@@ -147,8 +147,13 @@ call, and is not adopted.
   no browser call in the last 7 days; all-time 4 of 14 failed.
   **Case added 2026-10-12:** `browser_read` opens a local page whose code
   exists only after its script runs; the matrix's browser row now reads it.
+  Its first live run found that SYRAX's browser was never launched after a
+  self-restart (`52a0fa3`), and that `tool_used` counted a failed call
+  (`tool_ok` added). **Passed live 2026-10-13** (quality runs #30 and #31).
+  Still open: the 15 % failure share over 7 days.
 - **F3 python_execute reliability.** Failure share under 25 % over 7 days
   (32 % on 2026-10-11, 23 of 72; most are the model's own code errors).
+  **Met 2026-10-12:** 23 % (29 of 127), 2 of them permission refusals.
 - **F4 Task phase model.** Understand, plan, act, observe and verify are
   journaled per task and shown in the UI (no stage event is recorded today).
   Visible Work Presence builds on it. **Built 2026-10-12** (`97aee23`): the
@@ -156,8 +161,13 @@ call, and is not adopted.
   to the UI's status corner with its tool and target.
 - **F5 Recovery hand-off.** An interrupted `python_execute` is checked against
   what it touched, or handed to the human with exactly that list, instead of
-  staying UNCERTAIN.
+  staying UNCERTAIN. **Built 2026-10-12** (`6c2e235`): a call whose
+  permission level only reads resumes safely; code, browser and writing calls
+  stay UNCERTAIN with their level and targets shown in the history view.
 - **F6 Frontend tests.** Component tests beyond the single wake-word test file.
+  **Started 2026-10-13:** the PCM helpers of live talk and the UI's link
+  (`SyraxClient`: reconnect, backoff, ping, close) are tested; React
+  components still have none.
 - **Exit**: the matrix rows for research, browser and code execution GREEN;
   30 consecutive autonomous cycles without a crash, then 7 days without an
   unrecoverable one.
