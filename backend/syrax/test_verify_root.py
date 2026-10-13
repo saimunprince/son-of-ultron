@@ -15,13 +15,15 @@ def test_the_live_tree_gets_exactly_the_gates_it_had():
     for name in ("tsc", "eslint", "node_test"):
         assert gates[name].cwd == V.FRONTEND_ROOT and isinstance(gates[name].cmd, list)
     assert gates["next_build"].cmd is V.isolated_next_build
-    assert [g.name for g in V.default_gates()] == ["py_compile", "pytest", "tsc", "eslint", "node_test", "next_build", "diff_scan", "performance"]
+    assert gates["hud_test"].cwd == V.REPO_ROOT / "hud"  # the desktop HUD's link module (hud/link.js), node --test
+    assert [g.name for g in V.default_gates()] == ["py_compile", "pytest", "tsc", "eslint", "node_test", "hud_test", "next_build", "diff_scan", "performance"]
 
 
 def test_a_worktree_gets_the_same_checks_in_its_own_directories(tmp_path):
     gates = {g.name: g for g in V.default_gates(tmp_path)}
-    assert [g for g in gates] == ["py_compile", "pytest", "tsc", "eslint", "node_test", "next_build", "diff_scan", "performance"]
+    assert [g for g in gates] == ["py_compile", "pytest", "tsc", "eslint", "node_test", "hud_test", "next_build", "diff_scan", "performance"]
     assert gates["py_compile"].cwd == tmp_path / "backend" and gates["pytest"].cwd == tmp_path / "backend"
+    assert gates["hud_test"].cwd == tmp_path / "hud"
     assert gates["pytest"].env == V.default_gates()[1].env  # same test environment
     for name in ("tsc", "eslint", "node_test"):
         assert callable(gates[name].cmd)  # runs in tmp_path/frontend with the shared modules linked in
