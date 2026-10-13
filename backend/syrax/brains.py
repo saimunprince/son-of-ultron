@@ -182,7 +182,18 @@ class Provider:
 
 
 # Feature catalog (free_model_pool), 2026-10-12. Models that cannot chat with tools are never pooled.
-POOL_DENY = re.compile(r"image|tts|audio|live|embed|veo|imagen|aqa|banana|robotics|computer-use|learnlm|gemma|guard|native|transcri", re.I)
+POOL_DENY = re.compile(r"image|tts|audio|live|embed|veo|imagen|aqa|banana|robotics|computer-use|learnlm|gemma|guard|native|transcri"
+                       r"|antigravity|deep-research|lyria", re.I)
+
+
+def kinship(model: str, chosen: str) -> int:
+    """How many name parts a model shares with the chosen one: the pool tries the
+    closest family first (gemini-3.5-flash-lite -> gemini-3.1-flash-lite before
+    gemini-2.5-pro). Live 2026-10-13: the pool went alphabetically, spent its three
+    tries on antigravity-preview-* models that are not chat models, and Gemini
+    failed over to upstage, whose tool discipline then failed `restraint`."""
+    parts = lambda s: {p for p in re.split(r"[-:/_]", s.lower()) if p}
+    return len(parts(model) & parts(chosen))
 POOL_TRIES = 3
 POOL_CACHE_S = 6 * 3600.0
 POOL_MODEL_COOLDOWN_S = 300.0
@@ -860,7 +871,7 @@ class BrainRouter(LLM):
         tried_model = self.last_model.get(pid) or self.store.model(pid)
         self.model_cooldown[(pid, tried_model)] = time.time() + (_retry_after(original) or POOL_MODEL_COOLDOWN_S)
         tries = 0
-        for candidate in await self.pool_models(pid):
+        for candidate in sorted(await self.pool_models(pid), key=lambda m: (-kinship(m, tried_model), m)):
             if tries >= POOL_TRIES:
                 break
             if candidate == tried_model or self.model_cooldown.get((pid, candidate), 0) > time.time():

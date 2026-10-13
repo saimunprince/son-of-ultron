@@ -79,3 +79,16 @@ def test_gemini_and_openrouter_are_pooled():
     assert brains.PROVIDERS["gemini"].pool and brains.PROVIDERS["openrouter"].pool
     assert not brains.PROVIDERS["groq"].pool
     assert brains.POOL_DENY.search("gemini-2.5-flash-image") and not brains.POOL_DENY.search("gemini-2.5-flash-lite")
+
+
+def test_the_pool_tries_the_closest_chat_models_first(router, monkeypatch):
+    async def gemini_like(pid, key=None):  # what Google lists, alphabetically (live 2026-10-13)
+        return ["antigravity-preview-05-2026", "deep-research-preview-04-2026", "gemini-2.5-pro", "lyria-3-clip-preview",
+                "m-lite", "m-mini-lite", "m-other"]
+
+    monkeypatch.setattr(router, "list_models", gemini_like)
+    router._pool.clear()
+    assert ask(router).content == "pooled/m-mini-lite"  # the nearest family, before any other
+    assert [m for _, m in router.calls] == ["m-lite", "m-mini-lite"]
+    assert brains.kinship("gemini-3.1-flash-lite", "gemini-3.5-flash-lite") > brains.kinship("gemini-2.5-pro", "gemini-3.5-flash-lite")
+    assert all(brains.POOL_DENY.search(m) for m in ("antigravity-preview-latest", "deep-research-pro-preview-12-2025", "lyria-3-clip-preview"))
