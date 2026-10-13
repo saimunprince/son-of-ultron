@@ -103,13 +103,13 @@ async def check(journal: Journal, fetch: Optional[Callable[[str], List[Dict[str,
     """Look up every due topic once; journal the new stories (topic.news) and when each was checked."""
     now = now or time.time()
     found = []
-    for t in due(journal, now):
+    for t in await asyncio.to_thread(due, journal, now):  # journal calls off the event loop
         try:
             items = await asyncio.to_thread(fetch or fetch_news, t)
         except Exception:
             continue  # offline or rate-limited: try again at the next idle cycle
-        journal.set_meta(CHECKED + t.lower(), str(now))
-        seen = reported_urls(journal, t)
+        await asyncio.to_thread(journal.set_meta, CHECKED + t.lower(), str(now))
+        seen = await asyncio.to_thread(reported_urls, journal, t)
         new = [i for i in items if i.get("url") not in seen][:MAX_ITEMS]
         if new:
             await journal.record("topic.news", {"topic": t, "items": new})  # fans out: the UI shows and speaks it

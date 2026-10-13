@@ -74,13 +74,14 @@ async def tick(journal: Journal, now: Optional[float] = None) -> Optional[Dict[s
     from syrax import resources
 
     now = now if now is not None else time.time()
-    human = last_human(journal)
+    # every journal read off the event loop: waiting on the journal lock must not freeze the server
+    human = await asyncio.to_thread(last_human, journal)
     if now - human < QUIET_FOR_S or not daytime(now) or resources.in_quiet_hours(dt.datetime.fromtimestamp(now).hour):
         return None
-    previous = last_checkin(journal)
+    previous = await asyncio.to_thread(last_checkin, journal)
     if now - previous < COOLDOWN_S:
         return None
-    items = gather(journal, max(human, previous), now)
+    items = await asyncio.to_thread(gather, journal, max(human, previous), now)
     if not items:
         return None  # nothing useful: silence is the answer
     payload = {"text": compose(items), "items": items}

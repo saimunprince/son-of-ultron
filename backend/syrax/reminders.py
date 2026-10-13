@@ -98,7 +98,9 @@ async def fire_due(journal: Journal, notify: Optional[Callable[[str], Awaitable[
     notification, so a crash in between never fires it twice."""
     now = now if now is not None else time.time()
     fired = []
-    for r in pending(journal):
+    # off the event loop: a slow journal call elsewhere holds the journal lock, and waiting for it
+    # here froze the whole server for 60 s+ (stall-20261012-184441.txt)
+    for r in await asyncio.to_thread(pending, journal):
         if float(r.get("due_ts") or 0) > now:
             break
         late = max(0, int(now - float(r["due_ts"])))
