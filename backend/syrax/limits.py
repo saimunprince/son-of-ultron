@@ -231,13 +231,17 @@ def judge_tool_reliability(journal: Journal, objective: dict) -> tuple:
     # id: on Windows time.time() ticks every ~15 ms, so uses recorded in the
     # same tick as the objective passed a ts >= created filter (gate run,
     # 2026-10-03) and counted old failures against the fix.
-    born = next((e["id"] for e in reversed(journal.recent_events(5000))
-                 if e["type"] == "objective.created" and e["payload"].get("objective_id") == objective.get("id")), None)
-    for e in journal.events_between(objective["created"] - 1, limit=10000):
-        if born is not None and e["id"] <= born:
-            continue
-        if e["type"] in ("tool.completed", "tool.failed") and e["payload"].get("name") == tool:
-            if e["type"] == "tool.completed":
+    # Only the two kinds of event the verdict needs, newest first. It read the whole journal
+    # window before: events_between's first 10 000 events after an old objective missed every
+    # newer use, and each cycle re-read ~15 000 events per BLOCKED objective (2026-10-13).
+    since = objective["created"] - 1
+    born = next((e["id"] for e in journal.events_of_type("objective.created", since=since, limit=5000)
+                 if e["payload"].get("objective_id") == objective.get("id")), None)
+    for kind in ("tool.completed", "tool.failed"):
+        for e in journal.events_of_type(kind, since=since, limit=5000):
+            if (born is not None and e["id"] <= born) or e["payload"].get("name") != tool or refused(e["payload"]):
+                continue  # before the objective, another tool, or a call a guard refused (not the tool failing)
+            if kind == "tool.completed":
                 ok += 1
             else:
                 bad += 1
