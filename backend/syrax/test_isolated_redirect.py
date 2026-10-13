@@ -72,7 +72,7 @@ def test_the_ledger_counts_own_edits_in_the_running_tree(tmp_path):
     h = j.start_task_sync("a human edit", kind="conversation")
     j.record_sync("code.changed", {"path": "backend/syrax/c.py", "command": "create", "step": 1}, task_id=h)
     j.close()
-    m = {r["id"]: r for r in rise.measure(tmp_path / "j.db", time.time())["metrics"]}
+    m = {r["id"]: r for r in rise.measure(tmp_path / "j.db", time.time() + 1)["metrics"]}  # + 1: the window ends before `now`, and time.time() ticks every 15.6 ms on Windows
     assert m["live_tree_edits"]["last"]["value"] == 1 and m["live_tree_edits"]["better"] == "lower"
 
 

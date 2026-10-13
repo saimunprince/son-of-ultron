@@ -106,7 +106,7 @@ def test_the_ledger_counts_claims_sent_back_and_its_publisher_is_a_judge(tmp_pat
     t = j.start_task_sync("own", kind="autonomous")
     j.record_sync("claim.rejected", {"text": "has been addressed", "task_kind": "autonomous"}, task_id=t)
     j.close()
-    m = {r["id"]: r for r in rise.measure(tmp_path / "j.db", time.time())["metrics"]}
+    m = {r["id"]: r for r in rise.measure(tmp_path / "j.db", time.time() + 1)["metrics"]}  # + 1: the window ends before `now`, and time.time() ticks every 15.6 ms on Windows
     assert m["claims_rejected"]["last"]["value"] == 1
     assert "backend/syrax/ledger.py" in JUDGES
 
