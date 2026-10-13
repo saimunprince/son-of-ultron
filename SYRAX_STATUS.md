@@ -202,6 +202,43 @@ the frozen task was dismissed with a journaled note; its half-finished edit
 `backend/config/rollback/1791608558-e2f5c27-hung-task-6b1c321baf4f.patch` and
 the file restored; objective 97 was dropped with a note (superseded by 105).
 
+## Self-improvement plan (2026-10-13)
+
+The owner's plan: SYRAX improves itself at every level, and what measures it
+stays out of its reach. One phase at a time, each GREEN before the next; the
+gate result of each phase is recorded in the next phase's entry.
+
+### Phase 1: the protected judge
+
+- The protected set is `devloop.JUDGES` (29 paths): the quality cases, the
+  release gate and its definition (`devloop.py`), the guard, the permissions,
+  the journal and its owner lock, the benches, the ledger, the matrix and the
+  probes.
+- Before: `judge_problems` ran only for autonomous and eval tasks, so a release
+  in a conversation could commit a change to `quality.py` (a test asserted it).
+  Now every SYRAX release that touches the set is refused, in any task kind:
+  `refused: backend/syrax/quality.py: this file judges SYRAX's own work; only
+  a human changes it`. In a conversation the edit stays in the working tree
+  and the refusal tells SYRAX to hand it to the human to review and commit.
+- The refusal is journaled as a refusal, not a tool failure: `release` returns
+  `release refused: …`, which `agent._refused` flags `refused: true`, and the
+  limits and skill-evolution judges skip it.
+- At the call, own work (autonomous and eval) is refused writing a protected
+  file: `permissions.protected_targets` maps editor paths, worktree paths
+  (`.syrax/worktrees/<id>/…`) and code path literals onto the set. Reading a
+  judge stays allowed.
+- Tests (`backend/syrax/test_protected_set.py`): every path in the set is
+  refused in a release (one parametrized case each); a normal change passes;
+  a conversation release of `quality.py` is refused and the edit kept; editor
+  writes to a judge are refused in autonomous and eval work, by absolute,
+  worktree and relative path; a judge view is allowed; a normal own edit and
+  a human-requested judge edit are allowed; `python_execute` writing
+  `guard.py` is refused. `test_devloop.py` now expects the conversation
+  release of `quality.py` to be refused (the owner's rule supersedes the old
+  "human-approved case change").
+- Local run: `pytest test_protected_set.py test_devloop.py test_permissions.py
+  test_release_refusal.py test_permissions_agent.py`: 101 passed.
+
 ## Evidence
 
 - [docs/FIRST_SESSION_EVIDENCE.md](docs/FIRST_SESSION_EVIDENCE.md): every

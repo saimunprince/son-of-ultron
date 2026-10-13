@@ -169,7 +169,10 @@ def test_autonomous_work_cannot_release_changes_to_its_judges(tmp_path):
     dl.task_id_provider = lambda: human
     dl.begin_task()
     (root / "backend" / "syrax" / "quality.py").write_text("CHECK = 'research or know'\n")
-    assert asyncio.run(dl.release("human-approved case change"))["outcome"] == "COMMITTED"
+    # owner rule, 2026-10-13: only a human-made commit changes the judges; the edit stays for the human to commit
+    with pytest.raises(ValueError, match="judges SYRAX's own work"):
+        asyncio.run(dl.release("human-approved case change"))
+    assert (root / "backend" / "syrax" / "quality.py").read_text() == "CHECK = 'research or know'\n"
     assert judge_problems({"docs/x.md": "M", "backend/syrax/test_x.py": "??"}) == []
 
 

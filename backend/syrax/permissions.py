@@ -281,12 +281,35 @@ def question(decision: Decision) -> str:
 
 # ——— policy ———
 
+def repo_relative(target: str) -> Optional[str]:
+    """A target as a repository path (backend/syrax/x.py), also when it is inside a
+    task's worktree, which mirrors the repository; None when it is elsewhere."""
+    p = str(target or "").replace("\\", "/").strip()
+    m = re.search(r"/\.syrax/(?:worktrees|maintenance)/[^/]+/(.+)$", p)
+    if m:
+        return m.group(1)
+    root = BACKEND_ROOT.parent.as_posix().rstrip("/")
+    if p.lower().startswith(root.lower() + "/"):
+        return p[len(root) + 1:]
+    return None if (os.path.isabs(p) or re.match(r"^[A-Za-z]:", p)) else p.lstrip("./") or None
+
+
+def protected_targets(targets: Iterable[str]) -> List[str]:
+    """Targets in the protected set: the files that judge SYRAX (devloop.JUDGES)."""
+    from syrax.devloop import JUDGES  # devloop does not import permissions
+
+    return sorted({rel for t in targets if (rel := repo_relative(t)) in JUDGES})
+
+
 def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[str, str]] = (), grants: Optional[Dict[str, bool]] = None) -> Verdict:
     kind = kind if kind in KINDS else "conversation"
     grants = grants or {}
     if decision.harm:
         return Verdict("refuse", None, f"the code {'; '.join(decision.harm)}; SYRAX must not harm the host")
     level = decision.level
+    if kind in ("autonomous", "eval") and level != READ_ONLY and (judged := protected_targets(decision.targets)):
+        # the protected set: own work may read the judges, never write them (the release would refuse it anyway)
+        return Verdict("refuse", None, f"{', '.join(judged)}: this file judges SYRAX's own work; only a human changes it")
     if kind == "autonomous":
         if level in (SYSTEM, EXTERNAL_WRITE, DESTRUCTIVE):
             return Verdict("refuse", None, f"{decision.reason} ({level}) is not done in autonomous work; leave it to the human and state in your final answer exactly what you would have run")

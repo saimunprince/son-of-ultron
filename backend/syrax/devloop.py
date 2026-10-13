@@ -132,8 +132,11 @@ JUDGES = (
 
 
 def judge_problems(files: Dict[str, str]) -> List[str]:
-    """Changes an autonomous task may not release: the judges, and any edit or
-    deletion of an existing test (new tests are welcome)."""
+    """Changes SYRAX may not release in any task: the judges (the protected set,
+    JUDGES above, which includes this definition), and any edit or deletion of an
+    existing test (new tests are welcome). Owner rule, 2026-10-13: only a
+    human-made commit changes the protected set; when the human asks SYRAX for such
+    a change, the edit stays in the working tree for the human to commit."""
     problems = []
     for path, st in files.items():
         name = path.rsplit("/", 1)[-1]
@@ -275,8 +278,10 @@ class DevLoop:
         problems = scope_problems(files)
         task_id = self.task_id_provider()
         task = self.journal.task(task_id) if task_id else None
-        if task and task.get("kind") in ("autonomous", "eval"):
-            problems += judge_problems(files)
+        judged = judge_problems(files)  # every task kind: only a human-made commit changes the judges
+        problems += judged
+        if judged and task and task.get("kind") not in ("autonomous", "eval"):
+            problems.append("the edit stays in the working tree: tell the human it is there for them to review and commit")
         if problems:
             raise ValueError("refused: " + "; ".join(problems))
         diff = _git(["diff", "HEAD", "--", *[p for p, st in files.items() if st != "??"]], self.root).stdout if any(st != "??" for st in files.values()) else ""
