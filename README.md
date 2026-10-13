@@ -145,6 +145,10 @@ Chromium, Edge or Brave works.
 SYRAX works out of the box with **no API key**. Open the **BRAIN** panel
 (`B` or the BRAIN button) to add free keys for speed. SYRAX tries brains top to
 bottom and fails over automatically on rate limits, bad keys, or outages.
+The panel's **Self-change brain** names the brain SYRAX uses on its own code
+(release objectives); when it cannot take the call, the code benchmark's choice
+stands in and the journal's `brain.routed` says why. Left empty, the benchmark
+decides.
 
 | Brain | Cost | Key |
 | --- | --- | --- |

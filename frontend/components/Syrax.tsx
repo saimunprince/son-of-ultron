@@ -672,8 +672,13 @@ export default function Syrax() {
     [arm, input, push],
   );
 
-  const saveBrains = useCallback((changes: Record<string, BrainChange>, order: string[]) => {
-    clientRef.current?.send({ type: "brains_save", providers: changes, order });
+  const saveBrains = useCallback((changes: Record<string, BrainChange>, order: string[], selfChangeBrain?: string | null) => {
+    clientRef.current?.send({
+      type: "brains_save",
+      providers: changes,
+      order,
+      ...(selfChangeBrain === undefined ? {} : { self_change_brain: selfChangeBrain }),
+    });
   }, []);
 
   const loadModels = useCallback((id: string, apiKey?: string) => {

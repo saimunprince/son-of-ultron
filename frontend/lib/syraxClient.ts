@@ -20,6 +20,8 @@ export interface BrainsState {
   order: string[];
   providers: BrainProvider[];
   active: string | null;
+  /** Phase 2: the brain the owner wants on SYRAX's own code changes; null = the benchmark decides. */
+  self_change_brain?: string | null;
 }
 
 export interface BrainTestResult {
@@ -534,7 +536,7 @@ export type ClientMessage =
   | { type: "quality_runs"; limit?: number }
   | { type: "experiments"; limit?: number }
   | { type: "brains_get" }
-  | { type: "brains_save"; providers: Record<string, BrainChange>; order?: string[] }
+  | { type: "brains_save"; providers: Record<string, BrainChange>; order?: string[]; self_change_brain?: string | null }
   | { type: "brain_models"; id: string; api_key?: string }
   | { type: "brain_test"; id: string };
 

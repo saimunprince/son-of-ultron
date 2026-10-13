@@ -56,6 +56,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from app.logger import logger
 
 from syrax import browser, voice
+from syrax import brains as brains_mod
 from syrax.brains import PROVIDERS, get_router
 from syrax.core import get_core
 from syrax import permissions
@@ -628,7 +629,8 @@ class Session:
             await self.send({"type": "brains", **get_router().describe()})
         elif kind == "brains_save":
             router = get_router()
-            router.update(msg.get("providers") or {}, msg.get("order"))
+            router.update(msg.get("providers") or {}, msg.get("order"),
+                          self_change_brain=msg["self_change_brain"] if "self_change_brain" in msg else brains_mod._UNSET)
             await self.send({"type": "brains", **router.describe()})
         elif kind == "brain_models":
             pid = str(msg.get("id") or "")

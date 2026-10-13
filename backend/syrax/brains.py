@@ -18,7 +18,7 @@ import string
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
 from openai import (
@@ -39,6 +39,7 @@ from app.logger import logger
 from app.schema import Message
 
 BRAINS_FILE = Path(os.getenv("SYRAX_BRAINS_FILE", PROJECT_ROOT / "config" / "brains.json"))
+_UNSET = object()
 
 
 _ENC = None
@@ -357,6 +358,9 @@ class BrainStore:
 
     order: List[str] = field(default_factory=lambda: list(DEFAULT_ORDER))
     settings: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    # Phase 2 of the self-improvement plan: the brain the owner wants on SYRAX's own code changes
+    # (a release objective), tried before any measured routing; None keeps the benchmark's choice.
+    self_change_brain: Optional[str] = None
 
     @classmethod
     def load(cls) -> "BrainStore":
@@ -368,6 +372,8 @@ class BrainStore:
             }
             saved = [p for p in data.get("order") or [] if p in PROVIDERS]
             store.order = saved + [p for p in DEFAULT_ORDER if p not in saved]
+            sc = data.get("self_change_brain")
+            store.self_change_brain = sc if sc in PROVIDERS else None
         except FileNotFoundError:
             pass
         except Exception as e:  # corrupt file: keep defaults, do not crash boot
@@ -377,7 +383,7 @@ class BrainStore:
     def save(self) -> None:
         BRAINS_FILE.parent.mkdir(parents=True, exist_ok=True)
         tmp = BRAINS_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"order": self.order, "providers": self.settings}, indent=2))
+        tmp.write_text(json.dumps({"order": self.order, "providers": self.settings, "self_change_brain": self.self_change_brain}, indent=2))
         os.chmod(tmp, 0o600)
         tmp.replace(BRAINS_FILE)
 
@@ -542,9 +548,24 @@ class BrainRouter(LLM):
                     "cooldown_s": max(0, int(h.until - now)),
                 }
             )
-        return {"order": list(self.store.order), "providers": out, "active": self.active}
+        return {"order": list(self.store.order), "providers": out, "active": self.active,
+                "self_change_brain": self.store.self_change_brain}
 
-    def update(self, changes: Dict[str, Dict[str, Any]], order: Optional[List[str]]) -> None:
+    def usable(self, pid: str) -> Tuple[bool, str]:
+        """Whether a brain can take a call right now, and why not: enabled, keyed if it needs
+        a key, not cooling down after a failure."""
+        if pid not in PROVIDERS:
+            return False, "unknown brain"
+        p, h = PROVIDERS[pid], self.health[pid]
+        if p.key_required and not self.store.key(pid):
+            return False, "no key"  # before "disabled": a keyless keyed brain is both, and the key is the cure
+        if not self.store.enabled(pid):
+            return False, "disabled"
+        if h.until > time.time():
+            return False, f"cooldown: {h.reason or 'recent failure'}"
+        return True, "ready"
+
+    def update(self, changes: Dict[str, Dict[str, Any]], order: Optional[List[str]], self_change_brain: Any = _UNSET) -> None:
         for pid, ch in (changes or {}).items():
             if pid not in PROVIDERS or not isinstance(ch, dict):
                 continue
@@ -568,6 +589,10 @@ class BrainRouter(LLM):
         if order:
             valid = [p for p in order if p in PROVIDERS]
             self.store.order = valid + [p for p in DEFAULT_ORDER if p not in valid]
+        if self_change_brain is not _UNSET:  # "" or None clears it; an unknown id is ignored, not saved
+            sc = str(self_change_brain or "").strip() or None
+            if sc is None or sc in PROVIDERS:
+                self.store.self_change_brain = sc
         self.store.save()
 
     def _client(self, pid: str, key: Optional[str] = None) -> AsyncOpenAI:

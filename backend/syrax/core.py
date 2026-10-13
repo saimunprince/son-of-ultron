@@ -364,6 +364,19 @@ class Core:
             order = [p for p in router.store.order if router.store.enabled(p)]
             if release:
                 kind = "code_change"
+                chosen = getattr(router.store, "self_change_brain", None)
+                if chosen:
+                    # Phase 2: the owner's brain for SYRAX's own code; when it cannot take the call the
+                    # benchmark's choice (or the human's order) stands in, and the journal says why
+                    ok, why = router.usable(chosen)
+                    if ok and chosen in order:
+                        router.routed = chosen
+                        await self.journal.record("brain.routed", {"kind": kind, "brain": chosen, "instead_of": order[0], "reason": "self_change_brain"}, task_id=task_id)
+                        return
+                    router.routed = await asyncio.to_thread(routing.preferred_for_code, self.journal, order)
+                    await self.journal.record("brain.routed", {"kind": kind, "brain": router.routed or order[0], "instead_of": chosen,
+                                                               "reason": f"self_change_brain {chosen} unavailable ({why if ok else why}); fallback"}, task_id=task_id)
+                    return
                 router.routed = await asyncio.to_thread(routing.preferred_for_code, self.journal, order)
             else:
                 kind = routing.kind_of(text)

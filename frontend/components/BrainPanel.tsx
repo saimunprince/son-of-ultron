@@ -7,7 +7,7 @@ interface Props {
   state: BrainsState | null;
   models: Record<string, { list: string[]; error?: string; loading: boolean }>;
   tests: Record<string, BrainTestResult | "running">;
-  onSave: (changes: Record<string, BrainChange>, order: string[]) => void;
+  onSave: (changes: Record<string, BrainChange>, order: string[], selfChangeBrain?: string | null) => void;
   onModels: (id: string, apiKey?: string) => void;
   onTest: (id: string) => void;
   onClose: () => void;
@@ -29,6 +29,7 @@ const STATUS_LABEL: Record<BrainProvider["status"], string> = {
 
 export default function BrainPanel({ state, models, tests, onSave, onModels, onTest, onClose }: Props) {
   const [order, setOrder] = useState<string[]>([]);
+  const [selfChange, setSelfChange] = useState<string>(""); // "" = the benchmark decides
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [modelDraft, setModelDraft] = useState<Record<string, string>>({});
   const [enabledDraft, setEnabledDraft] = useState<Record<string, boolean>>({});
@@ -42,7 +43,10 @@ export default function BrainPanel({ state, models, tests, onSave, onModels, onT
 
   // Adopt server order when it changes (e.g. after a save)
   useEffect(() => {
-    if (state) setOrder(state.order);
+    if (state) {
+      setOrder(state.order);
+      setSelfChange(state.self_change_brain ?? "");
+    }
   }, [state]);
 
   useEffect(() => {
@@ -55,7 +59,8 @@ export default function BrainPanel({ state, models, tests, onSave, onModels, onT
     Object.values(keys).some((v) => v.trim()) ||
     Object.keys(modelDraft).length > 0 ||
     Object.keys(enabledDraft).length > 0 ||
-    (state && order.join() !== state.order.join());
+    (state && order.join() !== state.order.join()) ||
+    (state && selfChange !== (state.self_change_brain ?? ""));
 
   const move = (id: string, dir: -1 | 1) => {
     setOrder((prev) => {
@@ -73,7 +78,7 @@ export default function BrainPanel({ state, models, tests, onSave, onModels, onT
     for (const [id, v] of Object.entries(keys)) if (v.trim()) (changes[id] ??= {}).api_key = v.trim();
     for (const [id, v] of Object.entries(modelDraft)) (changes[id] ??= {}).model = v.trim();
     for (const [id, v] of Object.entries(enabledDraft)) (changes[id] ??= {}).enabled = v;
-    onSave(changes, order);
+    onSave(changes, order, selfChange || null);
     setKeys({});
     setModelDraft({});
     setEnabledDraft({});
@@ -109,6 +114,17 @@ export default function BrainPanel({ state, models, tests, onSave, onModels, onT
         </p>
 
         <ol className="brain-list">
+          <label className="brain-self-change">
+            <span className="hud-dim">Self-change brain</span>
+            <select value={selfChange} onChange={(e) => setSelfChange(e.target.value)} aria-label="Brain for SYRAX's own code changes">
+              <option value="">benchmark decides</option>
+              {order.map((id) => (
+                <option key={id} value={id}>
+                  {byId[id]?.label ?? id}
+                </option>
+              ))}
+            </select>
+          </label>
           {order.map((id, idx) => {
             const p = byId[id];
             if (!p) return null;

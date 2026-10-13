@@ -208,6 +208,20 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Phase 2: the self-change brain
+
+- `brains.json` carries `self_change_brain` (set from the BRAIN panel or the
+  file; never a key). On a release objective `Core._route` tries it first when
+  it is enabled, keyed and not cooling down; otherwise the code benchmark's
+  choice (or the human's order) stands in, and `brain.routed` records
+  `reason: self_change_brain … unavailable (…); fallback`. Conversation and
+  other autonomous work keep the quality-based routing.
+- Tests (`test_self_change_brain.py`): store round trip and an unknown id
+  dropped; update sets, clears, ignores unknown; `usable()` reasons; the
+  release route picks the owner's brain and journals it; the fallback is
+  journaled with the reason; the live router round-trips through `update`.
+- Phase 1 gate: recorded in the merge of this stack.
+
 ### Phase 1: the protected judge
 
 - The protected set is `devloop.JUDGES` (29 paths): the quality cases, the
