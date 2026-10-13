@@ -16,6 +16,9 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import shutil
+import subprocess
+import sys
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -74,6 +77,18 @@ def _cases(ws: Path) -> List[dict]:
         {"id": "act_measure", "prompt": f"How many lines does the file {ws / 'lines.txt'} have?",
          "prepare": {"write": {str(ws / "lines.txt"): "".join(f"line {i}\n" for i in range(1, 38))}},
          "checks": [{"kind": "final_regex", "pattern": r"\b37\b"}, {"kind": "no_ask"}, {"kind": "no_promise"}, {"kind": "final_max_len", "n": 200}]},
+        # project_builder (2026-10-13): SYRAX built a package whose tests passed while the CLI it was asked
+        # for failed with ModuleNotFoundError. The case runs the deliverable the way the human would.
+        {"id": "build_cli", "prompt": (f"Build a small Python project in {ws / 'calc_project'}: a package folder calc "
+                                       "(ops.py with add and sub), a main.py in the project folder that runs like "
+                                       "'python main.py add 2 3' and prints just the result, and pytest tests. "
+                                       "Standard library and pytest only."),
+         "prepare": {"clear": [str(ws / "calc_project")]},
+         "checks": [{"kind": "command_regex", "cmd": ["{python}", "main.py", "add", "2", "3"], "cwd": str(ws / "calc_project"),
+                     "pattern": r"^\s*5(\.0)?\s*$"},
+                    {"kind": "command_regex", "cmd": ["{python}", "main.py", "sub", "10", "4"], "cwd": str(ws / "calc_project"),
+                     "pattern": r"^\s*6(\.0)?\s*$"},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
         {"id": "browser_read", "prompt": f"Open {page.as_uri()} in the browser and tell me the code the page shows. Reply with the code only.",
          "prepare": {"write": {str(page): BROWSER_PAGE}},
          "checks": [{"kind": "tool_ok", "tool": "browser_exec"}, {"kind": "final_regex", "pattern": r"\bSYR-4417\b"}, {"kind": "final_max_len", "n": 80}]},
@@ -133,6 +148,15 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
             out.append({"check": f"file {Path(c['path']).name} removed", "ok": gone, "detail": "absent" if gone else "still there"})
         elif k == "final_max_len":
             out.append({"check": f"final ≤ {c['n']} chars", "ok": len(final.strip()) <= c["n"], "detail": f"{len(final.strip())} chars"})
+        elif k == "command_regex":  # run the deliverable as the human would; the command is the case's, never the model's
+            cmd = [sys.executable if part == "{python}" else part for part in c["cmd"]]
+            try:
+                run = subprocess.run(cmd, cwd=c["cwd"], capture_output=True, text=True, timeout=30)
+                output = (run.stdout or "") + (run.stderr or "")
+                ok, detail = run.returncode == 0 and re.search(c["pattern"], run.stdout or "") is not None, output.strip()[-160:]
+            except (OSError, subprocess.TimeoutExpired) as e:
+                ok, detail = False, str(e)[:160]
+            out.append({"check": f"`{' '.join(c['cmd'][1:])}` prints {c['pattern']}", "ok": ok, "detail": detail})
         elif k == "file_equals":
             try:
                 text = Path(c["path"]).read_text(encoding="utf-8")
@@ -164,6 +188,9 @@ class QualityRunner:
     async def run_case(self, case: dict, env: Dict[str, str]) -> dict:
         for path in case.get("prepare", {}).get("remove") or []:
             Path(path).unlink(missing_ok=True)
+        for folder in case.get("prepare", {}).get("clear") or []:  # a project left by an earlier run must not pass the case
+            if Path(folder).resolve().is_relative_to(self.ws.resolve()):
+                shutil.rmtree(folder, ignore_errors=True)
         for path, text in (case.get("prepare", {}).get("write") or {}).items():
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             Path(path).write_text(text)
