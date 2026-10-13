@@ -126,6 +126,21 @@ def list_directory(path: Path, depth: int = 2, limit: int = 400) -> str:
     return "\n".join(rows)
 
 
+def same_name(path: Path, root: Optional[Path] = None, limit: int = 5) -> List[str]:
+    """Files elsewhere in the repository with the name that was asked for. Live
+    2026-10-12: all 13 of the editor's latest failures were paths that do not
+    exist, most of them guesses such as backend/syrax/app/tool/str_replace_editor.py
+    for backend/app/tool/str_replace_editor.py; the error now names the real one."""
+    out: List[str] = []
+    for here, dirs, files in os.walk(root or REPO_ROOT):
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS)
+        if path.name in files:
+            out.append(str(Path(here) / path.name))
+            if len(out) >= limit:
+                break
+    return out
+
+
 class KeepEolOperator(LocalFileOperator):
     """Writes text with the file's own line endings: LF unless the file already
     uses CRLF; new files get LF. Upstream writes with Path.write_text, which on
@@ -182,8 +197,10 @@ class SyraxEditor(StrReplaceEditor):
             raise ToolError("Parameter `command` is required: view, create, str_replace, insert or undo_edit.")
         if not path:
             raise ToolError(f"Parameter `path` is required for `{command}`: give the absolute path of the file.")
-        resolved, note = resolve_path(str(path), str(command))
-        resolved = redirect(resolved)  # M1: an isolated task writes into its own worktree
+        original, note = resolve_path(str(path), str(command))
+        resolved = redirect(original)  # M1: an isolated task writes into its own worktree
+        if command != "create" and not resolved.exists():
+            resolved, note = self._missing(command, original, resolved, note)
         operator = self._get_operator()
         if command == "create" and await operator.exists(resolved) and not await operator.is_directory(resolved):
             if kwargs.get("file_text") is None:
@@ -213,6 +230,21 @@ class SyraxEditor(StrReplaceEditor):
         if file_content.endswith("\n"):
             file_content = file_content[:-1]
         return super()._make_output(file_content, file_descriptor, init_line, expand_tabs)
+
+    @staticmethod
+    def _missing(command: Any, original: Path, resolved: Path, note: Optional[str]) -> Tuple[Path, Optional[str]]:
+        """A path that is not there: read an untracked file from the running tree, or say where the file really is."""
+        if resolved != original and original.exists():
+            # an isolated task's worktree holds only what git tracks: skills and other untracked files stay in the
+            # running tree (live: .syrax/worktrees/<task>/backend/skills/screen_brightness/skill.py did not exist)
+            if command == "view":
+                why = "(read from the running tree: git does not track it, so it is not in this task's worktree)"
+                return original, f"{note}\n{why}" if note else why
+            raise ToolError(f"{original} is not in this task's worktree because git does not track it, so it cannot be "
+                            "changed here. A skill changes through skill_create.")
+        others = same_name(original)
+        hint = (" Files with that name: " + "; ".join(others) + ".") if others else f" No file named {original.name} exists in the repository."
+        raise ToolError(f"The path {original} does not exist.{hint}")
 
     @staticmethod
     def _noted(text: str, note: Optional[str]) -> str:
