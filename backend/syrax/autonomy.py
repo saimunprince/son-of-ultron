@@ -245,6 +245,20 @@ def resource_pressure() -> Optional[str]:
     return resources.pressure()
 
 
+def own_work_may_not_call(journal: Journal, name: str) -> bool:
+    """permissions.autonomous_refuses, or the level the skill registry recorded: skills
+    are declared only when the agent is built, and a cycle right after a restart came
+    first (live 2026-10-13: objective 183 asked own work to verify screen_brightness,
+    a SYSTEM skill every own call of which is refused by design)."""
+    from syrax import permissions
+
+    if permissions.autonomous_refuses(name):
+        return True
+    row = journal.skill(name)
+    risk = str(((row or {}).get("evidence") or {}).get("risk") or "")
+    return bool(row) and row.get("status") == "VERIFIED" and risk in (permissions.SYSTEM, permissions.EXTERNAL_WRITE, permissions.DESTRUCTIVE)
+
+
 def derive_objectives(journal: Journal, selfmodel: Any) -> int:
     """Turn evidence-based weaknesses into objectives. Idempotent via keys."""
     created = 0
@@ -294,7 +308,7 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
 
     for c in caps:
         name = c["capability"]
-        if not c["registered"] or name in NOT_AUTO_VERIFIED or name in targeted or permissions.autonomous_refuses(name):
+        if not c["registered"] or name in NOT_AUTO_VERIFIED or name in targeted or own_work_may_not_call(journal, name):
             continue  # a tool own work may not call is verified by the human using it
         if c["status"] == "NOT_TESTED":
             ok = journal.add_objective_sync(

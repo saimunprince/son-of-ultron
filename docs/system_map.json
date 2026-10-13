@@ -161,7 +161,7 @@
         "maintain(): 30-day retention of chatty events and checkpoint contexts for finished tasks, WAL truncate, measured counts"
       ],
       "limitations": [
-        "only file edits are reality-checked; other tools UNCERTAIN",
+        "file edits are reality-checked and calls that only read resume safely (F5); code, browser and writing calls stay UNCERTAIN with their level and targets listed",
         "PENDING tasks are stored but not scheduled",
         "maintenance never deletes tasks, knowledge or evidence; no full compaction"
       ],
@@ -662,7 +662,7 @@
         "desktop actions on Wayland"
       ],
       "limitations": [
-        "python/browser/desktop side effects are not reality-checked after a crash"
+        "python/browser side effects and writing desktop actions are not reality-checked after a crash (read-only calls resume safely)"
       ],
       "code": [
         "backend/syrax/tools.py",
