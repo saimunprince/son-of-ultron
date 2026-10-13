@@ -174,7 +174,7 @@ class QualityRunner:
         try:
             await asyncio.wait_for(self.core.wait(), timeout=self.case_timeout)
         except asyncio.TimeoutError:
-            await self.core.cancel()
+            await self.core.cancel(f"the quality case ran out of time ({int(self.case_timeout)} s)")
             await self.core.wait()
         task = self.journal.task(task_id) or {}
         events = self.journal.events(task_id)

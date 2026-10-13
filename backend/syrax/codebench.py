@@ -205,7 +205,7 @@ async def run_case(core: Any, case: dict, ws: Path = WORKSPACE, steps: int = CAS
     try:
         await asyncio.wait_for(core.wait(), timeout=timeout)
     except asyncio.TimeoutError:
-        await core.cancel()
+        await core.cancel(f"the benchmark case ran out of time ({int(timeout)} s)")
         await core.wait()
     events = journal.events(task_id, limit=5000)
     task = journal.task(task_id) or {}

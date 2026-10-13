@@ -77,6 +77,7 @@ class Running:
     kind: str = "conversation"
     phase: Optional[str] = None  # F4: understand | plan | act | observe | verify (phases.py)
     tools_run: int = 0
+    cancel_reason: str = "aborted by human"  # who or what stopped it, as journaled on task.cancelled
 
 
 # Live 2026-10-03: right after boot the autonomy cycle and a human "hi" both
@@ -393,7 +394,7 @@ class Core:
             # "conversation"); history.jsonl is no longer written.
         except asyncio.CancelledError:
             self.agent.repair_memory(aborted=True)
-            await self._mark("task.cancelled", {"error": "aborted by human"})
+            await self._mark("task.cancelled", {"error": self.current.cancel_reason})
             await self.broadcast({"type": "notice", "text": "Task aborted."})
             raise
         except (sqlite3.Error, JournalError) as e:
@@ -485,10 +486,13 @@ class Core:
             "head": _git(["rev-parse", "HEAD"], self.devloop.root).stdout.strip(),
         }
 
-    async def cancel(self) -> bool:
+    async def cancel(self, reason: str = "aborted by human") -> bool:
+        """Stop the running task. `reason` is journaled: a timeout is not a human
+        (live 2026-10-12: a quality case that ran out of time read "aborted by human")."""
         if not self.busy:
             return False
         assert self.current is not None and self.current.task is not None
+        self.current.cancel_reason = reason
         self.current.task.cancel()
         return True
 
