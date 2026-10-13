@@ -83,6 +83,14 @@ ALLOWED_ORIGINS |= {f"http://{h}:{PORT}" for h in ("127.0.0.1", "localhost", HOS
 # files, never the folder (node_modules and the Electron shell stay on disk).
 HUD_DIR = Path(__file__).resolve().parents[2] / "hud"
 HUD_FILES = {"hud.html": "text/html; charset=utf-8", "link.js": "text/javascript; charset=utf-8"}
+# Public feeds the HUD draws that send no CORS headers (fine from file://, blocked from the core's origin):
+# the core fetches them for the page, this allowlist only, cached a minute.
+HUD_FEEDS = {
+    "solar": "https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json",
+    "kp": "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json",
+}
+HUD_FEED_TTL_S = 60
+_hud_feed_cache: dict = {}
 
 
 @asynccontextmanager
@@ -221,6 +229,27 @@ async def hud_redirect():
 @app.get("/hud/")
 async def hud_page():
     return await hud_file("hud.html")
+
+
+@app.get("/hud/feed/{name}")
+async def hud_feed(name: str):
+    if name not in HUD_FEEDS:
+        raise HTTPException(status_code=404, detail="no such feed")
+    hit = _hud_feed_cache.get(name)
+    if hit and time.time() - hit[0] < HUD_FEED_TTL_S:
+        return Response(content=hit[1], media_type="application/json")
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as http:
+            r = await http.get(HUD_FEEDS[name])
+            r.raise_for_status()
+            body = r.content
+    except Exception as e:
+        logger.warning(f"HUD feed {name} failed: {e}")
+        raise HTTPException(status_code=502, detail="feed unavailable")
+    _hud_feed_cache[name] = (time.time(), body)
+    return Response(content=body, media_type="application/json")
 
 
 @app.get("/hud/{name}")

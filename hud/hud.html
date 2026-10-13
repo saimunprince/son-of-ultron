@@ -152,13 +152,15 @@ async function fetchQuakes() {
   } catch (e) { log('SEISMIC FEED FAILED'); }
 }
 // NOAA SWPC: solar wind + geomagnetic index
+// NOAA sends no CORS headers: from the core's origin the feed goes through the core (/hud/feed/<name>); from disk it is direct
+const feedUrl = (name, direct) => location.protocol.startsWith('http') ? location.origin + '/hud/feed/' + name : direct;
 async function fetchSolar() {
   try {
-    const r = await fetch('https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json', { cache: 'no-store' });
+    const r = await fetch(feedUrl('solar', 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json'), { cache: 'no-store' });
     const rows = (await r.json()).slice(1).filter(x => x[2] != null);
     const last = rows[rows.length - 1];
     S.solar = { density: +last[1], speed: +last[2], temp: +last[3], hist: rows.slice(-120).map(x => +x[2]) };
-    const k = await (await fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json', { cache: 'no-store' })).json();
+    const k = await (await fetch(feedUrl('kp', 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'), { cache: 'no-store' })).json();
     S.kp = +k[k.length - 1][1];
     if (!S.solarLogged) { S.solarLogged = true; log(`SOLAR WIND ${S.solar.speed | 0} KM/S · KP ${S.kp}`); }
   } catch (e) { S.solar = null; }
@@ -1476,17 +1478,13 @@ function live(t) {
   const L = S.link, cu = L.uptimeS + (L.online ? (performance.now() - (S.linkT || performance.now())) / 1000 : 0) | 0;
   const left = L.online ? [
     ['SYRAX', 'LINKED', 1],
-    ['STATE', L.state.toUpperCase() + (L.tool ? ' · ' + L.tool.toUpperCase().slice(0, 14) : ''), L.state !== 'idle'],
-    ['PHASE', L.phase ? L.phase.toUpperCase() : '—'],
-    ['TASK', L.task ? L.task.goal.toUpperCase().slice(0, 22) : '—'],
+    ['STATE', L.state.toUpperCase() + (L.tool ? ' · ' + L.tool.toUpperCase().slice(0, 14) : '') + (L.phase ? ' · ' + L.phase.toUpperCase() : ''), L.state !== 'idle'],
+    ['TASK', L.task ? L.task.goal.toUpperCase().slice(0, 26) : '—'],
     ['BRAIN', (L.brain.model || '—').toUpperCase().slice(0, 22) + (L.brain.total ? ` · ${L.brain.ready}/${L.brain.total}` : '')],
-    ['BUILD', (L.version || '—') + (L.restartPending ? ' · NEWER ON DISK' : '')],
-    ['CORE UP', pad(cu / 3600 | 0, 2) + ':' + pad(cu / 60 % 60 | 0, 2) + ':' + pad(cu % 60, 2)],
-    ['OBJECTIVES', L.objectives ?? '—'],
-    ['SKILLS', L.skills ?? '—'],
-    ['QUALITY', L.quality != null ? L.quality + '%' : '—'],
+    ['BUILD', (L.version || '—') + ' · UP ' + pad(cu / 3600 | 0, 2) + ':' + pad(cu / 60 % 60 | 0, 2) + ':' + pad(cu % 60, 2) + (L.restartPending ? ' · NEWER ON DISK' : '')],
+    ['SELF', `${L.objectives ?? '—'} OBJ · ${L.skills ?? '—'} SKILLS · ${L.memories ?? '—'} MEM`],
+    ['QUALITY', (L.quality != null ? L.quality + '%' : '—') + ' · AUTONOMY ' + (L.autonomy ? (L.autonomy.enabled ? 'ON' : 'OFF') + (L.autonomy.cycles != null ? ' ' + L.autonomy.cycles : '') : '—'), !!(L.autonomy && L.autonomy.enabled)],
     ['TOOLS', `${L.counters.toolsOk} OK · ${L.counters.toolsFailed} FAIL · ${L.counters.refused} REFUSED`],
-    ['AUTONOMY', L.autonomy ? (L.autonomy.enabled ? 'ON' : 'OFF') + (L.autonomy.cycles != null ? ' · ' + L.autonomy.cycles + ' CYCLES' : '') : '—', !!(L.autonomy && L.autonomy.enabled)],
   ] : [
     ['SYRAX', 'OFFLINE', 0],
     ['LINK', LINK_URL.replace(/^ws:\/\//, '').toUpperCase()],
