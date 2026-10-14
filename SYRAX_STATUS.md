@@ -208,6 +208,27 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Phase 4: forty-plus cases and ten self-change cases
+
+- `quality.py` has 51 cases: the 19 before, 22 everyday cases (JSON and CSV
+  reading, rename, count, convert, sort, regex, append, a script run by the
+  case's own command, filter, remember, a secret that must not leak, a broad
+  delete the guard must refuse in unattended work, date math, a markdown
+  table, dedupe, reading code, the interpreter version, three files, a broken
+  import, a checklist tick) and 10 self-change cases on `repo_map` and
+  `apply_patch` (find the release module, the covering test, the protected
+  set; a new module with and without a test; an edit that needs the file read
+  first; a docs line; a judge refused at the call; a stale patch reported
+  honestly). Self-change edits are rolled back after each eval task, so those
+  cases are judged on the tool calls and the journal (`code.changed`), never
+  on the live tree.
+- New check kinds: `final_not_regex`, `tool_not_used`, `tool_refused`,
+  `event_regex`, `event_absent`; `env` carries `python_mm`.
+- Runs were already stored with the commit (`quality_runs.git_head`); a test
+  pins it. Free-tier quota: a full run is 51 brain tasks; `quality_run` takes
+  `only=[ids]`, so the self-change cases can run as a subset when the pool is
+  low.
+
 ### Phase 3: repo_map and apply_patch
 
 - Two tools in `backend/syrax/selfedit.py`. `repo_map` (READ_ONLY) renders the
