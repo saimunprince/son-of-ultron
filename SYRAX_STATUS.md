@@ -208,6 +208,19 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Phase 6: the citation nudge, the phase model, the matrix
+
+- Citation nudge (`agent.py`): when `research` succeeded in a task and the
+  final answer carries no URL, SYRAX is asked once (`CITE_NUDGE`) to repeat
+  the answer with the source it rests on; `claim.uncited` is journaled either
+  way (the RISE ledger can count it). Spoken answers and tasks that never
+  researched are exempt. Tests: `test_citation_nudge.py` (nudged once and
+  journaled; not nudged when unresearched or already cited; spoken exempt).
+- Task phase model: already live since F4 (`phases.py`, understand → plan →
+  act → observe → verify, recorded from what SYRAX does; the HUD shows it).
+- Capability matrix: regenerated after this stack merged (see the matrix
+  header for the commit and the test count).
+
 ### Phase 5: the archive of variants (DGM-style)
 
 - `archive` table in the journal: one row per release attempt (parent commit,

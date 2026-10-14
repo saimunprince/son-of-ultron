@@ -188,6 +188,13 @@ WORLD_NUDGE = (
     "tool in this task did that. If the request asks for it, do it now with a tool, then answer. If it does not, "
     "or you cannot, answer honestly what was and was not done."
 )
+# Phase 6 of the self-improvement plan: a researched answer carries its source. Live: research_cite
+# answered the year from memory and quality run #23 failed it; the rule in the prompt alone was not enough.
+URL = re.compile(r"https?://\S+")
+CITE_NUDGE = (
+    "[SYRAX check, not a new request] You used `research` in this task, but your answer carries no source URL. "
+    "Repeat the answer with the URL(s) it rests on, taken from the research results. No new tool calls."
+)
 EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 WRITES = guard.FILE_WRITE  # one regex, shared with permissions.py
 CLAIM_ASK = (
@@ -236,6 +243,7 @@ class SyraxAgent(Manus):
     loop_stopped: bool = False  # the task was ended because it kept repeating one call
     release_called: bool = False  # `release` ran in this task (whatever its outcome)
     changed: bool = False  # a tool that changes the world succeeded this turn
+    researched: bool = False  # `research` succeeded this task: the answer owes a source URL
     # Permissions (permissions.py): the task's kind and the human's own words
     # decide what a destructive or external call needs; consents are the
     # ask_human answers of this task, grants the yes/no already given per call.
@@ -281,6 +289,7 @@ class SyraxAgent(Manus):
         self.loop_stopped = False
         self.release_called = False
         self.changed = False
+        self.researched = False
         self.consents = []
         self.grants = {}
         if not self.task_goal:
@@ -317,6 +326,14 @@ class SyraxAgent(Manus):
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
             await self._send({"type": "notice", "text": "The answer claims a change no tool made: asking once to do it or say so."})
             result += "\n" + await BaseAgent.run(self, WORLD_NUDGE)
+            if self.last_reply.startswith("SYRAX:"):
+                self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+        if (self.last_reply and self.researched and not URL.search(self.last_reply) and "[Spoken aloud" not in (request or "")
+                and not self.step_limit_hit and not self.loop_stopped):
+            # the answer rests on research: it names its source once asked, or the journal shows it would not
+            await self._send({"type": "claim", "event": "uncited", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._send({"type": "notice", "text": "A researched answer without its source: asking once for the URL."})
+            result += "\n" + await BaseAgent.run(self, CITE_NUDGE)
             if self.last_reply.startswith("SYRAX:"):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
         if self.last_reply and not self.changed and (
@@ -433,6 +450,8 @@ class SyraxAgent(Manus):
                 seen[key] = self.current_step
                 if _succeeded(result) and changes_something(name, _args_of(command)):
                     self.changed = True
+                if _succeeded(result) and name == "research":
+                    self.researched = True
                 if name == "ask_human":  # a yes to a question that names a target authorizes it (permissions.named_in)
                     self.consents.append((str(_args_of(command).get("inquire", "")), _OBSERVED.sub("", result, count=1).strip()))
         event = {
