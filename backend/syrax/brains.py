@@ -335,6 +335,51 @@ DEFAULT_ORDER = [
 _ID_ALPHABET = string.ascii_letters + string.digits
 
 
+_TEXT_CALL = re.compile(r"<tool_call>(.*?)(?:</tool_call>|\Z)", re.S)
+_TEXT_FUNC = re.compile(r"<function=([\w.-]+)>(.*?)(?:</function>|\Z)", re.S)
+_TEXT_PARAM = re.compile(r"<parameter=([\w.-]+)>(.*?)</parameter>", re.S)
+
+
+def text_tool_calls(content: str, tools: Optional[List[dict]]) -> tuple:
+    """Tool calls a model wrote as text, in the two shapes seen from open models:
+    <tool_call>{"name": ..., "arguments": {...}}</tool_call> and
+    <tool_call><function=NAME><parameter=KEY>VALUE</parameter>...</function></tool_call>.
+    Only functions that were offered count. Returns (calls, the text before the first call)."""
+    from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
+
+    offered = {(t.get("function") or {}).get("name") for t in tools or []}
+    first = content.find("<tool_call>")
+    if first < 0:
+        return [], content
+    calls = []
+    for body in _TEXT_CALL.findall(content):
+        body = body.strip()
+        name, args = None, None
+        if body.startswith("{"):
+            try:
+                obj = json.loads(body)
+                name, args = obj.get("name"), obj.get("arguments") or obj.get("parameters") or {}
+                if isinstance(args, str):
+                    args = json.loads(args)
+            except (ValueError, AttributeError):
+                continue
+        else:
+            f = _TEXT_FUNC.search(body)
+            if not f:
+                continue
+            name, args = f.group(1), {}
+            for key, raw in _TEXT_PARAM.findall(f.group(2)):
+                val = raw.strip("\n").strip() if raw.strip().startswith(("[", "{")) or raw.strip().isdigit() else raw.strip("\n")
+                try:
+                    args[key] = json.loads(val) if val[:1] in "[{" or val.isdigit() else val
+                except ValueError:
+                    args[key] = val
+        if name in offered and isinstance(args, dict):
+            calls.append(ChatCompletionMessageToolCall(id=_new_call_id(), type="function",
+                                                       function=Function(name=name, arguments=json.dumps(args))))
+    return calls, content[:first].strip()
+
+
 def _new_call_id() -> str:
     # 9 alphanumerics: the strictest format any provider enforces (Mistral).
     return "".join(secrets.choice(_ID_ALPHABET) for _ in range(9))
@@ -856,6 +901,15 @@ class BrainRouter(LLM):
         if not resp.choices or not resp.choices[0].message:
             raise BrainError("empty response")
         msg = resp.choices[0].message
+        if tools and not msg.tool_calls and msg.content:
+            # live 2026-10-14 (objective 224, attempt 2): an openrouter model wrote its tool call as text
+            # ("<tool_call> <function=str_replace_editor> <parameter=path> ..."), the loop took the text for
+            # the final answer and the task ended "SUCCESS" mid-work. A call written in text is a call.
+            parsed, before = text_tool_calls(msg.content, tools)
+            if parsed:
+                logger.info(f"brain {pid}: {len(parsed)} tool call(s) written as text, taken as calls")
+                msg.tool_calls = parsed
+                msg.content = before or None
         for call in msg.tool_calls or []:
             call.id = _new_call_id()
             call.function.name = _clean_tool_name(call.function.name)

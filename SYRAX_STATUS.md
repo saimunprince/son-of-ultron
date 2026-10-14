@@ -221,6 +221,13 @@ gate result of each phase is recorded in the next phase's entry.
   `apply_patch` for the change and its new test, how a test imports
   (`from syrax.<module> import ...`) and isolates (tmp_path stores and
   journals), and `release`.
+- Attempt 2 (upstage, then an openrouter model): 24 editor calls, no
+  `apply_patch`, and the last model wrote its next tool call as text
+  ("<tool_call> <function=str_replace_editor> ..."); the loop took that
+  text for the final answer and the task ended "SUCCESS" in the middle of
+  the work. The router now turns a tool call written as text (the JSON and
+  the XML shapes open models use) into a real call, for offered tools only
+  (`brains.text_tool_calls`, `test_text_tool_calls.py`).
 
 ### Fallback brain: openrouter before upstage (2026-10-14)
 
