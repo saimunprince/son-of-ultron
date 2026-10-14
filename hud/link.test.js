@@ -116,6 +116,17 @@ test('the window SYRAX acted in shows while it works and clears when it is idle'
   assert.equal(s.window, null);
 });
 
+test('a task says whose work it is: the human\'s, SYRAX\'s own objective, or a quality case', () => {
+  const s = L.initial();
+  const own = L.reduce(s, { type: 'task', event: 'started', task_id: 't1', goal: 'Memory expiry for inferences', kind: 'autonomous' }, 1);
+  assert.equal(s.task.kind, 'autonomous');
+  assert.deepEqual(own, [{ kind: 'log', text: 'OWN WORK · MEMORY EXPIRY FOR INFERENCES' }]);
+  L.reduce(s, { type: 'task', event: 'started', task_id: 't2', goal: '17*23?', kind: 'eval' }, 2);
+  assert.equal(s.task.kind, 'eval');
+  L.reduce(s, { type: 'task', event: 'started', task_id: 't3', goal: 'hi' }, 3);
+  assert.equal(s.task.kind, 'conversation');
+});
+
 test('counts come from the real lists: memories, open objectives, skills', () => {
   const s = L.initial();
   L.reduce(s, { type: 'memories', facts: [{ id: 1 }, { id: 2 }] }, 1);

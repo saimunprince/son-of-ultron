@@ -616,6 +616,7 @@ class Core:
                 "step": row.get("current_step", 0),
                 "status": row.get("status"),
                 "phase": self.current.phase,
+                "kind": self.current.kind,  # whose work it is (the HUD labels SYRAX's own objectives)
             }
         interrupted = [
             _interrupted_summary(t) for t in self.journal.tasks(limit=10, status="INTERRUPTED")

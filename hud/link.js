@@ -52,7 +52,7 @@
         s.autonomy = e.autonomy || s.autonomy;
         if (e.presence && e.presence.visibility) { s.visibility = e.presence.visibility; fx.push({ kind: 'presence', visibility: s.visibility }); }
         log('SYRAX LINK ESTABLISHED · ' + s.tools.length + ' TOOLS');
-        if (e.running) { s.task = { id: e.running.task_id, goal: e.running.goal, step: e.running.step || 0 }; s.phase = e.running.phase || null; s.state = 'thinking'; mode('THINKING'); }
+        if (e.running) { s.task = { id: e.running.task_id, goal: e.running.goal, step: e.running.step || 0, kind: e.running.kind || 'conversation' }; s.phase = e.running.phase || null; s.state = 'thinking'; mode('THINKING'); }
         else { s.state = 'idle'; mode('IDLE'); }
         break;
       case 'self_model': {
@@ -80,7 +80,11 @@
         s.phase = e.phase || null; if (e.phase) cog('PHASE ' + e.phase.toUpperCase());
         break;
       case 'task':
-        if (e.event === 'started' || e.event === 'created') { s.task = { id: e.task_id, goal: e.goal || '', step: 0 }; s.counters.tasks++; }
+        if (e.event === 'started' || e.event === 'created') {
+          // whose work it is: the human's (conversation), SYRAX's own objective (autonomous), or a quality case (eval)
+          s.task = { id: e.task_id, goal: e.goal || '', step: 0, kind: e.kind || 'conversation' }; s.counters.tasks++;
+          if (e.kind === 'autonomous') log('OWN WORK · ' + short(e.goal, 40).toUpperCase());
+        }
         else if (e.event === 'completed') log('TASK ' + (e.status || 'DONE') + (e.task_id ? ' · ' + String(e.task_id).slice(0, 8) : ''));
         else if (e.event === 'failed') log('TASK FAILED · ' + short(e.error, 40));
         else if (e.event === 'cancelled') log('TASK ABORTED');
