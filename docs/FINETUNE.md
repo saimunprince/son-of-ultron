@@ -19,6 +19,10 @@ The file lands in `backend/workspace/exports/` (gitignored). Nothing leaves
 the machine; the export is never committed. Run it against the live journal
 while SYRAX runs (it opens the journal read-only, `recover=False`).
 
+First live export, 2026-10-14 (7 days of journal): 274 trajectories, 104
+graded pass, 18 fail, 4 sent back, 148 ungraded; 17 skipped as secret-looking
+and 119 repeats dropped.
+
 ## Format
 
 One JSON object per line:

@@ -395,6 +395,10 @@ gate result of each phase is recorded in the next phase's entry.
 - Tests (`test_trajectories.py`): messages with tool calls and results,
   terminate dropped; grades from quality runs and sent-back answers; secrets
   skipped and repeats capped; the export file and the CLI.
+- Live on the real journal (2026-10-14 17:52, `--since 7`): 274 trajectories
+  (104 pass, 18 fail, 4 sent back, 148 ungraded), 17 skipped as
+  secret-looking, 119 repeats dropped, 1.9 MB, gitignored; a scan of the file
+  for key and password patterns found none.
 
 ### Summary of the plan (2026-10-14)
 
