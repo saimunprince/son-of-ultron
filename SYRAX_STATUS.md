@@ -208,6 +208,18 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Rerun of the three self-change cases (quality run #36, 2026-10-14)
+
+- 3 of 3 passed on build `48d4d22`, but `self_patch_edit` only on a
+  technicality: the brain changed the line with the editor first, then sent
+  the same diff fifteen times (each refused: the `-` line was gone), and the
+  loop's "Not run again" answer to the sixteenth counted as a successful
+  `apply_patch`. Fixed on both sides: `apply_patch` now says when a hunk is
+  ALREADY APPLIED (its `+` lines are in the file and its `-` lines are not),
+  recounts hunk headers (`git apply --recount`, the brains' most common
+  slip), and `tool_ok` no longer counts the repeat-guard's answer.
+  `self_patch_docs` and `self_patch_judge_refused` passed outright.
+
 ### Live run of the everyday cases (quality run #35, 2026-10-14)
 
 - 20 of 22 passed (gemini, build `d48f5a4`). `unit_convert` computed 5 miles

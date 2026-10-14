@@ -154,8 +154,31 @@ def context_hint(diff: str, root: Path, around: int = 6) -> str:
         start = int(h.group(1))
         lo, hi = max(1, start - around), min(len(lines), start + around)
         snippet = "\n".join(f"{i:>5}: {lines[i - 1]}" for i in range(lo, hi + 1))
+        done = already_applied(diff, current, lines)
+        if done:
+            out.append(f"{current}: this hunk is ALREADY APPLIED (the file already holds: {done}). Nothing to patch; "
+                       "if that was the change, the task is done.")
         out.append(f"{current} has {len(lines)} lines; around line {start}:\n{snippet}")
     return "\n".join(out)[:3000]
+
+
+def already_applied(diff: str, path: str, lines: List[str]) -> str:
+    """Live 2026-10-14 (quality run #35 rerun, self_patch_edit): the brain changed the line with the
+    editor, then sent the same diff fifteen times, each refused because the '-' line was gone. When
+    every '+' line of a file's hunks is already in the file and no '-' line is, the change is done."""
+    plus, minus, current = [], [], None
+    for line in diff.split("\n"):
+        if line.startswith("+++ "):
+            m = _DIFF_PATH.match(line)
+            current = m.group(1) if m else None
+        elif current == path and line.startswith("+") and not line.startswith("+++"):
+            plus.append(line[1:].rstrip())
+        elif current == path and line.startswith("-") and not line.startswith("---"):
+            minus.append(line[1:].rstrip())
+    body = {l.rstrip() for l in lines}
+    if plus and all(p in body for p in plus) and not any(m in body for m in minus if m.strip()):
+        return "; ".join(p.strip() for p in plus[:3])[:160]
+    return ""
 
 
 def _git(args: List[str], cwd: Path, stdin: Optional[str] = None) -> subprocess.CompletedProcess:
@@ -217,12 +240,12 @@ def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dic
     for f in files:
         if f.startswith("/") or re.match(r"^[A-Za-z]:", f) or ".." in Path(f).parts:
             raise ValueError(f"{f}: paths must be repository-relative, inside the repository")
-    check = _git(["apply", "--check", "--whitespace=nowarn", "-"], root, stdin=diff)
+    check = _git(["apply", "--check", "--recount", "--whitespace=nowarn", "-"], root, stdin=diff)
     if check.returncode != 0:
         hint = context_hint(diff, root)
         raise ValueError("the patch does not apply cleanly: " + (check.stderr or check.stdout).strip()[:600]
                          + "\nMake the next diff from what the file holds now (context lines must match exactly):\n" + hint)
-    applied = _git(["apply", "--whitespace=nowarn", "-"], root, stdin=diff)
+    applied = _git(["apply", "--recount", "--whitespace=nowarn", "-"], root, stdin=diff)
     if applied.returncode != 0:
         raise RuntimeError("git apply failed after --check passed: " + (applied.stderr or applied.stdout).strip()[:600])
     report: Dict[str, Any] = {"root": str(root), "files": files, "compiled": [], "tests": None}

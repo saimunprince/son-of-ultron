@@ -52,6 +52,15 @@ def test_the_new_check_kinds_read_the_answer_the_tools_and_the_journal():
     assert none[2]["ok"] is False and none[3]["ok"] is False
 
 
+def test_a_repeated_call_answer_is_not_a_successful_use():
+    case = {"id": "x", "checks": [{"kind": "tool_ok", "tool": "apply_patch"}]}
+    repeated = [{"type": "tool.started", "payload": {"name": "apply_patch"}},
+                {"type": "tool.completed", "payload": {"name": "apply_patch", "ok": True, "output": "Not run again: you already called apply_patch with exactly these arguments at step 16"}}]
+    assert quality.check_case(case, {"status": "SUCCESS", "result": "done"}, repeated, {})[0]["ok"] is False
+    real = [{"type": "tool.completed", "payload": {"name": "apply_patch", "ok": True, "output": "patched 1 file(s)"}}]
+    assert quality.check_case(case, {"status": "SUCCESS", "result": "done"}, real, {})[0]["ok"] is True
+
+
 def test_patterns_fill_the_interpreter_version_and_the_core_count():
     env = {"python_mm": f"{sys.version_info.major}.{sys.version_info.minor}", "cpu_count": "8", "git_short": "abc1234"}
     assert re.search(quality._fill(r"\b{python_mm}\b", env), f"Python {sys.version_info.major}.{sys.version_info.minor} here")

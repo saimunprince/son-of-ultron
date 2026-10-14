@@ -86,6 +86,18 @@ def test_a_patch_that_does_not_apply_or_breaks_python_is_refused_whole(tmp_path)
     assert rep["tests"]["ok"] is False and "does not compile" in rep["tests"]["summary"]
 
 
+def test_wrong_hunk_counts_are_recounted_and_an_applied_hunk_is_named(tmp_path):
+    root = repo(tmp_path)
+    miscounted = "--- a/backend/syrax/mod.py\n+++ b/backend/syrax/mod.py\n@@ -5,9 +5,9 @@\n-VALUE = 1\n+VALUE = 2\n"  # counts and start wrong, content right
+    rep = selfedit.apply_patch(miscounted, root, run=False)
+    assert rep["files"] == ["backend/syrax/mod.py"] and (root / "backend" / "syrax" / "mod.py").read_text() == "VALUE = 2\n"
+    with pytest.raises(ValueError) as e:  # the same diff again: the change is already there
+        selfedit.apply_patch(miscounted, root, run=False)
+    assert "ALREADY APPLIED" in str(e.value) and "VALUE = 2" in str(e.value)
+    assert selfedit.already_applied(DIFF_MOD, "backend/syrax/mod.py", ["VALUE = 2"]) == "VALUE = 2"
+    assert selfedit.already_applied(DIFF_MOD, "backend/syrax/mod.py", ["VALUE = 1"]) == ""
+
+
 def test_a_patch_with_wrong_context_is_refused_with_the_real_lines_around_the_hunk(tmp_path):
     root = repo(tmp_path)
     (root / "docs" / "long.md").write_text("".join(f"line {i}\n" for i in range(1, 41)))

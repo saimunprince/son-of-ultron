@@ -270,8 +270,10 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
         elif k == "tool_used":
             ok = c["tool"] in tools
             out.append({"check": f"tool {c['tool']} used", "ok": ok, "detail": f"tools: {tools}"})
-        elif k == "tool_ok":  # used and at least one call succeeded: a failed call is not use (browser_read, 2026-10-12)
-            worked = [e["payload"].get("name") for e in events if e["type"] == "tool.completed"]
+        elif k == "tool_ok":  # used and at least one call succeeded: a failed call is not use (browser_read, 2026-10-12);
+            # the loop's "Not run again" answer to a repeated call is not a success either (self_patch_edit, run #35 rerun)
+            worked = [e["payload"].get("name") for e in events if e["type"] == "tool.completed"
+                      and not str(e["payload"].get("output") or "").lstrip().startswith("Not run again")]
             ok = c["tool"] in worked
             out.append({"check": f"tool {c['tool']} succeeded", "ok": ok, "detail": f"succeeded: {worked}; used: {tools}"})
         elif k == "no_tools":
