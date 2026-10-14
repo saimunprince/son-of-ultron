@@ -1,0 +1,88 @@
+{
+ "generated": "2026-10-14 13:41:18 +0600",
+ "endpoints": {
+  "http": "http://127.0.0.1:8765",
+  "ws": "ws://127.0.0.1:8765/ws?probe=1",
+  "ui": "http://localhost:3001",
+  "origin": "http://localhost:3001"
+ },
+ "process": {
+  "pid": 11424,
+  "pid_alive": true
+ },
+ "http": {
+  "health": {
+   "status": 200,
+   "ms": 20,
+   "json": {
+    "name": "SYRAX",
+    "status": "online",
+    "brain": "gemini"
+   }
+  },
+  "self_structure": {
+   "status": 200,
+   "mojibake_count": 0
+  }
+ },
+ "ui": {
+  "status": 200,
+  "title": "SYRAX"
+ },
+ "ws": {
+  "hello": {
+   "tools": [
+    "aircraft_nearby",
+    "apply_patch",
+    "ask_human",
+    "browser_exec",
+    "browser_screenshot",
+    "compare_versions",
+    "desktop",
+    "disk_usage",
+    "experiment",
+    "flight_search",
+    "forget",
+    "image_tools",
+    "journal_query",
+    "json_tools",
+    "know",
+    "learn",
+    "make_docx",
+    "make_pdf",
+    "make_pptx",
+    "make_xlsx",
+    "organize_folder",
+    "pdf_text",
+    "present",
+    "python_execute",
+    "recall",
+    "release",
+    "remember",
+    "remind",
+    "repo_map",
+    "research",
+    "screen_brightness",
+    "self_inspect",
+    "skill_create",
+    "skill_list",
+    "skill_test",
+    "str_replace_editor",
+    "terminate",
+    "undo",
+    "wallpaper",
+    "watch_topic",
+    "weather",
+    "youtube_open",
+    "youtube_transcript"
+   ],
+   "running": false
+  }
+ },
+ "voice": {
+  "tts": {
+   "error": "HTTP Error 502: Bad Gateway",
+   "ms": 833
+  }
+ }
+}

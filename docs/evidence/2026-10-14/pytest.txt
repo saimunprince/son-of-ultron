@@ -1,0 +1,86 @@
+﻿........................................................................ [  8%]
+........................................................................ [ 17%]
+........................................................................ [ 26%]
+........................................................................ [ 35%]
+........................................................................ [ 44%]
+........................................................................ [ 52%]
+........................................................................ [ 61%]
+........................................................................ [ 70%]
+........................................................................ [ 79%]
+........................................................................ [ 88%]
+.....................................................................s.. [ 96%]
+..........................                                               [100%]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\fastapi\testclient.py:1
+  C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\fastapi\testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+app\config.py:174
+  C:\ai-agent\son-of-ultron\backend\app\config.py:174: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class AppConfig(BaseModel):
+
+app\tool\base.py:38
+  C:\ai-agent\son-of-ultron\backend\app\tool\base.py:38: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class ToolResult(BaseModel):
+
+app\tool\base.py:78
+  C:\ai-agent\son-of-ultron\backend\app\tool\base.py:78: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class BaseTool(ABC, BaseModel):
+
+.venv\Lib\site-packages\pydantic\_internal\_config.py:386: 4 warnings
+syrax/test_bridge.py: 1 warning
+syrax/test_browser_retry.py: 3 warnings
+syrax/test_feature_catalog.py: 2 warnings
+syrax/test_permissions_agent.py: 1 warning
+syrax/test_permissions_skills.py: 2 warnings
+syrax/test_skill_isolation.py: 1 warning
+syrax/test_skill_safety.py: 1 warning
+syrax/test_skill_schema.py: 2 warnings
+syrax/test_skillevo.py: 4 warnings
+syrax/test_skills.py: 6 warnings
+  C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\pydantic\_internal\_config.py:386: UserWarning: Valid config keys have changed in V2:
+  * 'underscore_attrs_are_private' has been removed
+    warnings.warn(message, UserWarning)
+
+app\agent\base.py:13
+  C:\ai-agent\son-of-ultron\backend\app\agent\base.py:13: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    class BaseAgent(BaseModel, ABC):
+
+syrax/test_agent_loops.py: 47 warnings
+syrax/test_bridge.py: 78 warnings
+syrax/test_browser_retry.py: 6 warnings
+syrax/test_citation_nudge.py: 6 warnings
+syrax/test_claims_own_work.py: 4 warnings
+syrax/test_context_isolation.py: 2 warnings
+syrax/test_honest_claims.py: 10 warnings
+syrax/test_ledger_publish.py: 2 warnings
+syrax/test_permissions_agent.py: 44 warnings
+syrax/test_phases.py: 2 warnings
+syrax/test_release_nudge.py: 5 warnings
+syrax/test_reminders.py: 2 warnings
+syrax/test_world_claims.py: 7 warnings
+  C:\ai-agent\son-of-ultron\backend\app\schema.py:90: PydanticDeprecatedSince20: The `dict` method is deprecated; use `model_dump` instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    message["tool_calls"] = [tool_call.dict() for tool_call in self.tool_calls]
+
+syrax/test_brains.py::test_key_less_tier_answers_plain_chat_when_tools_get_402
+  C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\websockets\legacy\__init__.py:6: DeprecationWarning: websockets.legacy is deprecated; see https://websockets.readthedocs.io/en/stable/howto/upgrade.html for upgrade instructions
+    warnings.warn(  # deprecated in 14.0 - 2024-11-09
+
+syrax/test_brains.py::test_key_less_tier_answers_plain_chat_when_tools_get_402
+  C:\ai-agent\son-of-ultron\backend\.venv\Lib\site-packages\uvicorn\protocols\websockets\websockets_impl.py:17: DeprecationWarning: websockets.server.WebSocketServerProtocol is deprecated
+    from websockets.server import WebSocketServerProtocol
+
+syrax/test_bridge.py: 10 warnings
+syrax/test_browser_retry.py: 4 warnings
+syrax/test_citation_nudge.py: 3 warnings
+syrax/test_claims_own_work.py: 2 warnings
+syrax/test_experiments.py: 24 warnings
+syrax/test_ledger_publish.py: 1 warning
+syrax/test_permissions_agent.py: 2 warnings
+syrax/test_reminders.py: 1 warning
+  C:\ai-agent\son-of-ultron\backend\app\tool\base.py:50: PydanticDeprecatedSince20: The `__fields__` attribute is deprecated, use the `model_fields` class property instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.13/migration/
+    return any(getattr(self, field) for field in self.__fields__)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+- generated xml file: C:\ai-agent\son-of-ultron\docs\evidence\2026-10-14\pytest.xml -
+817 passed, 1 skipped, 296 warnings in 433.31s (0:07:13)
