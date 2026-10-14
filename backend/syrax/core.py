@@ -121,6 +121,9 @@ class Core:
         self.devloop.reviewer = _cross_review
         self.versions = VersionComparer(self.journal, task_id_provider=self.current_task_id)
         self.presentation = PresentationEngine(self.journal, emit=self.broadcast)
+        from syrax.presence import Presence
+
+        self.presence = Presence(self.journal)  # Visible Work Presence: visible / minimal / hidden, never touches execution
         try:
             self.presentation.restore()  # the stage survives a restart
         except Exception as e:
@@ -617,6 +620,7 @@ class Core:
             "interrupted": interrupted,
             "recent": [_task_summary(t) for t in self.journal.tasks(limit=10)],
             "presentation": self.presentation.plan(),
+            "presence": self.presence.snapshot(),
         }
 
     async def shutdown(self) -> None:

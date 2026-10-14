@@ -55,7 +55,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from app.logger import logger
 
-from syrax import auth, browser, voice
+from syrax import auth, browser, presence, voice
 from syrax import brains as brains_mod
 from syrax.brains import PROVIDERS, get_router
 from syrax.core import get_core
@@ -378,6 +378,7 @@ class Session:
                 "startup": startup.status(),
                 "voice": {"current": voice.current_voice(get_journal()), "voices": voice.VOICES},
                 "presentation": snap["presentation"],
+                "presence": snap["presence"],
             }
         )
         await self.send({"type": "brains", **get_router().describe()})
@@ -399,6 +400,14 @@ class Session:
 
         if kind == "ping":
             await self.send({"type": "pong"})
+        elif kind == "task" and presence.parse_command(text):
+            # "hide" / "show" / "go minimal": a visibility change, never a task, allowed while one runs
+            await self.core.presence.set(presence.parse_command(text), by="voice" if msg.get("voice") else "text")
+        elif kind == "presence":
+            try:
+                await self.core.presence.set(str(msg.get("visibility") or ""), by=str(msg.get("by") or "ui")[:20])
+            except ValueError as e:
+                await self.send({"type": "notice", "text": str(e)})
         elif kind == "task":
             if not text:
                 return

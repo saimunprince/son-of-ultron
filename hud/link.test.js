@@ -95,6 +95,17 @@ test('the event log carries what SYRAX does to itself: guard, commits, rollbacks
   assert.equal(s.quality, 100);
 });
 
+test('presence: the level comes with hello and with every change, and only a change is an effect', () => {
+  const s = L.initial();
+  const hello = L.reduce(s, { type: 'hello', tools: [], presence: { visibility: 'minimal' } }, 1);
+  assert.equal(s.visibility, 'minimal');
+  assert.deepEqual(hello.filter(f => f.kind === 'presence'), [{ kind: 'presence', visibility: 'minimal' }]);
+  const hide = L.reduce(s, { type: 'presence', event: 'changed', visibility: 'hidden', by: 'voice' }, 2);
+  assert.deepEqual(hide.map(f => f.kind), ['log', 'presence']);
+  assert.equal(hide[0].text, 'PRESENCE HIDDEN · BY VOICE');
+  assert.deepEqual(L.reduce(s, { type: 'presence', event: 'changed', visibility: 'hidden' }, 3), []);
+});
+
 test('counts come from the real lists: memories, open objectives, skills', () => {
   const s = L.initial();
   L.reduce(s, { type: 'memories', facts: [{ id: 1 }, { id: 2 }] }, 1);

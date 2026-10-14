@@ -50,6 +50,8 @@
   #wc button:hover::after { opacity: .9; transform: scaleX(1); }
   #wc #wc-close:hover { color: #ff7a5c; filter: drop-shadow(0 0 5px rgba(255,80,50,.95)); }
   #wc svg { width: 11px; height: 11px; stroke: currentColor; stroke-width: 1.3; fill: none; }
+  /* Visible Work Presence, minimal: a small always-on-top core; the shell's corner window has no room for controls */
+  body.minimal #bar, body.minimal #wc, body.minimal #drag { display: none; }
 </style>
 </head>
 <body>
@@ -561,7 +563,15 @@ function applyEffect(f) {
   else if (f.kind === 'ask') { say(f.question); cmd.placeholder = f.question.slice(0, 80); cmd.focus(); }
   else if (f.kind === 'cog') { S.cog.push({ s: f.text, t: now }); if (S.cog.length > 7) S.cog.shift(); blip(1400, .03, .02); }
   else if (f.kind === 'log') log(f.text);
+  else if (f.kind === 'presence') setVisibility(f.visibility);
 }
+function setVisibility(v) {
+  S.visibility = v;
+  document.body.classList.toggle('minimal', v === 'minimal');
+  window.ultronWin?.presence?.(v);
+}
+// hidden, the shell's global shortcut asks to come back: the core decides, every face follows
+window.ultronWin?.onShowRequest?.(() => { if (online()) link.presence('visible'); else setVisibility('visible'); });
 const MEM_KEY = 'syrax.hud.memory'; // the offline reflex only; SYRAX's real memory lives in its journal
 try { S.rebirths = (+localStorage.getItem('syrax.hud.rebirths') || 0) + 1; localStorage.setItem('syrax.hud.rebirths', S.rebirths); } catch (_) { S.rebirths = 1; }
 try { S.memory = JSON.parse(localStorage.getItem(MEM_KEY) || '[]'); } catch (_) { S.memory = []; }
@@ -704,6 +714,8 @@ async function ask(text, spoken = false) {
   if (!text) return;
   pushChat('YOU', text);
   log('CMD "' + text.toUpperCase().slice(0, 28) + '"');
+  const level = /^(hide|go away)$/i.test(text) ? 'hidden' : /^(show|show yourself|come back)$/i.test(text) ? 'visible' : /^(go )?minimal$/i.test(text) ? 'minimal' : null;
+  if (level && !online()) { setVisibility(level); log('PRESENCE ' + level.toUpperCase() + ' · LOCAL'); return; }
   if (online()) {
     // SYRAX does the work; its state, tool calls and reply come back as events
     cmd.placeholder = 'type a command — or press V and speak';
@@ -1037,6 +1049,20 @@ function frameUI(t) {
   dialogue(t); cognitionPanel(t);
 }
 
+// minimal presence: what SYRAX is doing, in one line under the core (state · tool · phase), and the last words
+function miniUI(t) {
+  const L = S.link, MODE_C = { IDLE: '120,200,255', LISTENING: '110,255,200', THINKING: '255,120,80', RESPONDING: '255,90,60' };
+  const k = U * S.scale, y = (H / 2 - 34) / k;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = (13 / k).toFixed(1) + 'px "Share Tech Mono", monospace';
+  g.fillStyle = `rgba(${MODE_C[S.mode] || MODE_C.IDLE},.95)`;
+  const what = [L.online ? S.mode : 'OFFLINE', L.tool ? L.tool.toUpperCase().slice(0, 14) : null, L.phase ? L.phase.toUpperCase() : null].filter(Boolean).join(' · ');
+  g.fillText('◉ ' + what, 0, y);
+  if (S.reply && (performance.now() - S.replyT) / 1000 < 12) {
+    g.font = (11 / k).toFixed(1) + 'px "Share Tech Mono", monospace'; g.fillStyle = 'rgba(255,235,215,.85)';
+    g.fillText(S.reply.slice(0, 34) + (S.reply.length > 34 ? '…' : ''), 0, y + 18 / k);
+  }
+}
 // what Ultron is thinking about, from live state
 function thought() {
   const q = S.quakes?.[0], i = S.iss, w = S.weather, op = operator(), d = new Date(), pool = [];
@@ -1717,17 +1743,18 @@ function frame(now) {
   const px = S.tx * 8, py = S.ty * 8;
   // every group is wrapped in asmWrap so it flies in on its own trajectory during boot
   g = gf;
-  g.save(); g.translate(-px * 1.6, -py * 1.6); asmWrap(9001, () => { hexgrid(t); rain(t, dt); }, 300); g.restore();
+  const mini = S.visibility === 'minimal';  // the corner core: rings and the mind only, one status line, no panels
+  if (!mini) { g.save(); g.translate(-px * 1.6, -py * 1.6); asmWrap(9001, () => { hexgrid(t); rain(t, dt); }, 300); g.restore(); }
   g.save(); g.translate(-px, -py); sweep(P); outer(t, P); asmWrap(9002, () => spokes(t)); asmWrap(9003, () => deco(t)); g.restore();
   g = gs;
   g.save(); g.translate(-px * .4, -py * .4); mid(t, P); main(t, P); blips(t, P, dt); g.restore();
   g.save(); g.translate(px * .3, py * .3); inner(t, P); spectrum(t); gyro(t + S.think); core(t, P); g.restore();
-  g.save(); g.translate(-px * .6, -py * .6); globe(t); neural(t, dt); terrain(t); g.restore();
+  if (!mini) { g.save(); g.translate(-px * .6, -py * .6); globe(t); neural(t, dt); terrain(t); g.restore(); }
   reticle(t); particles(t, dt * (1 + S.boost + Math.abs(S.omega) * .3));
   // text and panels go on their own layer so bloom, fringe and scanlines never smear them
   g = gu;
-  g.save(); g.translate(-px * .4, -py * .4); drawTexts(th); g.restore();
-  live(th); frameUI(t);
+  if (mini) miniUI(t);
+  else { g.save(); g.translate(-px * .4, -py * .4); drawTexts(th); g.restore(); live(th); frameUI(t); }
   g = gs;
 
   // composite: background, bloom, crisp scene, glitch, flares, scanlines

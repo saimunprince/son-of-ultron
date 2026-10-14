@@ -75,6 +75,12 @@ cd hud; npm install        # once: Electron + systeminformation
 .\SYRAX.cmd                # or: npm start
 ```
 
+Say or type **hide**, **show** or **go minimal**: the HUD leaves the screen,
+fills it, or shrinks to a small always-on-top core in the corner. The level
+is the core's (`presence.changed` in the journal, kept across restarts), never
+a task, and a running task keeps running. While hidden, Ctrl+Shift+Space
+brings SYRAX back.
+
 What is live on the HUD (all of it arrives over `/ws`, mapped in
 `hud/link.js`): link state, task state, phase and current tool; the brain in
 use and how many are ready; the running build, core uptime and whether a newer

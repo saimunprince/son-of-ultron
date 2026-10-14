@@ -2,7 +2,7 @@
 // The HUD itself is served by SYRAX's own backend (http://127.0.0.1:8765/hud) so it talks to the
 // core from the core's own origin; while the core is down the shell shows the local copy, which
 // keeps calling the core (hud/link.js) and reloads from it once it answers.
-const { app, BrowserWindow, ipcMain, session, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, session, nativeTheme, globalShortcut, screen } = require('electron');
 const path = require('path');
 const si = require('systeminformation');
 
@@ -68,6 +68,24 @@ const ASK = process.env.SYRAX_ASK;
 // the core serves the HUD page itself; a core too old to have /hud counts as down for loading (the local copy still links to it)
 async function coreUp() {
   try { return (await fetch(HUD_URL, { signal: AbortSignal.timeout(1500) })).ok; } catch (_) { return false; }  // GET: the route has no HEAD (405)
+}
+
+// visible: the full HUD; minimal: a small always-on-top core in the bottom-right corner; hidden: off screen
+function applyPresence(win, level) {
+  if (win.isDestroyed()) return;
+  if (level === 'hidden') { win.setAlwaysOnTop(false); win.hide(); return; }
+  if (level === 'minimal') {
+    if (win.isFullScreen()) win.setFullScreen(false);
+    win.unmaximize();
+    const area = screen.getPrimaryDisplay().workArea, size = 300;
+    win.setBounds({ x: area.x + area.width - size - 16, y: area.y + area.height - size - 16, width: size, height: size });
+    win.setAlwaysOnTop(true, 'floating');
+    win.showInactive();  // never steal the human's focus
+    return;
+  }
+  win.setAlwaysOnTop(false);
+  win.show();
+  win.maximize();
 }
 
 function sendWinState(win, fullscreen) {
@@ -171,6 +189,16 @@ else {
       else if (cmd === 'close') w.close();
     });
     ipcMain.handle('win-state', e => ({ fullscreen: !!BrowserWindow.fromWebContents(e.sender)?.isFullScreen() }));
+    // Visible Work Presence: the core decides the level (the human's "hide" / "show" / "go minimal"), the shell shows it
+    ipcMain.on('presence', (e, level) => {
+      const w = BrowserWindow.fromWebContents(e.sender);
+      if (w) applyPresence(w, level);
+    });
+    // while hidden, Ctrl+Shift+Space asks the core to show SYRAX again (the HUD sends `presence visible`)
+    globalShortcut.register('CommandOrControl+Shift+Space', () => {
+      const w = BrowserWindow.getAllWindows()[0];
+      if (w) w.webContents.send('show-request');
+    });
     every(60000, pollStatic);
     every(1000, pollFast);
     every(5000, pollSlow);
@@ -178,4 +206,5 @@ else {
   });
   app.on('second-instance', () => BrowserWindow.getAllWindows()[0]?.focus());
   app.on('window-all-closed', () => app.quit());
+  app.on('will-quit', () => globalShortcut.unregisterAll());
 }

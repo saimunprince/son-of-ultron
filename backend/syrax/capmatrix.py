@@ -151,8 +151,11 @@ CAPABILITIES: List[Capability] = [
     Capability("sight", "Click what it sees (UI Automation, then OCR)", CURRENT, "backend/syrax/sight.py, sight.ps1, desktop.py (click_text, find_text)",
                tests=["syrax.test_sight::*"], live=["sight_used"],
                note="primary screen only; a tie clicks nothing and lists the candidates"),
-    Capability("presence", "Visible Work Presence (visibility, hide/show, timeline)", PLANNED, "(none)",
-               note="specified 2026-10-03, not built"),
+    Capability("presence", "Visible Work Presence (visibility, hide/show, timeline)", PARTIAL,
+               "backend/syrax/presence.py, server.py (presence, hello), hud/ (link.js, main.js: visible / minimal / hidden)",
+               tests=["syrax.test_presence::*", "syrax.test_hud::*"],
+               note="Level 1-2 on the HUD (task, phase, tool, log from the journal) and the three levels by text or voice; "
+                    "the human's active window is not observed yet; Level 3 (live workspace) is the owner's decision"),
 ]
 
 

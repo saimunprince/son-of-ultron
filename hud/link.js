@@ -18,7 +18,7 @@
 
   function initial() {
     return {
-      online: false, name: 'SYRAX', version: null, bootId: null, uptimeS: 0, restartPending: false,
+      online: false, name: 'SYRAX', version: null, bootId: null, uptimeS: 0, restartPending: false, visibility: 'visible',
       state: 'offline', tool: null, phase: null, step: 0, task: null, pendingAsk: null,
       lastReply: null, lastReplyAt: 0,
       cog: [], log: [],
@@ -50,6 +50,7 @@
         s.online = true; s.name = e.name || 'SYRAX';
         s.tools = e.tools || []; s.toolLevels = e.tool_levels || {};
         s.autonomy = e.autonomy || s.autonomy;
+        if (e.presence && e.presence.visibility) { s.visibility = e.presence.visibility; fx.push({ kind: 'presence', visibility: s.visibility }); }
         log('SYRAX LINK ESTABLISHED · ' + s.tools.length + ' TOOLS');
         if (e.running) { s.task = { id: e.running.task_id, goal: e.running.goal, step: e.running.step || 0 }; s.phase = e.running.phase || null; s.state = 'thinking'; mode('THINKING'); }
         else { s.state = 'idle'; mode('IDLE'); }
@@ -150,6 +151,13 @@
         s.objectives = (e.objectives || []).filter(o => !/^(DONE|DROPPED)$/.test(o.status || '')).length; break;
       case 'skills':
         s.skills = (e.skills || []).length; break;
+      case 'presence':
+        if (e.visibility && e.visibility !== s.visibility) {
+          s.visibility = e.visibility;
+          log('PRESENCE ' + e.visibility.toUpperCase() + (e.by ? ' · BY ' + String(e.by).toUpperCase() : ''));
+          fx.push({ kind: 'presence', visibility: e.visibility });
+        }
+        break;
       case 'recovery':
         log('RECOVERY · ' + short(e.state || e.event, 30).toUpperCase()); break;
       default:
@@ -210,6 +218,7 @@
     link.answer = text => send({ type: 'answer', text });
     link.stop = () => send({ type: 'stop', reason: 'hud' });
     link.refresh = () => ON_OPEN.forEach(m => send(m));
+    link.presence = visibility => send({ type: 'presence', visibility, by: 'hud' });
     link.close = () => { link.closed = true; if (reconnectTimer) clearTimer(reconnectTimer); if (pingTimer) clearTimer(pingTimer); if (link.ws) link.ws.close(); };
     link.open = open;
     open();

@@ -13,4 +13,6 @@ contextBridge.exposeInMainWorld('ultronWin', {
   close: () => ipcRenderer.send('win', 'close'),
   getState: () => ipcRenderer.invoke('win-state'),
   onState: cb => ipcRenderer.on('win-state', (e, s) => cb(s)),
+  presence: visibility => ipcRenderer.send('presence', visibility),  // visible | minimal | hidden
+  onShowRequest: cb => ipcRenderer.on('show-request', () => cb()),     // the global shortcut while hidden
 });

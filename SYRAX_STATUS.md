@@ -208,6 +208,22 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Visible Work Presence: visible / minimal / hidden (2026-10-14)
+
+- `backend/syrax/presence.py`: three levels, set by a short command
+  ("hide", "show", "go minimal", typed or spoken, never a task, accepted
+  while a task runs) or a `presence` message; journaled as
+  `presence.changed` with who set it; kept across restarts (journal meta);
+  in `hello` and `Core.snapshot()`. The HUD obeys: visible fills the screen,
+  minimal is a 300 px always-on-top core in the bottom-right corner that
+  never takes focus, hidden leaves the screen; Ctrl+Shift+Space asks to come
+  back. Offline, the HUD obeys its own words.
+- Matrix row moved from PLANNED to PARTIAL: Level 1-2 (the HUD's live task,
+  phase, tool and log) and visibility are built; observing the human's
+  active window is not; Level 3 stays the owner's decision.
+- Tests: `test_presence.py` (commands and non-commands, journal and restart,
+  the socket: "hide" starts no task and reaches the face), `link.test.js`.
+
 ### apply_patch never applied a correct diff of an LF file (fixed 2026-10-14)
 
 - Quality run #37 (22 cases on `7921a35`): 21 of 22; all 19 original cases
