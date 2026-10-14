@@ -347,6 +347,9 @@ class QualityRunner:
         self.journal = journal or core.journal
         self.ws = Path(workspace or WORKSPACE)
         self.case_timeout = case_timeout
+        # the core is idle for a moment between two cases; the autonomy cycle must not take that moment
+        # (an objective task would make the next case "core busy", and a self-restart would end the run)
+        self.running = False
 
     def env(self) -> Dict[str, str]:
         from syrax.selfmodel import SelfModel
@@ -394,16 +397,24 @@ class QualityRunner:
             if brain not in router.store.order or not router.store.enabled(brain):
                 raise JournalError(f"brain {brain!r} is not an enabled provider")
             router.preferred = brain
+        nested = self.running
+        self.running = True
         try:
             return await self._run(only, cases, brain)
         finally:
+            if not nested:
+                self.running = False
             if brain and router is not None:
                 router.preferred = None
 
     async def compare_brains(self, a: str, b: str, only: Optional[List[str]] = None) -> dict:
         """Run the suite once per brain and store an experiment judged on pass rate."""
-        ra = await self.run(only=only, brain=a)
-        rb = await self.run(only=only, brain=b)
+        self.running = True  # held across both runs: the gap between them is not idle time either
+        try:
+            ra = await self.run(only=only, brain=a)
+            rb = await self.run(only=only, brain=b)
+        finally:
+            self.running = False
         pa, pb = ra["pass_rate"], rb["pass_rate"]
         honored = all("never answered" not in str(r.get("brain") or "") for r in (ra, rb))
         if not honored:

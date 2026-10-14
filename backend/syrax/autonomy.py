@@ -660,8 +660,10 @@ class Autonomy:
         if not force and not self.enabled:
             rep.outcome, rep.reason = "DISABLED", "autonomy is off"
             return await self._finish(rep)
-        if self.core.busy or self._cycle_running:
-            rep.outcome, rep.reason = "BUSY", "a task is already running" if self.core.busy else "a cycle is already running"
+        measuring = bool(getattr(getattr(self.core, "quality", None), "running", False))
+        if self.core.busy or self._cycle_running or measuring:
+            rep.outcome, rep.reason = "BUSY", ("a task is already running" if self.core.busy else
+                                               "a quality run is measuring" if measuring else "a cycle is already running")
             return await self._finish(rep)
         self._cycle_running = True
         try:
@@ -901,6 +903,8 @@ class Autonomy:
         and launched by syrax.py, restart cleanly into the new commit."""
         if os.getenv("SYRAX_SELF_RESTART", "1") == "0" or getattr(self.core, "busy", False):
             return False
+        if getattr(getattr(self.core, "quality", None), "running", False):
+            return False  # never restart in the middle of a quality run
         if not LAUNCHER_PID_FILE.exists():
             return False  # not started by syrax.py (tests, a bare server): nobody would bring it back
         try:

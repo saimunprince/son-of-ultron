@@ -208,6 +208,15 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### The cycle no longer takes the gap between two quality cases (2026-10-14)
+
+- The autonomy cycle and the self-restart checked only `core.busy`, which is
+  false for a moment between two quality cases: an objective task started
+  there would make the next case fail "core busy", and a restart (after a
+  merge) would end the run. `QualityRunner.running` now covers a whole run
+  and both runs of a brain comparison; the cycle reports BUSY "a quality run
+  is measuring" and the restart waits (`test_cycle_waits_for_quality.py`).
+
 ### The daily ledger was not published on 10-13 and 10-14 (fixed 2026-10-14)
 
 - 10-14 13:03: its gate in `.syrax/maintenance/<id>` hit the nested-worktree
