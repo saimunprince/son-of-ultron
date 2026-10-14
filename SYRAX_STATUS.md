@@ -208,6 +208,17 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Fallback brain: openrouter before upstage (2026-10-14)
+
+- Three days of quality runs: gemini 124 of 135 cases (92 %), upstage 21 of
+  33 (64 %). When Gemini's free quota ran out, the pool fell to upstage and
+  run #39 dropped to 74.5 %. Experiment #43 (`compare_brains`, the same ten
+  everyday cases): openrouter 100 %, upstage 50 %. The brain order is now
+  gemini, openrouter, upstage, groq, ... (the BRAIN panel changes it back).
+- The console rule "exact instructions stay exact" (`prompt.py`): when the
+  human says how to do it and that way fails, report it; never reach the
+  goal another way that changes something else (self_patch_stale, run #39).
+
 ### An objective born from a quality case may not rewrite what the case works on (2026-10-14)
 
 - Task ee5bb152e8fa, on SYRAX's own objective "make quality case
