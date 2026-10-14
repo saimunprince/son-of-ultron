@@ -33,6 +33,8 @@ STEP_PROMPT = (
     "already satisfies the request."
 )
 ECHO_FALLBACK = "I could not put the result into a clean answer; the steps and their outputs are in this task's history."
+NOT_RELEASED_NOTE = (" (Not released: no `release` committed these edits, so they are rolled back as this task ends; "
+                     "the objective stays open.)")
 FINAL_ASK = (
     "You finished using tools but gave the human no answer. Reply now with the final answer only: "
     "the result itself (number, name, year, output), taken from the observations above, and the source "
@@ -248,6 +250,7 @@ class SyraxAgent(Manus):
     repeats: int = 0  # consecutive calls that were repeats of an earlier one
     loop_stopped: bool = False  # the task was ended because it kept repeating one call
     release_called: bool = False  # `release` ran in this task (whatever its outcome)
+    release_committed: bool = False  # and one of its runs committed
     changed: bool = False  # a tool that changes the world succeeded this turn
     researched: bool = False  # `research` succeeded this task: the answer owes a source URL
     # Permissions (permissions.py): the task's kind and the human's own words
@@ -294,6 +297,7 @@ class SyraxAgent(Manus):
         self.repeats = 0
         self.loop_stopped = False
         self.release_called = False
+        self.release_committed = False
         self.changed = False
         self.researched = False
         self.consents = []
@@ -354,8 +358,19 @@ class SyraxAgent(Manus):
             # M3: the journal counts what was sent back, not only what got through
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
             await self._final_answer(CLAIM_ASK)
+        if self._unreleased_edits(request):
+            # live 2026-10-14 (objective 224, attempt 3): thirty steps of edits, no `release`, and the final said
+            # "implemented ... and verified"; the edits were rolled back when the task ended. Say so in the answer.
+            self.last_reply = (self.last_reply or "").rstrip() + NOT_RELEASED_NOTE
         self.task_goal, self.task_kind = "", "conversation"  # the core sets them again for the next task
         return self.last_reply or "Done."
+
+    def _unreleased_edits(self, request: Optional[str]) -> bool:
+        """A release was asked for, files changed, and no release committed them (it never ran, or it did not
+        land): whatever the answer says, the edits are rolled back when the task ends."""
+        from syrax.autonomy import RELEASE_MARK
+
+        return RELEASE_MARK in (request or "") and self.changed and not self.release_committed
 
     def _owes_release(self, request: Optional[str]) -> bool:
         """The brief asked for a release, files changed, `release` never ran,
@@ -457,6 +472,8 @@ class SyraxAgent(Manus):
                     result = await ToolCallAgent.execute_tool(self, command)  # once: the code never ran, so nothing repeats
                 if name == "release":
                     self.release_called = True
+                    if "RELEASE COMMITTED" in result:
+                        self.release_committed = True
                 if name not in READ_ONLY_TOOLS:
                     seen.clear()  # the world may have changed: re-reading it is legitimate again
                 seen[key] = self.current_step
