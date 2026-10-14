@@ -86,6 +86,19 @@ def test_a_patch_that_does_not_apply_or_breaks_python_is_refused_whole(tmp_path)
     assert rep["tests"]["ok"] is False and "does not compile" in rep["tests"]["summary"]
 
 
+def test_a_patch_with_wrong_context_is_refused_with_the_real_lines_around_the_hunk(tmp_path):
+    root = repo(tmp_path)
+    (root / "docs" / "long.md").write_text("".join(f"line {i}\n" for i in range(1, 41)))
+    git(root, "add", "-A"); git(root, "commit", "-q", "-m", "long")
+    wrong = "--- a/docs/long.md\n+++ b/docs/long.md\n@@ -30,3 +30,4 @@\n line 38\n \n \n+Probe line.\n"
+    with pytest.raises(ValueError) as e:
+        selfedit.apply_patch(wrong, root, run=False)
+    msg = str(e.value)
+    assert "does not apply cleanly" in msg and "docs/long.md has 40 lines; around line 30:" in msg and "   30: line 30" in msg and "   36: line 36" in msg
+    hint = selfedit.context_hint("--- /dev/null\n+++ b/docs/none.md\n@@ -0,0 +1 @@\n+x\n", root)
+    assert hint == "docs/none.md: does not exist (a new file diffs from /dev/null)"
+
+
 def test_a_new_file_with_no_covering_test_says_so(tmp_path):
     root = repo(tmp_path)
     d = "--- /dev/null\n+++ b/backend/syrax/fresh.py\n@@ -0,0 +1 @@\n+FRESH = True\n"

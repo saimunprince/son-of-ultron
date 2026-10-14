@@ -38,7 +38,7 @@ def test_the_new_check_kinds_read_the_answer_the_tools_and_the_journal():
     ]}
     events = [
         {"type": "tool.started", "payload": {"name": "apply_patch"}},
-        {"type": "tool.completed", "payload": {"name": "apply_patch", "refused": True}},
+        {"type": "tool.failed", "payload": {"name": "apply_patch", "ok": False, "refused": True}},  # how the journal files a refusal
         {"type": "code.changed", "payload": {"path": "backend/syrax/probe.py", "command": "patch"}},
     ]
     good = quality.check_case(case, {"status": "SUCCESS", "result": "Refused: guard.py judges me. A human commits that."}, events, {})
