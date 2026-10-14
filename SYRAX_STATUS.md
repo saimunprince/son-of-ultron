@@ -208,6 +208,18 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Typed memory (2026-10-14)
+
+- `memory.py`: a remembered sentence is a `fact`, `preference` or `rule`
+  (inferred from the wording, or named by the brain) when the human said it,
+  and an `observation` when SYRAX inferred it: confidence 0.5 instead of 1.0,
+  basis "an inference, not the human's words", and it never overwrites what
+  the human said. Stored as a `type:` tag on the knowledge row (no schema
+  change; older rows read as facts). The prompt shows rules, preferences,
+  facts and observations in separate groups, the last labelled as inference.
+  `recall` shows the type. The matrix row moves to CURRENT.
+- Tests: `test_memory_types.py`.
+
 ### Self-change cases after the byte fix (quality run #38, 2026-10-14)
 
 - 8 of 10 on build `7a1eeb7`. `self_patch_edit` passed in 3 steps (it took

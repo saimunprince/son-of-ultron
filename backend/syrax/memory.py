@@ -37,6 +37,30 @@ _SECRET = re.compile(
 )
 
 
+# Typed memory (2026-10-14): what the human SAID is kept apart from what SYRAX INFERRED, so an
+# inference never speaks with the weight of the human's own words. Stored as a `type:<t>` tag on the
+# knowledge row (no schema change); rows from before carry no tag and read as facts.
+TYPES = ("fact", "preference", "rule", "observation")
+_PREFERENCE = re.compile(r"\b(prefers?|likes?|loves?|hates?|dislikes?|enjoys?|favou?rite|wants?|would rather|rather than)\b", re.I)
+_RULE = re.compile(r"(^|\b)(always|never|don't|do not|must|should|only)\b.*\b(you|syrax|me|reply|answer|ask|use)\b|\b(call me|address me|speak to me)\b", re.I)
+
+
+def infer_type(text: str) -> str:
+    """fact | preference | rule, from the wording; an observation is never inferred (SYRAX says so itself)."""
+    if _RULE.search(text):
+        return "rule"
+    if _PREFERENCE.search(text):
+        return "preference"
+    return "fact"
+
+
+def type_of(tags) -> str:
+    for t in tags or []:
+        if str(t).startswith("type:") and str(t)[5:] in TYPES:
+            return str(t)[5:]
+    return "fact"
+
+
 def _words(text: str) -> set:
     return {w for w in re.findall(r"[\w']+", text.lower()) if len(w) > 2}
 
@@ -86,7 +110,8 @@ class MemoryStore:
 
     @staticmethod
     def _as_fact(k: dict) -> dict:
-        return {"id": str(k["id"]), "text": k["claim"], "created": k["created"], "updated": k.get("last_used")}
+        return {"id": str(k["id"]), "text": k["claim"], "created": k["created"], "updated": k.get("last_used"),
+                "type": type_of(k.get("tags")), "confidence": k.get("confidence")}
 
     def facts(self) -> List[dict]:
         try:
@@ -95,12 +120,13 @@ class MemoryStore:
         except Exception:
             return [{"id": f.get("id", "?"), "text": f["text"], "created": f.get("created")} for f in self._file_facts()]
 
-    def remember(self, text: str) -> str:
+    def remember(self, text: str, kind: Optional[str] = None) -> str:
         text = " ".join(str(text or "").split())[:400]
         if not text:
             return "Nothing to remember."
         if _SECRET.search(text):
             return "Refused: that looks like a secret (password/key/token). Secrets are never stored."
+        kind = kind if kind in TYPES else infer_type(text)
         with self._lock:
             j = self._journal()
             self._migrate()
@@ -108,10 +134,16 @@ class MemoryStore:
             for f in self.facts():
                 old = _words(f["text"])
                 if old and new and len(old & new) / max(1, len(old | new)) > 0.8:
+                    if f.get("type") != "observation" and kind == "observation":
+                        return f"Kept what the human said: {f['text']} (an observation never overwrites it)"
                     j.update_knowledge_claim_sync(int(f["id"]), text)
                     return f"Updated memory: {text}"
-            j.add_knowledge_sync(text, "human", tags=["memory"] + sorted(new)[:6], basis="human said (remember tool)")
-        return f"Remembered: {text}"
+            if kind == "observation":  # SYRAX's own inference: half the weight of the human's word, and labelled so
+                j.add_knowledge_sync(text, "human", tags=["memory", "type:observation"] + sorted(new)[:6], confidence=0.5,
+                                     basis="SYRAX observed (remember tool, type observation): an inference, not the human's words")
+            else:
+                j.add_knowledge_sync(text, "human", tags=["memory", f"type:{kind}"] + sorted(new)[:6], basis="human said (remember tool)")
+        return f"Remembered ({kind}): {text}"
 
     def recall(self, query: str = "", limit: int = 15) -> List[dict]:
         facts = self.facts()
@@ -181,7 +213,14 @@ class MemoryStore:
         recent = self.recent()
         parts = []
         if facts:
-            parts.append("LONG-TERM MEMORY (facts about the human, from earlier sessions):\n" + "\n".join(f"- {f['text']}" for f in facts))
+            groups = [("rule", "Rules the human set for you"), ("preference", "What the human prefers"),
+                      ("fact", "What the human told you"), ("observation", "What you observed yourself (inference; the human never said it, it may be wrong)")]
+            lines = []
+            for t, title in groups:
+                mine = [f for f in facts if f.get("type", "fact") == t]
+                if mine:
+                    lines.append(f"{title}:\n" + "\n".join(f"- {f['text']}" for f in mine))
+            parts.append("LONG-TERM MEMORY (from earlier sessions):\n" + "\n".join(lines))
         if recent:
             parts.append(
                 "RECENT CONVERSATIONS (previous sessions, oldest first):\n"
@@ -190,8 +229,9 @@ class MemoryStore:
         parts.append(
             "MEMORY RULES: When the human shares a lasting fact about themselves (name, preferences, "
             "projects, people, routines, how they want you to behave), call `remember` with one short "
-            "sentence. Use `recall` to search older facts, `forget` when asked. Never store passwords, "
-            "keys, tokens or other secrets."
+            "sentence. Something you noticed but they never said is an `observation` (type observation): "
+            "it is kept apart and never overrides their words. Use `recall` to search older facts, "
+            "`forget` when asked. Never store passwords, keys, tokens or other secrets."
         )
         return "\n\n".join(parts)
 
@@ -208,16 +248,21 @@ def get_memory() -> MemoryStore:
 
 class RememberTool(BaseTool):
     name: str = "remember"
-    description: str = "Store one lasting fact about the human (preference, name, project, rule) in long-term memory."
+    description: str = ("Store one lasting fact about the human in long-term memory. type: fact (what they told you), "
+                        "preference (what they like), rule (how they want you to behave), or observation (something you "
+                        "noticed that they never said: kept apart, half the weight). Leave type out to infer it from the wording.")
     parameters: dict = {
         "type": "object",
-        "properties": {"fact": {"type": "string", "description": "One short sentence, e.g. 'Prince prefers dark themes.'"}},
+        "properties": {
+            "fact": {"type": "string", "description": "One short sentence, e.g. 'Prince prefers dark themes.'"},
+            "type": {"type": "string", "enum": list(TYPES), "description": "fact | preference | rule | observation"},
+        },
         "required": ["fact"],
     }
     store: Optional[MemoryStore] = Field(default=None, exclude=True)
 
-    async def execute(self, fact: str) -> str:
-        return (self.store or get_memory()).remember(fact)
+    async def execute(self, fact: str, type: Optional[str] = None) -> str:  # noqa: A002 - the tool's parameter name
+        return (self.store or get_memory()).remember(fact, type)
 
 
 class RecallTool(BaseTool):
@@ -232,7 +277,7 @@ class RecallTool(BaseTool):
 
     async def execute(self, query: str = "") -> str:
         hits = (self.store or get_memory()).recall(query)
-        return "\n".join(f"[{f['id']}] {f['text']}" for f in hits) or "No matching memories."
+        return "\n".join(f"[{f['id']}] ({f.get('type', 'fact')}) {f['text']}" for f in hits) or "No matching memories."
 
 
 class ForgetTool(BaseTool):

@@ -83,9 +83,10 @@ CAPABILITIES: List[Capability] = [
                tools=["browser_screenshot"], tests=["syrax.test_desktop::test_system_info_and_find_files"], live=["desktop_screenshot"]),
     Capability("desktop", "Desktop automation (apps, media, clipboard, windows)", CURRENT, "backend/syrax/desktop.py, winctl.py",
                tools=["desktop"], tests=["syrax.test_desktop::*"], quality_cases=["desktop_cpu"]),
-    Capability("memory", "Memory (remember / recall / forget)", PARTIAL, "backend/syrax/memory.py",
-               tools=["remember", "recall", "forget"], tests=["syrax.test_memory::*"],
-               note="keyword store, no fact/observation/inference typing; rarely used by the model"),
+    Capability("memory", "Memory (remember / recall / forget)", CURRENT, "backend/syrax/memory.py",
+               tools=["remember", "recall", "forget"], tests=["syrax.test_memory::*", "syrax.test_memory_types::*"],
+               note="typed: fact / preference / rule from the human, observation (SYRAX's inference, half the weight) kept apart; "
+                    "keyword recall, no embeddings"),
     Capability("knowledge", "Research and knowledge (research / know / learn)", CURRENT, "backend/syrax/research.py, consolidate.py",
                tools=["research", "know", "learn"], tests=["syrax.test_research::*", "syrax.test_consolidate::*"],
                quality_cases=["know_honest", "research_cite"]),
