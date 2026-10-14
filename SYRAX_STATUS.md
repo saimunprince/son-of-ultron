@@ -208,6 +208,20 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### apply_patch never applied a correct diff of an LF file (fixed 2026-10-14)
+
+- Quality run #37 (22 cases on `7921a35`): 21 of 22; all 19 original cases
+  and the two fixed in #35 passed. `self_patch_edit` failed again, twenty
+  calls; its very first diff was correct. Reproduced by hand: the same diff
+  applies with `git apply` on bytes and fails through `subprocess` in text
+  mode, which on Windows turns every `\n` of the patch into `\r\n`. The
+  `.py` files are LF on disk, so no correct diff of SYRAX's own code could
+  apply; the unit tests passed only because their files were written with
+  CRLF. `selfedit._git` now sends the patch as bytes, with a test on an LF
+  file written as bytes. The "line 159" and "already applied" diagnoses in
+  runs #34 and #36 were symptoms of this, not brain errors; the context hint
+  and `--recount` stay (they help when the brain is wrong).
+
 ### SYRAX's own releases blocked by a Phase 1 test (fixed 2026-10-14)
 
 - Verifications #19, #20 and #21 (SYRAX's own objectives on `apply_patch`,

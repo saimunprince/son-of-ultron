@@ -182,7 +182,12 @@ def already_applied(diff: str, path: str, lines: List[str]) -> str:
 
 
 def _git(args: List[str], cwd: Path, stdin: Optional[str] = None) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=str(cwd), input=stdin, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+    """git with the patch on stdin as bytes. Live 2026-10-14 (quality runs #34-#37): in text mode,
+    Windows turned every \n of the patch into \r\n, so no correct diff of an LF file ever applied;
+    the tests passed only because their files were written with CRLF too."""
+    r = subprocess.run(["git", *args], cwd=str(cwd), input=stdin.encode("utf-8") if stdin is not None else None,
+                       capture_output=True, timeout=60)
+    return subprocess.CompletedProcess(r.args, r.returncode, r.stdout.decode("utf-8", "replace"), r.stderr.decode("utf-8", "replace"))
 
 
 def covering_tests(root: Path, files: List[str]) -> List[str]:

@@ -86,6 +86,19 @@ def test_a_patch_that_does_not_apply_or_breaks_python_is_refused_whole(tmp_path)
     assert rep["tests"]["ok"] is False and "does not compile" in rep["tests"]["summary"]
 
 
+def test_a_correct_diff_of_an_lf_file_applies(tmp_path):
+    """The repository's .py files are LF on disk (eol=lf); the brain's diff is LF. Written as bytes, so
+    Windows text mode cannot hide a newline translation (the earlier tests wrote CRLF files)."""
+    root = repo(tmp_path)
+    (root / "backend" / ".gitattributes").write_bytes(b"*.py text eol=lf\n")  # as in the real backend/.gitattributes
+    (root / "backend" / "syrax" / "lf.py").write_bytes(b'MODULE = "x"\nTIMEOUT_S = 300\nMAX = 12\n')
+    git(root, "-c", "core.autocrlf=false", "add", "-A"); git(root, "-c", "core.autocrlf=false", "commit", "-q", "-m", "lf")
+    d = '--- a/backend/syrax/lf.py\n+++ b/backend/syrax/lf.py\n@@ -1,3 +1,3 @@\n MODULE = "x"\n-TIMEOUT_S = 300\n+TIMEOUT_S = 400\n MAX = 12\n'
+    rep = selfedit.apply_patch(d, root, run=False)
+    assert rep["files"] == ["backend/syrax/lf.py"]
+    assert (root / "backend" / "syrax" / "lf.py").read_bytes() == b'MODULE = "x"\nTIMEOUT_S = 400\nMAX = 12\n'
+
+
 def test_wrong_hunk_counts_are_recounted_and_an_applied_hunk_is_named(tmp_path):
     root = repo(tmp_path)
     miscounted = "--- a/backend/syrax/mod.py\n+++ b/backend/syrax/mod.py\n@@ -5,9 +5,9 @@\n-VALUE = 1\n+VALUE = 2\n"  # counts and start wrong, content right
