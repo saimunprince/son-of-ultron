@@ -208,6 +208,27 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### The first full run of all 51 cases (quality run #39, 2026-10-14)
+
+- 38 of 51 (74.5 %) on build `4c248c7`. Gemini's free quota ran out part way
+  (13 rate limits in the hour) and the pool failed over to upstage: 11 of the
+  13 failures were answered by upstage, on cases gemini passed earlier the
+  same day. The score is kept as measured; routing learns from it.
+- Three real defects found and fixed:
+  - `apply_patch`: a brain's `+++ backend/syrax/x.py` (no `b/`) made `git
+    apply` write `syrax/x.py` at the repository root while the journal, the
+    rollback and the permission check read `backend/syrax/x.py` (the stray
+    file stayed; I removed it). Worse, `x/backend/syrax/guard.py` would have
+    written a judge while the guard checked another path. Headers without
+    `a/` or `b/` now get one, so git and SYRAX agree (`normalize_headers`).
+  - An eval task (self_patch_stale, gemini) rewrote README's title against
+    the case's words and called `release`; the gate ran four minutes until
+    the case's timeout; the rollback restored README and nothing was
+    committed. A quality case now never releases (refused at the call).
+  - That timeout was journaled "aborted by human": `wait_for` cancelled the
+    task through `Core.wait`'s gather before the reason was set. The wait is
+    shielded now.
+
 ### Work Presence, the target window (2026-10-14)
 
 - Right after a `desktop` or `browser_*` call the core notes the window in

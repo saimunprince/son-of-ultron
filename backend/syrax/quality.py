@@ -369,7 +369,9 @@ class QualityRunner:
         if task_id is None:
             return {"id": case["id"], "ok": False, "task_id": None, "ms": 0, "checks": [{"check": "task started", "ok": False, "detail": "core busy"}]}
         try:
-            await asyncio.wait_for(self.core.wait(), timeout=self.case_timeout)
+            # shield: on timeout wait_for cancels what it awaits, and Core.wait gathers the task itself,
+            # so the task was cancelled before core.cancel could give the reason (run #39: "aborted by human")
+            await asyncio.wait_for(asyncio.shield(self.core.wait()), timeout=self.case_timeout)
         except asyncio.TimeoutError:
             await self.core.cancel(f"the quality case ran out of time ({int(self.case_timeout)} s)")
             await self.core.wait()

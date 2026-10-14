@@ -209,10 +209,10 @@ def classify(name: str, args: Any) -> Decision:
             return Decision(name, WRITE, f"edits {Path(path).name}", [str(resolved)], [], scope_of(resolved))
         return Decision(name, READ_ONLY, "views a file", [path] if path else [])
     if name == "apply_patch":  # Phase 3: a unified diff; its paths are the targets, so the protected set is checked per file
-        from syrax.selfedit import diff_paths, work_root
+        from syrax.selfedit import diff_paths, normalize_headers, work_root
 
         root = work_root()
-        paths = diff_paths(str(a.get("diff") or ""))
+        paths = diff_paths(normalize_headers(str(a.get("diff") or "").replace("\r\n", "\n")))
         return Decision(name, WRITE, f"patches {', '.join(Path(x).name for x in paths[:3]) or '?'}", [str(root / x) for x in paths], [], "repo")
     if name == "python_execute":
         code = str(a.get("code") or "")
@@ -317,6 +317,10 @@ def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[st
     if decision.harm:
         return Verdict("refuse", None, f"the code {'; '.join(decision.harm)}; SYRAX must not harm the host")
     level = decision.level
+    if kind == "eval" and decision.tool == "release":
+        # live 2026-10-14 (quality run #39, self_patch_stale): an eval task rewrote README's title and called
+        # release; the gate ran four minutes before the case's timeout stopped it. A measurement never commits.
+        return Verdict("refuse", None, "a quality case measures SYRAX; it never releases a change")
     if kind in ("autonomous", "eval") and level != READ_ONLY and (judged := protected_targets(decision.targets)):
         # the protected set: own work may read the judges, never write them (the release would refuse it anyway)
         return Verdict("refuse", None, f"{', '.join(judged)}: this file judges SYRAX's own work; only a human changes it")

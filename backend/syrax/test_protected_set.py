@@ -53,6 +53,13 @@ def test_own_work_is_refused_writing_a_judge_at_the_call(path):
     assert permissions.decide(view, "autonomous", "read it").action == "allow"  # reading a judge is fine
 
 
+def test_a_quality_case_never_releases():
+    d = permissions.classify("release", {"summary": "x"})
+    assert permissions.decide(d, "eval", "apply the patch").action == "refuse"
+    assert permissions.decide(d, "autonomous", "improve").action == "allow"
+    assert permissions.decide(d, "conversation", "release it").action == "allow"
+
+
 def test_a_path_in_a_worktree_of_a_worktree_maps_to_the_repository():
     nested = "C:/ai-agent/son-of-ultron/.syrax/worktrees/1d1d0126f78f/.syrax/worktrees/abc123/backend/syrax/guard.py"
     assert permissions.repo_relative(nested) == "backend/syrax/guard.py"

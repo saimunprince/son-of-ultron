@@ -116,6 +116,24 @@ def render_map(root: Path, query: str = "") -> str:
 
 # ——— the patch ———
 
+def normalize_headers(diff: str) -> str:
+    """Live 2026-10-14 (quality run #39, self_patch_no_test): a brain wrote `+++ backend/syrax/x.py`
+    without the b/ prefix; `git apply` strips the first path component regardless (-p1), so it wrote
+    `syrax/x.py` at the repository root while the journal, the rollback and the permission check all
+    read `backend/syrax/x.py`. A header without a/ or b/ now gets one, so git strips exactly that."""
+    out = []
+    for line in diff.split("\n"):
+        for marker, prefix in (("--- ", "a/"), ("+++ ", "b/")):
+            if line.startswith(marker):
+                rest = line[len(marker):]
+                token = rest.split("\t", 1)[0].strip()
+                if token and token != "/dev/null" and not token.startswith(("a/", "b/")):
+                    line = marker + prefix + rest.lstrip()
+                break
+        out.append(line)
+    return "\n".join(out)
+
+
 def diff_paths(diff: str) -> List[str]:
     """Repository-relative paths a unified diff touches (a/ and b/ prefixes stripped, /dev/null dropped)."""
     seen: List[str] = []
@@ -239,6 +257,7 @@ def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dic
         raise ValueError(f"patch too large ({len(diff)} chars); split it")
     if not diff.endswith("\n"):
         diff += "\n"
+    diff = normalize_headers(diff)
     files = diff_paths(diff)
     if not files:
         raise ValueError("not a unified diff: no '--- a/path' / '+++ b/path' headers")

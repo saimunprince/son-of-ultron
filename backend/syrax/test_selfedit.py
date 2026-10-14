@@ -99,6 +99,27 @@ def test_a_correct_diff_of_an_lf_file_applies(tmp_path):
     assert (root / "backend" / "syrax" / "lf.py").read_bytes() == b'MODULE = "x"\nTIMEOUT_S = 400\nMAX = 12\n'
 
 
+def test_a_header_without_a_or_b_lands_where_the_journal_says(tmp_path):
+    root = repo(tmp_path)
+    d = "--- /dev/null\n+++ backend/syrax/fresh2.py\n@@ -0,0 +1 @@\n+FRESH = 2\n"
+    rep = selfedit.apply_patch(d, root, run=False)
+    assert rep["files"] == ["backend/syrax/fresh2.py"]
+    assert (root / "backend" / "syrax" / "fresh2.py").is_file() and not (root / "syrax").exists()
+    assert selfedit.normalize_headers("--- a/x.py\n+++ b/x.py\n") == "--- a/x.py\n+++ b/x.py\n"
+    assert selfedit.normalize_headers("--- /dev/null\n+++ docs/y.md\n") == "--- /dev/null\n+++ b/docs/y.md\n"
+
+
+def test_a_judge_hidden_behind_an_extra_component_is_still_a_judge():
+    from syrax import permissions
+
+    sneaky = "--- x/backend/syrax/guard.py\n+++ x/backend/syrax/guard.py\n@@ -1 +1 @@\n-a\n+b\n"
+    # git would strip x/ and write backend/syrax/guard.py; the guard must see that path too
+    d = permissions.classify("apply_patch", {"diff": selfedit.normalize_headers(sneaky)})
+    assert any(t.replace("\\", "/").endswith("x/backend/syrax/guard.py") for t in d.targets)
+    plain = permissions.classify("apply_patch", {"diff": "--- backend/syrax/guard.py\n+++ backend/syrax/guard.py\n@@ -1 +1 @@\n-a\n+b\n"})
+    assert permissions.decide(plain, "autonomous", "x").action == "refuse"
+
+
 def test_wrong_hunk_counts_are_recounted_and_an_applied_hunk_is_named(tmp_path):
     root = repo(tmp_path)
     miscounted = "--- a/backend/syrax/mod.py\n+++ b/backend/syrax/mod.py\n@@ -5,9 +5,9 @@\n-VALUE = 1\n+VALUE = 2\n"  # counts and start wrong, content right
