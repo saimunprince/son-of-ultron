@@ -32,6 +32,7 @@ STEP_PROMPT = (
     "and finish. If it is not done, take the one next step that moves it forward. Never undo work that "
     "already satisfies the request."
 )
+ECHO_FALLBACK = "I could not put the result into a clean answer; the steps and their outputs are in this task's history."
 FINAL_ASK = (
     "You finished using tools but gave the human no answer. Reply now with the final answer only: "
     "the result itself (number, name, year, output), taken from the observations above, and the source "
@@ -117,6 +118,11 @@ def _succeeded(result: str) -> bool:
 # A final reply that announces an answer instead of giving it. Live: "SYRAX: The
 # request is fully satisfied. I have researched ... I will now present the answer
 # and terminate." — and no year, no URL.
+# A final answer that repeats the console's own nudges instead of answering. Live 2026-10-14
+# (task f0a6e150812b, upstage): the final began 'The user says: "[SYRAX step check, not a new
+# request] ...' and went on reasoning about it; six finished tasks in the journal carry such text.
+ECHO = re.compile(r"\[SYRAX (?:step )?check, not a new request\]|^\s*the user says:\s*[\"\u201c]?\[SYRAX", re.I)
+
 PROMISE = re.compile(
     r"\b(i will now|i'll now|let me now|i am going to|i'm going to|the request is (fully )?(satisfied|complete)|"
     r"i will (now )?(present|provide|give))\b", re.I,
@@ -321,6 +327,11 @@ class SyraxAgent(Manus):
             self.last_reply = self.last_reply[len("SYRAX:"):].strip()
         if (not self.last_reply or PROMISE.search(self.last_reply)) and any(m.role == "tool" for m in self.memory.messages):
             await self._final_answer()
+        if self.last_reply and ECHO.search(self.last_reply):
+            await self._send({"type": "notice", "text": "The answer repeated a console nudge: asking once for the answer itself."})
+            await self._final_answer()
+            if ECHO.search(self.last_reply or ""):  # still an echo: never hand the human the console's own words
+                self.last_reply = ECHO_FALLBACK
         if (self.last_reply and not self.changed and WORLD_CLAIM.search(self.last_reply)
                 and not self.step_limit_hit and not self.loop_stopped):
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
