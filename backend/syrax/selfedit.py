@@ -29,7 +29,7 @@ from syrax.journal import BACKEND_ROOT
 REPO_ROOT = BACKEND_ROOT.parent
 MODULE_DIR = "backend/syrax"
 TEST_TIMEOUT_S = 300
-MAX_TEST_FILES = 12
+MAX_TEST_FILES = 16
 PATCH_MAX_CHARS = 200_000
 _DIFF_PATH = re.compile(r"^(?:\+\+\+|---) (?:[ab]/)?(\S+)", re.M)
 
@@ -208,9 +208,26 @@ def _git(args: List[str], cwd: Path, stdin: Optional[str] = None) -> subprocess.
     return subprocess.CompletedProcess(r.args, r.returncode, r.stdout.decode("utf-8", "replace"), r.stderr.decode("utf-8", "replace"))
 
 
+def importing_tests(root: Path, module: str) -> List[str]:
+    """Test files that import a backend/syrax module (from syrax.<m> import / from syrax import <m> / import
+    syrax.<m>), the module's own test file first. Live 2026-10-14 (objective 224, attempt 4): apply_patch ran
+    only test_memory.py, SYRAX released, and the gate failed on test_memory_types.py, which imports memory too."""
+    rx = re.compile(rf"(?m)^\s*(?:from\s+syrax\.{re.escape(module)}\s+import|from\s+syrax\s+import\s+[^\n]*\b{re.escape(module)}\b|import\s+syrax\.{re.escape(module)}\b)")
+    out = []
+    for p in sorted((root / MODULE_DIR).glob("test_*.py")):
+        try:
+            if rx.search(p.read_text(encoding="utf-8", errors="replace")):
+                out.append(f"{MODULE_DIR}/{p.name}")
+        except OSError:
+            continue
+    own = f"{MODULE_DIR}/test_{module}.py"
+    return ([own] if own in out else []) + [t for t in out if t != own]
+
+
 def covering_tests(root: Path, files: List[str]) -> List[str]:
     """Test files to run after touching `files`: the system map's component tests for them, each
-    module's own test_<module>.py, and a touched test file itself; only files that exist."""
+    module's own test_<module>.py, the other tests that import the module, and a touched test file
+    itself; only files that exist, at most MAX_TEST_FILES."""
     from syrax.devloop import impact_of
 
     wanted: List[str] = []
@@ -223,6 +240,7 @@ def covering_tests(root: Path, files: List[str]) -> List[str]:
             wanted.append(f)
         elif p.suffix == ".py" and f.startswith(MODULE_DIR + "/"):
             wanted.append(f"{MODULE_DIR}/test_{p.stem}.py")
+            wanted += importing_tests(root, p.stem)
     out: List[str] = []
     for w in wanted:
         if w not in out and (root / w).is_file():

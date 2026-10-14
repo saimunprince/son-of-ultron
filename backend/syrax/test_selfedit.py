@@ -145,6 +145,19 @@ def test_a_patch_with_wrong_context_is_refused_with_the_real_lines_around_the_hu
     assert hint == "docs/none.md: does not exist (a new file diffs from /dev/null)"
 
 
+def test_every_test_that_imports_a_touched_module_covers_it(tmp_path):
+    root = repo(tmp_path)
+    syr = root / "backend" / "syrax"
+    (syr / "test_mod.py").write_text("from syrax.mod import VALUE\n")
+    (syr / "test_other.py").write_text("from syrax import journal, mod\n")
+    (syr / "test_third.py").write_text("import syrax.mod as m\n")
+    (syr / "test_unrelated.py").write_text("from syrax.module_b import X\n# mod is mentioned in a comment only\n")
+    assert selfedit.importing_tests(root, "mod") == ["backend/syrax/test_mod.py", "backend/syrax/test_other.py", "backend/syrax/test_third.py"]
+    assert set(selfedit.covering_tests(root, ["backend/syrax/mod.py"])) >= {"backend/syrax/test_mod.py", "backend/syrax/test_other.py",
+                                                                          "backend/syrax/test_third.py"}
+    assert "backend/syrax/test_unrelated.py" not in selfedit.covering_tests(root, ["backend/syrax/mod.py"])
+
+
 def test_a_new_file_with_no_covering_test_says_so(tmp_path):
     root = repo(tmp_path)
     d = "--- /dev/null\n+++ b/backend/syrax/fresh.py\n@@ -0,0 +1 @@\n+FRESH = True\n"

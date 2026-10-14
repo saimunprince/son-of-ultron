@@ -228,6 +228,14 @@ gate result of each phase is recorded in the next phase's entry.
   the work. The router now turns a tool call written as text (the JSON and
   the XML shapes open models use) into a real call, for offered tools only
   (`brains.text_tool_calls`, `test_text_tool_calls.py`).
+- Attempt 4, on the new code: `repo_map`, `apply_patch` for the change
+  (covering tests passed) and for its new test (passed), then `release`:
+  SYRAX's first release through the new tools. The gate BLOCKED it:
+  `test_memory_types.py` failed (its prompt groups were lost), and
+  `apply_patch` had run only `test_memory.py`. The covering tests of a
+  touched module now include every test file that imports it
+  (`selfedit.importing_tests`), so the next attempt sees that failure before
+  it releases.
 
 ### Fallback brain: openrouter before upstage (2026-10-14)
 
