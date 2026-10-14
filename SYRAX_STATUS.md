@@ -208,6 +208,16 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### The daily ledger was not published on 10-13 and 10-14 (fixed 2026-10-14)
+
+- 10-14 13:03: its gate in `.syrax/maintenance/<id>` hit the nested-worktree
+  test failure (fixed in `7921a35`). 10-13 17:23: gated GREEN and committed
+  in its worktree, but I had merged to main while its gate ran, so the
+  fast-forward failed (COMMIT_FAILED). `DevLoop.land` now replays a commit
+  that changes only `docs/` files nobody else touched since its base onto
+  the moved branch, and lands it; a code change, or a document someone else
+  changed, still does not land (`test_land_docs_replay.py`).
+
 ### The first full run of all 51 cases (quality run #39, 2026-10-14)
 
 - 38 of 51 (74.5 %) on build `4c248c7`. Gemini's free quota ran out part way

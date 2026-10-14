@@ -259,9 +259,41 @@ class DevLoop:
     def land(self, sha: str) -> Dict[str, Any]:
         """Fast-forward the running tree to a commit made in the task's worktree.
         Only a fast-forward: if the running tree's branch moved meanwhile, or a
-        human's uncommitted change is in the way, nothing lands."""
+        human's uncommitted change is in the way, nothing lands, with one
+        exception: a commit that changes only docs/ files nobody else touched
+        since its base is replayed onto the moved branch and lands then
+        (live 2026-10-13: the daily ledger, docs only, lost its fast-forward to
+        a human's code commit made while its gate ran, and was not published)."""
         out = _git(["merge", "--ff-only", sha], self.live_root)
-        return {"ok": out.returncode == 0, "output": (out.stdout + out.stderr).strip()[-500:]}
+        if out.returncode == 0:
+            return {"ok": True, "output": (out.stdout + out.stderr).strip()[-500:]}
+        replayed = self._replay_docs_only(sha)
+        if replayed:
+            again = _git(["merge", "--ff-only", replayed["sha"]], self.live_root)
+            if again.returncode == 0:
+                return {"ok": True, "sha": replayed["sha"], "rebased_onto": replayed["onto"],
+                        "output": f"docs-only commit replayed onto {replayed['onto'][:12]}, files nobody else touched: "
+                                  + ", ".join(replayed["files"])}
+        return {"ok": False, "output": (out.stdout + out.stderr).strip()[-500:]}
+
+    def _replay_docs_only(self, sha: str) -> Optional[Dict[str, Any]]:
+        files = [f for f in _git(["diff", "--name-only", f"{sha}^", sha], self.live_root).stdout.split() if f]
+        if not files or not all(f.startswith("docs/") for f in files):
+            return None
+        onto = _git(["rev-parse", "HEAD"], self.live_root).stdout.strip()
+        base = _git(["merge-base", onto, sha], self.live_root).stdout.strip()
+        if not onto or not base:
+            return None
+        moved = set(_git(["diff", "--name-only", base, onto], self.live_root).stdout.split())
+        if moved & set(files):
+            return None  # someone else changed the same document: a human decides
+        where = self.isolated or self.root
+        _git(["checkout", "-q", "--detach", onto], where)
+        pick = _git(["-c", "user.name=SYRAX", "-c", "user.email=syrax@localhost", "cherry-pick", "--allow-empty", sha], where)
+        if pick.returncode != 0:
+            _git(["cherry-pick", "--abort"], where)
+            return None
+        return {"sha": _git(["rev-parse", "HEAD"], where).stdout.strip(), "onto": onto, "files": files}
 
     def task_files(self, files: Dict[str, str]) -> Dict[str, str]:
         """Changed files this task is responsible for: everything not dirty at task start."""
@@ -356,6 +388,8 @@ class DevLoop:
             if not landed["ok"]:
                 raise RuntimeError(f"committed {head[:12]} in the task's worktree but could not fast-forward the running tree "
                                    f"(it moved, or a human's change is in the way): {landed['output'][:300]}")
+            if landed.get("sha"):
+                return {"commit": landed["sha"], "files": files, "rebased_onto": landed["rebased_onto"]}
         return {"commit": head, "files": files}
 
     def push(self) -> Dict[str, Any]:
