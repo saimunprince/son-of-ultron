@@ -415,6 +415,7 @@ class SyraxAgent(Manus):
             }
         )
         await self._send({"type": "state", "state": "acting", "tool": name})
+        self.ask_tool.unattended = self.task_kind == "eval"  # an evaluation has nobody to answer: the console does
         key = _call_key(command)
         seen = self.seen_calls
         problem = await browser.ensure_browser() if name.startswith("browser_") else None
