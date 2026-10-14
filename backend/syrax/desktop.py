@@ -535,8 +535,16 @@ class DesktopControl(BaseTool):
         return ToolResult(output="Copied to clipboard.") if code == 0 else ToolResult(error=err or "clipboard write failed")
 
     async def _do_find_files(self, target: str, folder: str = "", **_) -> ToolResult:
+        # live 2026-10-14 (run #39): a brain asked for "whatever is in" a folder with find_files and no
+        # pattern, and the call failed; with a folder named, an empty pattern lists that folder's files
+        if not target and not folder:
+            return ToolResult(error="find_files needs a name pattern in target, or a folder to list.")
         if not target:
-            return ToolResult(error="find_files needs a name pattern in target.")
+            root = Path(os.path.expanduser(folder)).resolve()
+            if not root.is_dir():
+                return ToolResult(error=f"Folder not found: {root}")
+            names = sorted(os.listdir(root))[:50]
+            return ToolResult(output="\n".join(str(root / n) for n in names) if names else f"{root} is empty.")
         root = Path(os.path.expanduser(folder or "~")).resolve()
         if not root.is_dir():
             return ToolResult(error=f"Folder not found: {root}")

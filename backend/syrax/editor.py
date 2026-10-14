@@ -195,6 +195,10 @@ class SyraxEditor(StrReplaceEditor):
     async def execute(self, *, command: Any = None, path: Any = None, **kwargs: Any) -> str:  # type: ignore[override]
         if not command:
             raise ToolError("Parameter `command` is required: view, create, str_replace, insert or undo_edit.")
+        if str(command) in ("rename", "move", "delete", "remove", "copy"):
+            # live 2026-10-14 (run #39): brains asked the editor to rename a file; it only edits text
+            raise ToolError(f"The editor cannot `{command}` files: it views and edits text only. To {command} a file use "
+                            "python_execute (os.replace, shutil.copy2, os.remove); a delete the human did not name is asked first.")
         if not path:
             raise ToolError(f"Parameter `path` is required for `{command}`: give the absolute path of the file.")
         original, note = resolve_path(str(path), str(command))
