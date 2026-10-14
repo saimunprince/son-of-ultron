@@ -208,6 +208,19 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Work Presence, the target window (2026-10-14)
+
+- Right after a `desktop` or `browser_*` call the core notes the window in
+  front (`winctl.foreground`: program and title) as `presence.window` in the
+  journal; never for other tools, never while the human works alone. A title
+  that looks private (mail, bank, password, key, private browsing, an email
+  address) is replaced by "[title not recorded: it looked private]". The HUD
+  shows it as TARGET in the SYRAX panel while a tool runs, in the minimal
+  view's status line, and in the cognition stream.
+- Tests: `test_presence_window.py` (which tools, redaction, a scripted
+  desktop call journals the window and a python call does not),
+  `link.test.js`.
+
 ### Typed memory (2026-10-14)
 
 - `memory.py`: a remembered sentence is a `fact`, `preference` or `rule`

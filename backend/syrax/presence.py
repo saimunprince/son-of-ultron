@@ -15,7 +15,7 @@ leaves the screen when hidden (Ctrl+Shift+Space brings it back).
 from __future__ import annotations
 
 import re
-from typing import Optional
+from typing import Callable, Optional
 
 from syrax.journal import Journal
 
@@ -38,6 +38,38 @@ def parse_command(text: str) -> Optional[str]:
         if rx.match(t):
             return level
     return None
+
+
+# Work Presence, the target: which application SYRAX is acting in. Observed only right after a
+# desktop or browser call (never while the human works alone), journaled as presence.window, and
+# a title that looks private is never written down.
+OBSERVED_TOOLS = ("desktop",)
+_PRIVATE = re.compile(r"(password|passwd|api[_ -]?key|secret|token|otp|pin code|credit card|cvv|\bsk-[A-Za-z0-9]|\bgsk_|\bAIza|"
+                      r"[\w.+-]+@[\w-]+\.[\w.]+|inbox|gmail|outlook|bank|private|incognito)", re.I)
+
+
+def observes(tool: str) -> bool:
+    return tool in OBSERVED_TOOLS or str(tool).startswith("browser_")
+
+
+def redact(title: str) -> str:
+    title = " ".join(str(title or "").split())
+    if _PRIVATE.search(title):
+        return "[title not recorded: it looked private]"
+    return title[:80]
+
+
+def observe_window(reader: Optional[Callable[[], Optional[dict]]] = None) -> Optional[dict]:
+    """The foreground window as presence evidence: program and redacted title; None off Windows or on error."""
+    try:
+        if reader is None:
+            from syrax.winctl import foreground as reader
+        w = reader()
+    except Exception:
+        return None
+    if not w:
+        return None
+    return {"process": str(w.get("process") or "")[:60], "title": redact(w.get("title") or "")}
 
 
 class Presence:

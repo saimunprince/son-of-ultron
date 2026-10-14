@@ -48,6 +48,27 @@ def windows() -> List[Tuple[int, str]]:
     return out
 
 
+def foreground() -> Optional[dict]:
+    """The window the human sees in front: its title and the program that owns it; None when there is none."""
+    u = _user32()
+    hwnd = u.GetForegroundWindow()
+    if not hwnd:
+        return None
+    n = u.GetWindowTextLengthW(hwnd)
+    buf = ctypes.create_unicode_buffer(n + 1)
+    u.GetWindowTextW(hwnd, buf, n + 1)
+    pid = wintypes.DWORD()
+    u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    process = ""
+    try:
+        import psutil
+
+        process = psutil.Process(pid.value).name()
+    except Exception:
+        pass
+    return {"title": buf.value, "process": process, "pid": int(pid.value)}
+
+
 def find(title_part: str, wins: Optional[List[Tuple[int, str]]] = None) -> Optional[Tuple[int, str]]:
     """The first window (top of z-order) whose title contains ``title_part``."""
     q = " ".join(title_part.lower().split())

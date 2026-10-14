@@ -252,7 +252,13 @@ class Core:
                 edit = _repo_edit(self.current.steps, self._last_tool_args)
                 if edit:
                     await self.journal.record("code.changed", edit, task_id=self.current.task_id)
-            elif kind == "tool.completed" and event.get("name") == "apply_patch":
+            if kind in ("tool.completed", "tool.failed") and _observes_window(event.get("name")):
+                from syrax.presence import observe_window  # Work Presence: where SYRAX acted, right after it acted
+
+                seen = await asyncio.to_thread(observe_window)
+                if seen:
+                    await self.journal.record("presence.window", {"tool": event.get("name"), **seen}, task_id=self.current.task_id)
+            if kind == "tool.completed" and event.get("name") == "apply_patch":
                 for edit in _patch_edits(self.current.steps, self._last_tool_args):  # Phase 3: one code.changed per patched file
                     await self.journal.record("code.changed", edit, task_id=self.current.task_id)
         except (sqlite3.Error, JournalError) as e:
@@ -687,6 +693,12 @@ def _repo_edit(steps: List[dict], args: dict) -> Optional[dict]:
     if rel.startswith(".."):
         return None
     return {"path": rel, "command": cmd, "step": step}
+
+
+def _observes_window(tool) -> bool:
+    from syrax.presence import observes
+
+    return observes(str(tool or ""))
 
 
 def _patch_edits(steps: List[dict], args: dict) -> List[dict]:

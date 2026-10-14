@@ -106,6 +106,16 @@ test('presence: the level comes with hello and with every change, and only a cha
   assert.deepEqual(L.reduce(s, { type: 'presence', event: 'changed', visibility: 'hidden' }, 3), []);
 });
 
+test('the window SYRAX acted in shows while it works and clears when it is idle', () => {
+  const s = L.initial();
+  const fx = L.reduce(s, { type: 'presence', event: 'window', tool: 'desktop', process: 'notepad.exe', title: 'Untitled - Notepad' }, 1);
+  assert.deepEqual(s.window, { process: 'notepad.exe', title: 'Untitled - Notepad', tool: 'desktop' });
+  assert.deepEqual(fx, [{ kind: 'cog', text: '◎ notepad.exe · Untitled - Notepad' }]);
+  assert.equal(s.visibility, 'visible');  // a window event is not a visibility change
+  L.reduce(s, { type: 'state', state: 'idle' }, 2);
+  assert.equal(s.window, null);
+});
+
 test('counts come from the real lists: memories, open objectives, skills', () => {
   const s = L.initial();
   L.reduce(s, { type: 'memories', facts: [{ id: 1 }, { id: 2 }] }, 1);

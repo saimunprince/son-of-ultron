@@ -18,7 +18,7 @@
 
   function initial() {
     return {
-      online: false, name: 'SYRAX', version: null, bootId: null, uptimeS: 0, restartPending: false, visibility: 'visible',
+      online: false, name: 'SYRAX', version: null, bootId: null, uptimeS: 0, restartPending: false, visibility: 'visible', window: null,
       state: 'offline', tool: null, phase: null, step: 0, task: null, pendingAsk: null,
       lastReply: null, lastReplyAt: 0,
       cog: [], log: [],
@@ -73,7 +73,7 @@
         break;
       case 'state':
         s.state = e.state || 'idle'; s.tool = e.tool || null; if (e.step) s.step = e.step;
-        if (s.state === 'idle') { s.tool = null; s.task = null; s.phase = null; s.pendingAsk = null; }
+        if (s.state === 'idle') { s.tool = null; s.task = null; s.phase = null; s.pendingAsk = null; s.window = null; }
         mode(s.pendingAsk ? 'LISTENING' : STATE_MODE[s.state] || 'IDLE');
         break;
       case 'phase':
@@ -152,6 +152,11 @@
       case 'skills':
         s.skills = (e.skills || []).length; break;
       case 'presence':
+        if (e.event === 'window') {  // the application SYRAX just acted in (observed by the core, title redacted)
+          s.window = { process: e.process || '', title: e.title || '', tool: e.tool || '' };
+          cog('◎ ' + (e.process || '?') + (e.title ? ' · ' + short(e.title, 40) : ''));
+          break;
+        }
         if (e.visibility && e.visibility !== s.visibility) {
           s.visibility = e.visibility;
           log('PRESENCE ' + e.visibility.toUpperCase() + (e.by ? ' · BY ' + String(e.by).toUpperCase() : ''));

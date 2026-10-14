@@ -1056,7 +1056,8 @@ function miniUI(t) {
   g.textAlign = 'center'; g.textBaseline = 'middle';
   g.font = (13 / k).toFixed(1) + 'px "Share Tech Mono", monospace';
   g.fillStyle = `rgba(${MODE_C[S.mode] || MODE_C.IDLE},.95)`;
-  const what = [L.online ? S.mode : 'OFFLINE', L.tool ? L.tool.toUpperCase().slice(0, 14) : null, L.phase ? L.phase.toUpperCase() : null].filter(Boolean).join(' · ');
+  const what = [L.online ? S.mode : 'OFFLINE', L.tool ? L.tool.toUpperCase().slice(0, 14) : null,
+                L.window && L.tool ? L.window.process.replace(/\.exe$/i, '').toUpperCase().slice(0, 12) : null, L.phase ? L.phase.toUpperCase() : null].filter(Boolean).join(' · ');
   g.fillText('◉ ' + what, 0, y);
   if (S.reply && (performance.now() - S.replyT) / 1000 < 12) {
     g.font = (11 / k).toFixed(1) + 'px "Share Tech Mono", monospace'; g.fillStyle = 'rgba(255,235,215,.85)';
@@ -1505,7 +1506,8 @@ function live(t) {
   const left = L.online ? [
     ['SYRAX', 'LINKED', 1],
     ['STATE', L.state.toUpperCase() + (L.tool ? ' · ' + L.tool.toUpperCase().slice(0, 14) : '') + (L.phase ? ' · ' + L.phase.toUpperCase() : ''), L.state !== 'idle'],
-    ['TASK', L.task ? L.task.goal.toUpperCase().slice(0, 26) : '—'],
+    L.window && L.tool ? ['TARGET', (L.window.process.replace(/\.exe$/i, '') + (L.window.title ? ' · ' + L.window.title : '')).toUpperCase().slice(0, 30), 1]
+      : ['TASK', L.task ? L.task.goal.toUpperCase().slice(0, 26) : '—'],
     ['BRAIN', (L.brain.model || '—').toUpperCase().slice(0, 22) + (L.brain.total ? ` · ${L.brain.ready}/${L.brain.total}` : '')],
     ['BUILD', (L.version || '—') + ' · UP ' + pad(cu / 3600 | 0, 2) + ':' + pad(cu / 60 % 60 | 0, 2) + ':' + pad(cu % 60, 2) + (L.restartPending ? ' · NEWER ON DISK' : '')],
     ['SELF', `${L.objectives ?? '—'} OBJ · ${L.skills ?? '—'} SKILLS · ${L.memories ?? '—'} MEM`],

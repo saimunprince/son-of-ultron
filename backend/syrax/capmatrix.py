@@ -155,8 +155,9 @@ CAPABILITIES: List[Capability] = [
     Capability("presence", "Visible Work Presence (visibility, hide/show, timeline)", PARTIAL,
                "backend/syrax/presence.py, server.py (presence, hello), hud/ (link.js, main.js: visible / minimal / hidden)",
                tests=["syrax.test_presence::*", "syrax.test_hud::*"],
-               note="Level 1-2 on the HUD (task, phase, tool, log from the journal) and the three levels by text or voice; "
-                    "the human's active window is not observed yet; Level 3 (live workspace) is the owner's decision"),
+               note="Level 1-2 on the HUD (task, phase, tool, target window, log from the journal) and the three levels by text "
+                    "or voice; the target window is observed only right after a desktop or browser call, private titles never recorded; "
+                    "Level 3 (live workspace) is the owner's decision"),
 ]
 
 
