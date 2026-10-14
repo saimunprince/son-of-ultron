@@ -123,6 +123,7 @@ JUDGES = (
     "backend/syrax/tools.py", "backend/syrax/review.py",
     # and what measures it: a system that reports its own rise must not edit the ruler
     "backend/syrax/rise.py", "backend/syrax/capmatrix.py", "backend/syrax/contracts.py", "backend/syrax/ledger.py",
+    "backend/syrax/archive.py",
     "backend/syrax/devlog.py",
     "backend/syrax/codebench.py", "backend/syrax/probe.py",
     # and what decides which features exist and which ones SYRAX may build on its own
@@ -422,12 +423,19 @@ class DevLoop:
                 "REFUSED": f"refused before the gate: {str(report.get('error') or '')[:200]}",
                 "COMMIT_FAILED": f"gate GREEN but the commit failed: {str(report.get('error') or '')[:200]}",
             }.get(decision, decision)
-            return self.journal.add_experiment_sync(
+            exp = self.journal.add_experiment_sync(
                 f"release: {summary.strip()[:200]}", {"git_head": head}, {"files": result["artifacts"]["files"], "diff_sha256": result["artifacts"]["diff_sha256"]},
                 "release_gate", result, conclusion, verdict, objective=str(objective_id) if objective_id is not None else None,
                 next_action=None if decision == "COMMITTED" else "change the approach; the same change fails the same way",
                 task_id=None,  # task-less on purpose: the task's own event sequence stays the release's
             )
+            try:  # Phase 5: the attempt joins the archive of variants (parent → head, scored later by the quality suite)
+                from syrax import archive
+
+                archive.record_attempt(self.journal, report, summary, objective_id, task_id, (exp or {}).get("id"))
+            except Exception as e:  # pragma: no cover
+                logger.warning(f"could not archive the release attempt: {e}")
+            return exp
         except Exception as e:  # pragma: no cover - bookkeeping must not break a release
             logger.warning(f"could not record the release experiment: {e}")
             return None

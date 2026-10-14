@@ -189,6 +189,20 @@ def rolled_back(events: List[dict]) -> Optional[dict]:
     return None
 
 
+def archive_brief(journal: Journal, objective: dict) -> str:
+    """Phase 5: for an objective about SYRAX's own code, the archive of variants (running build's
+    score, the best parent, this objective's dead ends). Empty for other objectives."""
+    if (objective.get("check_spec") or {}).get("kind") != "change_released":
+        return ""
+    from syrax import archive
+    from syrax.selfmodel import _git as _head
+
+    try:
+        return archive.brief(journal, _head(["rev-parse", "HEAD"], REPO_ROOT_PATH), objective.get("id"))
+    except Exception:
+        return ""
+
+
 def brief_evidence(objective: dict, budget: int = 1800) -> str:
     """The evidence the objective was created from, compact, for the task.
     Live: SYRAX was told to "read the failures listed in the evidence" but the
@@ -793,7 +807,8 @@ class Autonomy:
         steps_before = await asyncio.to_thread(plan.status, self.journal, objective, plan.task_ids_of(objective))
         brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-", hint=hint, repo_root=REPO_ROOT,
                                         evidence=plan.render(steps_before) + followup.learned_brief(self.journal, objective)
-                                        + brief_evidence(objective) + past_experience(self.journal, objective))
+                                        + brief_evidence(objective) + past_experience(self.journal, objective)
+                                        + archive_brief(self.journal, objective))
         try:
             budget = {"max_steps": RELEASE_STEPS} if spec.get("kind") == "change_released" else {}
             task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous", **budget)

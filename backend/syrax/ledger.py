@@ -111,6 +111,9 @@ async def publish(journal: Journal, root: Path = REPO_ROOT, gates: Optional[Call
 
         days = await asyncio.to_thread(devlog.entries, journal, now, root)
         (wt / "docs" / "DEVLOG.md").write_text(devlog.render(days, head), encoding="utf-8", newline="\n")
+        from syrax import archive  # Phase 5: the archive of SYRAX's own variants
+
+        (wt / "docs" / "ARCHIVE.md").write_text(await asyncio.to_thread(archive.render, journal, head), encoding="utf-8", newline="\n")
         counts = None
         if matrix:
             xml = root / ".syrax" / "maintenance" / f"{wt.name}-pytest.xml"  # beside the worktree, never committed

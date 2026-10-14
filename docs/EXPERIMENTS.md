@@ -84,6 +84,20 @@ tests decide first (more failing tests loses), then benchmark regressions
 (>50 % and >5 ms); a version that cannot be measured makes the experiment
 INCONCLUSIVE. Worktrees are removed afterwards. Cost: two test-suite runs.
 
+## The archive of variants (`docs/ARCHIVE.md`, generated)
+
+Phase 5 of the self-improvement plan (2026-10-14). Every release attempt
+SYRAX makes to its own code is a row in the journal's `archive` table: the
+commit it started from (parent), the commit it produced (head, for a
+committed one), the decision, and the quality pass rate later measured at
+that head (`quality_runs.git_head` scores it). `archive.select_parent` picks
+the variant to build on next the way the Darwin Gödel Machine does: a sigmoid
+of the score, divided by the number of children the variant already has, so
+the search neither ignores a strong ancestor nor piles onto one. An
+autonomous brief for a `change_released` objective carries the running
+build's score, the best parent and that objective's dead ends. The daily
+ledger renders the table and the lineage into `docs/ARCHIVE.md`.
+
 ## Objectives about SYRAX's own mechanisms
 
 Derived every cycle (idempotent):

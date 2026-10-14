@@ -456,6 +456,10 @@ class QualityRunner:
         row = await self.journal.run(
             self.journal.add_quality_run_sync, results, rate, status, compared_to, delta, brain,
         )
+        try:  # Phase 5: the run scores the archived variant at this commit
+            await self.journal.run(self.journal.score_archive_sync, str(row.get("git_head") or ""), rate, row.get("id"))
+        except Exception:
+            pass
         return row
 
 

@@ -373,6 +373,20 @@ CREATE TABLE IF NOT EXISTS experiments (
   next_action TEXT,
   task_id     TEXT
 );
+CREATE TABLE IF NOT EXISTS archive (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts            REAL NOT NULL,
+  head          TEXT,
+  parent        TEXT,
+  decision      TEXT NOT NULL,
+  summary       TEXT NOT NULL,
+  objective_id  INTEGER,
+  task_id       TEXT,
+  experiment_id INTEGER,
+  score         REAL,
+  quality_run_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS archive_head ON archive(head);
 CREATE TABLE IF NOT EXISTS skills (
   name              TEXT PRIMARY KEY,
   version           INTEGER NOT NULL DEFAULT 1,
@@ -1287,6 +1301,39 @@ class Journal:
             eid = int(cur.lastrowid)
             self._insert_event(cur, ts, task_id, "experiment.completed", {"experiment_id": eid, "hypothesis": hypothesis[:160], "verdict": verdict, "metric": metric})
         return self.experiment(eid)
+
+    # ——— the archive of SYRAX's own variants (Phase 5, DGM-style) ———
+
+    def add_archive_sync(self, head: Optional[str], parent: Optional[str], decision: str, summary: str, objective_id: Optional[int],
+                         task_id: Optional[str], experiment_id: Optional[int]) -> dict:
+        ts = _now()
+        with self._txn() as cur:
+            cur.execute(
+                "INSERT INTO archive(ts, head, parent, decision, summary, objective_id, task_id, experiment_id) VALUES (?,?,?,?,?,?,?,?)",
+                (ts, head, parent, decision, summary, objective_id, task_id, experiment_id),
+            )
+            aid = int(cur.lastrowid)  # no event of its own: experiment.completed already marks the attempt in the task's sequence
+        return self.archive_row(aid)
+
+    def score_archive_sync(self, head: str, pass_rate: float, quality_run_id: Optional[int]) -> int:
+        """A quality run measured `head`: every committed variant at that commit takes the score."""
+        if not head:
+            return 0
+        with self._txn() as cur:
+            cur.execute("UPDATE archive SET score=?, quality_run_id=? WHERE head IS NOT NULL AND (head=? OR head LIKE ?)",
+                        (float(pass_rate), quality_run_id, head, head[:7] + "%"))
+            return int(cur.rowcount)
+
+    def archive_row(self, archive_id: int) -> Optional[dict]:
+        with self._lock:
+            row = self._db.execute("SELECT * FROM archive WHERE id=?", (archive_id,)).fetchone()
+        return dict(row) if row else None
+
+    def archive(self, limit: int = 80) -> List[dict]:
+        limit = max(1, min(int(limit), 1000))
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM archive ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
 
     def experiment(self, experiment_id: int) -> Optional[dict]:
         with self._lock:

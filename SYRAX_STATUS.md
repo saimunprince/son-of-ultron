@@ -208,6 +208,24 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Phase 5: the archive of variants (DGM-style)
+
+- `archive` table in the journal: one row per release attempt (parent commit,
+  head commit when committed, decision, summary, objective, task, experiment),
+  written by `devloop.record_experiment` through `archive.record_attempt`; a
+  quality run scores every committed variant at its `git_head`
+  (`score_archive_sync`), so the score is measured, never asserted.
+- `archive.select_parent`: sigmoid of the score around 50 %, divided by the
+  variant's children; the newest committed variant while nothing is scored.
+  `lineage`, `dead_ends`, `brief` (the running build's score, the best parent,
+  this objective's dead ends) feed every `change_released` brief
+  (`autonomy.archive_brief`). The daily ledger renders `docs/ARCHIVE.md`;
+  `docs/EXPERIMENTS.md` (hand-written) points to it. `archive.py` is a judge.
+- Tests (`test_archive.py`): rows, scoring by full or short sha, weights and
+  children; selection flips to the sibling once an ancestor has three
+  children; lineage and dead ends; a report becomes a row; the brief and its
+  gate on the objective kind; the rendered table and lineage.
+
 ### Phase 4: forty-plus cases and ten self-change cases
 
 - `quality.py` has 51 cases: the 19 before, 22 everyday cases (JSON and CSV
