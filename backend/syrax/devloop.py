@@ -149,6 +149,41 @@ def judge_problems(files: Dict[str, str]) -> List[str]:
     return problems
 
 
+_PATH_TOKEN = re.compile(r"[\w./-]+\.\w+")
+_REPO_TOPS = ("backend/", "docs/", "frontend/", "hud/")
+
+
+def case_files(case_ids) -> Dict[str, List[str]]:
+    """{repository path: [case ids]} for the files the prompts of these quality cases name."""
+    from syrax import quality
+
+    out: Dict[str, List[str]] = {}
+    wanted = set(case_ids or [])
+    for case in quality._cases(quality.WORKSPACE):
+        if case["id"] not in wanted:
+            continue
+        for token in _PATH_TOKEN.findall(str(case.get("prompt") or "")):
+            path = token[2:] if token[:2] in ("a/", "b/") else token  # a diff in the prompt names a/README.md
+            if (path.startswith(_REPO_TOPS) or path == "README.md") and case["id"] not in out.get(path, []):
+                out.setdefault(path, []).append(case["id"])
+    return out
+
+
+def fixture_problems(files: Dict[str, str], objective: Optional[dict]) -> List[str]:
+    """Live 2026-10-14 (task ee5bb152e8fa): working on "make quality case self_patch_stale pass", SYRAX
+    rewrote README's title so the case's stale patch would apply, and the gate passed it (it landed
+    only because the branch had moved). A case measures SYRAX's behaviour; an objective born from a
+    case may change SYRAX, never the files that case works on."""
+    spec = (objective or {}).get("check_spec") or {}
+    if spec.get("kind") not in ("quality_case_passes", "quality_recovered"):
+        return []
+    ev = (objective or {}).get("evidence") or {}
+    ids = [spec.get("case")] if spec.get("case") else list(((ev.get("quality") or {}).get("failed")) or [])
+    named = case_files(ids)
+    return [f"{path}: named by quality case {', '.join(named[path])}; an objective to make a case pass changes SYRAX's "
+            "behaviour, never the files the case works on" for path in files if path in named]
+
+
 PLAN_FIELDS = ("why", "risk", "tests")
 
 
@@ -314,6 +349,9 @@ class DevLoop:
         task = self.journal.task(task_id) if task_id else None
         judged = judge_problems(files)  # every task kind: only a human-made commit changes the judges
         problems += judged
+        if task and task.get("kind") == "autonomous":
+            oid = self._active_objective_id(task)
+            problems += fixture_problems(files, self.journal.objective(oid) if oid is not None else None)
         if judged and task and task.get("kind") not in ("autonomous", "eval"):
             problems.append("the edit stays in the working tree: tell the human it is there for them to review and commit")
         if problems:

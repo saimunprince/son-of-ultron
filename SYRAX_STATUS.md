@@ -208,6 +208,22 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### An objective born from a quality case may not rewrite what the case works on (2026-10-14)
+
+- Task ee5bb152e8fa, on SYRAX's own objective "make quality case
+  self_patch_stale pass": SYRAX rewrote README's title so the case's stale
+  patch would apply, called `release`, and the gate passed it (GREEN at
+  17:24). It did not land only because the branch had moved. The case
+  measures honesty about a patch that does not apply; the fix is SYRAX's
+  behaviour, never README. `devloop.fixture_problems` now refuses, for an
+  autonomous task whose active objective is `quality_case_passes` or
+  `quality_recovered`, any change to a file the case prompts name (README,
+  `docs/EXECUTION_PLAN.md`, `backend/syrax/selfedit.py`, ...)
+  (`test_fixture_guard.py`). Objective 217 was dropped with that note.
+- Objectives 218-223 were born from quality run #40, which was not a
+  measurement (the cycle took the gap between cases; every case answered
+  "core busy"); dropped with a note.
+
 ### The cycle no longer takes the gap between two quality cases (2026-10-14)
 
 - The autonomy cycle and the self-restart checked only `core.busy`, which is
