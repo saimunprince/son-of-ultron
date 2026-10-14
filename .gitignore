@@ -3,6 +3,7 @@ backend/config/config.toml
 backend/config/brains.json
 backend/config/brains.tmp
 backend/config/mcp.json
+backend/config/ws.token
 .env
 .env.*
 

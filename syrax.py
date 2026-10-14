@@ -568,11 +568,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--uninstall-service", action="store_true")
     ap.add_argument("--status", action="store_true", help="login service status")
     ap.add_argument("--gate", action="store_true", help="run the release gate and exit")
+    ap.add_argument("--token", action="store_true", help="print the token a non-browser client needs for /ws, /live and the voice endpoints")
     ap.add_argument("--stop", action="store_true", help="stop the running SYRAX")
     ap.add_argument("--restart", action="store_true", help="stop, then start in the background")
     ap.add_argument("--respawn", action="store_true", help=argparse.SUPPRESS)  # SYRAX restarting itself
     ap.add_argument("--service", action="store_true", help=argparse.SUPPRESS)  # set by the login service
     a = ap.parse_args(argv)
+    if a.token:
+        sys.path.insert(0, str(BACKEND))
+        from syrax import auth
+
+        print(auth.token())
+        return 0
     if a.setup:
         setup()
         return 0

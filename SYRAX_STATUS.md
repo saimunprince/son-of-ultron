@@ -208,6 +208,24 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Phase 7: token auth for /ws and /live
+
+- `backend/syrax/auth.py` (a judge): `verdict(origin, allowed, given)`: an
+  allowed Origin is trusted as before; a foreign Origin is refused whatever it
+  presents; no Origin needs the token (`?token=` or `X-SYRAX-Token`). Applied
+  to `/ws`, `/live` and the origin-checked HTTP endpoints (`/stt`, `/tts`,
+  `/upload`, the HUD feeds). The token is `backend/config/ws.token` (created
+  on first use, 0600, gitignored); `python syrax.py --token` prints it;
+  `GET /token` hands it to a page with an allowed Origin only.
+- Before: a connection without an Origin header was accepted by both sockets,
+  so any local process could drive SYRAX. The UI and the HUD are unchanged
+  (their Origin is allowed).
+- Tests (`test_auth.py`): token file; the verdict table; sockets without
+  Origin refused (1008) and accepted with the token in the query or header; a
+  foreign page refused with a valid token; the UI origin unchanged; `/live`
+  the same; writing HTTP endpoints; `/token` only for a served page; the
+  launcher prints the token.
+
 ### Phase 6: the citation nudge, the phase model, the matrix
 
 - Citation nudge (`agent.py`): when `research` succeeded in a task and the

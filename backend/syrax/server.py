@@ -55,7 +55,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from app.logger import logger
 
-from syrax import browser, voice
+from syrax import auth, browser, voice
 from syrax import brains as brains_mod
 from syrax.brains import PROVIDERS, get_router
 from syrax.core import get_core
@@ -156,9 +156,25 @@ app.add_middleware(
 
 
 def _check_origin(request: Request) -> None:
-    origin = request.headers.get("origin")
-    if origin and origin not in ALLOWED_ORIGINS:
-        raise HTTPException(status_code=403, detail="origin not allowed")
+    """A page SYRAX serves or expects (its Origin is allowed) may call; anything without an Origin
+    needs the token (Phase 7: a local process is not a page)."""
+    ok, why = auth.verdict(request.headers.get("origin"), ALLOWED_ORIGINS,
+                           auth.presented(request.headers.raw, request.query_params.get(auth.QUERY)))
+    if not ok:
+        raise HTTPException(status_code=403, detail=why)
+
+
+def _ws_allowed(ws: WebSocket) -> tuple:
+    return auth.verdict(ws.headers.get("origin"), ALLOWED_ORIGINS, auth.presented(ws.headers.raw, ws.query_params.get(auth.QUERY)))
+
+
+@app.get("/token")
+async def token_for_page(request: Request):
+    """The token, for a page the core serves (same-origin) so it can present it too; refused otherwise."""
+    origin = request.headers.get("origin") or request.headers.get("referer", "")
+    if not any(origin.startswith(o) for o in ALLOWED_ORIGINS if o):
+        raise HTTPException(status_code=403, detail="only a page SYRAX serves may read the token")
+    return {"token": auth.token()}
 
 
 @app.post("/stt")
@@ -743,9 +759,9 @@ def _explain(e: Exception) -> str:
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
-    origin = ws.headers.get("origin")
-    if origin and origin not in ALLOWED_ORIGINS:
-        logger.warning(f"Rejected WebSocket from origin {origin}")
+    ok, why = _ws_allowed(ws)
+    if not ok:
+        logger.warning(f"Rejected WebSocket: {why}")
         await ws.close(code=1008)
         return
 
@@ -778,10 +794,10 @@ async def ws_endpoint(ws: WebSocket):
 
 @app.websocket("/live")
 async def live_endpoint(ws: WebSocket):
-    """Live talk (syrax/live.py): the microphone to Gemini Live and its voice back. Same origin rule as /ws."""
-    origin = ws.headers.get("origin")
-    if origin and origin not in ALLOWED_ORIGINS:
-        logger.warning(f"Rejected live WebSocket from origin {origin}")
+    """Live talk (syrax/live.py): the microphone to Gemini Live and its voice back. Same rule as /ws."""
+    ok, why = _ws_allowed(ws)
+    if not ok:
+        logger.warning(f"Rejected live WebSocket: {why}")
         await ws.close(code=1008)
         return
     await ws.accept()

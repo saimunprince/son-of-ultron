@@ -309,6 +309,16 @@ battery pressure and during `SYRAX_QUIET_HOURS`. Idle cycles do real housekeepin
 once a day the journal prunes chatty events of tasks older than 30 days and
 truncates its WAL. Details: `docs/AUTONOMY.md`, `docs/OPERATIONS.md`.
 
+## Who may talk to the core
+
+A page SYRAX serves or expects (the UI on its port, the HUD the core serves
+at `/hud/`) is trusted by its Origin, as before. A connection with no Origin
+(a script, curl, another process on this machine) needs the token for `/ws`,
+`/live` and the writing endpoints (`/stt`, `/tts`, `/upload`): pass it as
+`?token=…` on the socket URL or the `X-SYRAX-Token` header. The token is
+`backend/config/ws.token` (created on first use, owner-only, never committed);
+`python syrax.py --token` prints it. `/health` and `/self` stay readable.
+
 ## Permissions
 
 Every tool call passes a permission check before it runs
