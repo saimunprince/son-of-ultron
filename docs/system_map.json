@@ -794,7 +794,8 @@
         "backend/syrax/rise.py",
         "backend/syrax/ledger.py (daily self-published ledger and matrix)",
         "backend/syrax/probe.py (live probes for the matrix)",
-        "backend/syrax/devlog.py (daily devlog from the journal and git)"
+        "backend/syrax/devlog.py (daily devlog from the journal and git)",
+        "backend/syrax/selfedit.py (repo_map and apply_patch: the map, the unified diff, the covering tests)"
       ],
       "tests": [
         "backend/syrax/test_verify.py"

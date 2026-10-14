@@ -208,6 +208,29 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Phase 3: repo_map and apply_patch
+
+- Two tools in `backend/syrax/selfedit.py`. `repo_map` (READ_ONLY) renders the
+  system map's components with code, tests and limitations, plus an index of
+  the backend modules (lines, first docstring line, own test file), filtered by
+  a query; it names the protected set. `apply_patch` (WRITE) applies a unified
+  diff with `git apply` to the task's tree (its worktree when isolated), whole
+  or not at all; compiles the touched Python; runs the covering tests (the
+  system map's component tests plus each module's own `test_<module>.py`,
+  bounded, with the gate's test settings) and reports pass or fail. A failing
+  test leaves the patch in place for a fix forward; the release gate still
+  decides.
+- The core journals one `code.changed` per patched file, so the release owns
+  exactly those files (`devloop.EDITOR_TOOLS`); `permissions.classify` makes
+  the diff's paths the targets, so own work is refused patching a judge at the
+  call. The console prompt says: `repo_map`, then `apply_patch`, then
+  `release`; judges are left to the human.
+- Tests (`test_selfedit.py`): the map; diff paths; apply + compile + covering
+  tests pass; a failing test reported with the patch kept; stale, empty,
+  non-diff, escaping and non-compiling patches refused whole; a new file with
+  no test says so; the release ownership and the journal payloads; the
+  permission refusal of a judge; the tools in the toolset and the self-model.
+
 ### Phase 2: the self-change brain
 
 - `brains.json` carries `self_change_brain` (set from the BRAIN panel or the

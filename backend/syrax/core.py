@@ -249,6 +249,9 @@ class Core:
                 edit = _repo_edit(self.current.steps, self._last_tool_args)
                 if edit:
                     await self.journal.record("code.changed", edit, task_id=self.current.task_id)
+            elif kind == "tool.completed" and event.get("name") == "apply_patch":
+                for edit in _patch_edits(self.current.steps, self._last_tool_args):  # Phase 3: one code.changed per patched file
+                    await self.journal.record("code.changed", edit, task_id=self.current.task_id)
         except (sqlite3.Error, JournalError) as e:
             # Bookkeeping must never kill a task, but we never pretend it was journaled.
             self.current.unjournaled += 1
@@ -680,6 +683,21 @@ def _repo_edit(steps: List[dict], args: dict) -> Optional[dict]:
     if rel.startswith(".."):
         return None
     return {"path": rel, "command": cmd, "step": step}
+
+
+def _patch_edits(steps: List[dict], args: dict) -> List[dict]:
+    """apply_patch's touched files → code.changed payloads (repository-relative, as the diff names them)."""
+    from syrax import editor as _editor
+    from syrax.selfedit import diff_paths
+
+    step = steps[-1].get("step") if steps else None
+    out = []
+    for rel in diff_paths(str(args.get("diff") or "")):
+        edit = {"path": rel, "command": "patch", "step": step}
+        if _editor.ROOT_MAP is not None:
+            edit["isolated"] = True
+        out.append(edit)
+    return out
 
 
 def _task_summary(t: dict) -> dict:

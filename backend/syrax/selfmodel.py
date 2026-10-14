@@ -439,6 +439,8 @@ def _implementation_of(tool: str) -> str:
         "know": "backend/syrax/research.py",
         "learn": "backend/syrax/research.py",
         "release": "backend/syrax/devloop.py",
+        "repo_map": "backend/syrax/selfedit.py",
+        "apply_patch": "backend/syrax/selfedit.py",
         "present": "backend/syrax/presentation.py",
         "experiment": "backend/syrax/experiments.py",
         "compare_versions": "backend/syrax/versions.py",

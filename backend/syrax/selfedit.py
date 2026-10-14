@@ -1,0 +1,273 @@
+"""Phase 3 of the self-improvement plan: SYRAX changes its own code the way an
+engineer does, with a map and a patch, not by overwriting files blind.
+
+repo_map   read-only: the system map's components with their code and tests, and
+           an index of the backend modules (lines, first docstring line), filtered
+           by a query. The map is docs/system_map.json; the index is read from
+           the tree the task works in (its worktree when isolated).
+apply_patch a unified diff applied with `git apply` to that tree; then every
+           touched .py file is compiled and the tests the system map says cover
+           the touched files run (pytest, bounded). The report says what was
+           applied, what ran and what failed; a failed patch applies nothing.
+           Protected files (devloop.JUDGES) are refused for SYRAX's own work by
+           permissions.decide before this runs, and by the release gate after.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from app.tool.base import BaseTool, ToolResult
+from syrax.journal import BACKEND_ROOT
+
+REPO_ROOT = BACKEND_ROOT.parent
+MODULE_DIR = "backend/syrax"
+TEST_TIMEOUT_S = 300
+MAX_TEST_FILES = 12
+PATCH_MAX_CHARS = 200_000
+_DIFF_PATH = re.compile(r"^(?:\+\+\+|---) (?:[ab]/)?(\S+)", re.M)
+
+
+def work_root() -> Path:
+    """The tree the current task edits: its worktree when the task is isolated (editor.ROOT_MAP),
+    else the running repository."""
+    from syrax import editor
+
+    return Path(editor.ROOT_MAP[1]) if editor.ROOT_MAP else REPO_ROOT
+
+
+def system_map(root: Path) -> dict:
+    try:
+        return json.loads((root / "docs" / "system_map.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"components": []}
+
+
+def _first_doc_line(path: Path) -> str:
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:2000]
+    except OSError:
+        return ""
+    m = re.search(r'^\s*(?:r|u)?"""\s*(.+?)\s*$', head, re.M)
+    return (m.group(1) if m else "").strip('"').strip()[:110]
+
+
+def module_index(root: Path, query: str = "") -> List[Dict[str, Any]]:
+    """backend/syrax modules (tests apart) with line counts and their first docstring line."""
+    q = query.lower()
+    out = []
+    for p in sorted((root / MODULE_DIR).glob("*.py")):
+        if p.name.startswith("test_") or p.name == "__init__.py":
+            continue
+        rel = f"{MODULE_DIR}/{p.name}"
+        doc = _first_doc_line(p)
+        if q and q not in rel.lower() and q not in doc.lower():
+            continue
+        try:
+            lines = sum(1 for _ in p.open("rb"))
+        except OSError:
+            lines = 0
+        out.append({"path": rel, "lines": lines, "doc": doc, "test": f"{MODULE_DIR}/test_{p.stem}.py" if (root / MODULE_DIR / f"test_{p.stem}.py").is_file() else None})
+    return out
+
+
+def components_for(root: Path, query: str = "") -> List[Dict[str, Any]]:
+    q = query.lower()
+    out = []
+    for c in system_map(root).get("components", []):
+        name = str(c.get("component") or "")
+        code = [str(x).split(" ")[0] for x in c.get("code") or []]
+        tests = [str(t).split(" ")[0] for t in c.get("tests") or []]
+        blob = " ".join([name, str(c.get("purpose") or ""), *code]).lower()
+        if q and q not in blob:
+            continue
+        out.append({"component": name, "purpose": str(c.get("purpose") or "")[:140], "code": code, "tests": tests,
+                    "limitations": [str(x)[:120] for x in (c.get("limitations") or [])][:3]})
+    return out
+
+
+def render_map(root: Path, query: str = "") -> str:
+    comps, mods = components_for(root, query), module_index(root, query)
+    lines = [f"repo map of {root}" + (f" for {query!r}" if query else "") + f": {len(comps)} components, {len(mods)} modules"]
+    for c in comps[:12]:
+        lines.append(f"\n[{c['component']}] {c['purpose']}")
+        lines.append("  code:  " + ", ".join(c["code"][:8]) + (" …" if len(c["code"]) > 8 else ""))
+        if c["tests"]:
+            lines.append("  tests: " + ", ".join(c["tests"][:6]) + (" …" if len(c["tests"]) > 6 else ""))
+        for lim in c["limitations"]:
+            lines.append(f"  limit: {lim}")
+    if comps[12:]:
+        lines.append(f"\n… and {len(comps) - 12} more components; narrow the query")
+    if mods:
+        lines.append("\nmodules:")
+        for m in mods[:40]:
+            lines.append(f"  {m['path']:<36} {m['lines']:>5} lines  {m['doc']}" + (f"  (tests: {m['test']})" if m["test"] else "  (no test file)"))
+        if mods[40:]:
+            lines.append(f"  … and {len(mods) - 40} more; narrow the query")
+    lines.append("\nProtected (never patched by SYRAX; a human commits those): the judges listed in devloop.JUDGES.")
+    return "\n".join(lines)
+
+
+# ——— the patch ———
+
+def diff_paths(diff: str) -> List[str]:
+    """Repository-relative paths a unified diff touches (a/ and b/ prefixes stripped, /dev/null dropped)."""
+    seen: List[str] = []
+    for m in _DIFF_PATH.finditer(diff):
+        p = m.group(1).strip()
+        if p and p != "/dev/null" and p not in seen:
+            seen.append(p)
+    return seen
+
+
+def _git(args: List[str], cwd: Path, stdin: Optional[str] = None) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", *args], cwd=str(cwd), input=stdin, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+
+
+def covering_tests(root: Path, files: List[str]) -> List[str]:
+    """Test files to run after touching `files`: the system map's component tests for them, each
+    module's own test_<module>.py, and a touched test file itself; only files that exist."""
+    from syrax.devloop import impact_of
+
+    wanted: List[str] = []
+    for pat in impact_of({f: "M" for f in files}, root).get("component_tests", []):
+        mod = pat.split("::")[0].replace(".", "/")
+        wanted.append(f"backend/{mod}.py" if not mod.startswith("backend/") else f"{mod}.py")
+    for f in files:
+        p = Path(f)
+        if p.name.startswith("test_") and p.suffix == ".py":
+            wanted.append(f)
+        elif p.suffix == ".py" and f.startswith(MODULE_DIR + "/"):
+            wanted.append(f"{MODULE_DIR}/test_{p.stem}.py")
+    out: List[str] = []
+    for w in wanted:
+        if w not in out and (root / w).is_file():
+            out.append(w)
+    return out[:MAX_TEST_FILES]
+
+
+def run_tests(root: Path, test_files: List[str], timeout: float = TEST_TIMEOUT_S) -> Dict[str, Any]:
+    """pytest on the covering tests, from the backend of `root`, with the gate's test settings."""
+    from syrax.verify import venv_python
+
+    rel = [t[len("backend/"):] if t.startswith("backend/") else t for t in test_files]
+    env = {k: v for k, v in os.environ.items() if not k.startswith("SYRAX_")}
+    env.update({"OPENMANUS_DISABLE_BROWSER_USE": "1", "SYRAX_DISABLE_WHISPER_WARMUP": "1", "SYRAX_BROWSER": "0"})
+    cmd = [venv_python(), "-m", "pytest", *rel, "-q", "-x", "-p", "no:cacheprovider"]
+    try:
+        r = subprocess.run(cmd, cwd=str(root / "backend"), env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "ran": rel, "summary": f"tests did not finish in {int(timeout)} s", "tail": ""}
+    out = (r.stdout or "") + (r.stderr or "")
+    summary = next((ln for ln in reversed(out.splitlines()) if re.search(r"\d+ (passed|failed|error)", ln)), out.strip().splitlines()[-1] if out.strip() else "no output")
+    return {"ok": r.returncode == 0, "ran": rel, "summary": summary.strip(), "tail": "\n".join(out.strip().splitlines()[-25:])}
+
+
+def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dict[str, Any]:
+    """Apply a unified diff to the task's tree, compile the touched Python, run the covering tests."""
+    root = root or work_root()
+    diff = (diff or "").replace("\r\n", "\n")
+    if not diff.strip():
+        raise ValueError("empty patch")
+    if len(diff) > PATCH_MAX_CHARS:
+        raise ValueError(f"patch too large ({len(diff)} chars); split it")
+    if not diff.endswith("\n"):
+        diff += "\n"
+    files = diff_paths(diff)
+    if not files:
+        raise ValueError("not a unified diff: no '--- a/path' / '+++ b/path' headers")
+    for f in files:
+        if f.startswith("/") or re.match(r"^[A-Za-z]:", f) or ".." in Path(f).parts:
+            raise ValueError(f"{f}: paths must be repository-relative, inside the repository")
+    check = _git(["apply", "--check", "--whitespace=nowarn", "-"], root, stdin=diff)
+    if check.returncode != 0:
+        raise ValueError("the patch does not apply cleanly: " + (check.stderr or check.stdout).strip()[:600]
+                         + "\nRe-read the file (str_replace_editor view) and make the diff from what is there now.")
+    applied = _git(["apply", "--whitespace=nowarn", "-"], root, stdin=diff)
+    if applied.returncode != 0:
+        raise RuntimeError("git apply failed after --check passed: " + (applied.stderr or applied.stdout).strip()[:600])
+    report: Dict[str, Any] = {"root": str(root), "files": files, "compiled": [], "tests": None}
+    broken = []
+    for f in files:
+        p = root / f
+        if p.suffix == ".py" and p.is_file():
+            try:
+                compile(p.read_text(encoding="utf-8", errors="replace"), f, "exec")
+                report["compiled"].append(f)
+            except SyntaxError as e:
+                broken.append(f"{f}: line {e.lineno}: {e.msg}")
+    if broken:
+        report["tests"] = {"ok": False, "ran": [], "summary": "not run: python does not compile: " + "; ".join(broken), "tail": ""}
+        return report
+    if run:
+        tests = covering_tests(root, files)
+        report["tests"] = run_tests(root, tests) if tests else {"ok": True, "ran": [], "summary": "no covering tests found: write one (backend/syrax/test_<module>.py) before you release", "tail": ""}
+    return report
+
+
+def render_report(rep: Dict[str, Any]) -> str:
+    lines = [f"patched {len(rep['files'])} file(s) in {rep['root']}: " + ", ".join(rep["files"])]
+    if rep["compiled"]:
+        lines.append("compiled: " + ", ".join(rep["compiled"]))
+    t = rep.get("tests")
+    if t is not None:
+        lines.append(("TESTS PASS: " if t["ok"] else "TESTS FAIL: ") + t["summary"] + (f" ({', '.join(t['ran'])})" if t["ran"] else ""))
+        if not t["ok"] and t.get("tail"):
+            lines.append(t["tail"])
+            lines.append("The patch is applied; fix forward with another patch or `undo`. A release with failing tests is rolled back.")
+    return "\n".join(lines)
+
+
+class RepoMapTool(BaseTool):
+    name: str = "repo_map"
+    description: str = (
+        "Read-only map of your own repository: the system map's components (purpose, code files, the tests "
+        "that cover them, known limitations) and the backend modules with their size and test file. Call it "
+        "before changing your own code, with a query (a module name, a tool, a word from the task) to find "
+        "where the change goes and which tests prove it."
+    )
+    parameters: dict = {
+        "type": "object",
+        "properties": {"query": {"type": "string", "description": "Filter: module, component, tool or keyword. Empty for everything."}},
+    }
+
+    async def execute(self, query: str = "", **_: Any) -> ToolResult:
+        try:
+            return ToolResult(output=render_map(work_root(), str(query or "").strip()))
+        except Exception as e:
+            return ToolResult(error=f"repo_map failed: {e}")
+
+
+class ApplyPatchTool(BaseTool):
+    name: str = "apply_patch"
+    description: str = (
+        "Change your own code with a unified diff (the `diff -u` / `git diff` format: '--- a/backend/syrax/x.py', "
+        "'+++ b/backend/syrax/x.py', @@ hunks; new files diff from /dev/null). Paths are repository-relative. "
+        "It applies the whole patch or nothing, compiles the touched Python and runs the tests that cover the "
+        "touched files; the reply says what passed or failed. Then call `release`. Files that judge your work "
+        "(quality cases, the gate, the guard, permissions, the journal) are refused: a human commits those."
+    )
+    parameters: dict = {
+        "type": "object",
+        "properties": {
+            "diff": {"type": "string", "description": "The unified diff."},
+            "run_tests": {"type": "boolean", "description": "Run the covering tests after applying (default true)."},
+        },
+        "required": ["diff"],
+    }
+    async def execute(self, diff: str = "", run_tests: bool = True, **_: Any) -> ToolResult:
+        import asyncio
+
+        try:
+            rep = await asyncio.to_thread(apply_patch, diff, None, bool(run_tests))
+        except ValueError as e:
+            return ToolResult(error=f"apply_patch refused: {e}")
+        except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+            return ToolResult(error=f"apply_patch failed: {e}")
+        return ToolResult(output=render_report(rep))  # a test failure is in the text; the patch itself succeeded

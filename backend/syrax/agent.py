@@ -18,6 +18,7 @@ from syrax.desktop import DesktopControl
 from syrax.editor import SyraxEditor
 from syrax.journal_query import JournalQueryTool
 from syrax.devloop import ReleaseTool
+from syrax.selfedit import ApplyPatchTool, RepoMapTool
 from syrax.experiments import ExperimentTool
 from syrax.memory import ForgetTool, RecallTool, RememberTool, get_memory
 
@@ -147,7 +148,7 @@ LOOP_STOPPED = (
 )
 
 
-READ_ONLY_TOOLS = {"self_inspect", "know", "recall", "skill_list"}
+READ_ONLY_TOOLS = {"self_inspect", "know", "recall", "skill_list", "repo_map"}
 
 # Live 2026-10-03: three autonomous attempts read the journal, changed nothing,
 # and ended "Fixed task quality regression ... by ensuring prompt alignment".
@@ -203,7 +204,7 @@ def changes_something(name: str, args: Any) -> bool:
         return a.get("command") in EDIT_COMMANDS
     if name == "python_execute":
         return bool(WRITES.search(str(a.get("code") or "")))
-    return name in ("release", "skill_create", "desktop", "present", "learn", "remember", "forget") or name.startswith("browser_") or name.startswith("make_")
+    return name in ("release", "skill_create", "apply_patch", "desktop", "present", "learn", "remember", "forget") or name.startswith("browser_") or name.startswith("make_")
 
 
 def _call_key(command: ToolCall) -> str:
@@ -249,7 +250,7 @@ class SyraxAgent(Manus):
             AsyncPythonExecute(), SyraxEditor(), DesktopControl(),
             RememberTool(), RecallTool(), ForgetTool(), RemindTool(), WatchTopicTool(), UndoTool(), SelfInspectTool(), JournalQueryTool(),
             ResearchTool(), KnowTool(), LearnTool(),
-            SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), PresentTool(), ExperimentTool(), CompareVersionsTool(), Terminate()
+            SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), RepoMapTool(), ApplyPatchTool(), PresentTool(), ExperimentTool(), CompareVersionsTool(), Terminate()
         )
     )
 

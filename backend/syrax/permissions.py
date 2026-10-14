@@ -55,7 +55,7 @@ STATIC: Dict[str, str] = {
     "self_inspect": READ_ONLY, "know": READ_ONLY, "recall": READ_ONLY, "skill_list": READ_ONLY,
     "journal_query": READ_ONLY, "compare_versions": READ_ONLY, "terminate": READ_ONLY, "ask_human": READ_ONLY,
     "remember": WRITE, "forget": WRITE, "remind": WRITE, "watch_topic": WRITE, "undo": READ_ONLY, "learn": WRITE, "present": WRITE, "experiment": WRITE,
-    "skill_test": WRITE, "release": WRITE,
+    "skill_test": WRITE, "release": WRITE, "repo_map": READ_ONLY,
     "research": EXTERNAL_READ, "browser_screenshot": EXTERNAL_READ, "browser_exec": EXTERNAL_READ,
     # polymorphic tools: the static entry is their ceiling; classify() refines per call
     "str_replace_editor": WRITE, "skill_create": WRITE, "python_execute": SYSTEM, "desktop": SYSTEM,
@@ -208,6 +208,12 @@ def classify(name: str, args: Any) -> Decision:
                 resolved = Path(path)
             return Decision(name, WRITE, f"edits {Path(path).name}", [str(resolved)], [], scope_of(resolved))
         return Decision(name, READ_ONLY, "views a file", [path] if path else [])
+    if name == "apply_patch":  # Phase 3: a unified diff; its paths are the targets, so the protected set is checked per file
+        from syrax.selfedit import diff_paths, work_root
+
+        root = work_root()
+        paths = diff_paths(str(a.get("diff") or ""))
+        return Decision(name, WRITE, f"patches {', '.join(Path(x).name for x in paths[:3]) or '?'}", [str(root / x) for x in paths], [], "repo")
     if name == "python_execute":
         code = str(a.get("code") or "")
         level, reason, harm = level_of_source(code)

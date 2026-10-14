@@ -89,6 +89,7 @@ def changed_files(root: Path) -> Dict[str, str]:
 # the editor, whose edits are journaled path by path (code.changed).
 WRITER_TOOLS = frozenset({"python_execute", "skill_create"})
 EDITOR_TOOL = "str_replace_editor"
+EDITOR_TOOLS = frozenset({EDITOR_TOOL, "apply_patch"})  # both journal exactly which files they touched (code.changed)
 
 
 def owned_files(files: Dict[str, str], tools_used: Iterable[str], edited_paths: Iterable[str]) -> Dict[str, str]:
@@ -99,7 +100,7 @@ def owned_files(files: Dict[str, str], tools_used: Iterable[str], edited_paths: 
     ran python or built a skill may have written anywhere, so it owns every
     change that was not there when it started."""
     used = set(tools_used)
-    if not used & (WRITER_TOOLS | {EDITOR_TOOL}):
+    if not used & (WRITER_TOOLS | EDITOR_TOOLS):
         return {}
     if used & WRITER_TOOLS:
         return dict(files)
