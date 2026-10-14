@@ -352,10 +352,14 @@ All CURRENT and tested (`test_<name>.py` beside each). Since 2026-10-12 every mo
 
 ## 5. PLANNED (not built)
 
-- **Visible Work Presence**: visibility levels, hide/show of SYRAX's own windows, observation of the human's active window. `winctl.py` can list and focus windows; nothing decides when SYRAX should be visible.
-- **Sandboxed self-modification**: the dev loop edits the live working tree and relies on gate + rollback; skills and `python_execute` run in-process or as plain child processes.
+- **Visible Work Presence, Level 3** (a live view of the workspace SYRAX acts in): the owner's decision. Built
+  2026-10-14: the three levels visible / minimal / hidden by the human's word (`presence.py`, the HUD obeys), and
+  the window SYRAX acted in, observed only right after a desktop or browser call, private titles never recorded.
+- **Sandboxed self-modification**: autonomous work runs in its own git worktree (`SYRAX_ISOLATE`, M1) and lands only
+  through the gate; skills and `python_execute` still run in-process or as plain child processes.
 - **Embeddings / semantic recall**: `know`, `recall` and consolidation use keyword overlap only.
-- **Typed memory** (fact / observation / inference with provenance and expiry): knowledge rows carry `kind`, `confidence`, `basis` and sources, but no such typing or expiry.
+- **Memory expiry**: typed memory is built (2026-10-14: fact / preference / rule from the human, observation from
+  SYRAX at half the weight, kept apart in the prompt); facts do not expire yet.
 - **Multi-brain synthesizer**: `BrainRouter` fails over and routes to one provider per call; `review.py` is the only place two brains are combined, and only for a yes/no verdict.
 
 ## 6. Persistence map

@@ -157,7 +157,11 @@ Intent + state + context + importance + user attention + history →
 show / hide / replace / expand / minimise / voice-only / full-screen.
 
 - PARTIAL: `presentation.py`, `Stage.tsx`, dismissal learning.
-- NEXT (specified 2026-10-03, "Visible Work Presence"): a truthful live view of what SYRAX is doing — current task, phase, action, target, application — with
+- DONE (2026-10-14): Visible Work Presence, Levels 1-2. The desktop HUD (`hud/`, served by the core) shows the live task, phase,
+  tool, target window and event log from the journal; "hide" / "show" / "go minimal" by text or voice set visible / minimal / hidden
+  (`presence.py`, never a task, journaled, kept across restarts); the window SYRAX acted in is observed only right after a desktop or
+  browser call, private titles never recorded. Level 3 stays the owner's decision.
+- Specified 2026-10-03, "Visible Work Presence": a truthful live view of what SYRAX is doing — current task, phase, action, target, application — with
   visibility levels visible / minimal / hidden that never touch execution, "hide" / "show" by voice and text, a durable timeline, redaction of secrets. Needs a
   task phase model first (the `stage.started` wire event exists and is never recorded: use it for understand / plan / act / observe / verify), a
   `work_presence` state in `Core.snapshot()`, an active-window reader in `winctl.py` journaled only during desktop/browser calls, and `hello.tool_levels`
