@@ -84,7 +84,14 @@ RELEASE_STEPS = 30
 RELEASE_MARK = "closes only when your `release` creates a commit"
 
 BRIEF_HINTS = {
-    "change_released": f" The objective {RELEASE_MARK}. You have {RELEASE_STEPS} steps: view only the regions you change, edit, run the tests, fix, then `release`.",
+    # live 2026-10-14 (objective 224, attempt 1): the editor's str_replace missed four times on a region with em dashes,
+    # the new test imported `backend.syrax.memory` and opened the running journal (read-only to other processes), and
+    # thirty steps ran out before `release`. The hint now names the tools that avoid each of those.
+    "change_released": (f" The objective {RELEASE_MARK}. You have {RELEASE_STEPS} steps: `repo_map` names the module and its test file; "
+                        "read only the region you change; make the change and its NEW test file with `apply_patch` (one unified diff; "
+                        "it compiles them and runs the covering tests and shows the result); fix forward with another patch; then `release`. "
+                        "A test imports modules as `from syrax.<module> import ...` and uses tmp_path stores and journals the way the "
+                        "module's existing test file does; a test that opens the running journal fails (read-only to other processes)."),
     "skill_verified": " Build it with `skill_create` (code + pytest tests, dependencies listed); the objective closes only when the skill `{name}` is VERIFIED by its own tests. Write files only inside the workspace. Do not call `release`: a skill is not in the repository.",
     "tool_verified": " For this objective one call of the `{tool}` tool with a harmless read-only action is enough; report its output and finish.",
     "knowledge_stored": " Use `research` once on the stated topic, then `learn` one verified conclusion citing the knowledge_ids, then finish.",

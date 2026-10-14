@@ -208,6 +208,20 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### SYRAX's first own code-change objective through the new tools (objective 224, 2026-10-14)
+
+- Given by the maintainer: expire stale inferences from the memory prompt,
+  with a new test, via `repo_map`, `apply_patch`, `release`. Attempt 1
+  (gemini and openrouter, 30 steps): used the editor instead of
+  `apply_patch` and missed four times on a region with em dashes; wrote a
+  test that imported `backend.syrax.memory` and opened the running journal
+  ("attempt to write a readonly database"); ran out of steps before
+  `release` (PARTIAL; the edits were rolled back and kept as a diff for the
+  next attempt). The brief's hint for code-change objectives now names
+  `apply_patch` for the change and its new test, how a test imports
+  (`from syrax.<module> import ...`) and isolates (tmp_path stores and
+  journals), and `release`.
+
 ### Fallback brain: openrouter before upstage (2026-10-14)
 
 - Three days of quality runs: gemini 124 of 135 cases (92 %), upstage 21 of
