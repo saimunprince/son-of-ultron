@@ -208,6 +208,44 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Phase 8: learning data for its own brain
+
+- `backend/syrax/trajectories.py`: every finished task becomes a graded
+  chat-with-tools trajectory (user request, assistant thoughts with
+  `tool_calls`, tool results with `ok`/`refused`, the final answer). Grades
+  come from the journal: a quality case passed or failed, an answer sent back
+  (`claim.rejected`, `claim.uncited`), else ungraded. A task whose text looks
+  like a secret is skipped whole; one prompt is kept at most three times.
+  `python -m syrax.trajectories --since 30` writes JSONL to
+  `backend/workspace/exports/` (gitignored; nothing leaves the machine).
+  `docs/FINETUNE.md` documents the format and the way to a local model.
+- Tests (`test_trajectories.py`): messages with tool calls and results,
+  terminate dropped; grades from quality runs and sent-back answers; secrets
+  skipped and repeats capped; the export file and the CLI.
+
+### Summary of the plan (2026-10-14)
+
+All eight phases are implemented, each behind the full gate (GREEN before
+merge), each with tests in `backend/syrax/test_*.py` and evidence above:
+
+1. Protected judge: only a human changes `devloop.JUDGES`; refused at the
+   call for own work and at every release.
+2. Self-change brain: the owner's brain for release objectives, with a
+   journaled fallback.
+3. `repo_map` and `apply_patch` with the covering tests run after the edit.
+4. 51 quality cases, 10 of them self-change, runs stored with the commit.
+5. The DGM-style archive of variants with parent selection and
+   `docs/ARCHIVE.md`.
+6. The citation nudge (`claim.uncited`); the phase model was already live;
+   the matrix regenerated.
+7. Token auth for `/ws`, `/live` and the writing endpoints; no-Origin
+   connections need the token.
+8. Trajectory export and `docs/FINETUNE.md`.
+
+Held for the owner: an API key or a paid model for the self-change brain,
+installing the login service (`python syrax.py --install-service`), and any
+training of a local model.
+
 ### Phase 7: token auth for /ws and /live
 
 - `backend/syrax/auth.py` (a judge): `verdict(origin, allowed, given)`: an

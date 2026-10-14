@@ -797,7 +797,8 @@
         "backend/syrax/devlog.py (daily devlog from the journal and git)",
         "backend/syrax/selfedit.py (repo_map and apply_patch: the map, the unified diff, the covering tests)",
         "backend/syrax/archive.py (the DGM-style archive of SYRAX's own variants: parent selection, docs/ARCHIVE.md)",
-        "backend/syrax/auth.py (who may talk to the core: an allowed Origin, or the token for everything else)"
+        "backend/syrax/auth.py (who may talk to the core: an allowed Origin, or the token for everything else)",
+        "backend/syrax/trajectories.py (finished tasks exported as graded chat-with-tools JSONL for fine-tuning; docs/FINETUNE.md)"
       ],
       "tests": [
         "backend/syrax/test_verify.py"
