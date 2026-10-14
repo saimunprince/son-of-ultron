@@ -2,7 +2,7 @@
 -r requirements.txt
 websockets>=13,<16
 # voice: neural TTS (free, no key) + local speech recognition
-edge-tts>=7.0
+edge-tts>=7.3.1  # 7.2.x: Microsoft answered 403 from 2026-10-14; 7.3.1 speaks again
 faster-whisper>=1.1
 ddgs>=9,<10
 # office documents: SYRAX builds its own docx/xlsx/pptx skills on these (approved by a human, 2026-10-01)
