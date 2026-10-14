@@ -208,6 +208,18 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### SYRAX's own releases blocked by a Phase 1 test (fixed 2026-10-14)
+
+- Verifications #19, #20 and #21 (SYRAX's own objectives on `apply_patch`,
+  `journal_query` and `desktop`) were rolled back because
+  `test_protected_set` failed inside SYRAX's task worktree: the test builds a
+  worktree path from the repository root, which there is itself a worktree,
+  and `permissions.repo_relative` took the first `.syrax/worktrees/<id>/`
+  segment instead of the last. My gate ran from the scratchpad, so it never
+  saw the nesting. `repo_relative` now takes the last segment, with a test.
+  (#20 also failed `test_journal_query` on SYRAX's own change: the gate was
+  right to stop that one.)
+
 ### Rerun of the three self-change cases (quality run #36, 2026-10-14)
 
 - 3 of 3 passed on build `48d4d22`, but `self_patch_edit` only on a

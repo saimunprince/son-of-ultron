@@ -53,6 +53,13 @@ def test_own_work_is_refused_writing_a_judge_at_the_call(path):
     assert permissions.decide(view, "autonomous", "read it").action == "allow"  # reading a judge is fine
 
 
+def test_a_path_in_a_worktree_of_a_worktree_maps_to_the_repository():
+    nested = "C:/ai-agent/son-of-ultron/.syrax/worktrees/1d1d0126f78f/.syrax/worktrees/abc123/backend/syrax/guard.py"
+    assert permissions.repo_relative(nested) == "backend/syrax/guard.py"
+    assert permissions.repo_relative("C:/x/.syrax/maintenance/m1/docs/RISE.md") == "docs/RISE.md"
+    assert permissions.protected_targets([nested]) == ["backend/syrax/guard.py"]
+
+
 def test_a_normal_own_edit_and_a_humans_request_are_allowed():
     own = permissions.classify("str_replace_editor", {"command": "create", "path": str(ROOT / "backend" / "syrax" / "newmod.py"), "file_text": "x"})
     assert permissions.decide(own, "autonomous", "add a module").action == "allow"

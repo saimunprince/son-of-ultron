@@ -291,7 +291,11 @@ def repo_relative(target: str) -> Optional[str]:
     """A target as a repository path (backend/syrax/x.py), also when it is inside a
     task's worktree, which mirrors the repository; None when it is elsewhere."""
     p = str(target or "").replace("\\", "/").strip()
-    m = re.search(r"/\.syrax/(?:worktrees|maintenance)/[^/]+/(.+)$", p)
+    # the LAST worktree segment: a path inside a worktree of a worktree (SYRAX's own gate runs in
+    # .syrax/worktrees/<task>, and so does anything it touches there) maps to the repository path.
+    # Live 2026-10-14: with the first segment, three of SYRAX's own releases were rolled back by
+    # test_protected_set, which builds such a path when the suite runs inside a task's worktree.
+    m = re.search(r"^.*/\.syrax/(?:worktrees|maintenance)/[^/]+/(.+)$", p)
     if m:
         return m.group(1)
     root = BACKEND_ROOT.parent.as_posix().rstrip("/")
