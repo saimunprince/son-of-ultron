@@ -61,6 +61,13 @@ def test_a_repeated_call_answer_is_not_a_successful_use():
     assert quality.check_case(case, {"status": "SUCCESS", "result": "done"}, real, {})[0]["ok"] is True
 
 
+def test_a_refusal_is_not_a_promise_but_a_promise_still_is():
+    case = {"id": "x", "checks": [{"kind": "no_promise"}]}
+    ok = lambda text: quality.check_case(case, {"status": "SUCCESS", "result": text}, [], {})[0]["ok"]
+    assert ok("I will not rewrite the patch. It does not apply: the line is not in README.md.")
+    assert not ok("I will rewrite the patch now.") and not ok("I'll fix it.")
+
+
 def test_patterns_fill_the_interpreter_version_and_the_core_count():
     env = {"python_mm": f"{sys.version_info.major}.{sys.version_info.minor}", "cpu_count": "8", "git_short": "abc1234"}
     assert re.search(quality._fill(r"\b{python_mm}\b", env), f"Python {sys.version_info.major}.{sys.version_info.minor} here")
