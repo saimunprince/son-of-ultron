@@ -871,7 +871,9 @@ def test_presentation_events_follow_the_task_and_reconnect_gets_the_plan(script)
 def test_agent_runs_an_experiment_and_benchmarks_are_queryable(script):
     script.queue = [
         call("experiment", {"hypothesis": "a short loop is faster than a long one", "metric": "ms", "repeats": 2,
-                            "baseline": {"tool": "python_execute", "args": {"code": "sum(range(20_000_000))"}},
+                            # a sleep, not a CPU loop: under load (a live quality run beside the gate, 2026-10-14) the
+                            # 20M-sum baseline measured faster than the trivial candidate and the test failed
+                            "baseline": {"tool": "python_execute", "args": {"code": "import time; time.sleep(1.5)"}},
                             "candidate": {"tool": "python_execute", "args": {"code": "sum(range(10))"}}}, "Measuring."),
         reply("Measured. The short loop wins."),
     ]
