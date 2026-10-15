@@ -24,6 +24,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import functools
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -74,6 +75,11 @@ def _count_lines(path: Path) -> int:
 
 def _meminfo() -> Dict[str, Optional[int]]:
     return sysinfo.meminfo()
+
+
+@functools.lru_cache(maxsize=1)
+def _gpu() -> Optional[Dict[str, Any]]:
+    return sysinfo.gpu()
 
 
 class SelfModel:
@@ -201,7 +207,7 @@ class SelfModel:
             "battery": res["battery"],
             "quiet_hours": res["quiet_hours"],
             "pressure": resources.pressure(res),
-            "gpu": None,  # not probed; no GPU on the reference machine
+            "gpu": _gpu(),
             "journal": {"path": str(self.journal.path), "bytes": journal_size},
             "brains": brains,
             "running_task": running,
