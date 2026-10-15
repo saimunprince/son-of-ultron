@@ -54,6 +54,7 @@ DEFAULT_INTERVAL_S = 120.0
 QUALITY_MEASURE_EVERY_S = 6 * 3600.0
 QUALITY_KINDS = ("quality_case_passes", "quality_recovered")
 IDLE_INTERVAL_S = 600.0
+NO_BRAIN_INTERVAL_S = 900.0  # after a task no brain answered: the network or every provider is down
 MAINTENANCE_EVERY_S = 86400.0
 
 AUTONOMOUS_BRIEF = (
@@ -842,6 +843,14 @@ class Autonomy:
         task = self.journal.task(task_id) or {}
         rep.task_status = task.get("status")
         rep.outcome = "RAN"
+        if task.get("status") == "FAILED" and no_brain_answered(self.journal, task_id):
+            # Live 2026-10-15, 12:54-15:35 (the network was down): every three minutes the cycle started a task
+            # that failed at its first brain call, counted it as an attempt, blocked objective 237 and four more,
+            # and derived nested "learn how to do what #239 could not" follow-ups from the outage itself.
+            await self.journal.update_objective(objective["id"], status="OPEN", last_task_id=task_id,
+                                                note="no brain could be reached: not an attempt")
+            rep.outcome, rep.reason = "NO_BRAIN", "no brain could be reached; the objective stays open"
+            return await self._finish(rep)
         # ——— reflect: expected vs actual, judged from evidence ———
         verdict, evidence = await asyncio.to_thread(judge, self.journal, objective, task)
         judged = verdict
@@ -922,8 +931,8 @@ class Autonomy:
             return False  # never restart in the middle of a quality run
         if not LAUNCHER_PID_FILE.exists():
             return False  # not started by syrax.py (tests, a bare server): nobody would bring it back
-        try:
-            ident = self.core.selfmodel.identity()
+        try:  # off the event loop: its git calls hung for 60 s+ on 2026-10-15 14:38 (stall dump) and froze SYRAX
+            ident = await asyncio.to_thread(self.core.selfmodel.identity)
         except Exception:
             return False
         if not ident.get("restart_pending"):
@@ -985,7 +994,7 @@ class Autonomy:
                 logger.exception("autonomy cycle crashed")
                 rep = CycleReport(started=time.time(), outcome="SKIPPED", reason=f"crash: {e}")
                 self.reports.append(rep)
-            delay = self.interval if rep.outcome == "RAN" else IDLE_INTERVAL_S if rep.outcome == "IDLE" else self.interval
+            delay = {"RAN": self.interval, "IDLE": IDLE_INTERVAL_S, "NO_BRAIN": NO_BRAIN_INTERVAL_S}.get(rep.outcome, self.interval)
             await asyncio.sleep(delay)
 
     def start(self) -> None:
@@ -1008,6 +1017,14 @@ def auto_keywords(text: str) -> List[str]:
     from syrax.research import keywords
 
     return keywords(text)
+
+
+def no_brain_answered(journal: Journal, task_id: str) -> bool:
+    """The task failed because no brain could be reached (BrainError "All brains failed"): an outage, not an attempt."""
+    for e in reversed(journal.events(task_id)):
+        if e["type"] == "task.failed":
+            return str(e["payload"].get("error") or "").startswith("All brains failed")
+    return False
 
 
 def _research_topic(error: str) -> Optional[str]:

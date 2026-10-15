@@ -208,6 +208,20 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### An outage is not an attempt (2026-10-15)
+
+- From 12:54 to 15:35 the network was down (the review of objective 237 was
+  its first casualty). Every three minutes the cycle started a task that
+  failed at its first brain call, counted it as an attempt, blocked
+  objective 237 and four more, and derived nested follow-ups ("learn how to
+  do what #239 could not: learn how to do what #238 could not ..."). At 14:38
+  the event loop also froze for over a minute in the restart check's git
+  calls. A task that failed with "All brains failed" now leaves its objective
+  OPEN without counting an attempt, derives nothing, and the next cycle waits
+  15 minutes; the restart check runs off the event loop
+  (`test_no_brain_outage.py`). The objectives the outage blocked were
+  reopened and its follow-ups dropped.
+
 ### SYRAX's first GREEN own change, rolled back unreviewed (2026-10-15)
 
 - Objective 237 (232 respecified): SYRAX made the change and its test in one
