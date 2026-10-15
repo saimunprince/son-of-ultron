@@ -208,6 +208,19 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### A caller's mistake is not the tool failing (2026-10-15)
+
+- From 09-30 to 10-15 the cycle derived 40 "the tool failed on its last use,
+  diagnose why" objectives; 38 were DONE on the first harmless call, some with
+  an invented cause ("a transient system error" for a query naming a column
+  that does not exist). The journal's own failures show why: an `old_str`
+  not in the file (32), a diff that does not apply (108), SQL with a wrong
+  column (30+), exceptions in SYRAX's own python. `journal.misuse` tells
+  these from the tool's own failures by the tool's own error text; they still
+  count as failed calls, but the last outcome is `misuse`, so the tool is not
+  FAILING and draws no repair objective (`test_misuse.py`). Timeouts, a dead
+  worker and plain errors stay failures.
+
 ### Own releases refuse tests that assert nothing (2026-10-15)
 
 - In objective 232's attempt 3, with its own new test failing, SYRAX

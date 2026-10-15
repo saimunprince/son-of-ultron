@@ -26,6 +26,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import sqlite3
 import subprocess
 import threading
@@ -157,6 +158,29 @@ class JournalError(RuntimeError):
 
 def _now() -> float:
     return time.time()
+
+
+# A failed call where the tool did its job: it answered input it cannot act on (bad SQL, an old_str that is not
+# in the file, a diff that does not apply, an exception in the caller's own code). Counted as a failure of the
+# call, never as the tool failing: from 2026-09-30 to 2026-10-15 the cycle spent 40 tasks on "the tool failed on
+# its last use, diagnose why" and 38 of them were DONE on the first harmless call, some with an invented cause
+# ("a transient system error" for a query that named a column that does not exist).
+_MISUSE = {
+    "journal_query": re.compile(r"^Error: .*\. Schema: |^Error: only one read-only SELECT", re.S),
+    "str_replace_editor": re.compile(r"^Error: (No replacement was performed|Parameter `\w+` is required|The path \S.* is not an "
+                                     r"absolute path|The path \S.* does not exist|Invalid `view_range`|File already exists|Failed to read )"),
+    "apply_patch": re.compile(r"^Error: apply_patch refused: (the patch does not apply cleanly|empty patch|not a unified diff|patch too large|"
+                              r"[^\n]*paths must be repository-relative)"),
+    # an exception in the caller's code; a timeout, a dead worker or an empty answer may be the tool's own fault
+    "python_execute": re.compile(r"^\{'observation': (['\"])(?!Execution timeout|Error: the python_execute worker|\1)"),
+}
+_OBSERVED_PREFIX = re.compile(r"^Observed output of cmd `[^`]*` executed:\s*")
+
+
+def misuse(name: Optional[str], output: Optional[str]) -> bool:
+    """True when a failed call of `name` was the caller's mistake, judged from the tool's own error (_MISUSE)."""
+    pat = _MISUSE.get(name or "")
+    return bool(pat and pat.search(_OBSERVED_PREFIX.sub("", str(output or ""), count=1)))
 
 
 _WORD = None
@@ -1700,7 +1724,8 @@ class Journal:
         with self._lock:
             rows = self._db.execute(
                 "SELECT type, ts, task_id, json_extract(payload, '$.name') AS name, json_extract(payload, '$.id') AS cid, "
-                "json_extract(payload, '$.refused') AS refused FROM events "
+                "json_extract(payload, '$.refused') AS refused, "
+                "CASE WHEN type='tool.failed' THEN substr(json_extract(payload, '$.output'), 1, 400) END AS output FROM events "
                 "WHERE type IN ('tool.started','tool.completed','tool.failed') AND name IS NOT NULL "
                 "ORDER BY id"
             ).fetchall()
@@ -1709,7 +1734,7 @@ class Journal:
         for r in rows:
             st = out.setdefault(
                 r["name"],
-                {"uses": 0, "successes": 0, "failures": 0, "refused": 0, "last_used": None, "last_failed": None, "last_outcome": None},
+                {"uses": 0, "successes": 0, "failures": 0, "refused": 0, "misuse": 0, "last_used": None, "last_failed": None, "last_outcome": None},
             )
             if r["type"] == "tool.started":
                 started[(r["task_id"], r["cid"])] = (st["last_used"], r["ts"])
@@ -1727,7 +1752,8 @@ class Journal:
             else:
                 st["failures"] += 1
                 st["last_failed"] = r["ts"]
-                st["last_outcome"] = "fail"
+                st["last_outcome"] = "misuse" if misuse(r["name"], r["output"]) else "fail"
+                st["misuse"] += st["last_outcome"] == "misuse"
         return out
 
     def count(self, table: str) -> int:

@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from syrax.journal import BACKEND_ROOT, DEFAULT_FILE
+from syrax.journal import BACKEND_ROOT, DEFAULT_FILE, misuse
 
 REPO_ROOT = BACKEND_ROOT.parent
 WINDOW_DAYS = 7
@@ -240,7 +240,8 @@ def tool_stats(c: sqlite3.Connection, now: float) -> Dict[str, dict]:
     out: Dict[str, dict] = {}
     started: Dict[tuple, tuple] = {}
     for r in c.execute("SELECT type, ts, task_id, json_extract(payload,'$.name') AS name, json_extract(payload,'$.id') AS cid, "
-                       "json_extract(payload,'$.refused') AS refused FROM events WHERE type IN ('tool.started','tool.completed','tool.failed') "
+                       "json_extract(payload,'$.refused') AS refused, CASE WHEN type='tool.failed' THEN substr(json_extract(payload,'$.output'), 1, 400) END AS output "
+                       "FROM events WHERE type IN ('tool.started','tool.completed','tool.failed') "
                        "AND name IS NOT NULL ORDER BY id"):
         st = out.setdefault(r["name"], {"uses": 0, "successes": 0, "failures": 0, "refused": 0, "last_used": None, "last_failed": None,
                                         "last_outcome": None, "recent_ok": 0, "recent_fail": 0, "last_ok": None})
@@ -263,7 +264,7 @@ def tool_stats(c: sqlite3.Connection, now: float) -> Dict[str, dict]:
         else:
             st["failures"] += 1
             st["last_failed"] = r["ts"]
-            st["last_outcome"] = "fail"
+            st["last_outcome"] = "misuse" if misuse(r["name"], r["output"]) else "fail"
             if r["ts"] >= since:
                 st["recent_fail"] += 1
     return out

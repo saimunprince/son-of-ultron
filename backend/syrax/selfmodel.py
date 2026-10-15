@@ -297,6 +297,8 @@ class SelfModel:
             registered = name in tools or not tools  # if no agent yet, we cannot say
             if st is None:
                 status, confidence = "NOT_TESTED", None
+            elif st["last_outcome"] == "misuse" and not st["successes"]:
+                status, confidence = "NOT_TESTED", None  # it answered bad input, never a real call (journal.misuse)
             elif st["last_outcome"] == "fail":
                 status = "FAILING"
                 confidence = round(st["successes"] / st["uses"], 3) if st["uses"] else None
