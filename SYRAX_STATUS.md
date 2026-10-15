@@ -208,6 +208,18 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### A checker error no longer kills the quality run (2026-10-15)
+
+- The 4-case rerun after the named-tool reminder died after its second case:
+  research_report's task had written "78.37 \u00b0C" with python_execute, whose
+  `open()` writes cp1252 on Windows; the checker read the file as UTF-8,
+  raised UnicodeDecodeError, and the run ended without any outcome in the
+  journal (the cycle then took the idle core). The checker now reads a
+  task's file as UTF-8, else cp1252, else byte by byte, and an exception in
+  one case's check fails that case with its error instead of the run
+  (`test_quality_crash.py`). Open: python_execute still writes files in the
+  Windows code page.
+
 ### Objective reads that grew past their limits (2026-10-15)
 
 - The known-limitation cap (3 research objectives a day) counted today's

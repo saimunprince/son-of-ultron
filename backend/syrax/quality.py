@@ -291,7 +291,7 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
             out.append({"check": "did not ask the human", "ok": not asked, "detail": f"tools: {tools}"})
         elif k == "file_regex":
             try:
-                text = Path(c["path"]).read_text(encoding="utf-8")
+                text = _text(c["path"])
                 ok, detail = re.search(c["pattern"], text) is not None, text[:120]
             except OSError as e:
                 ok, detail = False, str(e)
@@ -328,7 +328,7 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
             out.append({"check": f"`{' '.join(c['cmd'][1:])}` prints {c['pattern']}", "ok": ok, "detail": detail})
         elif k == "file_equals":
             try:
-                text = Path(c["path"]).read_text(encoding="utf-8")
+                text = _text(c["path"])
                 ok = text == c["text"]
                 detail = text[:120]
             except OSError as e:
@@ -339,6 +339,18 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
     if task.get("status") != "SUCCESS":
         out.append({"check": "task SUCCESS", "ok": False, "detail": f"status {task.get('status')}: {task.get('error')}"})
     return out
+
+
+def _text(path: str) -> str:
+    """A file the task wrote, read as UTF-8, else as Windows' own code page (python_execute's open() writes cp1252
+    here: live 2026-10-15 "78.37 \u00b0C" broke the UTF-8 read and the whole quality run with it), else byte by byte."""
+    data = Path(path).read_bytes()
+    for enc in ("utf-8", "cp1252"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("latin-1")
 
 
 BUSY_WAIT_S = 1800.0  # a case waits this long for a task already running (an objective, a human) to finish
@@ -454,7 +466,11 @@ class QualityRunner:
         results = []
         try:
             for case in all_cases:
-                results.append(await self.run_case(case, env))
+                try:
+                    results.append(await self.run_case(case, env))
+                except Exception as e:  # a checker's own error fails its case, never the run (live 2026-10-15)
+                    results.append({"id": case["id"], "ok": False, "task_id": None, "ms": 0,
+                                    "checks": [{"check": "case checked", "ok": False, "detail": f"{type(e).__name__}: {e}"[:300]}]})
         except asyncio.CancelledError:
             # never leave a started run without an outcome in the journal
             done = [r["id"] for r in results]
