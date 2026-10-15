@@ -35,6 +35,31 @@ STEP_PROMPT = (
 ECHO_FALLBACK = "I could not put the result into a clean answer; the steps and their outputs are in this task's history."
 # Live 2026-10-15 (objective 252, attempt 1): the brains answered empty, and the final "The new test file has been
 # created and the change is ready for release" stood as the task's result after two rejections; nothing was edited.
+# Live 2026-10-15 (objective 266, attempt 1): four releases refused because the covering tests failed, then the
+# final said "implemented ..., with unit tests passing". A pass claimed after a failing test run is sent back once.
+TEST_CLAIM = re.compile(r"\btests? (?:are |were |now |all )*(?:pass(?:ing|ed|es)?|green|succeed(?:s|ed|ing)?)\b"
+                        r"|\btests? (?:pass|succeed) successfully\b", re.I)
+TEST_CLAIM_ASK = (
+    "Your answer says the tests pass, but the last test run in this task failed. Rewrite the final answer honestly: "
+    "which tests fail, and what is therefore not done. No tool calls."
+)
+TEST_FALLBACK = ("The tests that cover this change still fail (the last test run is in this task's history), "
+                 "so the change is not done.")
+
+
+def state_of_tests(name: str, result: str) -> Optional[str]:
+    """"pass" or "fail" when a tool result reports a test run (apply_patch's covering tests, release's preflight or
+    gate), else None."""
+    if name == "apply_patch":
+        return "pass" if "TESTS PASS:" in result else "fail" if "TESTS FAIL:" in result else None
+    if name == "release":
+        if "RELEASE COMMITTED" in result:
+            return "pass"
+        if "the tests that cover your change fail" in result or ("RELEASE ROLLED_BACK" in result and "pytest=FAIL" in result):
+            return "fail"
+    return None
+
+
 CLAIM_FALLBACK = ("Nothing was changed in this task: no file was edited, created, written or released. "
                   "What was looked at, and its outputs, are in this task's history.")
 NOT_RELEASED_NOTE = (" (Not released: no `release` committed these edits, so they are rolled back as this task ends; "
@@ -285,6 +310,7 @@ class SyraxAgent(Manus):
     changed: bool = False  # a tool that changes the world succeeded this turn
     researched: bool = False  # `research` succeeded this task: the answer owes a source URL
     called: set = Field(default_factory=set)  # tools this task called (refusals excluded): NAMED_NUDGE
+    tests: Optional[str] = None  # "pass"/"fail": the last test run this task saw (state_of_tests)
     # Permissions (permissions.py): the task's kind and the human's own words
     # decide what a destructive or external call needs; consents are the
     # ask_human answers of this task, grants the yes/no already given per call.
@@ -333,6 +359,7 @@ class SyraxAgent(Manus):
         self.changed = False
         self.researched = False
         self.called = set()
+        self.tests = None
         self.consents = []
         self.grants = {}
         if not self.task_goal:
@@ -395,6 +422,11 @@ class SyraxAgent(Manus):
             await self._final_answer(CLAIM_ASK)
             if self._claims_change(self.last_reply or ""):  # still claimed, or no brain answered the rewrite
                 self.last_reply = CLAIM_FALLBACK
+        if self.last_reply and self.tests == "fail" and TEST_CLAIM.search(self.last_reply):
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._final_answer(TEST_CLAIM_ASK)
+            if TEST_CLAIM.search(self.last_reply or ""):
+                self.last_reply = TEST_FALLBACK
         if self._unreleased_edits(request):
             # live 2026-10-14 (objective 224, attempt 3): thirty steps of edits, no `release`, and the final said
             # "implemented ... and verified"; the edits were rolled back when the task ended. Say so in the answer.
@@ -523,6 +555,7 @@ class SyraxAgent(Manus):
                     self.changed = True
                 if _succeeded(result) and name == "research":
                     self.researched = True
+                self.tests = state_of_tests(name, result) or self.tests
                 if name == "ask_human":  # a yes to a question that names a target authorizes it (permissions.named_in)
                     self.consents.append((str(_args_of(command).get("inquire", "")), _OBSERVED.sub("", result, count=1).strip()))
         event = {

@@ -217,6 +217,23 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Run #43's four failures pass (2026-10-15 18:15)
+
+- On bcdc77c (named-tool reminder, quality race and checker fixes), the four
+  cases run #43 failed were rerun: research_cite, research_report,
+  remember_fact and self_map_tests all PASS (4/4, all on gemini). Each now
+  calls the tool the request names (`research`, `remember`, `repo_map`).
+
+### A pass claimed after failing tests is sent back (2026-10-15)
+
+- Objective 266, attempt 1, ended "Brain latency tracking implemented ...,
+  with unit tests passing" after four releases had been refused because the
+  covering tests failed. The agent now remembers the task's last test run
+  (apply_patch's covering tests, release's preflight or gate); when it
+  failed, an answer that says the tests pass is sent back once and, if it
+  still says so, replaced by a plain statement that the tests fail
+  (`test_test_claims.py`).
+
 ### apply_patch: git-style diffs split right, and all or nothing (2026-10-15)
 
 - Objective 266 (brain latency), attempt 1: SYRAX sent a git-style diff
