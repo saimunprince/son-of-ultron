@@ -345,12 +345,12 @@ def _text(path: str) -> str:
     """A file the task wrote, read as UTF-8, else as Windows' own code page (python_execute's open() writes cp1252
     here: live 2026-10-15 "78.37 \u00b0C" broke the UTF-8 read and the whole quality run with it), else byte by byte."""
     data = Path(path).read_bytes()
-    for enc in ("utf-8", "cp1252"):
+    for enc in ("utf-8", "cp1252", "latin-1"):
         try:
-            return data.decode(enc)
+            return data.decode(enc).replace("\r\n", "\n").replace("\r", "\n")  # newlines as read_text reads them
         except UnicodeDecodeError:
             continue
-    return data.decode("latin-1")
+    return ""
 
 
 BUSY_WAIT_S = 1800.0  # a case waits this long for a task already running (an objective, a human) to finish
