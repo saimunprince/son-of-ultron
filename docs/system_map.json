@@ -1,6 +1,6 @@
 {
   "name": "SYRAX",
-  "generated": "2026-09-30 (all 12 phases have a first real implementation; runs on Linux and Windows); 2026-10-12: every backend/syrax module mapped (proactive loops, live talk, feature catalog, desktop hands)",
+  "generated": "2026-09-30 (all 12 phases have a first real implementation; runs on Linux and Windows); 2026-10-12: every backend/syrax module mapped (proactive loops, live talk, feature catalog, desktop hands); 2026-10-15: limitations re-checked against the code (auth, GPU wiring, perf gate, review, memory expiry, quality suite)",
   "source": "hand-audited from source code; regenerate when components change",
   "components": [
     {
@@ -79,7 +79,7 @@
         "origin check on WS and voice routes"
       ],
       "limitations": [
-        "no auth beyond Origin allow-list; binds 127.0.0.1"
+        "an allowed Origin is trusted without a token; a client with no Origin needs the token in backend/config/ws.token (auth.py); binds 127.0.0.1"
       ],
       "code": [
         "backend/syrax/server.py"
@@ -200,10 +200,9 @@
         "None instead of invented values when git or the map is unavailable"
       ],
       "limitations": [
-        "GPU is not probed",
+        "the environment reports gpu None: sysinfo.gpu() (nvidia-smi, then Win32_VideoController on Windows) is not wired in",
         "system_map.json is hand-audited and must be regenerated when components change",
-        "no historical performance/latency metrics yet (journal has timestamps but nothing aggregates them)",
-        "does not yet feed an objectives engine"
+        "no historical performance/latency metrics yet (journal has timestamps but nothing aggregates them)"
       ],
       "code": [
         "backend/syrax/selfmodel.py",
@@ -250,7 +249,6 @@
         "idle cycles run Journal.maintain once per 24 h (retention, WAL truncate)"
       ],
       "limitations": [
-        "no research or self-modification objectives yet",
         "lessons are derived strings, not model reflections",
         "one task per cycle, no parallel objectives",
         "no GPU/network/thermal awareness"
@@ -408,9 +406,9 @@
       ],
       "limitations": [
         "push off by default",
-        "no benchmark/perf gate",
+        "the performance gate (bench.py) is advisory, not required (laptop noise)",
         "rollback covers the repository only",
-        "one release per tool call; the gate takes about a minute"
+        "one release per tool call; the full gate takes about 7-8 minutes (900+ tests and a production UI build)"
       ],
       "code": [
         "backend/syrax/devloop.py",
@@ -457,7 +455,7 @@
         "hand-written rules; no measurement of whether a presentation helped",
         "only the stage position is drawn",
         "no charts, maps, 3D or video kinds",
-        "stage is not restored after a backend restart"
+        "the stage is restored after a restart only from the last 24 hours of the journal"
       ],
       "code": [
         "backend/syrax/presentation.py",
@@ -505,7 +503,7 @@
       "limitations": [
         "performance gate is optional (laptop noise)",
         "experiments compare tool calls, not code versions",
-        "quality suite: 10 cases, brain-dependent, on demand only"
+        "quality suite: 51 cases, brain-dependent; runs on demand or when a quality objective needs a measured run"
       ],
       "code": [
         "backend/syrax/bench.py",
@@ -555,7 +553,7 @@
         "self_inspect tool reads the self-model"
       ],
       "limitations": [
-        "max_steps 20",
+        "max_steps 20 (30 for an own code change)",
         "tool success is a heuristic on the result text (_succeeded)"
       ],
       "code": [
@@ -629,7 +627,7 @@
       ],
       "limitations": [
         "keyword recall, no embeddings",
-        "no fact expiry or contradiction handling"
+        "observations leave the prompt after 30 days (SYRAX's own change 6afccd1); facts, preferences and rules never expire; no contradiction handling"
       ],
       "code": [
         "backend/syrax/memory.py"
@@ -785,8 +783,8 @@
         "next build on a scratch copy so live .next is untouched"
       ],
       "limitations": [
-        "performance gate has no benchmark yet (NOT_VERIFIED, optional)",
-        "no independent-review gate; review is done by the operator/agent"
+        "the performance gate is advisory (required=False)",
+        "own releases get a cross-brain review (review.py); a human's commits get none"
       ],
       "code": [
         "backend/syrax/verify.py",
