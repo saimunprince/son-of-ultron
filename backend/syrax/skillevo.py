@@ -19,7 +19,7 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional
 
-from syrax.journal import Journal
+from syrax.journal import Journal, misuse
 
 REPAIR_MIN_USES = 3
 REPAIR_MIN_RATE = 0.3
@@ -41,6 +41,8 @@ def real_use(journal: Journal, limit_events: int = 5000) -> Dict[str, dict]:
         st = out.get(name)
         if st is None or e["ts"] < st["since"] or e["payload"].get("refused"):
             continue  # a refused call never ran: it says nothing about the skill
+        if e["type"] == "tool.failed" and misuse(name, e["payload"].get("output")):
+            continue  # nor does input it cannot act on (journal.misuse): a .txt given to pdf_text
         st["uses"] += 1
         if e["type"] == "tool.failed" or not e["payload"].get("ok", True):
             st["failures"] += 1

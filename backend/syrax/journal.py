@@ -174,13 +174,22 @@ _MISUSE = {
     # an exception in the caller's code; a timeout, a dead worker or an empty answer may be the tool's own fault
     "python_execute": re.compile(r"^\{'observation': (['\"])(?!Execution timeout|Error: the python_execute worker|\1)"),
 }
+# Any tool, skills included: input it cannot act on, in the words tools use for it. Live 2026-10-15: pdf_text
+# called on a .txt file ("is not a PDF") and on a path that did not exist ("no file at") made a working skill
+# FAILING, then a skill-repair objective.
+_MISUSE_ANY = re.compile(r"\bno file at\b|\bis not an? (?:PDF|image|video|audio|text file|folder|directory)\b"
+                         r"|\bpages? \d+(?:-\d+)? (?:is|are) outside\b", re.I)
 _OBSERVED_PREFIX = re.compile(r"^Observed output of cmd `[^`]*` executed:\s*")
 
 
 def misuse(name: Optional[str], output: Optional[str]) -> bool:
-    """True when a failed call of `name` was the caller's mistake, judged from the tool's own error (_MISUSE)."""
+    """True when a failed call of `name` was the caller's mistake, judged from the tool's own error (_MISUSE),
+    or, for any tool, from an error that names input it cannot act on (_MISUSE_ANY)."""
+    body = _OBSERVED_PREFIX.sub("", str(output or ""), count=1)
     pat = _MISUSE.get(name or "")
-    return bool(pat and pat.search(_OBSERVED_PREFIX.sub("", str(output or ""), count=1)))
+    if pat and pat.search(body):
+        return True
+    return bool(name) and body.startswith("Error") and bool(_MISUSE_ANY.search(body[:400]))
 
 
 _WORD = None

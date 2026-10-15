@@ -208,6 +208,17 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### A skill given input it cannot read is not a skill to repair (2026-10-15)
+
+- Quality run #43 called `pdf_text` on a .txt file ("is not a PDF"); the
+  self-model called the skill FAILING, a diagnose task then called it on a
+  path that did not exist ("no file at"), and skillevo ranked "pdf_text failed
+  2 of 3 real uses" as a skill to repair (objective 251). `journal.misuse`
+  now also reads, for any tool, an error that names input it cannot act on
+  (no file at, is not a PDF/image/..., pages outside the range), and
+  skillevo's real-use count skips those calls like refusals; a real failure
+  (a password-protected PDF) still counts (`test_skill_misuse.py`).
+
 ### Objective 249: an old test was the contract against it (2026-10-15)
 
 - SYRAX's first attempt at wiring the GPU into the self-model failed its
