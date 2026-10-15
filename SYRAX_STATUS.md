@@ -208,6 +208,18 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### SYRAX's ledger of 2026-10-15 and the gate row (2026-10-15)
+
+- SYRAX published its daily ledger at 10:46 (`e6f0ed3`): RISE, DEVLOG, the
+  capability matrix from its own test run, and the first ARCHIVE.md (12
+  release attempts, none landed yet). The matrix read the gate row RED only
+  because the last verification had blocked SYRAX's own change (objective
+  224, attempt 4, which broke a test): the gate doing its job. The row now
+  judges the gate itself: every required check reached a verdict, and a
+  GREEN verification exists within the window (`test_capmatrix_gate.py`).
+  Refused releases are archived with the commit they started from (the
+  first archive had holes there).
+
 ### Objective 224, attempt 6 (2026-10-15)
 
 - On the new code `apply_patch` ran six covering test files (46 passed, 1

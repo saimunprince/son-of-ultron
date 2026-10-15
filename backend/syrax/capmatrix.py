@@ -184,6 +184,8 @@ def read_journal(path: Path, now: Optional[float] = None) -> Dict[str, Any]:
                           "cases": cases, "runs": runs} if latest else None
         vr = c.execute("SELECT id, ts, status, git_head FROM verifications ORDER BY id DESC LIMIT 1").fetchone()
         out["verification"] = dict(vr) if vr else None
+        green = c.execute("SELECT id, ts FROM verifications WHERE status='GREEN' ORDER BY id DESC LIMIT 1").fetchone()
+        out["last_green_verification"] = dict(green) if green else None
         out["skills_verified"] = [r["name"] for r in c.execute("SELECT name FROM skills WHERE status='VERIFIED' ORDER BY name")]
         out["counts"] = {
             "tasks_recent": c.execute("SELECT COUNT(*) FROM tasks WHERE status='SUCCESS' AND created>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
@@ -320,8 +322,16 @@ def live_checks(evidence: Optional[dict], gate: Optional[dict], journal: Dict[st
     out["self_model"] = (None, "") if moj is None else (("pass", "no mojibake in /self") if moj == 0 else ("fail", f"{moj} mojibake in /self?section=structure"))
     if gate:
         req = {k: v for k, v in gate["gates"].items() if k != "performance"}
-        ok = gate["status"] == "GREEN"
-        out["gate"] = ("pass" if ok else "fail", f"gate {gate['status']}: " + ", ".join(f"{k} {v}" for k, v in gate["gates"].items()))
+        # The capability is the gate itself: it ran every required check to a verdict, and it has passed a
+        # change within the window. A gate that blocks a failing candidate is doing its job (live 2026-10-15:
+        # the row read RED because the last verification blocked SYRAX's own change, which broke a test).
+        complete = bool(req) and all(v in ("PASS", "FAIL") for v in req.values())
+        green = journal.get("last_green_verification") or {}
+        recent_green = gate["status"] == "GREEN" or (bool(green) and green.get("ts", 0) >= time.time() - WINDOW_DAYS * 86400)
+        ok = complete and recent_green
+        why = (f"gate {gate['status']}: " + ", ".join(f"{k} {v}" for k, v in gate["gates"].items())
+               + ("" if ok else (" (a required check did not reach a verdict)" if not complete else f" (no GREEN verification in {WINDOW_DAYS} d)")))
+        out["gate"] = ("pass" if ok else "fail", why)
         fe = {k: req.get(k) for k in ("tsc", "eslint", "node_test", "next_build")}
         out["gate_frontend"] = ("pass" if all(v == "PASS" for v in fe.values()) else "fail", "frontend gates " + ", ".join(f"{k} {v}" for k, v in fe.items()))
     else:
