@@ -382,6 +382,22 @@ class DevLoop:
         head = _git(["rev-parse", "HEAD"], self.root).stdout.strip()
         return {"files": files, "diff": diff, "untracked": [p for p, s in files.items() if s == "??"], "stat": stat, "head": head}
 
+    def _preflight(self, files: Dict[str, str]) -> None:
+        """Own work only: the tests that cover the change run before the full gate. Live 2026-10-15 (objective
+        232, attempt 2): SYRAX released while its own new test failed; the gate took eight minutes to say so
+        and the rollback took the edits away. Refused here, the edits stay for a fix forward."""
+        from syrax import selfedit
+
+        py = [p for p, st in files.items() if p.endswith(".py")]
+        tests = selfedit.covering_tests(self.root, py) if py else []
+        if not tests:
+            return
+        result = selfedit.run_tests(self.root, tests)
+        if not result["ok"]:
+            raise ValueError("refused: the tests that cover your change fail, so the gate would roll it back; your edits "
+                             f"stay, fix forward and release again. {result['summary']} ({', '.join(result['ran'])})\n"
+                             + str(result.get("tail") or "")[-1500:])
+
     def snapshot(self, info: Dict[str, Any]) -> Path:
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
         path = self.snapshot_dir / f"{int(time.time())}-{info['head'][:7]}.patch"
@@ -539,6 +555,8 @@ class DevLoop:
                 + (f"; {len(tests)} failing tests, e.g. {tests[0]}" if tests else "") + "). They do not change with your "
                 "edits, so a third run will fail the same way. Stop releasing and report what blocks you."
             )
+        if task and task.get("kind") == "autonomous":
+            await asyncio.to_thread(self._preflight, info["files"])
         impact = impact_of(info["files"], self.root)
         await self.journal.record("release.planned", {"summary": summary, "plan": plan, **impact}, task_id=task_id)
         snap = await asyncio.to_thread(self.snapshot, info)

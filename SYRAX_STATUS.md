@@ -208,6 +208,16 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Own releases run the covering tests first (2026-10-15)
+
+- Objective 232, attempt 2: 24 steps (still under the `--recount` bug, fixed
+  since), then `release` while SYRAX's own new test failed; the gate took
+  eight minutes to block it and the rollback took the edits away. In SYRAX's
+  own work `release` now runs the tests that cover the change first
+  (`selfedit.covering_tests`); when they fail it is refused with their output
+  and the edits stay for a fix forward; when they pass the full gate runs as
+  before (`test_release_preflight.py`).
+
 ### `--recount` broke every correct multi-file patch (fixed 2026-10-15)
 
 - Objective 232, attempt 1: SYRAX's first diff (the change in memory.py and
