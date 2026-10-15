@@ -77,15 +77,24 @@ async def review(router: Any, info: Dict[str, Any], summary: str, authors: Itera
         {"role": "system", "content": SYSTEM},
         {"role": "user", "content": f"Summary: {summary}\n\nFiles: {info.get('stat') or ''}\n\nDiff:\n{body}"},
     ]
-    last_error = None
-    for pid in candidates[:2]:
+    # Every other brain that can take a call, not only the first two. Live 2026-10-15 (objective 237): SYRAX's
+    # first own change to pass the full gate was rolled back unreviewed because openrouter and upstage failed,
+    # while groq and pollinations were ready and never asked.
+    errors: List[str] = []
+    usable = getattr(router, "usable", None)
+    for pid in candidates:
+        if usable is not None:
+            ready, why = usable(pid)
+            if not ready:
+                errors.append(f"{pid}: {why}")
+                continue
         try:
             msg = await router._call(pid, messages, None, "none", images=False)
         except Exception as e:
-            last_error = f"{pid}: {e}"
+            errors.append(f"{pid}: {str(e)[:160]}")
             continue
         verdict = parse(getattr(msg, "content", "") or "")
         if verdict is not None:
-            return {**verdict, "reviewer": pid}
-        last_error = f"{pid}: unreadable review"
-    return {"approve": False, "problems": ["no_review"], "reasons": [f"no readable review ({last_error})"], "reviewer": None}
+            return {**verdict, "reviewer": pid, **({"unavailable": errors} if errors else {})}
+        errors.append(f"{pid}: unreadable review")
+    return {"approve": False, "problems": ["no_review"], "reasons": [f"no readable review ({'; '.join(errors)[:600]})"], "reviewer": None}

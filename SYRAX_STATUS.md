@@ -208,6 +208,20 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### SYRAX's first GREEN own change, rolled back unreviewed (2026-10-15)
+
+- Objective 237 (232 respecified): SYRAX made the change and its test in one
+  `apply_patch`, the covering tests passed (60), the preflight passed, and
+  the full gate #26 went GREEN on all nine gates: the first time its own
+  change got that far. The cross-brain review then rolled it back with "no
+  readable review": it asked only the first two other brains (openrouter,
+  upstage), both failed to connect, while groq and pollinations were ready.
+  And `release` answered the agent "None" instead of the reason. The review
+  now asks every other brain that can take a call (cooling-down ones are
+  skipped and named), and the release names the reviewer's reasons; for an
+  unreviewed rollback it says the change is not known to be wrong and to
+  release it again (`test_review_fallback.py`). Unreviewed still never commits.
+
 ### A caller's mistake is not the tool failing (2026-10-15)
 
 - From 09-30 to 10-15 the cycle derived 40 "the tool failed on its last use,

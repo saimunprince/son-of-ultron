@@ -682,6 +682,17 @@ def render(report: Dict[str, Any]) -> str:
         rb = report["rollback"]
         lines.append(f"\nRolled back: restored {len(rb['restored'])} file(s), removed {len(rb['removed'])} new file(s); tree clean={rb['clean']}. "
                      f"Snapshot of the attempt: {report['snapshot']}. The same change will fail again: diagnose the evidence and change approach.")
+    elif report["outcome"] == "REVIEW_REJECTED":
+        # the reviewer's reasons, which the release used to answer with "None" (live 2026-10-15, objective 237)
+        rv, rb = report.get("review") or {}, report["rollback"]
+        why = "; ".join(rv.get("reasons") or []) or "no reason given"
+        if "no_review" in (rv.get("problems") or []):
+            lines.append(f"\nNo other brain could review the change ({why}), so it was rolled back unreviewed (restored "
+                         f"{len(rb['restored'])} file(s), removed {len(rb['removed'])}). The gate passed and nothing is known to be wrong "
+                         f"with it: apply the same change again and release again. Snapshot: {report['snapshot']}.")
+        else:
+            lines.append(f"\nRolled back: a second brain ({rv.get('reviewer')}) rejected the change ({', '.join(rv.get('problems') or [])}): "
+                         f"{why}. Fix what it names, or change approach. Snapshot: {report['snapshot']}.")
     elif report["outcome"] == "COMMITTED":
         lines.append(f"\nCommitted {report['commit'][:12]}. {report['push']['output'] if report['push']['ok'] is None else ('Pushed to ' + report['push']['branch'] if report['push']['ok'] else 'PUSH FAILED: ' + report['push']['output'])}")
     else:
