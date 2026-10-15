@@ -208,6 +208,25 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### SYRAX's third own change: 162fd71, task durations (2026-10-15 17:25)
+
+- Objective 252: `SelfModel.performance()` reports `task_seconds`, per task
+  kind over the last 7 days, count and nearest-rank p50/p90, with a new test
+  driven by the journal's clock. Gate #29 GREEN, review approved (with two
+  style notes). It closes the self-model limitation "no historical
+  performance metrics" for tasks; per-tool and per-brain latency remain.
+
+### SYRAX's second own change: f32efc2, the self-model knows its GPU (2026-10-15 17:05)
+
+- Objective 249, attempt 2: SYRAX opened the diff its first attempt had left
+  in backend/config/rollback (the brief points to it), re-applied it with
+  one `apply_patch`, released, gate #28 went GREEN, and the review
+  (openrouter) approved: four tool calls. The first attempt had been stopped
+  by an old test pinning `gpu is None` (5a9f490 updated that contract).
+  Live after the restart: `/self?section=runtime` reports
+  `AMD Radeon(TM) Graphics, 512 MB`. The system map's limitation now says
+  what is still missing (load and VRAM in use only on NVIDIA).
+
 ### A quality run that never ran is not a regression (2026-10-15)
 
 - Run #44, a 4-case rerun of #43's failures, began just as the autonomy

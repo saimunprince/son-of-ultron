@@ -200,9 +200,9 @@
         "None instead of invented values when git or the map is unavailable"
       ],
       "limitations": [
-        "the environment reports gpu None: sysinfo.gpu() (nvidia-smi, then Win32_VideoController on Windows) is not wired in",
+        "GPU load and memory in use are known only on NVIDIA (nvidia-smi); other GPUs report name and adapter memory (Win32_VideoController), probed once per process (SYRAX's own change f32efc2)",
         "system_map.json is hand-audited and must be regenerated when components change",
-        "no historical performance/latency metrics yet (journal has timestamps but nothing aggregates them)"
+        "performance history is task durations per kind over 7 days (p50/p90, SYRAX's own change 162fd71); no per-tool or per-brain latency history"
       ],
       "code": [
         "backend/syrax/selfmodel.py",
