@@ -134,10 +134,23 @@ def normalize_headers(diff: str) -> str:
     return "\n".join(out)
 
 
+_EXT_HEADER = ("diff --git ", "index ", "new file mode", "deleted file mode", "old mode", "new mode", "similarity index",
+               "dissimilarity index", "rename from", "rename to", "copy from", "copy to")
+
+
 def file_sections(diff: str) -> List[str]:
-    """A unified diff split into one diff per file (a section starts at a '--- ' line followed by '+++ ')."""
+    """A unified diff split into one diff per file. A section starts at its '--- ' line followed by '+++ ', or at the
+    git header lines just above it (diff --git, new file mode, index ...). Live 2026-10-15 (objective 266): a git-style
+    diff left the next file's "diff --git ... new file mode" lines at the end of the section before; applied alone,
+    that section created the new file empty, and the new file's own section then failed with "already exists"."""
     lines = diff.split("\n")
-    starts = [i for i in range(len(lines) - 1) if lines[i].startswith("--- ") and lines[i + 1].startswith("+++ ")]
+    starts = []
+    for i in range(len(lines) - 1):
+        if lines[i].startswith("--- ") and lines[i + 1].startswith("+++ "):
+            s = i
+            while s > (starts[-1] if starts else -1) + 1 and lines[s - 1].startswith(_EXT_HEADER):
+                s -= 1
+            starts.append(s)
     if not starts:
         return [diff]
     out = []
@@ -345,10 +358,19 @@ def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dic
         hint = context_hint(diff, root)
         raise ValueError("the patch does not apply cleanly: " + (check.stderr or check.stdout).strip()[:600]
                          + "\nMake the next diff from what the file holds now (context lines must match exactly):\n" + hint)
+    # All or nothing: a section that fails after others applied puts the files back as they were (objective 266,
+    # attempt 1: a half-applied patch was reported as failed, and the retry found its hunks "already applied").
+    before = {f: ((root / f).read_bytes() if (root / f).is_file() else None) for f in files}
     for part, opts in plan:
         applied = _git(["apply", *opts, "--whitespace=nowarn", "-"], root, stdin=part)
         if applied.returncode != 0:
-            raise RuntimeError("git apply failed after --check passed: " + (applied.stderr or applied.stdout).strip()[:600])
+            for f, data in before.items():
+                if data is None:
+                    (root / f).unlink(missing_ok=True)
+                else:
+                    (root / f).write_bytes(data)
+            raise RuntimeError("git apply failed after --check passed; nothing was changed: "
+                               + (applied.stderr or applied.stdout).strip()[:600])
     report: Dict[str, Any] = {"root": str(root), "files": files, "compiled": [], "tests": None}
     broken = []
     for f in files:

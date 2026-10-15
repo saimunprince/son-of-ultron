@@ -217,6 +217,19 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### apply_patch: git-style diffs split right, and all or nothing (2026-10-15)
+
+- Objective 266 (brain latency), attempt 1: SYRAX sent a git-style diff
+  (`diff --git`, `new file mode`) with a miscounted hunk, so it went file by
+  file; `file_sections` split only at `---`/`+++`, which left the new test
+  file's header lines at the end of the section before. Applied alone, that
+  section created the test file empty, and the test file's own section
+  failed with "already exists", after brains.py and selfmodel.py had been
+  changed. The retry found its hunks "already applied", and the attempt went
+  on to rewrite the test by hand away from the brief. Sections now keep their
+  git header lines, and an apply that fails partway puts every file back
+  (`test_selfedit_gitdiff.py`). Objective 266 was held meanwhile.
+
 ### A checker error no longer kills the quality run (2026-10-15)
 
 - The 4-case rerun after the named-tool reminder died after its second case:
