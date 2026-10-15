@@ -208,6 +208,19 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### A quality run that never ran is not a regression (2026-10-15)
+
+- Run #44, a 4-case rerun of #43's failures, began just as the autonomy
+  cycle started objective 249's task: every case found the core busy and the
+  run was recorded as 0 % REGRESSION, compared with #43's 51-case 92 %, and
+  would have drawn a "quality regressed" objective. Three fixes
+  (`test_quality_busy.py`): a case waits for a busy core (up to 30 minutes)
+  instead of failing; a run is compared with the latest run that measured the
+  same cases, on those cases only (a subset is no longer compared with the
+  full suite); and the cycle checks for a running quality run again right
+  before it submits its task, and yields. Run #44 stays in the journal; the
+  objective it drew was dropped with a note.
+
 ### A skill given input it cannot read is not a skill to repair (2026-10-15)
 
 - Quality run #43 called `pdf_text` on a .txt file ("is not a PDF"); the

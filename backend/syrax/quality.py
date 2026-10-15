@@ -341,6 +341,10 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
     return out
 
 
+BUSY_WAIT_S = 1800.0  # a case waits this long for a task already running (an objective, a human) to finish
+BUSY_POLL_S = 5.0
+
+
 class QualityRunner:
     def __init__(self, core: Any, journal: Optional[Journal] = None, workspace: Optional[Path] = None, case_timeout: float = CASE_TIMEOUT_S):
         self.core = core
@@ -367,8 +371,15 @@ class QualityRunner:
         for path, text in (case.get("prepare", {}).get("write") or {}).items():
             Path(path).parent.mkdir(parents=True, exist_ok=True)
             Path(path).write_text(text)
-        started = time.time()
+        # Live 2026-10-15 (run #44): the cycle started an objective task while the run began, every case found
+        # the core busy, and the run was recorded as 0 % REGRESSION. A busy core is waited for, not failed.
         task_id = await self.core.submit(case["prompt"], said=case["prompt"], session_id=None, kind="eval")
+        waited = 0.0
+        while task_id is None and waited < BUSY_WAIT_S:
+            await asyncio.sleep(BUSY_POLL_S)
+            waited += BUSY_POLL_S
+            task_id = await self.core.submit(case["prompt"], said=case["prompt"], session_id=None, kind="eval")
+        started = time.time()
         if task_id is None:
             return {"id": case["id"], "ok": False, "task_id": None, "ms": 0, "checks": [{"check": "task started", "ok": False, "detail": "core busy"}]}
         try:
@@ -451,13 +462,17 @@ class QualityRunner:
             raise
         passed = sum(1 for r in results if r["ok"])
         rate = round(100.0 * passed / len(results), 1) if results else 0.0
-        prev = self.journal.quality_runs(limit=1)
-        if not prev:
+        # Like with like: the latest run that measured every case of this one, on those cases only. Live
+        # 2026-10-15: a 4-case rerun of four failures was compared with the 51-case run's 92 %.
+        ids = {r["id"] for r in results}
+        prev = next((q for q in self.journal.quality_runs(limit=20) if ids <= {r["id"] for r in q["results"]}), None)
+        if not prev or not ids:
             status, compared_to, delta = "BASELINE", None, None
         else:
-            delta = round(rate - prev[0]["pass_rate"], 1)
+            before = [r for r in prev["results"] if r["id"] in ids]
+            delta = round(rate - 100.0 * sum(1 for r in before if r.get("ok")) / len(before), 1)
             status = "REGRESSION" if delta < -REGRESSION_PP else "PASS"
-            compared_to = prev[0]["id"]
+            compared_to = prev["id"]
         # The brain column must say who actually answered. A requested brain that
         # never answered (cooldown, quota) is reported as such, never as its result.
         answered: Dict[str, int] = {}

@@ -827,6 +827,11 @@ class Autonomy:
                                         evidence=plan.render(steps_before) + followup.learned_brief(self.journal, objective)
                                         + brief_evidence(objective) + past_experience(self.journal, objective)
                                         + archive_brief(self.journal, objective))
+        if getattr(getattr(self.core, "quality", None), "running", False):
+            # a quality run began while this cycle built the brief (live 2026-10-15, run #44): it goes first
+            await self.journal.update_objective(objective["id"], status="OPEN", note="a quality run started first")
+            rep.outcome, rep.reason = "BUSY", "a quality run is measuring"
+            return await self._finish(rep)
         try:
             budget = {"max_steps": RELEASE_STEPS} if spec.get("kind") == "change_released" else {}
             task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous", **budget)
