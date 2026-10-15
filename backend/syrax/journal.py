@@ -1693,22 +1693,34 @@ class Journal:
 
     def tool_stats(self) -> Dict[str, dict]:
         """Per-tool evidence from events: uses, failures, last use, last failure,
-        last outcome. Derived, never hand-written."""
+        last outcome. Derived, never hand-written. A call a guard refused (tool.failed
+        with refused) is no use and no failure of the tool, only counted as refused:
+        live 2026-10-15 a refused os.remove in python_execute made the tool FAILING and
+        the cycle spent a task on "python_execute failed, diagnose why"."""
         with self._lock:
             rows = self._db.execute(
-                "SELECT type, ts, json_extract(payload, '$.name') AS name FROM events "
+                "SELECT type, ts, task_id, json_extract(payload, '$.name') AS name, json_extract(payload, '$.id') AS cid, "
+                "json_extract(payload, '$.refused') AS refused FROM events "
                 "WHERE type IN ('tool.started','tool.completed','tool.failed') AND name IS NOT NULL "
                 "ORDER BY id"
             ).fetchall()
         out: Dict[str, dict] = {}
+        started: Dict[tuple, tuple] = {}
         for r in rows:
             st = out.setdefault(
                 r["name"],
-                {"uses": 0, "successes": 0, "failures": 0, "last_used": None, "last_failed": None, "last_outcome": None},
+                {"uses": 0, "successes": 0, "failures": 0, "refused": 0, "last_used": None, "last_failed": None, "last_outcome": None},
             )
             if r["type"] == "tool.started":
+                started[(r["task_id"], r["cid"])] = (st["last_used"], r["ts"])
                 st["uses"] += 1
                 st["last_used"] = r["ts"]
+            elif r["type"] == "tool.failed" and r["refused"]:
+                prev, ts = started.pop((r["task_id"], r["cid"]), (st["last_used"], None))
+                st["uses"] -= ts is not None
+                st["refused"] += 1
+                if ts is not None and st["last_used"] == ts:  # a refused call is no use of the tool
+                    st["last_used"] = prev
             elif r["type"] == "tool.completed":
                 st["successes"] += 1
                 st["last_outcome"] = "ok"

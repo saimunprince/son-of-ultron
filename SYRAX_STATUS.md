@@ -208,6 +208,25 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### A refused call does not make the tool FAILING (2026-10-15)
+
+- In objective 232's attempt 3 the permission gate refused an `os.remove`
+  in `python_execute` (autonomous work never deletes). `tool_stats` counted
+  the refusal as the tool's last outcome, so the self-model called
+  `python_execute` FAILING and the next cycle spent a task on
+  "python_execute failed on its last use, diagnose why". Limits and skillevo
+  already skipped refusals; `tool_stats` and the matrix now count them apart
+  (`refused`), as no use and no failure, so a refused call can also never
+  make a verify objective DONE (`test_refused_stats.py`).
+
+### The matrix names the failing tests (2026-10-15)
+
+- SYRAX's ledger of 10-15 said "885 passed, 1 failed" and its JUnit report
+  went with the maintenance worktree, so the failing test could not be named
+  afterwards. `junit_totals` now lists the failing tests with their messages
+  and the matrix prints them under the suite totals
+  (`test_capmatrix_failing.py`).
+
 ### Objective 232 failed on its brief, not on SYRAX (2026-10-15)
 
 - Attempt 3 wrote a correct change, and the release preflight refused it

@@ -234,16 +234,26 @@ def phase_evidence(c: sqlite3.Connection, now: float, last: int = 30) -> Dict[st
 
 
 def tool_stats(c: sqlite3.Connection, now: float) -> Dict[str, dict]:
-    """Same counting as Journal.tool_stats (uses from tool.started), plus a
-    WINDOW_DAYS window."""
+    """Same counting as Journal.tool_stats (uses from tool.started; a call a guard
+    refused is no use and no failure), plus a WINDOW_DAYS window."""
     since = now - WINDOW_DAYS * 86400
     out: Dict[str, dict] = {}
-    for r in c.execute("SELECT type, ts, json_extract(payload,'$.name') AS name FROM events WHERE type IN ('tool.started','tool.completed','tool.failed') AND name IS NOT NULL ORDER BY id"):
-        st = out.setdefault(r["name"], {"uses": 0, "successes": 0, "failures": 0, "last_used": None, "last_failed": None, "last_outcome": None,
-                                        "recent_ok": 0, "recent_fail": 0, "last_ok": None})
+    started: Dict[tuple, tuple] = {}
+    for r in c.execute("SELECT type, ts, task_id, json_extract(payload,'$.name') AS name, json_extract(payload,'$.id') AS cid, "
+                       "json_extract(payload,'$.refused') AS refused FROM events WHERE type IN ('tool.started','tool.completed','tool.failed') "
+                       "AND name IS NOT NULL ORDER BY id"):
+        st = out.setdefault(r["name"], {"uses": 0, "successes": 0, "failures": 0, "refused": 0, "last_used": None, "last_failed": None,
+                                        "last_outcome": None, "recent_ok": 0, "recent_fail": 0, "last_ok": None})
         if r["type"] == "tool.started":
+            started[(r["task_id"], r["cid"])] = (st["last_used"], r["ts"])
             st["uses"] += 1
             st["last_used"] = r["ts"]
+        elif r["type"] == "tool.failed" and r["refused"]:
+            prev, ts = started.pop((r["task_id"], r["cid"]), (st["last_used"], None))
+            st["uses"] -= ts is not None
+            st["refused"] += 1
+            if ts is not None and st["last_used"] == ts:
+                st["last_used"] = prev
         elif r["type"] == "tool.completed":
             st["successes"] += 1
             st["last_outcome"] = "ok"
@@ -283,7 +293,16 @@ def junit_totals(path: Optional[Path]) -> Optional[dict]:
     s = root if root.tag == "testsuite" else root.find("testsuite")
     a = s.attrib
     t, f, e, k = int(a.get("tests", 0)), int(a.get("failures", 0)), int(a.get("errors", 0)), int(a.get("skipped", 0))
-    return {"tests": t, "passed": t - f - e - k, "failed": f, "errors": e, "skipped": k, "seconds": round(float(a.get("time", 0)), 1)}
+    # which tests failed, not only how many: SYRAX's ledger of 2026-10-15 said "1 failed" and its JUnit
+    # report went with the maintenance worktree, so nobody could say which test it was
+    failing = []
+    for tc in root.iter("testcase"):
+        bad = tc.find("failure") if tc.find("failure") is not None else tc.find("error")
+        if bad is not None:
+            msg = " ".join(str(bad.get("message") or bad.text or "").split())[:160]
+            failing.append({"test": f"{tc.get('classname')}::{tc.get('name')}", "message": msg})
+    return {"tests": t, "passed": t - f - e - k, "failed": f, "errors": e, "skipped": k, "seconds": round(float(a.get("time", 0)), 1),
+            "failing": failing[:10]}
 
 
 def read_gate(path: Optional[Path]) -> Optional[dict]:
@@ -428,6 +447,8 @@ def render(rows: List[dict], head: str, journal_path: str, totals: Optional[dict
              "BLOCKED is an external cause; UNVERIFIED is missing evidence or a planned capability.", ""]
     if totals:
         lines.append(f"Test suite: {totals['passed']} passed, {totals['failed']} failed, {totals['errors']} errors, {totals['skipped']} skipped of {totals['tests']} in {totals['seconds']} s.")
+        for x in totals.get("failing") or []:
+            lines.append(f"- failing: `{x['test']}`" + (f" ({x['message'].replace('|', '/')})" if x["message"] else ""))
         lines.append("")
     lines += ["| Capability | Implementation | Runtime Test | Verification | Evidence | Status |", "|---|---|---|---|---|---|"]
     for r in rows:
