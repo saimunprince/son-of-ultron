@@ -208,6 +208,15 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### SYRAX's fourth own change: 92c3bd1, tool latency (2026-10-15 17:41)
+
+- Objective 262, first attempt: `SelfModel.performance()` reports `tool_ms`,
+  per tool over the newest 5000 journal events, count and nearest-rank
+  p50/p90 in milliseconds, refused and unfinished calls left out. Gate GREEN,
+  review approved, committed by SYRAX. Four own commits today: 6afccd1,
+  f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
+  through SYRAX's own covering-test run first.
+
 ### A checker error no longer kills the quality run (2026-10-15)
 
 - The 4-case rerun after the named-tool reminder died after its second case:
