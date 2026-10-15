@@ -904,6 +904,7 @@ class Autonomy:
             )
             # Phase 1: what this attempt taught decides the next objective
             blocked = await asyncio.to_thread(self.journal.objective, objective["id"])
+            await asyncio.to_thread(followup.drop_dependents, self.journal, objective["id"])
             await asyncio.to_thread(followup.derive, self.journal, blocked or objective)
         else:
             await self.journal.update_objective(

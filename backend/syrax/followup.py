@@ -30,6 +30,17 @@ MEASURED = {"quality_recovered", "quality_case_passes", "benchmark_recovered", "
 KEEP = ("limitation", "plan", "plan_checks")
 
 
+def drop_dependents(journal: Journal, objective_id: int) -> List[int]:
+    """OPEN objectives that wait for `objective_id`, once it is BLOCKED: a retry waits for its learning
+    objective to be DONE, so it would stay OPEN forever (outage of 2026-10-15: #240 waited on a blocked #239)."""
+    dropped = []
+    for o in journal.objectives(limit=500, status="OPEN"):
+        if objective_id in (o.get("dependencies") or []):
+            journal.update_objective_sync(o["id"], status="DROPPED", note=f"waited for #{objective_id}, which is BLOCKED: it would never run")
+            dropped.append(o["id"])
+    return dropped
+
+
 def derive(journal: Journal, objective: dict) -> List[dict]:
     """Objectives created from a just-BLOCKED objective (re-read after the block)."""
     ev = objective.get("evidence") or {}
@@ -73,7 +84,9 @@ def derive(journal: Journal, objective: dict) -> List[dict]:
         )
         if o:
             out.append(o)
-    elif not learned and spec.get("kind") not in MEASURED:
+    elif not learned and spec.get("kind") not in MEASURED and spec.get("kind") != "knowledge_stored":
+        # a learning objective that learned nothing gets no "learn how to learn" (live 2026-10-15:
+        # "Learn how to do what objective #239 could not: Learn how to do what objective #238 could not: ...")
         limitation = (ev.get("limitation") or {}).get("detail")
         topic = str(limitation or goal)[:120]
         learn = journal.add_objective_sync(

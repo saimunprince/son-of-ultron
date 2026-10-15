@@ -208,6 +208,15 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### No "learn how to learn" (2026-10-15)
+
+- A blocked learning objective drew its own learning objective ("Learn how
+  to do what objective #239 could not: Learn how to do what objective #238
+  could not: ..."). A learning objective (check `knowledge_stored`) that
+  learned nothing now gets no follow-up, and the retry that waited for it
+  (it runs only once its learning objective is DONE) is dropped with a
+  note instead of staying OPEN forever (`test_followup_learn.py`).
+
 ### An outage is not an attempt (2026-10-15)
 
 - From 12:54 to 15:35 the network was down (the review of objective 237 was
