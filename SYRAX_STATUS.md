@@ -208,6 +208,19 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Quality run #43 and the named-tool reminder (2026-10-15)
+
+- Run #43 on e80a764: 47/51 = 92.2 %, all on gemini (#42 was 100 %). The four
+  failures share one shape: the human named the tool and the answer came
+  without it. `self_map_tests` ("Use repo_map to tell me ...") answered an
+  invented path (`backend/tests/syrax/...`); `remember_fact` said the fact was
+  "already etched into my memory" with no `remember`; `research_cite` and
+  `research_report` answered from `know`. A request that names a tool
+  ("use X", "using the X tool", "with `X`", or a sentence that starts
+  "Research ..." / "Remember that ...") now gets one reminder when the task
+  never called it (`NAMED_NUDGE`, `test_named_tool.py`); autonomous briefs,
+  which name every tool of the method, do not.
+
 ### SYRAX's first own change landed: 6afccd1 (2026-10-15 16:08)
 
 - Objective 247 (memory expiry for observations, 232/237 respecified) is DONE

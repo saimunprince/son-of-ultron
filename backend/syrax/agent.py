@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Any, Awaitable, Callable, List, Optional
+from typing import Any, Awaitable, Callable, Iterable, List, Optional
 
 from pydantic import Field
 
@@ -205,6 +205,31 @@ CITE_NUDGE = (
     "[SYRAX check, not a new request] You used `research` in this task, but your answer carries no source URL. "
     "Repeat the answer with the URL(s) it rests on, taken from the research results. No new tool calls."
 )
+# Quality run #43 (2026-10-15): "Use repo_map to tell me which test file covers permissions.py" was answered
+# with an invented path and no tool, "Remember that my favourite editor is Vim" with "already etched into my
+# memory" and no `remember`, and two "Research ..." requests from `know` alone. A request that names a tool
+# gets one reminder when the task never called it.
+NAMED_NUDGE = (
+    "[SYRAX check, not a new request] The request asks you to use `{tool}`, and this task has not called it. Call "
+    "`{tool}` now and answer from what it returns. If the request does not really ask for that tool, repeat your "
+    "answer unchanged."
+)
+_IMPERATIVE = {"research": r"research\b", "remember": r"(?:please\s+)?remember\s+(?:that|this|my|me)\b"}
+
+
+def named_tools(text: str, tools: Iterable[str]) -> List[str]:
+    """Tools the human's words ask for by name: "use repo_map", "using the desktop tool", "with `know`", and the
+    imperative "Research ..." / "Remember that ..." at the start of a sentence."""
+    text = str(text or "")
+    out = []
+    for t in tools:
+        named = re.search(rf"\b(?:use|using|with|call|run)\s+(?:the\s+|your\s+)?`?{re.escape(t)}`?(?![\w-])", text, re.I)
+        verb = _IMPERATIVE.get(t)
+        if named or (verb and re.search(rf"(?:^|[.!?\n]\s*){verb}", text.strip(), re.I)):
+            out.append(t)
+    return out
+
+
 EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 WRITES = guard.FILE_WRITE  # one regex, shared with permissions.py
 CLAIM_ASK = (
@@ -255,6 +280,7 @@ class SyraxAgent(Manus):
     release_committed: bool = False  # and one of its runs committed
     changed: bool = False  # a tool that changes the world succeeded this turn
     researched: bool = False  # `research` succeeded this task: the answer owes a source URL
+    called: set = Field(default_factory=set)  # tools this task called (refusals excluded): NAMED_NUDGE
     # Permissions (permissions.py): the task's kind and the human's own words
     # decide what a destructive or external call needs; consents are the
     # ask_human answers of this task, grants the yes/no already given per call.
@@ -302,6 +328,7 @@ class SyraxAgent(Manus):
         self.release_committed = False
         self.changed = False
         self.researched = False
+        self.called = set()
         self.consents = []
         self.grants = {}
         if not self.task_goal:
@@ -324,6 +351,11 @@ class SyraxAgent(Manus):
         if self._owes_release(request):
             await self._send({"type": "notice", "text": "Files changed but not released: asking once for `release`."})
             result += "\n" + await BaseAgent.run(self, RELEASE_NUDGE)
+        missing = [] if self.task_kind == "autonomous" else [
+            t for t in named_tools(self.task_goal, self.available_tools.tool_map) if t not in self.called]
+        if missing and not self.step_limit_hit and not self.loop_stopped and "max steps" not in result:
+            await self._send({"type": "notice", "text": f"The request names `{missing[0]}` and the task never called it: asking once."})
+            result += "\n" + await BaseAgent.run(self, NAMED_NUDGE.format(tool=missing[0]))
         if self.current_step == 0 and "max steps" in result:
             self.step_limit_hit = True
             await self._send(
@@ -469,6 +501,7 @@ class SyraxAgent(Manus):
                 result = refused
                 seen[key] = self.current_step  # the same call again is a loop, not a second chance
             else:
+                self.called.add(name)
                 result = await ToolCallAgent.execute_tool(self, command)
                 if name.startswith("browser_") and browser.never_ran(result) and await browser.ensure_browser() is None:
                     result = await ToolCallAgent.execute_tool(self, command)  # once: the code never ran, so nothing repeats
