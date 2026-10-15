@@ -360,7 +360,15 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
             journal.update_objective_sync(o["id"], status="DROPPED", note=f"{spec['tool']} is not auto-verified: it needs a real purpose")
     behavior = selfmodel.behavior()
     last_v = behavior["verifications"]["last"]
-    if last_v and last_v["status"] == "BLOCKED":
+    # A gate that blocked a task's own candidate change says nothing about the code on main: the candidate
+    # was rolled back and its objective already carries the failure. Live 2026-10-15: after each blocked
+    # attempt of objective 232 the cycle spent a whole task on "investigate the blocked verification" and
+    # named the wrong cause. A blocked gate with no task (a human's run) or the daily maintenance (docs
+    # only, so a failure is main's) still becomes an objective.
+    recent = journal.verifications(limit=1)
+    owner = journal.task(recent[0].get("task_id")) if recent and recent[0].get("task_id") else None
+    candidate = bool(owner) and not str(owner.get("goal") or "").startswith("[MAINTENANCE]")
+    if last_v and last_v["status"] == "BLOCKED" and not candidate:
         failing = [g["name"] for g in last_v["gates"] if g["status"] != "PASS"]
         ok = journal.add_objective_sync(
             goal=f"The last verification run was BLOCKED (failing gates: {', '.join(failing) or 'unknown'}). Investigate the failure output and report the root cause.",

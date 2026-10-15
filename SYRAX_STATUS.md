@@ -208,6 +208,16 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### No "investigate the blocked gate" objective for a rolled-back candidate (2026-10-15)
+
+- After each blocked attempt of objective 232 the cycle spent a whole task
+  (20 `journal_query` calls) on "the last verification run was BLOCKED,
+  investigate" and named the wrong cause, although the candidate had been
+  rolled back and its objective already carried the failure. A gate that
+  blocked a task's own candidate no longer becomes an objective; a blocked
+  gate with no task (a human's run) or the daily maintenance's (docs only,
+  so a failure is main's) still does (`test_blocked_candidate.py`).
+
 ### Own releases run the covering tests first (2026-10-15)
 
 - Objective 232, attempt 2: 24 steps (still under the `--recount` bug, fixed
