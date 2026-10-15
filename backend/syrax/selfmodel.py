@@ -267,7 +267,36 @@ class SelfModel:
     def performance(self) -> dict:
         b = self.journal.benchmarks(limit=1)
         last = b[0] if b else None
+        
+        import math
+        cutoff = time.time() - 7 * 86400
+        tasks = self.journal.tasks(limit=500, status=["SUCCESS", "PARTIAL", "FAILED"])
+        by_kind: Dict[str, List[float]] = {}
+        for t in tasks:
+            created = t.get("created")
+            updated = t.get("updated")
+            kind = t.get("kind")
+            if created is not None and updated is not None and kind is not None:
+                if created >= cutoff:
+                    seconds = updated - created
+                    by_kind.setdefault(kind, []).append(seconds)
+        
+        task_seconds = {}
+        for kind, secs in by_kind.items():
+            if not secs:
+                continue
+            secs_sorted = sorted(secs)
+            n = len(secs_sorted)
+            p50_idx = math.ceil(0.5 * n) - 1
+            p90_idx = math.ceil(0.9 * n) - 1
+            task_seconds[kind] = {
+                "count": n,
+                "p50": round(float(secs_sorted[max(0, min(p50_idx, n - 1))]), 1),
+                "p90": round(float(secs_sorted[max(0, min(p90_idx, n - 1))]), 1),
+            }
+
         return {
+            "task_seconds": task_seconds,
             "last_benchmark": (
                 {"id": last["id"], "ts": last["ts"], "status": last["status"], "git_head": last["git_head"], "metrics": last["metrics"],
                  "regressions": [k for k, d in last["deltas"].items() if d.get("regression")]}
