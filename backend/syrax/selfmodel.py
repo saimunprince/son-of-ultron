@@ -295,8 +295,53 @@ class SelfModel:
                 "p90": round(float(secs_sorted[max(0, min(p90_idx, n - 1))]), 1),
             }
 
+        events = self.journal.recent_events(5000)
+        tool_starts: Dict[str, Dict[str, tuple]] = {}  # task_id -> {tool_id: (start_ts, tool_name)}
+        tool_durations: Dict[str, List[float]] = {}  # tool_name -> list of milliseconds
+
+        for ev in events:
+            ev_type = ev.get("type")
+            payload = ev.get("payload", {})
+            task_id = ev.get("task_id")
+            if not task_id:
+                continue
+            tool_id = payload.get("id")
+            tool_name = payload.get("name")
+            ts = ev.get("ts")
+            if not tool_id:
+                continue
+
+            if ev_type == "tool.started":
+                tool_starts.setdefault(task_id, {})[tool_id] = (ts, tool_name)
+            elif ev_type in ("tool.completed", "tool.failed"):
+                if payload.get("refused") is True:
+                    if task_id in tool_starts and tool_id in tool_starts[task_id]:
+                        del tool_starts[task_id][tool_id]
+                    continue
+                if task_id in tool_starts and tool_id in tool_starts[task_id]:
+                    start_ts, registered_name = tool_starts[task_id].pop(tool_id)
+                    name = tool_name or registered_name
+                    if name and ts is not None and start_ts is not None:
+                        ms = (ts - start_ts) * 1000.0
+                        tool_durations.setdefault(name, []).append(ms)
+
+        tool_ms = {}
+        for name, msecs in tool_durations.items():
+            if not msecs:
+                continue
+            msecs_sorted = sorted(msecs)
+            n = len(msecs_sorted)
+            p50_idx = math.ceil(0.5 * n) - 1
+            p90_idx = math.ceil(0.9 * n) - 1
+            tool_ms[name] = {
+                "count": n,
+                "p50": int(round(msecs_sorted[max(0, min(p50_idx, n - 1))])),
+                "p90": int(round(msecs_sorted[max(0, min(p90_idx, n - 1))])),
+            }
+
         return {
             "task_seconds": task_seconds,
+            "tool_ms": tool_ms,
             "last_benchmark": (
                 {"id": last["id"], "ts": last["ts"], "status": last["status"], "git_head": last["git_head"], "metrics": last["metrics"],
                  "regressions": [k for k, d in last["deltas"].items() if d.get("regression")]}
