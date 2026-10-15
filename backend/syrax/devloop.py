@@ -444,7 +444,10 @@ class DevLoop:
         try:
             report = await self._release(summary, plan)
         except (ValueError, JournalError) as e:
-            await asyncio.to_thread(self.record_experiment, summary, plan, {"outcome": "REFUSED", "error": str(e)})
+            # the commit the refused attempt started from: the archive's first publish (2026-10-15) showed
+            # every refused row with no parent, so its lineage had holes
+            head = (await asyncio.to_thread(_git, ["rev-parse", "HEAD"], self.root)).stdout.strip() or None
+            await asyncio.to_thread(self.record_experiment, summary, plan, {"outcome": "REFUSED", "error": str(e), "head": head})
             raise
         await asyncio.to_thread(self.record_experiment, summary, plan, report)
         return report
