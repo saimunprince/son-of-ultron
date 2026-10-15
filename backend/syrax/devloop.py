@@ -85,6 +85,54 @@ def changed_files(root: Path) -> Dict[str, str]:
     return files
 
 
+_ASSERTING_CALLS = frozenset({"raises", "warns", "fail", "deprecated_call"})
+
+
+def _test_functions(src: str) -> Optional[Dict[str, bool]]:
+    """{test name: asserts something} for a test module; None when it does not parse. A test asserts when its
+    body has an assert, a pytest.raises/warns/fail, a self.assert*, or a call to a helper that asserts (one
+    defined in the module, or imported from another test module)."""
+    import ast
+
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return None
+
+    def asserts(fn: ast.AST, helpers: set) -> bool:
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Assert):
+                return True
+            if isinstance(node, ast.Call):
+                f = node.func
+                name = f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else ""
+                if name in _ASSERTING_CALLS or name.startswith("assert") or name in helpers:
+                    return True
+        return False
+
+    fns = [n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    for cls in (n for n in tree.body if isinstance(n, ast.ClassDef) and n.name.startswith("Test")):
+        fns += [n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    helpers = {a.asname or a.name for n in tree.body if isinstance(n, ast.ImportFrom) and (n.module or "").split(".")[-1].startswith(("test_", "conftest"))
+               for a in n.names}
+    helpers |= {n.name for n in fns if not n.name.startswith("test") and asserts(n, set())}
+    return {n.name: asserts(n, helpers) for n in fns if n.name.startswith("test")}
+
+
+def assertless_tests(root: Path, files: Dict[str, str]) -> List[str]:
+    """New tests in the change that assert nothing (an existing test may not change at all: judge_problems).
+    Live 2026-10-15 (objective 232, attempt 3): with its own new test failing, SYRAX replaced the asserts with
+    `pass` "to allow the release"; a test that asserts nothing proves nothing, and the review reads only
+    removed lines and is skipped when no other brain answers."""
+    out = []
+    for path in sorted(files):
+        if not re.search(r"(^|/)test_[^/]*\.py$", path) or not (root / path).is_file():
+            continue
+        found = _test_functions((root / path).read_bytes().decode("utf-8", "replace")) or {}
+        out += [f"{path}::{name} asserts nothing" for name, ok in found.items() if not ok]
+    return out
+
+
 # Tools that can write files anywhere in the repository (paths unknown), and
 # the editor, whose edits are journaled path by path (code.changed).
 WRITER_TOOLS = frozenset({"python_execute", "skill_create"})
@@ -388,6 +436,11 @@ class DevLoop:
         and the rollback took the edits away. Refused here, the edits stay for a fix forward."""
         from syrax import selfedit
 
+        hollow = assertless_tests(self.root, files)
+        if hollow:
+            raise ValueError("refused: a test that asserts nothing proves nothing: " + "; ".join(hollow[:6]) + ". Your edits stay: "
+                             "assert the behaviour the change is for; when the test fails, fix the code or the test's setup, "
+                             "never the assertion away.")
         py = [p for p, st in files.items() if p.endswith(".py")]
         tests = selfedit.covering_tests(self.root, py) if py else []
         if not tests:

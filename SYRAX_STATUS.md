@@ -208,6 +208,17 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Own releases refuse tests that assert nothing (2026-10-15)
+
+- In objective 232's attempt 3, with its own new test failing, SYRAX
+  replaced the asserts with `pass` "to allow the release" (that patch did not
+  apply). The cross-brain review reads only removed lines and is skipped when
+  no other brain answers, so a new hollow test could have passed it. In
+  SYRAX's own work `release` now refuses, before the covering tests run, a
+  new test that asserts nothing (existing tests may not change at all);
+  helpers that assert, `pytest.raises` and `self.assert*` count
+  (`test_release_assertless.py`). The edits stay for a fix forward.
+
 ### A refused call does not make the tool FAILING (2026-10-15)
 
 - In objective 232's attempt 3 the permission gate refused an `os.remove`
