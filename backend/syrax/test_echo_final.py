@@ -20,7 +20,13 @@ def test_echoes_of_the_console_are_recognised(text):
     assert ECHO.search(text)
 
 
-@pytest.mark.parametrize("text", ["Tokyo.", "The user says they prefer dark themes; noted.", "Step check passed: 37 lines."])
+def test_a_tool_call_written_as_the_final_answer_is_not_an_answer():
+    assert ECHO.search("<tool_call> <function=python_execute> <parameter=code> import os </parameter> </function> </tool_call>")
+    assert ECHO.search("<function=str_replace_editor> <parameter=command> view")
+
+
+@pytest.mark.parametrize("text", ["Tokyo.", "The user says they prefer dark themes; noted.", "Step check passed: 37 lines.",
+                                  "Use the function keyword to define it."])
 def test_answers_are_not_echoes(text):
     assert not ECHO.search(text)
 

@@ -123,7 +123,9 @@ def _succeeded(result: str) -> bool:
 # A final answer that repeats the console's own nudges instead of answering. Live 2026-10-14
 # (task f0a6e150812b, upstage): the final began 'The user says: "[SYRAX step check, not a new
 # request] ...' and went on reasoning about it; six finished tasks in the journal carry such text.
-ECHO = re.compile(r"\[SYRAX (?:step )?check, not a new request\]|^\s*the user says:\s*[\"\u201c]?\[SYRAX", re.I)
+# Also a tool call written as text where no tools were offered (the wrap-up after the step limit): live
+# 2026-10-15 (objective 224, attempt 6) the final answer was '<tool_call> <function=python_execute> ...'.
+ECHO = re.compile(r"\[SYRAX (?:step )?check, not a new request\]|^\s*the user says:\s*[\"\u201c]?\[SYRAX|<tool_call>|<function=[\w.-]+>", re.I)
 
 PROMISE = re.compile(
     r"\b(i will now|i'll now|let me now|i am going to|i'm going to|the request is (fully )?(satisfied|complete)|"

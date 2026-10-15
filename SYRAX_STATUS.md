@@ -208,6 +208,16 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Objective 224, attempt 6 (2026-10-15)
+
+- On the new code `apply_patch` ran six covering test files (46 passed, 1
+  failed) and SYRAX fixed forward three times, but its new test kept failing
+  and thirty steps ran out (gemini answered 503 or rate-limited most calls;
+  openrouter carried the task). The wrap-up after the step limit, asked
+  without tools, came back as a tool call written as text; that is now
+  treated like an echo: asked for once more, never handed to the human
+  (`agent.ECHO`).
+
 ### An interrupted release is checked, not left to a human (2026-10-15)
 
 - SYRAX stopped at 19:41 on 10-14 while attempt 5 of objective 224 was
