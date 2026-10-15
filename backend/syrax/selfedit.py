@@ -347,15 +347,18 @@ def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dic
     # Live 2026-10-15 (objective 232): --recount on a whole multi-file diff read the next file's
     # "--- /dev/null" header as a line of the hunk before it, so every correct two-file patch failed.
     plans = [[(diff, [])], [(sec, ["--recount"]) for sec in file_sections(diff)]]
-    check = None
+    failure = None
     for plan in plans:
-        checks = [_git(["apply", "--check", *opts, "--whitespace=nowarn", "-"], root, stdin=part) for part, opts in plan]
-        failed = next((c for c in checks if c.returncode != 0), None)
-        if failed is None:
+        checks = [(part, _git(["apply", "--check", *opts, "--whitespace=nowarn", "-"], root, stdin=part)) for part, opts in plan]
+        failure = next(((part, c) for part, c in checks if c.returncode != 0), None)
+        if failure is None:
             break
-        check = check or failed
     else:
-        hint = context_hint(diff, root)
+        # The file-by-file plan's verdict names the file and line that do not match; the whole diff's says only
+        # "corrupt patch". Live 2026-10-15 (objective 266, attempt 2): three tries were told "corrupt patch at
+        # <stdin>:56" with brains.py's context, while selfmodel.py's hunk at line 341 was the one that did not match.
+        part, check = failure
+        hint = context_hint(part, root)
         raise ValueError("the patch does not apply cleanly: " + (check.stderr or check.stdout).strip()[:600]
                          + "\nMake the next diff from what the file holds now (context lines must match exactly):\n" + hint)
     # All or nothing: a section that fails after others applied puts the files back as they were (objective 266,

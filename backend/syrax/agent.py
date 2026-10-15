@@ -208,7 +208,9 @@ OWN_WORK_CLAIM = re.compile(
     rf"\b(?:has|have) been (?:successfully )?(?:[\w-]+(?:,| and) )*(?:{_DONE[3:-1]}|updated|changed|modified)\b"
     rf"|\b(?:was|were) (?:successfully )?(?:[\w-]+(?:,| and) )*{_DONE}\b"
     rf"|\b{_DONE} (?:through|via|by|with)\b"
-    rf"|\bsuccessfully {_DONE}\b",
+    rf"|\bsuccessfully {_DONE}\b"
+    # live 2026-10-15 (objective 266, attempt 2): "Brain latency metrics successfully added ..." after nothing applied
+    r"|\bsuccessfully (?:added|integrated|introduced|created|built|completed|wired)\b",
     re.I,
 )
 # Live 2026-10-11, quality run #25: upstage viewed old.log and its folder, deleted

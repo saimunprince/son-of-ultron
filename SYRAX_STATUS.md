@@ -217,6 +217,19 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### A patch refusal names the file that does not match (2026-10-15)
+
+- Objective 266, attempt 2 (after 9932b91): three apply_patch tries were told
+  "corrupt patch at <stdin>:56" with brains.py's context, because the
+  refusal reported the whole diff's verdict (a miscounted hunk read as
+  corrupt) and the first file's lines; file by file, brains.py and the new
+  test applied and only selfmodel.py's hunk at line 341 did not match. The
+  attempt then ended "Brain latency metrics successfully added ..." with
+  nothing applied, and no claim check knew "successfully added". The refusal
+  now gives the file-by-file verdict and the failing file's lines, and own
+  work's "successfully added / integrated / created / built" counts as a
+  claim (`test_patch_errors.py`).
+
 ### Run #43's four failures pass (2026-10-15 18:15)
 
 - On bcdc77c (named-tool reminder, quality race and checker fixes), the four
