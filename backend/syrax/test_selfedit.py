@@ -120,6 +120,22 @@ def test_a_judge_hidden_behind_an_extra_component_is_still_a_judge():
     assert permissions.decide(plain, "autonomous", "x").action == "refuse"
 
 
+def test_a_correct_two_file_patch_applies_and_a_miscounted_one_too(tmp_path):
+    """Live 2026-10-15 (objective 232): --recount on a whole two-file diff swallowed the second file's header."""
+    root = repo(tmp_path)
+    two = (DIFF_MOD.replace("@@ -1 +1 @@", "@@ -1,1 +1,1 @@")
+           + "--- /dev/null\n+++ b/backend/syrax/test_new2.py\n@@ -0,0 +1,2 @@\n+def test_x():\n+    assert True\n")
+    rep = selfedit.apply_patch(two, root, run=False)
+    assert rep["files"] == ["backend/syrax/mod.py", "backend/syrax/test_new2.py"]
+    assert (root / "backend" / "syrax" / "mod.py").read_text() == "VALUE = 2\n" and (root / "backend" / "syrax" / "test_new2.py").is_file()
+    root2 = repo(tmp_path / "second")
+    miscounted = ("--- a/backend/syrax/mod.py\n+++ b/backend/syrax/mod.py\n@@ -1,4 +1,9 @@\n-VALUE = 1\n+VALUE = 3\n"
+                  "--- /dev/null\n+++ b/backend/syrax/fresh3.py\n@@ -0,0 +1,7 @@\n+X = 1\n")
+    rep2 = selfedit.apply_patch(miscounted, root2, run=False)
+    assert (root2 / "backend" / "syrax" / "mod.py").read_text() == "VALUE = 3\n" and (root2 / "backend" / "syrax" / "fresh3.py").read_text() == "X = 1\n"
+    assert len(selfedit.file_sections(miscounted)) == 2 and selfedit.file_sections("no headers\n") == ["no headers\n"]
+
+
 def test_wrong_hunk_counts_are_recounted_and_an_applied_hunk_is_named(tmp_path):
     root = repo(tmp_path)
     miscounted = "--- a/backend/syrax/mod.py\n+++ b/backend/syrax/mod.py\n@@ -5,9 +5,9 @@\n-VALUE = 1\n+VALUE = 2\n"  # counts and start wrong, content right

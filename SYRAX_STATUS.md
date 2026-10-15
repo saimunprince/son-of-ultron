@@ -208,6 +208,17 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### `--recount` broke every correct multi-file patch (fixed 2026-10-15)
+
+- Objective 232, attempt 1: SYRAX's first diff (the change in memory.py and
+  its new test file, in one patch, as the brief asks) was correct; reproduced
+  by hand, it applies with plain `git apply`. With `--recount` (added on
+  10-14 for miscounted hunks) git read the second file's `--- /dev/null`
+  header as a line of the first file's hunk, so the patch was refused five
+  times. `apply_patch` now tries the diff as written first, then file by file
+  with the counts recounted (`file_sections`); a test covers a correct and a
+  miscounted two-file patch.
+
 ### SYRAX's ledger of 2026-10-15 and the gate row (2026-10-15)
 
 - SYRAX published its daily ledger at 10:46 (`e6f0ed3`): RISE, DEVLOG, the

@@ -134,6 +134,20 @@ def normalize_headers(diff: str) -> str:
     return "\n".join(out)
 
 
+def file_sections(diff: str) -> List[str]:
+    """A unified diff split into one diff per file (a section starts at a '--- ' line followed by '+++ ')."""
+    lines = diff.split("\n")
+    starts = [i for i in range(len(lines) - 1) if lines[i].startswith("--- ") and lines[i + 1].startswith("+++ ")]
+    if not starts:
+        return [diff]
+    out = []
+    for k, s in enumerate(starts):
+        e = starts[k + 1] if k + 1 < len(starts) else len(lines)
+        part = "\n".join(lines[s:e]).rstrip("\n") + "\n"
+        out.append(part)
+    return out
+
+
 def diff_paths(diff: str) -> List[str]:
     """Repository-relative paths a unified diff touches (a/ and b/ prefixes stripped, /dev/null dropped)."""
     seen: List[str] = []
@@ -282,14 +296,25 @@ def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dic
     for f in files:
         if f.startswith("/") or re.match(r"^[A-Za-z]:", f) or ".." in Path(f).parts:
             raise ValueError(f"{f}: paths must be repository-relative, inside the repository")
-    check = _git(["apply", "--check", "--recount", "--whitespace=nowarn", "-"], root, stdin=diff)
-    if check.returncode != 0:
+    # As written first; then file by file with the hunk counts recounted (the brains' most common slip).
+    # Live 2026-10-15 (objective 232): --recount on a whole multi-file diff read the next file's
+    # "--- /dev/null" header as a line of the hunk before it, so every correct two-file patch failed.
+    plans = [[(diff, [])], [(sec, ["--recount"]) for sec in file_sections(diff)]]
+    check = None
+    for plan in plans:
+        checks = [_git(["apply", "--check", *opts, "--whitespace=nowarn", "-"], root, stdin=part) for part, opts in plan]
+        failed = next((c for c in checks if c.returncode != 0), None)
+        if failed is None:
+            break
+        check = check or failed
+    else:
         hint = context_hint(diff, root)
         raise ValueError("the patch does not apply cleanly: " + (check.stderr or check.stdout).strip()[:600]
                          + "\nMake the next diff from what the file holds now (context lines must match exactly):\n" + hint)
-    applied = _git(["apply", "--recount", "--whitespace=nowarn", "-"], root, stdin=diff)
-    if applied.returncode != 0:
-        raise RuntimeError("git apply failed after --check passed: " + (applied.stderr or applied.stdout).strip()[:600])
+    for part, opts in plan:
+        applied = _git(["apply", *opts, "--whitespace=nowarn", "-"], root, stdin=part)
+        if applied.returncode != 0:
+            raise RuntimeError("git apply failed after --check passed: " + (applied.stderr or applied.stdout).strip()[:600])
     report: Dict[str, Any] = {"root": str(root), "files": files, "compiled": [], "tests": None}
     broken = []
     for f in files:
