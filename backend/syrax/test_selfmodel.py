@@ -92,7 +92,8 @@ def test_runtime_matches_the_machine(tmp_path):
     assert r["cpu"]["cores"] == __import__("os").cpu_count() and len(r["cpu"]["load_1_5_15"]) == 3
     assert r["journal"]["path"] == str(j.path) and r["journal"]["bytes"] > 0
     assert r["brains"] == {"active": "ollama", "ready": ["ollama"], "cooldown": [], "needs_key": ["gemini"]}
-    assert r["running_task"] == {"task_id": "t1", "goal": "x"} and r["gpu"] is None
+    assert r["running_task"] == {"task_id": "t1", "goal": "x"}
+    assert r["gpu"] is None or isinstance(r["gpu"].get("name"), str)  # the probed GPU, or None (objective 249)
 
 
 def test_behavior_is_derived_from_the_journal(tmp_path):

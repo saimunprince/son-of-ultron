@@ -208,6 +208,20 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Objective 249: an old test was the contract against it (2026-10-15)
+
+- SYRAX's first attempt at wiring the GPU into the self-model failed its
+  preflight on `test_selfmodel.py::test_runtime_matches_the_machine`, which
+  asserted `r["gpu"] is None`: the existing contract pinned the very
+  behaviour the objective asked to change, and only a human may change an
+  existing test. My dry run of the brief missed it (the new test ran first
+  and left `None` in the probe's cache). SYRAX edited the old test, was
+  refused, reverted, and ended without saying what blocked it. The contract
+  now accepts the probed GPU or None (a human edit), and when the failing
+  covering test is an existing one the task did not touch, the release
+  refusal names it as the contract and asks the agent to report which
+  assertion blocks the objective (`test_release_contract.py`).
+
 ### Quality run #43 and the named-tool reminder (2026-10-15)
 
 - Run #43 on e80a764: 47/51 = 92.2 %, all on gemini (#42 was 100 %). The four

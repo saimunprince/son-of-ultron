@@ -447,9 +447,16 @@ class DevLoop:
             return
         result = selfedit.run_tests(self.root, tests)
         if not result["ok"]:
+            # Live 2026-10-15 (objective 249): an existing test pinned the old behaviour (`gpu is None`); SYRAX
+            # edited it, was refused (existing tests are the contract), reverted, and ended without saying why.
+            pinned = sorted({f"backend/{m}" for m in re.findall(r"FAILED (syrax/test_[\w/]+\.py)::", str(result.get("tail") or ""))} - set(files))
+            contract = ("" if not pinned else
+                        f"\nThe failing test is an existing one ({', '.join(pinned)}): it is the contract and you may not edit it. "
+                        "If it pins the behaviour your objective asks to change, stop and say in your final answer which test "
+                        "and assertion block the objective, so a human can update the contract.")
             raise ValueError("refused: the tests that cover your change fail, so the gate would roll it back; your edits "
                              f"stay, fix forward and release again. {result['summary']} ({', '.join(result['ran'])})\n"
-                             + str(result.get("tail") or "")[-1500:])
+                             + str(result.get("tail") or "")[-1500:] + contract)
 
     def snapshot(self, info: Dict[str, Any]) -> Path:
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
