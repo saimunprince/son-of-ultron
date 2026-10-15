@@ -208,6 +208,22 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### SYRAX's first own change landed: 6afccd1 (2026-10-15 16:08)
+
+- Objective 247 (memory expiry for observations, 232/237 respecified) is DONE
+  with attribution `own`: task 5e0cec1b714b ran `repo_map`, read memory.py and
+  test_memory.py, made the change and its new test in one `apply_patch`, and
+  read its own failure from the FAILURES section (the fact "The secret code
+  is alpha beta gamma" was never stored: memory refuses secret-looking text).
+  It changed the test's text, not its assertions, reverted a helper it no
+  longer needed, passed the release preflight, gate #27 GREEN on all nine
+  gates, and openrouter's review (a different brain from its author, gemini)
+  approved. Committed by SYRAX as 6afccd1 (`Verified-By: syrax.verify #27`),
+  ten lines in `MemoryStore.prompt_block` and a 27-line test, and pushed by
+  me. The first own change through the full pipeline after 13 archived
+  attempts; what stopped the earlier ones is fixed above (the brief, the
+  test output, `--recount`, the two-reviewer limit, the outage).
+
 ### No "learn how to learn" (2026-10-15)
 
 - A blocked learning objective drew its own learning objective ("Learn how
