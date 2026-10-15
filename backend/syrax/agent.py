@@ -33,6 +33,10 @@ STEP_PROMPT = (
     "already satisfies the request."
 )
 ECHO_FALLBACK = "I could not put the result into a clean answer; the steps and their outputs are in this task's history."
+# Live 2026-10-15 (objective 252, attempt 1): the brains answered empty, and the final "The new test file has been
+# created and the change is ready for release" stood as the task's result after two rejections; nothing was edited.
+CLAIM_FALLBACK = ("Nothing was changed in this task: no file was edited, created, written or released. "
+                  "What was looked at, and its outputs, are in this task's history.")
 NOT_RELEASED_NOTE = (" (Not released: no `release` committed these edits, so they are rolled back as this task ends; "
                      "the objective stays open.)")
 FINAL_ASK = (
@@ -385,19 +389,22 @@ class SyraxAgent(Manus):
             result += "\n" + await BaseAgent.run(self, CITE_NUDGE)
             if self.last_reply.startswith("SYRAX:"):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
-        if self.last_reply and not self.changed and (
-            CLAIM.search(self.last_reply) or WORLD_CLAIM.search(self.last_reply)
-            or (self.task_kind == "autonomous" and OWN_WORK_CLAIM.search(self.last_reply))
-        ):
+        if self.last_reply and not self.changed and self._claims_change(self.last_reply):
             # M3: the journal counts what was sent back, not only what got through
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
             await self._final_answer(CLAIM_ASK)
+            if self._claims_change(self.last_reply or ""):  # still claimed, or no brain answered the rewrite
+                self.last_reply = CLAIM_FALLBACK
         if self._unreleased_edits(request):
             # live 2026-10-14 (objective 224, attempt 3): thirty steps of edits, no `release`, and the final said
             # "implemented ... and verified"; the edits were rolled back when the task ended. Say so in the answer.
             self.last_reply = (self.last_reply or "").rstrip() + NOT_RELEASED_NOTE
         self.task_goal, self.task_kind = "", "conversation"  # the core sets them again for the next task
         return self.last_reply or "Done."
+
+    def _claims_change(self, text: str) -> bool:
+        return bool(CLAIM.search(text) or WORLD_CLAIM.search(text)
+                    or (self.task_kind == "autonomous" and OWN_WORK_CLAIM.search(text)))
 
     def _unreleased_edits(self, request: Optional[str]) -> bool:
         """A release was asked for, files changed, and no release committed them (it never ran, or it did not

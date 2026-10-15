@@ -208,6 +208,15 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### A false claim never becomes the task's result (2026-10-15)
+
+- Objective 252, attempt 1 (before 162fd71 landed): the brains answered
+  empty, the final said "The new test file has been created and the change is
+  ready for release", it was sent back twice, and it still became the task's
+  result: nothing had been edited. A claim that survives its honest rewrite,
+  or a rewrite no brain answers, is now replaced by a plain statement that
+  nothing was changed (`CLAIM_FALLBACK`, `test_claim_fallback.py`).
+
 ### SYRAX's third own change: 162fd71, task durations (2026-10-15 17:25)
 
 - Objective 252: `SelfModel.performance()` reports `task_seconds`, per task
