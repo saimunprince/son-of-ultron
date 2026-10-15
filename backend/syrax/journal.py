@@ -160,6 +160,9 @@ def _now() -> float:
     return time.time()
 
 
+ALL_OBJECTIVES = 5000  # objectives() reads at most this many rows; full-set readers ask for this many
+
+
 # A failed call where the tool did its job: it answered input it cannot act on (bad SQL, an old_str that is not
 # in the file, a diff that does not apply, an exception in the caller's own code). Counted as a failure of the
 # call, never as the tool failing: from 2026-09-30 to 2026-10-15 the cycle spent 40 tasks on "the tool failed on
@@ -1128,7 +1131,8 @@ class Journal:
         return self._objective_dict(row) if row else None
 
     def objectives(self, limit: int = 50, status: Optional[str | Iterable[str]] = None) -> List[dict]:
-        limit = max(1, min(int(limit), 500))
+        """By priority, then age. Callers that need every row pass a limit above the table's size (ALL_OBJECTIVES)."""
+        limit = max(1, min(int(limit), ALL_OBJECTIVES))
         sql = "SELECT * FROM objectives"
         params: list = []
         if status:
@@ -1139,6 +1143,15 @@ class Journal:
         params.append(limit)
         with self._lock:
             rows = self._db.execute(sql, params).fetchall()
+        return [self._objective_dict(r) for r in rows]
+
+    def objectives_since(self, ts: float, limit: int = 500) -> List[dict]:
+        """Objectives created at or after `ts`, newest first. Live 2026-10-15: the known-limitation cap counted
+        "today's" objectives in objectives(limit=200), ordered by priority then age; with 262 rows the newest
+        priority-3 ones fell outside the 200 and the cap of 3 a day let 7 through."""
+        limit = max(1, min(int(limit), ALL_OBJECTIVES))
+        with self._lock:
+            rows = self._db.execute("SELECT * FROM objectives WHERE created>=? ORDER BY created DESC, id DESC LIMIT ?", (ts, limit)).fetchall()
         return [self._objective_dict(r) for r in rows]
 
     # ——— knowledge (provenance-aware) ———

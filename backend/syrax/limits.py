@@ -26,7 +26,7 @@ import math
 import time
 from typing import Any, Dict, List, Optional
 
-from syrax.journal import Journal
+from syrax.journal import ALL_OBJECTIVES, Journal
 
 MIN_USES = 5
 RECENT_USES = 40  # judge a tool on its latest uses: a fixed problem must stop ranking high
@@ -142,8 +142,8 @@ def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[
     except Exception:
         weaknesses = []
     since = now - 86400
-    known_today = sum(1 for o in journal.objectives(limit=200)
-                      if (o.get("key") or "").startswith("limit:known_limitation:") and o["created"] >= since)
+    known_today = sum(1 for o in journal.objectives_since(since)
+                      if (o.get("key") or "").startswith("limit:known_limitation:"))
     for w in weaknesses:
         if w.get("kind") != "known_limitation" or known_today >= KNOWN_PER_DAY:
             continue
@@ -178,7 +178,7 @@ def kind_stats(journal: Journal) -> Dict[str, dict]:
     """Per limitation kind: how many objectives closed DONE out of those that
     ended (DONE/BLOCKED/DROPPED), and the average brain calls they spent."""
     out: Dict[str, dict] = {}
-    for o in journal.objectives(limit=500, status=["DONE", "BLOCKED", "DROPPED"]):
+    for o in journal.objectives(limit=ALL_OBJECTIVES, status=["DONE", "BLOCKED", "DROPPED"]):
         kind = (((o.get("evidence") or {}).get("limitation")) or {}).get("kind")
         if not kind:
             continue

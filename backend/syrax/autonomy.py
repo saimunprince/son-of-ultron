@@ -36,7 +36,7 @@ from app.logger import logger
 
 from syrax import resources
 from syrax import contracts, followup, plan
-from syrax.journal import BACKEND_ROOT, Journal, JournalError
+from syrax.journal import ALL_OBJECTIVES, BACKEND_ROOT, Journal, JournalError
 
 REPO_ROOT_PATH = BACKEND_ROOT.parent
 
@@ -163,7 +163,7 @@ def past_experience(journal: Journal, objective: dict, limit: int = 3, budget: i
     subject = spec.get("tool") or spec.get("case") or spec.get("name") or spec.get("topic")
     words = set(auto_keywords(objective.get("goal") or ""))
     scored = []
-    for o in journal.objectives(limit=300, status=["DONE", "BLOCKED", "DROPPED"]):
+    for o in journal.objectives(limit=ALL_OBJECTIVES, status=["DONE", "BLOCKED", "DROPPED"]):
         if o["id"] == objective.get("id"):
             continue
         ospec = o.get("check_spec") or {}
@@ -646,7 +646,7 @@ class Autonomy:
     def status(self) -> dict:
         last = self.reports[-1].to_dict() if self.reports else None
         counts = {st: 0 for st in ("OPEN", "ACTIVE", "DONE", "BLOCKED", "DROPPED")}
-        for o in self.journal.objectives(limit=500):
+        for o in self.journal.objectives(limit=ALL_OBJECTIVES):
             counts[o["status"]] += 1
         snap = resources.snapshot()
         return {
@@ -664,7 +664,7 @@ class Autonomy:
     # ——— one cycle ———
 
     def _pick(self) -> Optional[dict]:
-        done = {o["id"] for o in self.journal.objectives(limit=500, status="DONE")}
+        done = {o["id"] for o in self.journal.objectives(limit=ALL_OBJECTIVES, status="DONE")}
         for o in self.journal.objectives(limit=500, status="OPEN"):
             if all(d in done for d in (o.get("dependencies") or [])):
                 return o

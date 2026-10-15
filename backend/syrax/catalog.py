@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from syrax.journal import BACKEND_ROOT, Journal
+from syrax.journal import ALL_OBJECTIVES, BACKEND_ROOT, Journal
 
 REPO_ROOT = BACKEND_ROOT.parent
 HAVE, PARTIAL, TODO, REJECTED = "HAVE", "PARTIAL", "TODO", "REJECTED"
@@ -278,7 +278,7 @@ def reopen_regressed(journal: Journal) -> List[int]:
     2026-10-12: disk_usage was verified by its own tests but declared no
     arguments; the factory now refuses that, and the objective must not stay DONE)."""
     reopened = []
-    for o in journal.objectives(limit=500, status="DONE"):
+    for o in journal.objectives(limit=ALL_OBJECTIVES, status="DONE"):
         check = o.get("check_spec") or {}
         if not str(o.get("key") or "").startswith("feature:") or check.get("kind") != "skill_verified":
             continue
@@ -296,7 +296,7 @@ def next_auto(journal: Journal) -> Optional[Feature]:
     open_keys = {o.get("key") for o in journal.objectives(status=["OPEN", "ACTIVE"])}
     if any(str(k or "").startswith("feature:") for k in open_keys):
         return None
-    taken = {o.get("key") for o in journal.objectives(limit=500)}
+    taken = {o.get("key") for o in journal.objectives(limit=ALL_OBJECTIVES)}
     for f in CATALOG:
         if f.status == TODO and f.auto and not f.needs and objective_key(f) not in taken:
             return f

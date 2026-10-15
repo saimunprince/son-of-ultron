@@ -208,6 +208,18 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Objective reads that grew past their limits (2026-10-15)
+
+- The known-limitation cap (3 research objectives a day) counted today's
+  objectives in `objectives(limit=200)`, ordered by priority then age; with
+  262 rows the newest priority-3 ones fell outside the 200, and 7 research
+  objectives got through today (my system-map edit also gave four
+  limitations new texts, so new weekly keys). The cap now reads
+  `objectives_since`, newest first. Readers that need every row (the
+  catalog's taken keys, the DONE set dependencies wait for, past experience,
+  closed limitations) ask for up to 5000 instead of 300-500, so they do not
+  silently drop rows as the table grows (`test_objective_limits.py`).
+
 ### A false claim never becomes the task's result (2026-10-15)
 
 - Objective 252, attempt 1 (before 162fd71 landed): the brains answered
