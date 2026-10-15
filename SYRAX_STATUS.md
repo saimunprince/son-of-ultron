@@ -208,6 +208,17 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### An interrupted release is checked, not left to a human (2026-10-15)
+
+- SYRAX stopped at 19:41 on 10-14 while attempt 5 of objective 224 was
+  gating its own release (step 11: `repo_map`, `apply_patch`, `release`), and
+  recovery at the next start marked the task UNCERTAIN. A release commits
+  only after its gate passes, so recovery now asks the journal and git: a
+  journaled `commit.created` is COMPLETED; no commit while HEAD has not moved
+  is NOT_STARTED (nothing landed; the task is resumable); no journaled
+  commit while HEAD moved stays UNCERTAIN for a human
+  (`test_recovery_release.py`).
+
 ### SYRAX's first own code-change objective through the new tools (objective 224, 2026-10-14)
 
 - Given by the maintainer: expire stale inferences from the memory prompt,

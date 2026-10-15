@@ -774,7 +774,8 @@ class Journal:
 
     # ——— recovery ———
 
-    def verify_operation(self, op: Optional[dict], cur: Optional[sqlite3.Cursor] = None) -> dict:
+    def verify_operation(self, op: Optional[dict], cur: Optional[sqlite3.Cursor] = None, task_id: Optional[str] = None,
+                         head_unchanged: Optional[bool] = None) -> dict:
         """Compare a persisted in-flight operation with reality.
 
         Returns {"state": COMPLETED|NOT_STARTED|PARTIAL|HARMLESS|UNCERTAIN|NONE, "checks": {...}}.
@@ -788,6 +789,18 @@ class Journal:
         args = op.get("args") if isinstance(op.get("args"), dict) else {}
         if name == "ask_human":
             return {"state": "BLOCKED", "checks": {"question": args.get("inquire")}}
+        if name == "release" and task_id:
+            # live 2026-10-15: SYRAX stopped while its own release gated (objective 224, attempt 5) and recovery left
+            # it UNCERTAIN for a human. A release commits only after its gate: the journal and git say whether it did.
+            q = "SELECT payload FROM events WHERE task_id=? AND type='commit.created' ORDER BY id DESC LIMIT 1"
+            found = (cur.execute(q, (task_id,)) if cur is not None else self._db.execute(q, (task_id,))).fetchone()
+            if found:
+                return {"state": "COMPLETED", "checks": {"commit": (_loads(found[0]) or {}).get("commit"), "reason": "the release committed"}}
+            if head_unchanged:
+                return {"state": "NOT_STARTED", "checks": {"reason": "no commit was created and the repository HEAD has not moved: "
+                                                                     "the gate did not finish and nothing landed"}}
+            return {"state": "UNCERTAIN", "checks": {"reason": "no commit is journaled but HEAD moved since the task began: "
+                                                               "a human checks whether the release landed"}}
         if name not in CHECKABLE_TOOLS:
             seen = self._effects_of(name, args, cur)
             if seen["level"] in NO_EFFECT_LEVELS and not seen["harm"] and name not in CODE_TOOLS and not name.startswith("browser_"):
@@ -909,7 +922,8 @@ class Journal:
             (row["task_id"],),
         ).fetchone()
         op = _loads(row["operation"])
-        verdict = self.verify_operation(op, cur)
+        verdict = self.verify_operation(op, cur, task_id=row["task_id"],
+                                        head_unchanged=(row["git_head"] == head_now) if row["git_head"] and head_now else None)
         op_state = verdict["state"]
         if row["status"] == "BLOCKED" or op_state == "BLOCKED":
             state = "BLOCKED"
