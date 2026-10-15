@@ -210,6 +210,16 @@ class MemoryStore:
     # ——— prompt block ———
     def prompt_block(self) -> str:
         facts = self.facts()[-PROMPT_FACTS:]
+        now = time.time()
+        thirty_days_ago = now - 30 * 86400
+        filtered_facts = []
+        for f in facts:
+            if f.get("type") == "observation":
+                eff = f.get("updated") if f.get("updated") is not None else f.get("created")
+                if eff is not None and eff < thirty_days_ago:
+                    continue
+            filtered_facts.append(f)
+        facts = filtered_facts
         recent = self.recent()
         parts = []
         if facts:
