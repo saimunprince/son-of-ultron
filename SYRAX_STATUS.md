@@ -208,6 +208,20 @@ The owner's plan: SYRAX improves itself at every level, and what measures it
 stays out of its reach. One phase at a time, each GREEN before the next; the
 gate result of each phase is recorded in the next phase's entry.
 
+### Objective 232 failed on its brief, not on SYRAX (2026-10-15)
+
+- Attempt 3 wrote a correct change, and the release preflight refused it
+  because SYRAX's new test failed. The cause was the brief: it said to call
+  `monkeypatch.undo()` after making rows old, and that also undid the test
+  journal isolation in `conftest.py` (both used the same `monkeypatch`), so the
+  old rows went to another journal. SYRAX could not see it: `apply_patch` and
+  the preflight showed the last 25 lines of pytest, all deprecation warnings,
+  and the assertion was cut to "AssertionError: asse...". Now the isolation
+  has a MonkeyPatch of its own, and `selfedit.failure_text` shows the FAILURES
+  section and the short summary without the warnings
+  (`test_failure_text.py`). The objective is respecified with
+  `monkeypatch.context()`.
+
 ### No "investigate the blocked gate" objective for a rolled-back candidate (2026-10-15)
 
 - After each blocked attempt of objective 232 the cycle spent a whole task

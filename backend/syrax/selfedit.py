@@ -268,15 +268,49 @@ def run_tests(root: Path, test_files: List[str], timeout: float = TEST_TIMEOUT_S
 
     rel = [t[len("backend/"):] if t.startswith("backend/") else t for t in test_files]
     env = {k: v for k, v in os.environ.items() if not k.startswith("SYRAX_")}
-    env.update({"OPENMANUS_DISABLE_BROWSER_USE": "1", "SYRAX_DISABLE_WHISPER_WARMUP": "1", "SYRAX_BROWSER": "0"})
-    cmd = [venv_python(), "-m", "pytest", *rel, "-q", "-x", "-p", "no:cacheprovider"]
+    env.update({"OPENMANUS_DISABLE_BROWSER_USE": "1", "SYRAX_DISABLE_WHISPER_WARMUP": "1", "SYRAX_BROWSER": "0", "COLUMNS": "200"})
+    cmd = [venv_python(), "-m", "pytest", *rel, "-q", "-x", "--tb=short", "-p", "no:cacheprovider"]
     try:
         r = subprocess.run(cmd, cwd=str(root / "backend"), env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"ok": False, "ran": rel, "summary": f"tests did not finish in {int(timeout)} s", "tail": ""}
     out = (r.stdout or "") + (r.stderr or "")
     summary = next((ln for ln in reversed(out.splitlines()) if re.search(r"\d+ (passed|failed|error)", ln)), out.strip().splitlines()[-1] if out.strip() else "no output")
-    return {"ok": r.returncode == 0, "ran": rel, "summary": summary.strip(), "tail": "\n".join(out.strip().splitlines()[-25:])}
+    return {"ok": r.returncode == 0, "ran": rel, "summary": summary.strip(), "tail": failure_text(out)}
+
+
+_SECTION = re.compile(r"^=+ (.+?) =+$")
+_NOISE = re.compile(r"^-+ Captured (stderr|stdout|log) (setup|teardown) -+$")
+
+
+def failure_text(out: str, limit: int = 1500) -> str:
+    """What a failing pytest run says about the failure: the FAILURES or ERRORS section and the short summary,
+    without the warnings summary or the setup noise. Live 2026-10-15 (objective 232): the last 25 lines were
+    deprecation warnings, so SYRAX saw "AssertionError: asse..." three attempts in a row and guessed the cause."""
+    lines = out.strip().splitlines()
+    keep: List[str] = []
+    section, noise = "", False
+    for ln in lines:
+        m = _SECTION.match(ln)
+        if m:
+            section, noise = m.group(1).lower(), False
+            if section in ("failures", "errors") or section.startswith("short test summary"):
+                keep.append(ln)
+            continue
+        if section in ("failures", "errors"):
+            if ln.startswith(("____", "----")):
+                noise = bool(_NOISE.match(ln))
+            if not noise:
+                keep.append(ln)
+        elif section.startswith("short test summary") or (keep and ln.startswith("!!")):
+            keep.append(ln)
+    if not keep:
+        keep = lines[-25:]
+    text = "\n".join(keep)
+    if len(text) > limit:
+        tail = text[-(limit - 120):]
+        text = "\n".join(keep[:2]) + "\n...\n" + tail[tail.find("\n") + 1:]
+    return text
 
 
 def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dict[str, Any]:

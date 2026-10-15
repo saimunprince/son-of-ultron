@@ -23,9 +23,12 @@ os.environ.setdefault("SYRAX_JOURNAL_FILE", os.path.join(_tmp, "journal.db"))
 
 
 @pytest.fixture(autouse=True)
-def fresh_journal_and_core(tmp_path, monkeypatch):
+def fresh_journal_and_core(tmp_path):
     import syrax.journal as journal_mod
 
+    # A MonkeyPatch of its own, not the test's `monkeypatch`: live 2026-10-15 (objective 232) a test that
+    # called monkeypatch.undo() undid this isolation too, and its later rows went to another journal.
+    monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setenv("SYRAX_JOURNAL_FILE", str(tmp_path / "journal.db"))
     monkeypatch.setattr(journal_mod, "_journal", None)
     try:
@@ -44,3 +47,4 @@ def fresh_journal_and_core(tmp_path, monkeypatch):
     j = journal_mod._journal
     if j is not None:
         j.close()
+    monkeypatch.undo()
