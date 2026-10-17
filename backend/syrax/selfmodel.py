@@ -557,6 +557,14 @@ def render(snapshot: dict, limit: int = 12000) -> str:
     text = json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"), default=str)
     if len(text) > limit:
         text = text[:limit] + "\n…[truncated; ask for a single section]"
+    if isinstance(snapshot, dict) and isinstance(snapshot.get("identity"), dict) and "version" in snapshot["identity"]:
+        ident = snapshot["identity"]
+        v = ident.get("version")
+        if v:
+            headline = f"Running build: {v}"
+            if ident.get("restart_pending"):
+                headline += " (a newer commit is on disk, not running yet)"
+            text = headline + "\n" + text
     return text
 
 
