@@ -25,6 +25,7 @@ from syrax.journal import BACKEND_ROOT
 
 CHECK_S = 5.0
 STALL_S = 60.0
+SLEEP_GAP_S = 30.0
 LOG_DIR = BACKEND_ROOT / "logs"
 
 
@@ -33,6 +34,7 @@ class Watchdog:
                  log_dir: Path = LOG_DIR) -> None:
         self.loop, self.journal = loop, journal
         self.check_s, self.stall_s, self.log_dir = check_s, stall_s, Path(log_dir)
+        self.sleep_gap_s = SLEEP_GAP_S
         self.last_answer = time.monotonic()
         self.stalled_since: Optional[float] = None
         self.dump: Optional[str] = None
@@ -71,7 +73,13 @@ class Watchdog:
         return str(path)
 
     def _run(self) -> None:
-        while not self._stop.wait(self.check_s):
+        while not self._stop.is_set():
+            before = time.monotonic()
+            if self._stop.wait(self.check_s):
+                break
+            if time.monotonic() - before > self.check_s + self.sleep_gap_s:
+                self.last_answer = time.monotonic()
+                continue
             try:
                 self.loop.call_soon_threadsafe(self._answered)
             except RuntimeError:  # the loop is closed: SYRAX is shutting down
