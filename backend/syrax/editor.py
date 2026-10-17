@@ -238,6 +238,21 @@ class SyraxEditor(StrReplaceEditor):
     @staticmethod
     def _missing(command: Any, original: Path, resolved: Path, note: Optional[str]) -> Tuple[Path, Optional[str]]:
         """A path that is not there: read an untracked file from the running tree, or say where the file really is."""
+        if resolved == original and ROOT_MAP is not None:
+            live, wt = ROOT_MAP
+            try:
+                rel = Path(os.path.realpath(original)).relative_to(Path(os.path.realpath(wt)))
+            except ValueError:
+                rel = None
+            if rel is not None:
+                cand = Path(live) / rel
+                if cand.exists():
+                    if command == "view":
+                        why = "(read from the running tree: git does not track it, so it is not in this task's worktree)"
+                        return cand, f"{note}\n{why}" if note else why
+            raise ToolError(f"{original} is not in this task's worktree because git does not track it, so it cannot be "
+                            "changed here. A skill changes through skill_create.")
+
         if resolved != original and original.exists():
             # an isolated task's worktree holds only what git tracks: skills and other untracked files stay in the
             # running tree (live: .syrax/worktrees/<task>/backend/skills/screen_brightness/skill.py did not exist)
