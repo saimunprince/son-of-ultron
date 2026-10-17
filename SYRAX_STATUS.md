@@ -217,6 +217,17 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### A restart points the next attempt at the interrupted diff (2026-10-17)
+
+- 2026-10-15 18:50 the machine stopped while objective 267's release was in
+  its gate (the preflight had passed). Two days later recovery did its part
+  (task INTERRUPTED, release NOT_STARTED, objective reopened without an
+  attempt counted), and the release had kept the diff as a snapshot, but the
+  next attempt started from zero because nothing pointed to it. Reopening an
+  objective after a restart now adds the interrupted task to its attempts
+  log with the kept diff (the release's snapshot when no rollback event
+  exists), so the brief says where the edits are (`test_interrupted_attempt.py`).
+
 ### A patch refusal names the file that does not match (2026-10-15)
 
 - Objective 266, attempt 2 (after 9932b91): three apply_patch tries were told

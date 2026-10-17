@@ -197,6 +197,19 @@ def rolled_back(events: List[dict]) -> Optional[dict]:
     return None
 
 
+def kept_diff(events: List[dict]) -> Optional[dict]:
+    """rolled_back, or else the snapshot a release took before its gate (code.changed with "snapshot"): a task a
+    restart cut short during its release has no rollback event, but its diff is kept all the same."""
+    kept = rolled_back(events)
+    if kept:
+        return kept
+    for e in reversed(events):
+        p = e["payload"]
+        if e["type"] == "code.changed" and p.get("snapshot"):
+            return {"snapshot": p["snapshot"], "files": sorted(p.get("files") or {})}
+    return None
+
+
 def archive_brief(journal: Journal, objective: dict) -> str:
     """Phase 5: for an objective about SYRAX's own code, the archive of variants (running build's
     score, the best parent, this objective's dead ends). Empty for other objectives."""
@@ -623,9 +636,29 @@ class Autonomy:
         cancelled cycle: put it back to OPEN so it can be picked again."""
         n = 0
         for o in self.journal.objectives(limit=500, status="ACTIVE"):
-            self.journal.update_objective_sync(o["id"], status="OPEN", note=f"reopened: {why}")
+            progress = self._interrupted_attempt(o)
+            self.journal.update_objective_sync(o["id"], status="OPEN", note=f"reopened: {why}", **({"progress": progress} if progress else {}))
             n += 1
         return n
+
+    def _interrupted_attempt(self, objective: dict) -> Optional[dict]:
+        """The objective's task that a restart interrupted, as an attempts_log entry with its kept diff. Live
+        2026-10-17: objective 267's release was cut by a shutdown after its preflight passed, its diff was kept by
+        the release's snapshot, and the next attempt started from zero because nothing pointed to it."""
+        tasks = [t for t in self.journal.tasks(limit=20, status="INTERRUPTED")
+                 if t.get("kind") == "autonomous" and t.get("goal") == objective["goal"]]
+        if not tasks:
+            return None
+        task = tasks[0]
+        log = list(((objective.get("progress") or {}).get("attempts_log")) or [])
+        if any(a.get("task_id") == task["task_id"] for a in log):
+            return None
+        events = self.journal.events(task["task_id"], limit=5000)
+        kept = kept_diff(events)
+        log.append({"attempt": objective.get("attempts", 0), "task_id": task["task_id"], "verdict": "INTERRUPTED",
+                    "strategy": strategy_of(events), "lesson": "a restart interrupted it before it finished; nothing landed",
+                    **({"kept": kept["snapshot"], "kept_files": kept["files"][:6]} if kept else {})})
+        return {"attempts_log": log[-6:]}
 
     # ——— enable / disable (persisted) ———
 
