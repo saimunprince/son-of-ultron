@@ -202,7 +202,7 @@
       "limitations": [
         "GPU load and memory in use are known only on NVIDIA (nvidia-smi); other GPUs report name and adapter memory (Win32_VideoController), probed once per process (SYRAX's own change f32efc2)",
         "system_map.json is hand-audited and must be regenerated when components change",
-        "performance history: task durations per kind over 7 days (162fd71) and tool-call latency over the newest 5000 events (92c3bd1), both SYRAX's own changes; no per-brain latency history"
+        "performance history: task durations per kind over 7 days (162fd71), tool-call latency (92c3bd1) and brain answer latency (09e97df, e2c362a) over the newest 5000 events, all SYRAX's own changes; nothing older than those windows is aggregated"
       ],
       "code": [
         "backend/syrax/selfmodel.py",

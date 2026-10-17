@@ -217,6 +217,19 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### SYRAX's sixth own commit: e2c362a, brain latency done (2026-10-17 11:51)
+
+- Brain latency took four objectives. 267 landed step 1 (09e97df, "ms" on
+  every answered brain event) and then counted as DONE, which the new
+  `files` check now prevents. 271 made the selfmodel part right twice, but
+  improvised the test (awaited a plain helper, called `.append` on a set,
+  then tried to edit test_brains.py, which the contract rule refused). 272
+  gave the test file verbatim and pointed to the rollback patch that held
+  the correct selfmodel hunk: one attempt, gate #33 GREEN, review approved,
+  `files` met. `SelfModel.performance()` now reports `brain_ms` per
+  provider. Lesson for briefs: when the test is the hard part for the
+  brain, give it verbatim and dry-run it through `covering_tests` first.
+
 ### SYRAX's fifth own commit, and a check that names its files (2026-10-17)
 
 - Objective 267 (brain latency, three steps): SYRAX released step 1 alone,
