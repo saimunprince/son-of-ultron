@@ -60,6 +60,17 @@ def state_of_tests(name: str, result: str) -> Optional[str]:
     return None
 
 
+# Live 2026-10-17 (quality run #46, guard_broad_delete): the delete was refused, and the final said "The folder is
+# empty, so the cleanup is complete" (keep.txt was still there). An answer after a refused call says what was not done.
+REFUSAL_ACK = re.compile(r"refus|not (?:allowed|permitted|done|deleted|removed)|permission|could ?n[o']t|\bcan'?t\b|\bcan ?not\b"
+                         r"|nothing (?:was|got|has been) (?:deleted|removed|changed|done)"
+                         r"|did ?n[o']t|was ?n[o']t|blocked|declin|unable|not authori[sz]ed|without (?:your|a) (?:ok|yes|permission)", re.I)
+REFUSAL_ASK = (
+    "[SYRAX check, not a new request] A call in this task was refused ({why}), and your answer does not say so. Rewrite "
+    "the final answer: what was not done because of the refusal, and what is as it was. No tool calls."
+)
+
+
 CLAIM_FALLBACK = ("Nothing was changed in this task: no file was edited, created, written or released. "
                   "What was looked at, and its outputs, are in this task's history.")
 NOT_RELEASED_NOTE = (" (Not released: no `release` committed these edits, so they are rolled back as this task ends; "
@@ -313,6 +324,7 @@ class SyraxAgent(Manus):
     researched: bool = False  # `research` succeeded this task: the answer owes a source URL
     called: set = Field(default_factory=set)  # tools this task called (refusals excluded): NAMED_NUDGE
     tests: Optional[str] = None  # "pass"/"fail": the last test run this task saw (state_of_tests)
+    refusals: list = Field(default_factory=list)  # (tool, reason) of the calls the permission gate refused this task
     # Permissions (permissions.py): the task's kind and the human's own words
     # decide what a destructive or external call needs; consents are the
     # ask_human answers of this task, grants the yes/no already given per call.
@@ -362,6 +374,7 @@ class SyraxAgent(Manus):
         self.researched = False
         self.called = set()
         self.tests = None
+        self.refusals = []
         self.consents = []
         self.grants = {}
         if not self.task_goal:
@@ -424,6 +437,12 @@ class SyraxAgent(Manus):
             await self._final_answer(CLAIM_ASK)
             if self._claims_change(self.last_reply or ""):  # still claimed, or no brain answered the rewrite
                 self.last_reply = CLAIM_FALLBACK
+        if self.last_reply and self.refusals and not REFUSAL_ACK.search(self.last_reply) and not self.step_limit_hit:
+            tool, why = self.refusals[-1]
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._final_answer(REFUSAL_ASK.format(why=f"{tool}: {why}"))
+            if not REFUSAL_ACK.search(self.last_reply or ""):
+                self.last_reply = (self.last_reply or "").rstrip() + f" (Not done: `{tool}` was refused: {why})"
         if self.last_reply and self.tests == "fail" and TEST_CLAIM.search(self.last_reply):
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
             await self._final_answer(TEST_CLAIM_ASK)
@@ -540,6 +559,7 @@ class SyraxAgent(Manus):
             refused = await self._permit(command)
             if refused is not None:
                 result = refused
+                self.refusals.append((name, _OBSERVED.sub("", refused, count=1).replace("Error: refused:", "").strip()[:160]))
                 seen[key] = self.current_step  # the same call again is a loop, not a second chance
             else:
                 self.called.add(name)

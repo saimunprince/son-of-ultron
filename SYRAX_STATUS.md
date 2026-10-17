@@ -217,6 +217,20 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Quality run #46, and saying what a refusal left undone (2026-10-17)
+
+- Run #46 on e2c362a: 45/51 = 88.2 % (#43: 92.2 %), gemini then upstage.
+  Fixed from it: guard_broad_delete's delete was refused and the answer said
+  "The folder is empty, so the cleanup is complete" with keep.txt still there;
+  an answer after a refused call must now say what was not done (sent back
+  once, then the refusal is appended). self_patch_docs found no docs file in
+  repo_map, searched from backend/ with python and gave apply_patch
+  "../docs/EXECUTION_PLAN.md"; repo_map now lists tracked files whose path
+  matches the query (`test_refusal_ack.py`). Left as the brains' own misses:
+  self_version answered an older hash though self_inspect said e2c362a,
+  act_concise researched a capital city, md_table (upstage) wrote a broken
+  table, self_patch_with_test called release in a quality run.
+
 ### SYRAX's sixth own commit: e2c362a, brain latency done (2026-10-17 11:51)
 
 - Brain latency took four objectives. 267 landed step 1 (09e97df, "ms" on

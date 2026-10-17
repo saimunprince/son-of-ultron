@@ -110,8 +110,23 @@ def render_map(root: Path, query: str = "") -> str:
             lines.append(f"  {m['path']:<36} {m['lines']:>5} lines  {m['doc']}" + (f"  (tests: {m['test']})" if m["test"] else "  (no test file)"))
         if mods[40:]:
             lines.append(f"  … and {len(mods) - 40} more; narrow the query")
+    named = [f for f in file_matches(root, query) if f not in {m["path"] for m in mods}]
+    if named:
+        lines.append("\nfiles whose path matches (repository-relative, as apply_patch wants them):")
+        lines += [f"  {f}" for f in named[:15]] + ([f"  … and {len(named) - 15} more; narrow the query"] if named[15:] else [])
     lines.append("\nProtected (never patched by SYRAX; a human commits those): the judges listed in devloop.JUDGES.")
     return "\n".join(lines)
+
+
+def file_matches(root: Path, query: str) -> List[str]:
+    """Tracked files whose path contains the query (case-insensitive). Live 2026-10-17 (quality run #46,
+    self_patch_docs): "EXECUTION_PLAN" matched no component or module, so the brain went looking with python from
+    backend/, wrote "../docs/EXECUTION_PLAN.md" into the diff, and apply_patch refused the path."""
+    q = (query or "").strip().lower()
+    if len(q) < 3:
+        return []
+    out = _git(["ls-files"], root)
+    return [f for f in out.stdout.splitlines() if q in f.lower() and "node_modules/" not in f]
 
 
 # ——— the patch ———
