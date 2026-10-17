@@ -85,6 +85,24 @@ def _poll(conn, timeout: float = 0.0) -> bool:
         return True
 
 
+def _utf8_by_default(builtins_dict: dict) -> None:
+    """In the python_execute child, text files are UTF-8 unless the code names an encoding. On Windows the
+    default is the ANSI code page (cp1252): live 2026-10-15 a report written with open() held "78.37 \u00b0C" as
+    one cp1252 byte and broke the quality checker, and reads of the repository's UTF-8 files failed with
+    "'charmap' codec can't decode byte". open() and pathlib's read_text/write_text/open both follow this."""
+    import io
+
+    guarded_open = builtins_dict["open"]
+
+    def open_utf8(file, mode="r", buffering=-1, encoding=None, *args, **kwargs):
+        if encoding is None and "b" not in mode:
+            encoding = "utf-8"
+        return guarded_open(file, mode, buffering, encoding, *args, **kwargs)
+
+    builtins_dict["open"] = open_utf8
+    io.text_encoding = lambda encoding, stacklevel=2: "utf-8" if encoding is None else encoding
+
+
 def _kill_quietly(proc) -> None:
     try:
         if proc.pid is not None and proc.is_alive():
@@ -140,6 +158,7 @@ class AsyncPythonExecute(PythonExecute):
             import builtins
 
             safe_globals["__builtins__"] = builtins.__dict__.copy()  # the copy made before the guard holds the unguarded open
+            _utf8_by_default(safe_globals["__builtins__"])
             import importlib
 
             for name in PRELOADED:  # the same (guarded) modules the code would get by importing them

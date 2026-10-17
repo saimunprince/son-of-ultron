@@ -217,6 +217,15 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### python_execute reads and writes UTF-8 (2026-10-17)
+
+- The open item of 2026-10-15: python_execute's `open()` wrote the Windows
+  code page (cp1252), which broke the quality checker on "78.37 \u00b0C", and
+  its reads of the repository's UTF-8 files had failed with "'charmap' codec
+  can't decode byte". In the python_execute child, `open()` and pathlib's
+  read_text/write_text now default to UTF-8; an encoding the code names is
+  kept (`test_python_execute_utf8.py`).
+
 ### A restart points the next attempt at the interrupted diff (2026-10-17)
 
 - 2026-10-15 18:50 the machine stopped while objective 267's release was in
