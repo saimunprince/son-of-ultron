@@ -198,6 +198,7 @@ def kinship(model: str, chosen: str) -> int:
 POOL_TRIES = 3
 POOL_CACHE_S = 6 * 3600.0
 POOL_MODEL_COOLDOWN_S = 300.0
+EMPTY_MODEL_COOLDOWN_S = 1800.0  # a model that answers nothing twice in a row rests longer than a rate-limited one
 
 
 PROVIDERS: Dict[str, Provider] = {
@@ -768,10 +769,18 @@ class BrainRouter(LLM):
                         if "empty response" not in str(e):
                             raise
                         logger.info(f"brain {pid} returned an empty reply, retrying once with low reasoning")
-                        msg = await self._call(
-                            pid, formatted, tools, tool_choice, images=True,
-                            extra={"reasoning_effort": "low"},
-                        )
+                        try:
+                            msg = await self._call(
+                                pid, formatted, tools, tool_choice, images=True,
+                                extra={"reasoning_effort": "low"}, model=self._model_for(pid),
+                            )
+                        except BrainError as again:
+                            # Live 2026-10-17: openrouter's chosen free model answered empty all morning, the
+                            # provider cooled down after each try, and upstage took the rest of quality run #46
+                            # (gemini had run out). A pooled provider tries its other models first.
+                            if "empty response" not in str(again) or not PROVIDERS[pid].pool:
+                                raise
+                            msg = await self._pool_model(pid, formatted, tools, tool_choice, again)
                     except APIStatusError as e:
                         # 502/503/504 blips are common; one quick retry beats
                         # falling over to a slower brain.
@@ -950,7 +959,8 @@ class BrainRouter(LLM):
         """The chosen model is rate limited: each model has its own free quota, so try the
         provider's other chat models (at most POOL_TRIES) before the provider fails over."""
         tried_model = self.last_model.get(pid) or self.store.model(pid)
-        self.model_cooldown[(pid, tried_model)] = time.time() + (_retry_after(original) or POOL_MODEL_COOLDOWN_S)
+        empty = isinstance(original, BrainError)
+        self.model_cooldown[(pid, tried_model)] = time.time() + (EMPTY_MODEL_COOLDOWN_S if empty else _retry_after(original) or POOL_MODEL_COOLDOWN_S)
         tries = 0
         for candidate in sorted(await self.pool_models(pid), key=lambda m: (-kinship(m, tried_model), m)):
             if tries >= POOL_TRIES:
@@ -966,8 +976,14 @@ class BrainRouter(LLM):
             except (NotFoundError, BadRequestError):
                 self.model_cooldown[(pid, candidate)] = time.time() + 3600.0
                 continue
+            except BrainError as e:
+                if "empty response" not in str(e):
+                    raise
+                self.model_cooldown[(pid, candidate)] = time.time() + EMPTY_MODEL_COOLDOWN_S
+                continue
             if self.pool_used.get(pid) != candidate:
-                await self._emit({"type": "notice", "text": f"{PROVIDERS[pid].label}: {tried_model} is out of free quota; answering with {candidate}."})
+                why = "answers empty" if empty else "is out of free quota"
+                await self._emit({"type": "notice", "text": f"{PROVIDERS[pid].label}: {tried_model} {why}; answering with {candidate}."})
             self.pool_used[pid] = candidate
             return msg
         raise original

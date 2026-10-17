@@ -217,6 +217,16 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### An empty model hands over within its provider's pool (2026-10-17)
+
+- On 10-17 openrouter answered nothing all morning: its chosen free model
+  (nemotron-3-ultra) returned empty replies, the provider cooled down after
+  each try, and upstage, the weakest brain, took the rest of quality run #46
+  once gemini ran out (20 calls). The pool only rotated on rate limits. A
+  pooled provider whose model answers empty twice (the second time with low
+  reasoning) now tries its other models before failing over, says so in a
+  notice, and lets the empty model rest half an hour (`test_pool_empty.py`).
+
 ### Quality run #46, and saying what a refusal left undone (2026-10-17)
 
 - Run #46 on e2c362a: 45/51 = 88.2 % (#43: 92.2 %), gemini then upstage.
