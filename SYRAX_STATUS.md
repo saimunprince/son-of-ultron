@@ -217,6 +217,19 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### A gate does not time out while the machine sleeps (2026-10-17)
+
+- Objective 274 (memory: a new value for the same subject replaces the old
+  one) passed its preflight and started the full gate at 13:45; the PC slept
+  from 13:48 to 14:57 (Windows log: Kernel-Power 42/107). On wake the
+  monotonic clock had moved past the pytest gate's 900 s, pytest was killed as
+  "timeout after 900.0s" (4322 s measured), the verification was BLOCKED and
+  the correct change was rolled back. The gate loop wakes every half second;
+  a gap over 30 s is time the machine slept and now extends the deadline
+  (`test_gate_sleep.py`). The day's two stall dumps (12:45, 13:33) were wakes
+  from sleep as well. Seventh own commit today: 5218b36 (self_inspect leads
+  with the running build).
+
 ### The HUD shows how long each answer took (2026-10-17)
 
 - Run #46's six failures were rerun on 6599ef4 (refusal acknowledgement,

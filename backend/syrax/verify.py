@@ -83,6 +83,9 @@ def _tail(text: str, lines: int = TAIL_LINES) -> str:
     return "\n".join(parts[-lines:])
 
 
+SLEEP_GAP_S = 30.0  # a gate loop iteration this late means the machine was asleep
+
+
 def _kill_tree(proc: "subprocess.Popen") -> None:
     """Stop a gate and everything it started (pytest runs skill tests in their own processes)."""
     try:
@@ -130,11 +133,19 @@ def run_gate(gate: Gate, cancel: Optional[threading.Event] = None) -> GateResult
             int((time.monotonic() - started) * 1000), f"cannot start: {e}", " ".join(cmd),
         )
     deadline = started + gate.timeout
+    last = time.monotonic()
     while True:
         try:
             stdout, stderr = proc.communicate(timeout=0.5)
             break
         except subprocess.TimeoutExpired:
+            now = time.monotonic()
+            if now - last > SLEEP_GAP_S:
+                # The loop wakes every half second; a longer gap is time the machine slept, not time the gate ran.
+                # Live 2026-10-17: the PC slept 69 minutes during objective 274's gate, pytest was killed as a
+                # "timeout after 900.0s" on wake, and a correct change was rolled back.
+                deadline += now - last
+            last = now
             stopped = cancel is not None and cancel.is_set()
             if stopped or time.monotonic() > deadline:
                 _kill_tree(proc)
