@@ -217,6 +217,18 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Nine own commits: self_inspect, memory, the watchdog (2026-10-17)
+
+- Three more of SYRAX's own changes landed from briefs whose tests were given
+  verbatim and dry-run through `covering_tests` first: 5218b36
+  (`self_inspect` leads with `Running build: <hash>`, after run #46's
+  self_version answer named an older hash than the JSON held), 0b42181
+  (memory: a new value for the same subject replaces the old one, an
+  observation still never overwrites the human; its first attempt lost its
+  gate to the machine's sleep), and c6342ec (the stall watchdog treats its
+  own frozen thread as the machine sleeping, not a stall). Nine own commits
+  in all, six of them on the first attempt.
+
 ### A gate does not time out while the machine sleeps (2026-10-17)
 
 - Objective 274 (memory: a new value for the same subject replaces the old

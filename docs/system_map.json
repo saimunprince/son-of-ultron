@@ -627,7 +627,7 @@
       ],
       "limitations": [
         "keyword recall, no embeddings",
-        "observations leave the prompt after 30 days (SYRAX's own change 6afccd1); facts, preferences and rules never expire; no contradiction handling"
+        "observations leave the prompt after 30 days (6afccd1); facts, preferences and rules never expire; a new value for the same subject (the words before is/are/was/were) replaces the old one (0b42181); other contradictions are not detected"
       ],
       "code": [
         "backend/syrax/memory.py"
