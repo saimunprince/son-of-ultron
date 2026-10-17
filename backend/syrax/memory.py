@@ -65,6 +65,13 @@ def _words(text: str) -> set:
     return {w for w in re.findall(r"[\w']+", text.lower()) if len(w) > 2}
 
 
+def _subject(text: str) -> Optional[tuple]:
+    m = re.match(r"(.+?)\s+(?:is|are|was|were)\s+", text, re.I)
+    if not m:
+        return None
+    return tuple(sorted(_words(m.group(1)))) or None
+
+
 def _atomic_write(path: Path, data: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -133,6 +140,13 @@ class MemoryStore:
             new = _words(text)
             for f in self.facts():
                 old = _words(f["text"])
+                subj_new = _subject(text)
+                subj_old = _subject(f["text"])
+                if subj_new is not None and subj_new == subj_old and text != f["text"]:
+                    if f.get("type") != "observation" and kind == "observation":
+                        return f"Kept what the human said: {f['text']} (an observation never overwrites it)"
+                    j.update_knowledge_claim_sync(int(f["id"]), text)
+                    return f"Updated memory: {f['text']} -> {text}"
                 if old and new and len(old & new) / max(1, len(old | new)) > 0.8:
                     if f.get("type") != "observation" and kind == "observation":
                         return f"Kept what the human said: {f['text']} (an observation never overwrites it)"
