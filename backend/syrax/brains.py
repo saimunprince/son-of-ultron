@@ -760,6 +760,7 @@ class BrainRouter(LLM):
                     continue
                 formatted = self._format(messages, system_msgs, PROVIDERS[pid].vision)
                 try:
+                    started = time.monotonic()
                     try:
                         msg = await self._call(pid, formatted, tools, tool_choice, images=True, model=self._model_for(pid))
                     except BrainError as e:
@@ -801,6 +802,7 @@ class BrainRouter(LLM):
                         "provider": pid,
                         "label": PROVIDERS[pid].label,
                         "model": self.last_model.get(pid) or self.store.model(pid),
+                        "ms": round((time.monotonic() - started) * 1000),
                     }
                 )
                 return msg
