@@ -1,13 +1,66 @@
 # SYRAX devlog
 
-Generated 2026-10-15 10:30 +0600 by `python -m syrax.devlog` at commit `b3be3c2`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+Generated 2026-10-17 10:49 +0600 by `python -m syrax.devlog` at commit `09e97df`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+
+## 2026-10-17
+
+- Tasks: 4 finished, 0 failed (315 journal events).
+- Objectives closed: 4
+  - #267 Brain latency. Three steps, one apply_patch each, then one release. (1) backend/syrax/brai
+  - #268 My biggest measured limitation right now: Self-model: performance history: task durations 
+  - #269 My biggest measured limitation right now: Research engine + knowledge store: keyword overl
+  - #270 My biggest measured limitation right now: Research engine + knowledge store: only web and 
+- Incidents: interrupted 1, rollbacks 1, restarts 1.
+- Commits SYRAX made to itself: 1
+  - `09e97df` syrax: Add ms timing to BrainRouter.ask_tool answered events
 
 ## 2026-10-15
 
-- Tasks: 2 finished, 0 failed (243 journal events).
-- Objectives closed: 1
+- Tasks: 92 finished, 12 failed (5024 journal events).
+- Objectives closed: 21
   - #230 The `python_execute` tool failed on its last use. Diagnose why, then call it again with a 
-- Incidents: interrupted 1, rollbacks 1.
+  - #233 The `python_execute` tool failed on its last use. Diagnose why, then call it again with a 
+  - #235 The `python_execute` tool failed on its last use. Diagnose why, then call it again with a 
+  - #236 The `journal_query` tool failed on its last use. Diagnose why, then call it again with a h
+  - #234 The last verification run was BLOCKED (failing gates: pytest). Investigate the failure out
+  - #247 Memory expiry for inferences. In backend/syrax/memory.py, MemoryStore.prompt_block must le
+  - #238 My biggest measured limitation right now: Self-model: GPU is not probed. Improve it. Plan:
+  - #243 My biggest measured limitation right now: Self-model: system_map.json is hand-audited and 
+- Quality run #45: 100.0 % of 4 cases.
+- Incidents: stalls 1, interrupted 1, rollbacks 14, claims sent back 2, restarts 17.
+- Commits SYRAX made to itself: 5
+  - `92c3bd1` syrax: Add tool_ms performance metrics to SelfModel and test suite
+  - `162fd71` syrax: Add task_seconds aggregation to SelfModel.performance() grouped by task kind with count, p50,
+  - `f32efc2` syrax: Self-model: Probe GPU using sysinfo.gpu() and cache the result
+  - `6afccd1` syrax: Memory expiry for observations older than 30 days in MemoryStore.prompt_block
+  - `e6f0ed3` syrax: docs(rise): the ledger, the devlog and the capability matrix, regenerated from evidence
+- Commits by its maintainers: 29
+  - `60dbf24` fix(selfedit): a patch refusal names the file that does not match; own work's 'successfully added' i
+  - `825dd68` fix(agent): a pass claimed after the task's tests failed is sent back, then replaced
+  - `9932b91` fix(selfedit): git-style diffs keep their headers per file; a failed apply changes nothing
+  - `bcdc77c` fix(quality): the checker's file read keeps read_text's newlines
+  - `2354a27` docs: SYRAX's fourth own change (92c3bd1); the map's performance limitation follows
+  - `250bae7` fix(quality): a checker error fails its case, never the run; read task files in the code page they w
+  - `a1214da` fix(journal): objective reads that grew past their limits
+  - `31659fd` fix(agent): a claim that survives its honest rewrite never becomes the task's result
+  - `0045643` docs: SYRAX's second and third own changes (f32efc2, 162fd71); the map's self-model limitations foll
+  - `9b2ebaa` fix(quality): wait for a busy core, compare like with like; the cycle yields to a run that just star
+  - `f9de92a` fix(journal): input a tool cannot act on is the caller's mistake, for skills too
+  - `5a9f490` fix(devloop): name an existing failing test as the contract; the self-model may report its GPU
+  - `df02faf` fix(agent): a request that names a tool gets one reminder when the task never called it
+  - `e95b58a` docs(system-map): limitations re-checked against the code
+  - `e80a764` docs(status): SYRAX's first own change landed through the full pipeline (6afccd1)
+  - `2ef6623` fix(followup): no learning objective for a learning objective; a blocked one drops the retry waiting
+  - `99e62a5` fix(autonomy): a task no brain answered is not an attempt; the restart check leaves the event loop
+  - `9f612b4` fix(review): ask every usable brain before rolling back unreviewed; tell the agent why
+  - `b43672b` fix(journal): a caller's mistake is not the tool failing
+  - `58aef24` fix(devloop): an own release refuses a new test that asserts nothing
+  - `ac1bce0` fix(journal): a refused call is no use and no failure of the tool; the matrix names failing tests
+  - `3fae178` fix(selfedit): show the failing assertion, not the warnings; isolation survives monkeypatch.undo()
+  - `3711e87` fix(autonomy): a gate that blocked an own candidate makes no investigate objective
+  - `0389893` feat(devloop): SYRAX's own release runs the covering tests before the gate
+  - `6dd9cd2` fix(selfedit): --recount only file by file, after the diff as written
+  - and 4 more
 
 ## 2026-10-14
 

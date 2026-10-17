@@ -1,6 +1,6 @@
 # SYRAX rise ledger
 
-Generated 2026-10-15 10:30 by `python -m syrax.rise` at commit `b3be3c2` from the journal (29759 events, 2026-09-30 15:18 to 2026-10-15 10:30). Every number is a read-only query over the journal; nothing here is typed by hand. **Last** is the last 7 days, **previous** the 7 days before, **trend** compares the two in the metric's own better direction. A dash means there is no evidence, which is reported as such.
+Generated 2026-10-17 10:49 by `python -m syrax.rise` at commit `09e97df` from the journal (34855 events, 2026-09-30 15:18 to 2026-10-17 10:49). Every number is a read-only query over the journal; nothing here is typed by hand. **Last** is the last 7 days, **previous** the 7 days before, **trend** compares the two in the metric's own better direction. A dash means there is no evidence, which is reported as such.
 
 The milestones in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) are judged by these numbers.
 
@@ -8,11 +8,11 @@ The milestones in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) are judged by these num
 
 | Metric | Last | Previous | All time | Better when | Trend |
 |---|---|---|---|---|---|
-| Quality suite pass rate | 100 % (run #42, 10 cases) | 92.9 % (run #23, 14 cases) | 100 % (run #42, 10 cases) | higher | better |
-| Machine-checked objectives done | 93.1 % (108/116) | 95.2 % (59/62) | 94.4 % (187/198) | higher | worse |
-| Attempts per objective done | 1 (median of 108) | 1 (median of 59) | 1 (median of 187) | lower | same |
-| Tool calls that failed | 15.4 % (311/2013) | 7.9 % (56/707) | 13.4 % (389/2896) | lower | worse |
-| Own tasks left unfinished | 5.3 % (11/206) | 2.2 % (2/90) | 5.5 % (17/310) | lower | worse |
+| Quality suite pass rate | 92.2 % (run #43, 51 cases) | 92.9 % (run #23, 14 cases) | 92.2 % (run #43, 51 cases) | higher | worse |
+| Machine-checked objectives done | 93.9 % (123/131) | 93.2 % (41/44) | 95 % (211/222) | higher | better |
+| Attempts per objective done | 1 (median of 123) | 1 (median of 41) | 1 (median of 211) | lower | same |
+| Tool calls that failed | 15.4 % (380/2464) | 5.5 % (23/417) | 13.4 % (460/3434) | lower | worse |
+| Own tasks left unfinished | 11.9 % (29/243) | 4.8 % (3/62) | 10 % (36/359) | lower | worse |
 
 - **Quality suite pass rate**: Latest full quality run (at least 10 cases) in the window: real tasks through the real brains, judged by checks on disk and in the journal.
 - **Machine-checked objectives done**: Objectives closed in the window whose check is evidence (not task_success): DONE out of DONE + BLOCKED.
@@ -24,12 +24,12 @@ The milestones in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) are judged by these num
 
 | Metric | Last | Previous | All time | Better when | Trend |
 |---|---|---|---|---|---|
-| Commits SYRAX made to itself | 5 | 1 | 6 | higher | better |
-| Releases that landed | 12.8 % (5/39) | 16.7 % (1/6) | 12.8 % (6/47) | higher | worse |
-| Own edits in the running tree | 41 | 10 | 52 | lower | worse |
-| Changes rolled back | 48 | 7 | 56 | lower | worse |
-| Changes a second brain rejected | 0 | 0 | 0 | - | — |
-| Experiments run | 44 | 0 | 44 | higher | better |
+| Commits SYRAX made to itself | 10 | 2 | 12 | higher | better |
+| Releases that landed | 16.4 % (10/61) | 33.3 % (2/6) | 17.1 % (12/70) | higher | worse |
+| Own edits in the running tree | 27 | 19 | 52 | lower | worse |
+| Changes rolled back | 61 | 3 | 70 | lower | worse |
+| Changes a second brain rejected | 1 | 0 | 1 | - | — |
+| Experiments run | 67 | 0 | 67 | higher | better |
 
 - **Commits SYRAX made to itself**: commit.created: a change that passed the gate, a second brain's review, and was committed by SYRAX's release.
 - **Releases that landed**: commit.created out of release calls in the window.
@@ -42,9 +42,9 @@ The milestones in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) are judged by these num
 
 | Metric | Last | Previous | All time | Better when | Trend |
 |---|---|---|---|---|---|
-| Conclusions stored | 223 | 188 | 439 | - | — |
-| Conclusions read back | 52 | 23 | 81 | higher | better |
-| Conclusions reinforced or contradicted | 3 | 1 | 4 | - | — |
+| Conclusions stored | 272 | 143 | 517 | - | — |
+| Conclusions read back | 71 | 12 | 100 | higher | better |
+| Conclusions reinforced or contradicted | 6 | 1 | 7 | - | — |
 
 - **Conclusions stored**: knowledge.stored events (verified conclusions with sources).
 - **Conclusions read back**: Stored conclusions whose last use falls in the window: memory that was used, not only kept.
@@ -54,11 +54,11 @@ The milestones in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) are judged by these num
 
 | Metric | Last | Previous | All time | Better when | Trend |
 |---|---|---|---|---|---|
-| Final answers claiming work not done | 9 | 9 | 18 | lower | same |
-| False claims sent back | 9 | 0 | 9 | - | — |
-| Objectives closed on words | 0 % (0/108) | 3.3 % (2/61) | 1.1 % (2/189) | lower | better |
-| Gate verdicts GREEN | 33.3 % (7/21) | 100 % (1/1) | 39.1 % (9/23) | higher | worse |
-| Guards that held | 50 | 3 | 53 | - | — |
+| Final answers claiming work not done | 9 | 4 | 21 | lower | worse |
+| False claims sent back | 11 | 0 | 11 | - | — |
+| Objectives closed on words | 0 % (0/123) | 4.7 % (2/43) | 0.9 % (2/213) | lower | better |
+| Gate verdicts GREEN | 46.4 % (13/28) | 100 % (2/2) | 51.6 % (16/31) | higher | worse |
+| Guards that held | 73 | 2 | 76 | - | — |
 
 - **Final answers claiming work not done**: Own tasks whose final answer claims a change (the agent's CLAIM and OWN_WORK_CLAIM patterns) while the task changed, committed and learned nothing.
 - **False claims sent back**: claim.rejected: a final answer claimed work its task did not do and was sent back to be rewritten (journaled since M3).
@@ -70,6 +70,6 @@ The milestones in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) are judged by these num
 
 | Metric | Last | Previous | All time | Better when | Trend |
 |---|---|---|---|---|---|
-| Days since the capability matrix was generated | 1 | — | 1 | lower | — |
+| Days since the capability matrix was generated | 2 | — | 2 | lower | — |
 
 - **Days since the capability matrix was generated**: Age of docs/CAPABILITY_MATRIX.md at the end of the window, from its own header.
