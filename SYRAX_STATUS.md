@@ -217,6 +217,17 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### SYRAX's fifth own commit, and a check that names its files (2026-10-17)
+
+- Objective 267 (brain latency, three steps): SYRAX released step 1 alone,
+  `"ms"` on every answered brain event (09e97df, gate #31 GREEN, review
+  approved), then stalled on selfmodel.py (the same edit five times, loop
+  stop). The objective still counted as DONE: change_released was met by any
+  commit of its own. A change_released check may now name `files`; it is
+  met only when the objective's commits, together, changed all of them, the
+  brief says so, and the judge's evidence lists what is missing
+  (`test_change_files.py`). Steps 2 and 3 are a new objective with that check.
+
 ### python_execute reads and writes UTF-8 (2026-10-17)
 
 - The open item of 2026-10-15: python_execute's `open()` wrote the Windows

@@ -599,7 +599,12 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
                 if e["type"] == "cycle.completed" and e["payload"].get("objective_id") == objective.get("id") and e["payload"].get("task_id")}
         # a task-less commit event (recorded from outside any task) keeps counting
         commits = [e for e in window if e["type"] == "commit.created" and (e.get("task_id") is None or e.get("task_id") in ids)]
-        return ("DONE" if commits else "RETRY"), {"commits": [e["payload"].get("commit") for e in commits][:5], "tasks": sorted(ids)}
+        # A check that names files is met only when this objective's commits, together, changed every one of them.
+        # Live 2026-10-17 (objective 267): step 1 of three landed alone (09e97df) and any commit counted as DONE.
+        touched = {f for e in commits for f in (e["payload"].get("files") or [])}
+        missing = [f for f in spec.get("files") or [] if f not in touched]
+        return ("DONE" if commits and not missing else "RETRY"), {"commits": [e["payload"].get("commit") for e in commits][:5],
+                                                                 "tasks": sorted(ids), **({"missing_files": missing} if missing else {})}
     if kind in ("file_present", "file_absent"):
         # a world-state check: the file must be inside the repository or the
         # workspace, and a present file counts only if it changed after the
@@ -853,6 +858,9 @@ class Autonomy:
         )
         spec = objective.get("check_spec") or {}
         hint = BRIEF_HINTS.get(spec.get("kind", ""), "").format(**{k: v for k, v in spec.items() if isinstance(v, str)})
+        if spec.get("kind") == "change_released" and spec.get("files"):
+            hint += (" It is done only when your released commits, together, change: " + ", ".join(spec["files"])
+                     + "; a release of part of it is progress, not the end.")
         from syrax.devloop import REPO_ROOT
 
         steps_before = await asyncio.to_thread(plan.status, self.journal, objective, plan.task_ids_of(objective))

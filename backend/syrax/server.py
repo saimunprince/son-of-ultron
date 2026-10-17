@@ -328,6 +328,11 @@ def objective_check_problem(check: Optional[dict]) -> Optional[str]:
         from syrax.autonomy import check_path
         if check_path(check.get("path")) is None:
             return "path must be inside the repository (or backend/workspace)"
+    if kind == "change_released" and "files" in check:
+        files = check.get("files")
+        if not isinstance(files, list) or not files or not all(isinstance(f, str) and f and not f.startswith(("/", "\\")) and ":" not in f
+                                                                and ".." not in f.replace("\\", "/").split("/") for f in files):
+            return "files must be a non-empty list of repository-relative paths"
     return None
 
 
