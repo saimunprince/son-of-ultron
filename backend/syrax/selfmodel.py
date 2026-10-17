@@ -339,9 +339,33 @@ class SelfModel:
                 "p90": int(round(msecs_sorted[max(0, min(p90_idx, n - 1))])),
             }
 
+        brain_durations: Dict[str, List[int]] = {}
+        for ev in events:
+            if ev.get("type") == "brain.answered":
+                payload = ev.get("payload", {})
+                provider = payload.get("provider")
+                ms = payload.get("ms")
+                if provider and isinstance(ms, (int, float)):
+                    brain_durations.setdefault(str(provider), []).append(int(ms))
+
+        brain_ms = {}
+        for provider, msecs in brain_durations.items():
+            if not msecs:
+                continue
+            msecs_sorted = sorted(msecs)
+            n = len(msecs_sorted)
+            p50_idx = math.ceil(0.5 * n) - 1
+            p90_idx = math.ceil(0.9 * n) - 1
+            brain_ms[provider] = {
+                "count": n,
+                "p50": int(round(msecs_sorted[max(0, min(p50_idx, n - 1))])),
+                "p90": int(round(msecs_sorted[max(0, min(p90_idx, n - 1))])),
+            }
+
         return {
             "task_seconds": task_seconds,
             "tool_ms": tool_ms,
+            "brain_ms": brain_ms,
             "last_benchmark": (
                 {"id": last["id"], "ts": last["ts"], "status": last["status"], "git_head": last["git_head"], "metrics": last["metrics"],
                  "regressions": [k for k, d in last["deltas"].items() if d.get("regression")]}
