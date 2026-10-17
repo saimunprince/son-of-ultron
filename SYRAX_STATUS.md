@@ -217,6 +217,14 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### The HUD shows how long each answer took (2026-10-17)
+
+- Run #46's six failures were rerun on 6599ef4 (refusal acknowledgement,
+  repo_map file matches, pool rotation on empty answers): 6/6 PASS on gemini.
+- Every answered brain event carries `ms` since SYRAX's own 09e97df; the HUD
+  now keeps the last one and the BRAIN row reads e.g. `GEMINI-3.5-FLASH-LITE
+  · 1.2S · 4/6` (`hud/brain_ms.test.js`).
+
 ### An empty model hands over within its provider's pool (2026-10-17)
 
 - On 10-17 openrouter answered nothing all morning: its chosen free model

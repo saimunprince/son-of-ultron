@@ -22,7 +22,7 @@
       state: 'offline', tool: null, phase: null, step: 0, task: null, pendingAsk: null,
       lastReply: null, lastReplyAt: 0,
       cog: [], log: [],
-      brain: { active: null, model: null, ready: 0, total: 0 },
+      brain: { active: null, model: null, ready: 0, total: 0, ms: null },
       autonomy: null, tools: [], toolLevels: {},
       memories: null, objectives: null, skills: null, quality: null,
       counters: { tasks: 0, toolsOk: 0, toolsFailed: 0, refused: 0, commits: 0, rollbacks: 0, claims: 0 },
@@ -69,6 +69,7 @@
       }
       case 'brain':
         if (e.event === 'answered' && e.model) s.brain.model = e.model;
+        if (e.event === 'answered' && typeof e.ms === 'number') s.brain.ms = e.ms;  // how long that answer took (09e97df)
         if (e.event === 'failover') log('BRAIN FAILOVER → ' + (e.to || e.brain || '?').toUpperCase());
         break;
       case 'state':

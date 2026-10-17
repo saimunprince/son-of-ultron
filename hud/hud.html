@@ -1509,7 +1509,8 @@ function live(t) {
     L.window && L.tool ? ['TARGET', (L.window.process.replace(/\.exe$/i, '') + (L.window.title ? ' · ' + L.window.title : '')).toUpperCase().slice(0, 30), 1]
       : [L.task && L.task.kind === 'autonomous' ? 'OWN WORK' : L.task && L.task.kind === 'eval' ? 'QUALITY' : 'TASK',
          L.task ? L.task.goal.toUpperCase().slice(0, 26) : '—', L.task && L.task.kind === 'autonomous'],
-    ['BRAIN', (L.brain.model || '—').toUpperCase().slice(0, 22) + (L.brain.total ? ` · ${L.brain.ready}/${L.brain.total}` : '')],
+    ['BRAIN', (L.brain.model || '—').toUpperCase().slice(0, 22) + (L.brain.ms != null ? ` · ${(L.brain.ms / 1000).toFixed(1)}S` : '')
+      + (L.brain.total ? ` · ${L.brain.ready}/${L.brain.total}` : '')],
     ['BUILD', (L.version || '—') + ' · UP ' + pad(cu / 3600 | 0, 2) + ':' + pad(cu / 60 % 60 | 0, 2) + ':' + pad(cu % 60, 2) + (L.restartPending ? ' · NEWER ON DISK' : '')],
     ['SELF', `${L.objectives ?? '—'} OBJ · ${L.skills ?? '—'} SKILLS · ${L.memories ?? '—'} MEM`],
     ['QUALITY', (L.quality != null ? L.quality + '%' : '—') + ' · AUTONOMY ' + (L.autonomy ? (L.autonomy.enabled ? 'ON' : 'OFF') + (L.autonomy.cycles != null ? ' ' + L.autonomy.cycles : '') : '—'), !!(L.autonomy && L.autonomy.enabled)],
