@@ -143,19 +143,19 @@ def same_name(path: Path, root: Optional[Path] = None, limit: int = 5) -> List[s
 
 
 def close_names(path: Path, root: Optional[Path] = None, limit: int = 3) -> List[str]:
-    out: List[str] = []
+    """Files whose name is close to the one asked for (same suffix, similarity at least 0.8), closest first.
+    Quality run #48 (fix_import): the folder held helperz.py and the brain, told only that helpers.py does not
+    exist, wrote a new helpers.py instead of fixing the import."""
+    want = path.name.lower()
     scored: List[Tuple[float, str]] = []
     for here, dirs, files in os.walk(root or REPO_ROOT):
         dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS)
         for f in files:
-            if f.lower() != path.name.lower() and Path(f).suffix.lower() == path.suffix.lower():
-                ratio = difflib.SequenceMatcher(None, path.name.lower(), f.lower()).ratio()
+            if f.lower() != want and Path(f).suffix.lower() == path.suffix.lower():
+                ratio = difflib.SequenceMatcher(None, want, f.lower()).ratio()
                 if ratio >= 0.8:
                     scored.append((-ratio, str(Path(here) / f)))
-    scored.sort()
-    for _, p in scored:
-        out.append(p)
-    return out[:limit]
+    return [p for _, p in sorted(scored)[:limit]]
 
 
 class KeepEolOperator(LocalFileOperator):
@@ -282,7 +282,8 @@ class SyraxEditor(StrReplaceEditor):
         if others:
             hint = " Files with that name: " + "; ".join(others) + "."
         else:
-            hint = f" No file named {original.name} exists in the repository." + (((" Close names: " + "; ".join(close_names(original, root=original.anchor and Path(original.anchor) or None)) + ".") if False else "") + (lambda c: f" Close names: " + "; ".join(c) + "." if c else "")(close_names(original)))
+            close = close_names(original)
+            hint = f" No file named {original.name} exists in the repository." + (" Close names: " + "; ".join(close) + "." if close else "")
         raise ToolError(f"The path {original} does not exist.{hint}")
 
     @staticmethod

@@ -217,6 +217,30 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Three own commits from quality run #48 (2026-10-19)
+
+- Quality run #48 (full, 56dc711, gemini) passed 44 of 51. Four of the seven
+  failures were self_patch cases where the brain called `release` although
+  the prompt said "Do not call release." The cause was SYRAX's own code:
+  `named_tools` read "Do not call release" as a request for `release`, so
+  after the answer `NAMED_NUDGE` told the brain to call it. SYRAX's own
+  objectives for those cases (283, 284) tried to make the case's probe edit
+  for real; the release gate refused that ("an objective to make a case pass
+  changes SYRAX's behaviour, never the files the case works on").
+- Three of SYRAX's own changes followed, each from a brief whose test was given
+  verbatim and dry-run first, each on its first attempt:
+  - 7c55302: apply_patch answers "TESTS NOT RUN" when no test covers the
+    change (it said "TESTS PASS: no covering tests found", which the agent
+    counted as a pass), and its description no longer says "Then call
+    `release`" unconditionally.
+  - a26aae2: a tool the human forbids ("do not call", "don't use",
+    "without using") is not a tool the human asks for.
+  - 2431cec: a missing file's error names files with a close name
+    (fix_import: the brain wrote its own helpers.py because nothing pointed
+    it at helperz.py). The hint line was made readable afterwards by hand.
+- Quality run #50 on a26aae2 (gemini): 9 of 9, all five self_patch cases,
+  fix_import, restraint and act_concise. Thirteen own commits in all.
+
 ### The output before sys.exit is kept; five more caller mistakes (2026-10-19)
 
 - SYRAX's tenth own change, 56dc711 (the editor reads an untracked file
