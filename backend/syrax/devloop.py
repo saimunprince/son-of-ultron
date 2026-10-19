@@ -66,7 +66,11 @@ def remove_worktree(worktree: Path, live_root: Path) -> None:
 
 
 def _git(args: Sequence[str], cwd: Path, timeout: float = 60) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=timeout)
+    """git with its output read as UTF-8. Live 2026-10-19: the daily ledger release failed with "unsupported operand
+    type(s) for +: 'NoneType' and 'str'": on Windows text mode read the diff as cp1252, a UTF-8 byte (0x90) killed
+    the reader thread, and stdout came back None."""
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=timeout)
 
 
 def changed_files(root: Path) -> Dict[str, str]:
@@ -410,7 +414,7 @@ class DevLoop:
             if st == "??":
                 p = self.root / path
                 try:
-                    body = p.read_text(errors="replace")
+                    body = p.read_text(encoding="utf-8", errors="replace")
                 except (OSError, UnicodeDecodeError):
                     continue
                 untracked_text += f"+++ b/{path}\n" + "\n".join("+" + ln for ln in body.splitlines()) + "\n"
@@ -421,7 +425,7 @@ class DevLoop:
         for path in files:
             if path.endswith(".py") and (self.root / path).is_file():
                 try:
-                    compile((self.root / path).read_text(errors="replace"), str(path), "exec")  # syntax only, no .pyc written
+                    compile((self.root / path).read_text(encoding="utf-8", errors="replace"), str(path), "exec")  # syntax only, no .pyc written
                 except SyntaxError as e:
                     broken.append(f"{path}: line {e.lineno}: {e.msg}")
         if broken:
@@ -464,10 +468,10 @@ class DevLoop:
         body = info["diff"]
         for rel in info["untracked"]:
             try:
-                body += f"\n# untracked: {rel}\n" + (self.root / rel).read_text(errors="replace")
+                body += f"\n# untracked: {rel}\n" + (self.root / rel).read_text(encoding="utf-8", errors="replace")
             except OSError:
                 pass
-        path.write_text(body)
+        path.write_text(body, encoding="utf-8", newline="\n")  # a diff holding "\u2190" could not be written as cp1252 (2026-10-19)
         return path
 
     def rollback(self, info: Dict[str, Any]) -> Dict[str, Any]:

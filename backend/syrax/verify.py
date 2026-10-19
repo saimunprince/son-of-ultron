@@ -261,7 +261,7 @@ def diff_scan(root: Path = REPO_ROOT) -> Tuple[bool, str]:
                 findings.append(f"{rel}: untracked file over 5MB")
                 continue
             if p.suffix in DEBUG_PATTERNS or p.suffix in (".py", ".ts", ".tsx", ".js"):
-                text = p.read_text(errors="replace")
+                text = p.read_text(encoding="utf-8", errors="replace")
                 pseudo = "+++ b/" + rel + "\n" + "\n".join("+" + ln for ln in text.splitlines())
                 findings.extend(scan_diff_text(pseudo))
         except OSError:
@@ -312,7 +312,8 @@ def frontend_gate(frontend: Path, cmd: Sequence[str], timeout: float = 900.0) ->
     """A frontend gate run in another tree (a worktree), with the shared modules linked in."""
     def run() -> Tuple[bool, str]:
         with shared_node_modules(frontend):
-            proc = subprocess.run(list(cmd), cwd=str(frontend), capture_output=True, text=True, timeout=timeout)
+            proc = subprocess.run(list(cmd), cwd=str(frontend), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                                  timeout=timeout)
         return proc.returncode == 0, (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
     return run
 
@@ -339,7 +340,8 @@ def isolated_next_build(frontend: Path = FRONTEND_ROOT, timeout: float = 1200.0)
         if cache.is_dir():  # reuse the local build cache (Google Fonts are fetched at build time; the cache makes the gate offline-safe)
             (scratch / ".next").mkdir(exist_ok=True)
             _link_tree(cache, scratch / ".next" / "cache")
-        proc = subprocess.run([_npx(), "next", "build"], cwd=str(scratch), capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run([_npx(), "next", "build"], cwd=str(scratch), capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=timeout)
         out = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
         return proc.returncode == 0, out
     finally:

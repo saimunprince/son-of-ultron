@@ -121,7 +121,13 @@ async def publish(journal: Journal, root: Path = REPO_ROOT, gates: Optional[Call
         report = await dl.release(SUMMARY_WITH_MATRIX if counts else SUMMARY, dict(PLAN))
         report["matrix"] = counts
     except Exception as e:
-        report = {"outcome": "FAILED", "error": str(e)[:300]}
+        # 2026-10-19: "unsupported operand type(s) for +: 'NoneType' and 'str'" alone did not say where; the
+        # journal keeps the exception's type and the line it came from.
+        import traceback
+
+        last = traceback.extract_tb(e.__traceback__)[-1:] or [None]
+        where = f" at {Path(last[0].filename).name}:{last[0].lineno}" if last[0] else ""
+        report = {"outcome": "FAILED", "error": f"{type(e).__name__}: {e}{where}"[:400]}
     finally:
         await asyncio.to_thread(dl.discard)
     outcome = str(report.get("outcome"))

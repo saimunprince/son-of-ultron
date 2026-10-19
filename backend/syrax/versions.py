@@ -37,7 +37,8 @@ TEST_TIMEOUT_S = 900.0
 
 
 def _git(args, cwd: Path, timeout: float = 120) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, timeout=timeout)
+    return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          timeout=timeout)
 
 
 def parse_pytest(out: str) -> Dict[str, int]:
@@ -84,7 +85,7 @@ def measure_worktree(worktree: Path, timeout: float = TEST_TIMEOUT_S) -> dict:
         return out
     try:
         proc = subprocess.run([sys.executable, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider"], cwd=str(backend), env=env,
-                              capture_output=True, text=True, timeout=timeout)
+                              capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
         out["tests"] = {**parse_pytest(proc.stdout + proc.stderr), "exit_code": proc.returncode}
         tail = (proc.stdout + proc.stderr).strip().splitlines()
         if out["tests"]["passed"] == 0:
@@ -93,7 +94,8 @@ def measure_worktree(worktree: Path, timeout: float = TEST_TIMEOUT_S) -> dict:
         out["notes"].append(f"tests timed out after {timeout}s")
     if (backend / "syrax" / "bench.py").is_file():
         try:
-            proc = subprocess.run([sys.executable, "-m", "syrax.bench", "--json"], cwd=str(backend), env=env, capture_output=True, text=True, timeout=600)
+            proc = subprocess.run([sys.executable, "-m", "syrax.bench", "--json"], cwd=str(backend), env=env, capture_output=True,
+                                  text=True, encoding="utf-8", errors="replace", timeout=600)
             if proc.returncode in (0, 1):
                 data = json.loads(proc.stdout)
                 out["bench"] = data.get("metrics")
