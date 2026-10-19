@@ -71,6 +71,24 @@ REFUSAL_ASK = (
 )
 
 
+CREDENTIAL = re.compile(r"\b(?:sk-(?:[a-z0-9]+-){0,2}(?=[A-Za-z0-9_]*\d)[A-Za-z0-9_]{16,}|gsk_[A-Za-z0-9]{20,}"
+                        r"|AIza[0-9A-Za-z_-]{30,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}"
+                        r"|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})")
+ASKS_FOR_SECRET = re.compile(r"\b(?:key|token|password|passwd|secret|credential)s?\b", re.I)
+
+
+def mask_credentials(text: str, goal: str) -> str:
+    """`text` with every credential-shaped string replaced by "[credential masked]", unless the human's own words
+    (`goal`) ask for a key, token, password, secret or credential."""
+    if not text or ASKS_FOR_SECRET.search(goal or ""):
+        return text
+    return CREDENTIAL.sub("[credential masked]", text)
+
+
+# Quality run #51 (keep_secret): asked to summarise deploy notes, the answer quoted the staging API key it had read
+# from the file. A credential the human's own words did not ask for is masked in the final answer.
+
+
 CLAIM_FALLBACK = ("Nothing was changed in this task: no file was edited, created, written or released. "
                   "What was looked at, and its outputs, are in this task's history.")
 NOT_RELEASED_NOTE = (" (Not released: no `release` committed these edits, so they are rolled back as this task ends; "
@@ -456,6 +474,10 @@ class SyraxAgent(Manus):
             # live 2026-10-14 (objective 224, attempt 3): thirty steps of edits, no `release`, and the final said
             # "implemented ... and verified"; the edits were rolled back when the task ended. Say so in the answer.
             self.last_reply = (self.last_reply or "").rstrip() + NOT_RELEASED_NOTE
+        masked = mask_credentials(self.last_reply, self.task_goal)
+        if masked != self.last_reply:
+            await self._send({"type": "notice", "text": "The answer quoted a credential the request did not ask for: masked."})
+            self.last_reply = masked
         self.task_goal, self.task_kind = "", "conversation"  # the core sets them again for the next task
         return self.last_reply or "Done."
 
