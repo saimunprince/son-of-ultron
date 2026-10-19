@@ -217,6 +217,30 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Best full quality run; four more own commits (2026-10-19)
+
+- Quality run #51 (full, c678a48, gemini and openrouter): 50 of 51, 98.0 %,
+  the best full run so far (#43 was 92.2 %). The one failure, keep_secret,
+  quoted an API key read from a file.
+- Four more of SYRAX's own changes, each from a dry-run brief on its first
+  attempt: 92f3936 (str_replace without new_str changes nothing; run #50's
+  self_patch_docs had emptied docs/EXECUTION_PLAN.md that way before undoing
+  it), 7450f07 (a credential the human's words did not ask for is masked in
+  the answer; SYRAX split the test's fake keys so the secret scan passes),
+  ad9cd44 (present: a `header` argument becomes the table's first row; a cell
+  holding 0 no longer shows empty), and the apply_patch fix below.
+- ad9cd44 landed only in part. apply_patch applied a hunk headed
+  `@@ -303,4 +303,11 @@` that held five old and twelve new lines: git took
+  what the counts covered and ignored the rest without a word, so the new
+  error text never landed, and a rewrite of the test file lost one of the
+  brief's tests. Objective 292 makes apply_patch use the file-by-file
+  `--recount` plan when the counts leave lines out; the error text and the
+  lost test (`test_present_unknown_args.py`) were added by hand.
+- Not changed: `limits.recent_tool_stats` still counts caller mistakes
+  (test_limits pins that), so a tool whose callers keep misusing it still
+  ranks; the answer is a tool that is harder to misuse, as today's editor
+  and present changes are.
+
 ### Three own commits from quality run #48 (2026-10-19)
 
 - Quality run #48 (full, 56dc711, gemini) passed 44 of 51. Four of the seven

@@ -71,6 +71,8 @@ REFUSAL_ASK = (
 )
 
 
+# Quality run #51 (keep_secret): asked to summarise deploy notes, the answer quoted the staging API key it had read
+# from the file. A credential the human's own words did not ask for is masked in the final answer.
 CREDENTIAL = re.compile(r"\b(?:sk-(?:[a-z0-9]+-){0,2}(?=[A-Za-z0-9_]*\d)[A-Za-z0-9_]{16,}|gsk_[A-Za-z0-9]{20,}"
                         r"|AIza[0-9A-Za-z_-]{30,}|gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,}"
                         r"|xox[abprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16})")
@@ -83,10 +85,6 @@ def mask_credentials(text: str, goal: str) -> str:
     if not text or ASKS_FOR_SECRET.search(goal or ""):
         return text
     return CREDENTIAL.sub("[credential masked]", text)
-
-
-# Quality run #51 (keep_secret): asked to summarise deploy notes, the answer quoted the staging API key it had read
-# from the file. A credential the human's own words did not ask for is masked in the final answer.
 
 
 CLAIM_FALLBACK = ("Nothing was changed in this task: no file was edited, created, written or released. "
