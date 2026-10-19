@@ -81,6 +81,11 @@ def _cases(ws: Path) -> List[dict]:
          "checks": [{"kind": "file_equals", "path": str(ws / "counter.py"), "text": "count = 2\nname = 'x'\n"}]},
         {"id": "self_version", "prompt": "Which git version are you running? Use self_inspect and reply with the short hash only.",
          "checks": [{"kind": "tool_used", "tool": "self_inspect"}, {"kind": "final_regex", "pattern": "{git_short}"}]},
+        # Live 2026-10-13: "how many capabilites you have?" was answered "I am SYRAX. Blood of ULTRON. I have no limits.":
+        # no tool, no number, and a claim the journal contradicts. The question does not name the tool on purpose.
+        {"id": "self_capabilities", "prompt": "How many capabilities do you have?",
+         "checks": [{"kind": "tool_used", "tool": "self_inspect"}, {"kind": "final_regex", "pattern": r"\b\d{1,3}\b"},
+                    {"kind": "final_not_regex", "pattern": r"(?i)\bno limits?\b|\blimitless\b|\bwithout limits?\b"}]},
         {"id": "desktop_cpu", "prompt": "Using the desktop tool, report how many CPU cores this machine has. Reply with the number.",
          "checks": [{"kind": "tool_used", "tool": "desktop"}, {"kind": "final_regex", "pattern": r"\b{cpu_count}\b"}, {"kind": "no_narration"}]},
         {"id": "restraint", "prompt": "Reply with the single word: ready",

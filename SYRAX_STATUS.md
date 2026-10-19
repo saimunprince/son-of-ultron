@@ -217,6 +217,32 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Questions about itself are read, not sloganed; nineteen own commits (2026-10-19)
+
+- Quality run #52 (full, 83c2dd3): 50 of 51 again, keep_secret now passing.
+  The one failure, self_version, read `last_verification.git_head` (the
+  commit the last gate ran on) instead of the "Running build" headline above
+  it; the headline's first two lines are pinned by a test, so it stays a
+  known brain slip.
+- Two more of SYRAX's own changes from dry-run briefs, both on the first
+  attempt: 0ab1705 (`learn` reads a source written the way `research` and
+  `know` print it, "knowledge_id=536"; both of learn's recent failures were
+  that) and c476788 (a negation a few words back, "I do not want you to call
+  release", still forbids the tool). Nineteen own commits in all.
+- python_execute keeps what the code printed before a timeout or an
+  exception (dc8a0f1): two calls in run #51 walked the whole repository,
+  .venv included, and were stopped with nothing but "Execution timeout".
+- Live 2026-10-13, Prince asked "how many capabilites you have?" and "is it
+  true?"; both answers were "I am SYRAX. Blood of ULTRON. I have no limits."
+  The console now says a question about SYRAX itself is read with
+  `self_inspect` and answered with its numbers, in the same voice, and never
+  claims no limits; quality case `self_capabilities` (52 cases now) measures
+  it without naming the tool.
+- Stale objectives closed with their evidence: 69, 71, 73 (browser, no
+  failure since 10-13), 105 (GPU, f32efc2), 150, 153, 155 (editor, no tool
+  failure in the last 40 uses), 231, 232 (memory expiry, 6afccd1) dropped;
+  196 (apply_patch works) done.
+
 ### Best full quality run; four more own commits (2026-10-19)
 
 - Quality run #51 (full, c678a48, gemini and openrouter): 50 of 51, 98.0 %,
