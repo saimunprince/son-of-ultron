@@ -103,6 +103,55 @@ def _utf8_by_default(builtins_dict: dict) -> None:
     io.text_encoding = lambda encoding, stacklevel=2: "utf-8" if encoding is None else encoding
 
 
+class _PrintedOutput(StringIO):
+    """The code's stdout: kept for the result and written through, line by line, to a file the parent can read when
+    it has to stop a code that runs past its timeout. Live 2026-10-19 (quality run #51, self_map_protected): two calls
+    that walked the whole repository, .venv included, were stopped at 60 s with nothing but "Execution timeout after
+    60 seconds"; what they had printed was lost."""
+
+    def __init__(self, path: Optional[str] = None):
+        super().__init__()
+        try:
+            self._file = open(path, "a", encoding="utf-8", errors="replace", buffering=1) if path else None
+        except OSError:
+            self._file = None
+
+    def write(self, s: str) -> int:
+        if self._file is not None:
+            try:
+                self._file.write(s)
+            except Exception:
+                self._file = None
+        return super().write(s)
+
+    def close_file(self) -> None:
+        if self._file is not None:
+            try:
+                self._file.close()
+            except Exception:
+                pass
+            self._file = None
+
+
+def _printed_before(path: str, limit: int = 2000) -> str:
+    """The tail of what a stopped code printed, or "" when it printed nothing."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return ""
+    return text if len(text) <= limit else "…" + text[-limit:]
+
+
+def _remove_quietly(path: str) -> None:
+    import os
+
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def _kill_quietly(proc) -> None:
     try:
         if proc.pid is not None and proc.is_alive():
@@ -145,7 +194,7 @@ class AsyncPythonExecute(PythonExecute):
         "required": ["code"],
     }
 
-    def _guarded_run(self, code: str, conn, safe_globals: dict, paths: list) -> None:
+    def _guarded_run(self, code: str, conn, safe_globals: dict, paths: list, out_path: Optional[str] = None) -> None:
         """Runs in the child: guard the journal and keys, for this process and
         every Python it starts, run the code, and send the result back. The
         result is sent even when the code calls sys.exit or the guard fails."""
@@ -164,7 +213,7 @@ class AsyncPythonExecute(PythonExecute):
             for name in PRELOADED:  # the same (guarded) modules the code would get by importing them
                 safe_globals.setdefault(name, importlib.import_module(name))
             safe_globals.setdefault("Path", safe_globals["pathlib"].Path)
-            self._run_code(code, result, safe_globals)
+            self._run_code(code, result, safe_globals, out_path)
         except Exception as e:  # the guard itself failed; the code never ran
             result["observation"] = f"{type(e).__name__}: {e}"
         finally:
@@ -174,19 +223,22 @@ class AsyncPythonExecute(PythonExecute):
                 pass
             conn.close()
 
-    def _run_code(self, code: str, result_dict: dict, safe_globals: dict) -> None:
-        """Upstream's, with the exception's type in the observation: "name 'os' is
-        not defined" alone does not say it was a NameError. SystemExit is still
-        not caught (a code that exits did not finish)."""
+    def _run_code(self, code: str, result_dict: dict, safe_globals: dict, out_path: Optional[str] = None) -> None:
+        """Upstream's, with the exception's type in the observation ("name 'os' is not defined" alone does not say
+        it was a NameError) after what the code printed before it raised, and the output kept when the code calls
+        sys.exit (it still did not finish)."""
         original_stdout = sys.stdout
+        output_buffer = _PrintedOutput(out_path)
         try:
-            output_buffer = StringIO()
             sys.stdout = output_buffer
             exec(code, safe_globals, safe_globals)
             result_dict["observation"] = output_buffer.getvalue()
             result_dict["success"] = True
         except Exception as e:
-            result_dict["observation"] = f"{type(e).__name__}: {e}"
+            printed = output_buffer.getvalue()
+            if printed and not printed.endswith("\n"):
+                printed += "\n"
+            result_dict["observation"] = printed + f"{type(e).__name__}: {e}"
             result_dict["success"] = False
         except SystemExit as e:
             # Live 2026-10-14 (objective 232): three runs of `pytest.main([...])` ended with `sys.exit(code)` and answered
@@ -195,6 +247,7 @@ class AsyncPythonExecute(PythonExecute):
             result_dict["success"] = False
         finally:
             sys.stdout = original_stdout
+            output_buffer.close_file()
 
     async def execute(self, code: str, timeout: int = 60) -> Dict:
         """One worker process and a pipe; nothing here blocks the event loop.
@@ -212,8 +265,18 @@ class AsyncPythonExecute(PythonExecute):
             safe_globals = {"__builtins__": __builtins__.__dict__.copy()}
         from syrax.guard import protected_paths
 
+        import tempfile
+
+        fd, out_path = tempfile.mkstemp(prefix="syrax_py_", suffix=".out")
+        __import__("os").close(fd)
+        try:
+            return await self._execute(code, timeout, safe_globals, protected_paths(), out_path)
+        finally:
+            _remove_quietly(out_path)
+
+    async def _execute(self, code: str, timeout: int, safe_globals: dict, paths: list, out_path: str) -> Dict:
         recv, send = multiprocessing.Pipe(duplex=False)
-        proc = multiprocessing.Process(target=self._guarded_run, args=(code, send, safe_globals, protected_paths()), daemon=True)
+        proc = multiprocessing.Process(target=self._guarded_run, args=(code, send, safe_globals, paths, out_path), daemon=True)
         starter = asyncio.ensure_future(asyncio.to_thread(proc.start))
         try:
             done, _ = await asyncio.wait({starter}, timeout=START_TIMEOUT_S)
@@ -254,8 +317,10 @@ class AsyncPythonExecute(PythonExecute):
         # still "alive" then is an exit in progress, not a timeout (seen under load)
         if result is None and not eof and proc.is_alive():
             _kill_quietly(proc)
+            printed = _printed_before(out_path)
             return {
-                "observation": f"Execution timeout after {timeout} seconds",
+                "observation": f"Execution timeout after {timeout} seconds"
+                               + (f"; it printed this before it was stopped:\n{printed}" if printed.strip() else ""),
                 "success": False,
             }
         if proc.is_alive():
