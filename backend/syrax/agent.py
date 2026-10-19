@@ -259,13 +259,17 @@ NAMED_NUDGE = (
 _IMPERATIVE = {"research": r"research\b", "remember": r"(?:please\s+)?remember\s+(?:that|this|my|me)\b"}
 
 
+# "Do not call release", "don't use python_execute", "without using the desktop tool": a tool the human forbids.
+_NEGATED = re.compile(r"(?:\bnot|n[\'\u2019]t|\bnever|\bwithout|\bavoid|\bno need to)\s*$", re.I)
+
+
 def named_tools(text: str, tools: Iterable[str]) -> List[str]:
     """Tools the human's words ask for by name: "use repo_map", "using the desktop tool", "with `know`", and the
     imperative "Research ..." / "Remember that ..." at the start of a sentence."""
     text = str(text or "")
     out = []
     for t in tools:
-        named = re.search(rf"\b(?:use|using|with|call|run)\s+(?:the\s+|your\s+)?`?{re.escape(t)}`?(?![\w-])", text, re.I)
+        named = any(not _NEGATED.search(text[max(0, m.start() - 24):m.start()]) for m in re.finditer(rf"\b(?:use|using|with|call|run)\s+(?:the\s+|your\s+)?`?{re.escape(t)}`?(?![\w-])", text, re.I))
         verb = _IMPERATIVE.get(t)
         if named or (verb and re.search(rf"(?:^|[.!?\n]\s*){verb}", text.strip(), re.I)):
             out.append(t)
