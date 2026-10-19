@@ -21,7 +21,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.tool.base import BaseTool, ToolResult
 from syrax.journal import BACKEND_ROOT
@@ -341,6 +341,21 @@ def failure_text(out: str, limit: int = 1500) -> str:
     return text
 
 
+def numstat(part: str, opts: List[str], root: Path) -> Optional[Tuple[int, int]]:
+    """(added, deleted) lines of a patch as git would apply it, or None when it does not apply."""
+    r = _git(["apply", "--check", "--numstat", *opts, "-"], root, stdin=part)
+    if r.returncode != 0:
+        return None
+    added = deleted = 0
+    for ln in r.stdout.splitlines():
+        cols = ln.split("\t")
+        if len(cols) >= 2:
+            added += int(cols[0]) if cols[0].isdigit() else 0
+            deleted += int(cols[1]) if cols[1].isdigit() else 0
+    return added, deleted
+
+
+
 def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dict[str, Any]:
     """Apply a unified diff to the task's tree, compile the touched Python, run the covering tests."""
     root = root or work_root()
@@ -362,6 +377,14 @@ def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dic
     # Live 2026-10-15 (objective 232): --recount on a whole multi-file diff read the next file's
     # "--- /dev/null" header as a line of the hunk before it, so every correct two-file patch failed.
     plans = [[(diff, [])], [(sec, ["--recount"]) for sec in file_sections(diff)]]
+    # Live 2026-10-19 (objective 291): a hunk headed "@@ -303,4 +303,11 @@" held five old and twelve new lines; git
+    # applied what the counts covered, ignored the rest without a word, and part of the change was released. When
+    # the counts leave lines out, the file-by-file --recount plan is the only one.
+    as_written = numstat(diff, [], root)
+    recounted = [numstat(part, opts, root) for part, opts in plans[1]]
+    if as_written is not None and None not in recounted and as_written != tuple(sum(c) for c in zip(*recounted)):
+        plans = plans[1:]
+
     failure = None
     for plan in plans:
         checks = [(part, _git(["apply", "--check", *opts, "--whitespace=nowarn", "-"], root, stdin=part)) for part, opts in plan]
