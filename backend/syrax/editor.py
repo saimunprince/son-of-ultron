@@ -237,6 +237,10 @@ class SyraxEditor(StrReplaceEditor):
             return self._noted(f"Here's the files and directories up to 2 levels deep in {resolved}, excluding hidden items:\n{listing}\n", note)
         if command == "view" and kwargs.get("view_range"):
             kwargs["view_range"] = await self._clamp_range(resolved, kwargs["view_range"], operator)
+        if command == "str_replace" and kwargs.get("new_str") is None:
+            # Quality run #50 (self_patch_docs): old_str was the whole file, upstream reads a missing new_str as ""
+            # An explicit new_str "" still deletes.
+            raise ToolError("Parameter `new_str` is required for command: str_replace (new_str \"\" deletes old_str; file_text is read only by create). Nothing was changed.")
         if command == "str_replace" and kwargs.get("old_str") is not None:
             loose = await self._loose_replace(resolved, kwargs["old_str"], kwargs.get("new_str"), operator)
             if loose is not None:
