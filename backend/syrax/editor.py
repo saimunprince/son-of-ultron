@@ -11,6 +11,7 @@ journal evidence, devloop ownership and prompts are unchanged.
 from __future__ import annotations
 
 import os
+import difflib
 from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
@@ -141,6 +142,22 @@ def same_name(path: Path, root: Optional[Path] = None, limit: int = 5) -> List[s
     return out
 
 
+def close_names(path: Path, root: Optional[Path] = None, limit: int = 3) -> List[str]:
+    out: List[str] = []
+    scored: List[Tuple[float, str]] = []
+    for here, dirs, files in os.walk(root or REPO_ROOT):
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in SKIP_DIRS)
+        for f in files:
+            if f.lower() != path.name.lower() and Path(f).suffix.lower() == path.suffix.lower():
+                ratio = difflib.SequenceMatcher(None, path.name.lower(), f.lower()).ratio()
+                if ratio >= 0.8:
+                    scored.append((-ratio, str(Path(here) / f)))
+    scored.sort()
+    for _, p in scored:
+        out.append(p)
+    return out[:limit]
+
+
 class KeepEolOperator(LocalFileOperator):
     """Writes text with the file's own line endings: LF unless the file already
     uses CRLF; new files get LF. Upstream writes with Path.write_text, which on
@@ -262,7 +279,10 @@ class SyraxEditor(StrReplaceEditor):
             raise ToolError(f"{original} is not in this task's worktree because git does not track it, so it cannot be "
                             "changed here. A skill changes through skill_create.")
         others = same_name(original)
-        hint = (" Files with that name: " + "; ".join(others) + ".") if others else f" No file named {original.name} exists in the repository."
+        if others:
+            hint = " Files with that name: " + "; ".join(others) + "."
+        else:
+            hint = f" No file named {original.name} exists in the repository." + (((" Close names: " + "; ".join(close_names(original, root=original.anchor and Path(original.anchor) or None)) + ".") if False else "") + (lambda c: f" Close names: " + "; ".join(c) + "." if c else "")(close_names(original)))
         raise ToolError(f"The path {original} does not exist.{hint}")
 
     @staticmethod
