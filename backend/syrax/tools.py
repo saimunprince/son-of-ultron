@@ -188,6 +188,11 @@ class AsyncPythonExecute(PythonExecute):
         except Exception as e:
             result_dict["observation"] = f"{type(e).__name__}: {e}"
             result_dict["success"] = False
+        except SystemExit as e:
+            # Live 2026-10-14 (objective 232): three runs of `pytest.main([...])` ended with `sys.exit(code)` and answered
+            # an empty observation; the whole pytest report was lost. It is kept now; the call still did not finish.
+            result_dict["observation"] = output_buffer.getvalue() + f"\n(the code called sys.exit({e.code!r}); it did not finish)"
+            result_dict["success"] = False
         finally:
             sys.stdout = original_stdout
 

@@ -217,6 +217,21 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### The output before sys.exit is kept; five more caller mistakes (2026-10-19)
+
+- SYRAX's tenth own change, 56dc711 (the editor reads an untracked file
+  through a worktree path from the running tree), landed on 10-17 16:00 and
+  was pushed on 10-19.
+- Of 299 failed calls in five days, 14 were neither refused nor a known
+  caller mistake. Three were python_execute runs of `pytest.main([...])`
+  followed by `sys.exit(code)`: the observation was empty and the pytest
+  report lost, so SYRAX ran it three times and saw nothing. The output is kept
+  now and the exit named (the call still counts as not finished). Five more
+  caller mistakes are told from tool failures: an editor command that does
+  not exist, a directory or an unresolved relative path given to the editor,
+  find_files without a pattern, learn without a source
+  (`test_sysexit_and_misuse.py`).
+
 ### Nine own commits: self_inspect, memory, the watchdog (2026-10-17)
 
 - Three more of SYRAX's own changes landed from briefs whose tests were given

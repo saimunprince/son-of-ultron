@@ -171,7 +171,11 @@ ALL_OBJECTIVES = 5000  # objectives() reads at most this many rows; full-set rea
 _MISUSE = {
     "journal_query": re.compile(r"^Error: .*\. Schema: |^Error: only one read-only SELECT", re.S),
     "str_replace_editor": re.compile(r"^Error: (No replacement was performed|Parameter `\w+` is required|The path \S.* is not an "
-                                     r"absolute path|The path \S.* does not exist|Invalid `view_range`|File already exists|Failed to read )"),
+                                     r"absolute path|The path \S.* does not exist|Invalid `view_range`|File already exists|Failed to read "
+                                     r"|Unrecognized command|The path \S.* is a directory and only|The path \S.* is not absolute and was not found"
+                                     r"|The editor cannot `)"),
+    "desktop": re.compile(r"^Error: (\w+ needs |Nothing to open)"),
+    "learn": re.compile(r"^Error: learn refused: cite"),
     "apply_patch": re.compile(r"^Error: apply_patch refused: (the patch does not apply cleanly|empty patch|not a unified diff|patch too large|"
                               r"[^\n]*paths must be repository-relative)"),
     # an exception in the caller's code; a timeout, a dead worker or an empty answer may be the tool's own fault
