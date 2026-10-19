@@ -276,7 +276,10 @@ _IMPERATIVE = {"research": r"research\b", "remember": r"(?:please\s+)?remember\s
 
 
 # "Do not call release", "don't use python_execute", "without using the desktop tool": a tool the human forbids.
-_NEGATED = re.compile(r"(?:\bnot|n[\'\u2019]t|\bnever|\bwithout|\bavoid|\bno need to)\s*$", re.I)
+# A negation reaches the verb across up to four plain words ("I do not want you to call release"); punctuation or
+# until/unless/before/after/then/and/but between them ends it ("Do not stop until you call release").
+_NEGATED = re.compile(r"(?:\bnot|n[\'\u2019]t|\bnever|\bwithout|\bavoid|\bno need to)"
+                      r"(?:\s+(?!(?:until|unless|before|after|then|and|but)\b)\w+){0,4}\s*$", re.I)
 
 
 def named_tools(text: str, tools: Iterable[str]) -> List[str]:
@@ -285,7 +288,7 @@ def named_tools(text: str, tools: Iterable[str]) -> List[str]:
     text = str(text or "")
     out = []
     for t in tools:
-        named = any(not _NEGATED.search(text[max(0, m.start() - 24):m.start()]) for m in re.finditer(rf"\b(?:use|using|with|call|run)\s+(?:the\s+|your\s+)?`?{re.escape(t)}`?(?![\w-])", text, re.I))
+        named = any(not _NEGATED.search(text[max(0, m.start() - 60):m.start()]) for m in re.finditer(rf"\b(?:use|using|with|call|run)\s+(?:the\s+|your\s+)?`?{re.escape(t)}`?(?![\w-])", text, re.I))
         verb = _IMPERATIVE.get(t)
         if named or (verb and re.search(rf"(?:^|[.!?\n]\s*){verb}", text.strip(), re.I)):
             out.append(t)
