@@ -414,7 +414,13 @@ def render_report(rep: Dict[str, Any]) -> str:
         lines.append("compiled: " + ", ".join(rep["compiled"]))
     t = rep.get("tests")
     if t is not None:
-        lines.append(("TESTS PASS: " if t["ok"] else "TESTS FAIL: ") + t["summary"] + (f" ({', '.join(t['ran'])})" if t["ran"] else ""))
+        if not t["ok"]:
+            prefix = "TESTS FAIL: "
+        elif t["ran"]:
+            prefix = "TESTS PASS: "
+        else:
+            prefix = "TESTS NOT RUN: "
+        lines.append(prefix + t["summary"] + (f" ({', '.join(t['ran'])})" if t["ran"] else ""))
         if not t["ok"] and t.get("tail"):
             lines.append(t["tail"])
             lines.append("The patch is applied; fix forward with another patch or `undo`. A release with failing tests is rolled back.")
@@ -447,7 +453,7 @@ class ApplyPatchTool(BaseTool):
         "Change your own code with a unified diff (the `diff -u` / `git diff` format: '--- a/backend/syrax/x.py', "
         "'+++ b/backend/syrax/x.py', @@ hunks; new files diff from /dev/null). Paths are repository-relative. "
         "It applies the whole patch or nothing, compiles the touched Python and runs the tests that cover the "
-        "touched files; the reply says what passed or failed. Then call `release`. Files that judge your work "
+        "touched files; the reply says what passed or failed. Then call `release` to commit it, unless you were told not to. Files that judge your work "
         "(quality cases, the gate, the guard, permissions, the journal) are refused: a human commits those."
     )
     parameters: dict = {
