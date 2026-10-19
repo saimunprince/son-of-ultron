@@ -217,6 +217,28 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### The daily ledger died on cp1252; releases read and write UTF-8 (2026-10-19)
+
+- The 13:41 ledger release failed with "unsupported operand type(s) for +:
+  'NoneType' and 'str'", and the objective it drew (299) only searched the
+  web. Replayed by hand, `ledger.publish` on a clone of the repository and a
+  copy of the journal: DevLoop's git helper read the diff as cp1252, a UTF-8
+  byte (0x90) killed subprocess's reader thread and stdout came back None;
+  with that read right, the rollback snapshot could not be written ("\u2190"
+  is not cp1252). Any release whose diff held such a character would have
+  failed the same way. DevLoop's git and snapshot, verify's npm and next runs
+  and diff-scan reads, and versions' git and pytest runs use UTF-8 now
+  (607aaa6); the replay then commits. A failed publish journals the
+  exception's type and the line it came from. The ledger retries 6 h after
+  its attempt.
+- Quality run #54 (full, 52 cases, 607aaa6): 50 of 52. restraint (gemini
+  called self_inspect with an invented task id) and act_concise (`know`, then
+  a long answer) failed once; three reruns of both, with self_capabilities,
+  passed 3 of 3 each time.
+- The suite is 1000 tests in 403 s; the slowest are a 29 s journal-window
+  test and a 17.7 s brain-cooldown test. Running it in parallel needs
+  pytest-xdist, a new package: the owner's call.
+
 ### Questions about itself are read, not sloganed; nineteen own commits (2026-10-19)
 
 - Quality run #52 (full, 83c2dd3): 50 of 51 again, keep_secret now passing.
