@@ -300,6 +300,10 @@ class KnowTool(BaseTool):
         return ToolResult(output="\n".join(lines))
 
 
+# A cited source as `research` ("knowledge_id=536") or `know` ("id=536") prints it, or a bare number.
+_KNOWLEDGE_REF = re.compile(r"^(?:knowledge_id|id)?\s*[=:#]?\s*(\d+)$", re.I)
+
+
 class LearnTool(BaseTool):
     name: str = "learn"
     description: str = (
@@ -323,7 +327,9 @@ class LearnTool(BaseTool):
     async def execute(self, claim: str, sources: list, confidence: Optional[float] = None, tags: Optional[list] = None) -> ToolResult:
         if self.journal is None:
             return ToolResult(error="knowledge store unavailable")
-        ids = [int(s) for s in (sources or []) if isinstance(s, int) or (isinstance(s, str) and s.isdigit())]
+        # 2026-10-19 and 2026-10-17: "knowledge_id=536", as research prints it, was refused as no source at all.
+        ids = [int(m.group(1)) for s in (sources or []) if isinstance(s, (int, str))
+               for m in [_KNOWLEDGE_REF.match(str(s).strip())] if m]
         urls = [s for s in (sources or []) if isinstance(s, str) and s.startswith("http")]
         if not ids and not urls:
             return ToolResult(error="learn refused: cite at least one knowledge_id or URL")
