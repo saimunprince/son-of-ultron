@@ -40,7 +40,7 @@ Emit = Callable[[dict], Awaitable[None]]
 
 
 def _clip(text: Any, n: int = MAX_TEXT) -> str:
-    s = str(text or "")
+    s = "" if text is None else str(text)
     return s if len(s) <= n else s[:n] + "…"
 
 
@@ -303,6 +303,13 @@ class PresentTool(BaseTool):
         for alias in ("data", "table", "content"):
             if rows is None and kind == "table" and isinstance(extra.get(alias), list):
                 rows = extra.pop(alias)
+        for key in list(extra.keys()):
+            if key.lower() in ("header", "headers", "columns", "column_names"):
+                if kind == "table" and isinstance(extra[key], list):
+                    header = extra.pop(key)
+                    rows = list(rows or [])
+                    if not rows or rows[0] != header:
+                        rows.insert(0, header)
         if extra:
             return ToolResult(error=f"unknown argument(s) {sorted(extra)}; use kind, title, text, rows, items, series, labels")
         tid = self.task_id_provider() if self.task_id_provider else None
