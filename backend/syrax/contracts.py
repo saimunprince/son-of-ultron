@@ -36,7 +36,8 @@ from syrax.journal import BACKEND_ROOT, Journal
 CONTRACT_VERSION = 1
 REPO_ROOT = BACKEND_ROOT.parent
 MEASUREMENT_KINDS = frozenset({"quality_case_passes", "quality_recovered", "benchmark_recovered", "verification_green", "tool_reliability"})
-WORK_PRODUCT_KINDS = frozenset({"change_released", "file_present", "file_absent", "knowledge_stored", "knowledge_confidence", "skill_verified"})
+WORK_PRODUCT_KINDS = frozenset({"change_released", "file_present", "file_absent", "knowledge_stored", "knowledge_confidence", "skill_verified",
+                                "repro_proven"})
 DOUBTFUL = frozenset({"INTERRUPTED", "UNKNOWN"})  # a crash or a restart cut the task off: what it left is unverified
 CHANGE_EVENTS = ("code.changed", "commit.created", "skill.created", "knowledge.stored")
 CHECK_KINDS_FOR_HUMANS = ("change_released", "file_present", "file_absent", "tool_verified", "quality_case_passes", "knowledge_stored", "skill_verified")
@@ -101,7 +102,12 @@ def _evidence_for(journal: Journal, objective: dict, evidence: dict, repo_root: 
     kind = spec.get("kind", "task_success")
     since = objective.get("created") or 0
     items: List[dict] = []
-    if kind == "change_released":
+    if kind == "repro_proven":
+        # the proof is recorded task-less (the hunt task had ended); its task is in the payload
+        for e in events_after(journal, objective):
+            if e["type"] == "repro.proven" and e["payload"].get("objective_id") == objective.get("id"):
+                items.append({"type": "event", "id": e["id"], "task_id": e["payload"].get("task_id")})
+    elif kind == "change_released":
         wanted = set(evidence.get("commits") or [])
         for e in events_after(journal, objective):
             if e["type"] == "commit.created" and e["payload"].get("commit") in wanted:

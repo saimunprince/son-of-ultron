@@ -96,6 +96,19 @@ BRIEF_HINTS = {
     "skill_verified": " Build it with `skill_create` (code + pytest tests, dependencies listed); the objective closes only when the skill `{name}` is VERIFIED by its own tests. Write files only inside the workspace. Do not call `release`: a skill is not in the repository.",
     "tool_verified": " For this objective one call of the `{tool}` tool with a harmless read-only action is enough; report its output and finish.",
     "knowledge_stored": " Use `research` once on the stated topic, then `learn` one verified conclusion citing the knowledge_ids, then finish.",
+    # Brief Factory phase 2 (repro.py): a hunt finds the code cause of a measured failure and proves it; it never
+    # releases. Its own words override the brief's "fix, release" and the worktree note's "only release moves it in".
+    "repro_proven": (" THIS OBJECTIVE IS A REPRO HUNT: do NOT call `release` (it is refused for a hunt). (1) Find the FIRST step where "
+                     "SYRAX's own code (a tool, a nudge, a parser, a prompt rule) made the model's job wrong or told it something false: "
+                     "read the evidence above, then `repo_map` and view only that function. If there is none, or it no longer happens, "
+                     "answer `NO CODE CAUSE: <why>` and stop. (2) One `apply_patch` that creates ONE new file "
+                     "backend/syrax/test_<topic>.py: a docstring with the evidence; `from syrax.<module> import ...`; tmp_path and "
+                     "monkeypatch only (no network, shell or model, never the running journal); feed it the input that broke it, "
+                     "quoted verbatim from the evidence (at least a dozen characters of the arguments, the error or the request); one "
+                     "test for the behaviour the fix is for and one for what must keep working. Its reply must say TESTS FAIL. "
+                     "(3) One `apply_patch` changing the module (never an existing test or a judge file) so the reply says TESTS PASS. "
+                     "(4) Finish with one sentence: module, function, cause. The cycle proves the test and the fix on a clean tree and "
+                     "files the brief that lands them."),
     "tool_reliability": " Follow the plan in the goal step by step. The objective closes only when new uses of `{tool}` show the lower failure rate, so finish by using it as the plan says.",
 }
 
@@ -590,6 +603,10 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         tags = set((base or {}).get("tags") or [])
         newer = [k for k in journal.knowledge_recent(limit=200, since=objective["created"]) if k["confidence"] >= want and (tags & set(k["tags"]))]
         return ("DONE" if newer else "RETRY"), {"knowledge_id": spec.get("knowledge_id"), "min": want, "stronger": [k["id"] for k in newer][:5]}
+    if kind == "repro_proven":
+        from syrax import repro
+
+        return repro.judge_hunt(journal, objective, task)
     if kind == "change_released":
         # only a commit made by this objective's own tasks counts; someone
         # else's release landing in the window is not this objective's work
@@ -748,6 +765,13 @@ class Autonomy:
             await self.journal.run(rejudge_blocked, self.journal)
         except Exception as e:
             logger.warning(f"re-judging blocked objectives failed: {e}")
+        try:  # Brief Factory phase 2: a measured failure with a code cause becomes one repro hunt
+            from syrax import repro
+
+            if repro.enabled():
+                rep.derived = (rep.derived or 0) + await self.journal.run(repro.derive, self.journal)
+        except Exception as e:
+            logger.warning(f"repro hunt derivation failed: {e}")
         if os.getenv("SYRAX_FEATURES", "0") == "1":
             try:  # every cycle, not only when idle: a feature that broke is open work
                 from syrax import catalog
@@ -881,7 +905,7 @@ class Autonomy:
             rep.outcome, rep.reason = "BUSY", "a quality run is measuring"
             return await self._finish(rep)
         try:
-            budget = {"max_steps": RELEASE_STEPS} if spec.get("kind") == "change_released" else {}
+            budget = {"max_steps": RELEASE_STEPS} if spec.get("kind") in ("change_released", "repro_proven") else {}
             rp = spec.get("repro") if isinstance(spec.get("repro"), dict) else None
             if budget and rp and rp.get("test") and rp.get("text"):
                 budget["seed"] = {rp["test"]: rp["text"]}  # the proven test is written, not retyped by a model
@@ -907,6 +931,14 @@ class Autonomy:
                                                 note="no brain could be reached: not an attempt")
             rep.outcome, rep.reason = "NO_BRAIN", "no brain could be reached; the objective stays open"
             return await self._finish(rep)
+        if spec.get("kind") == "repro_proven":
+            # what the hunt left in its worktree is judged by code: screened, bound to the evidence, proved, filed
+            from syrax import repro
+
+            try:
+                await asyncio.to_thread(repro.harvest, self.journal, objective, task)
+            except Exception as e:
+                logger.warning(f"repro harvest failed: {e}")
         # ——— reflect: expected vs actual, judged from evidence ———
         verdict, evidence = await asyncio.to_thread(judge, self.journal, objective, task)
         judged = verdict
@@ -1104,6 +1136,9 @@ def _lesson(objective: dict, task: dict, verdict: str, evidence: dict) -> str:
     spec = objective.get("check_spec") or {}
     if verdict == "DONE":
         return f"objective met: {spec.get('kind')} evidence satisfied (task {task.get('status')})"
+    if spec.get("kind") == "repro_proven":
+        rej = evidence.get("rejected") or {}
+        return (f"no proven repro yet ({rej.get('verdict') or 'nothing harvested'}): {rej.get('reason') or evidence.get('reason') or ''}")[:300]
     if spec.get("kind") == "tool_verified":
         if not evidence.get("used_after_objective"):
             return f"the task never called `{spec.get('tool')}`; a verification objective needs the tool to actually run"

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -392,6 +393,9 @@ def release_problems(task_root: Path, live_root: Path, files: Dict[str, str], ob
     """For a release of a brief that carries a repro: the filed test, byte for byte, as a new file; nothing
     outside the brief; and the test still fails on the base the task started from."""
     spec = (objective or {}).get("check_spec") or {}
+    if spec.get("kind") == "repro_proven":
+        return ["a repro hunt never releases: leave the new test and the fix in your worktree and finish; the cycle proves "
+                "them and files the brief that lands them"]
     rp = spec.get("repro") if isinstance(spec.get("repro"), dict) else None
     if not rp or not rp.get("test"):
         return []
@@ -436,6 +440,356 @@ def fidelity(root: Path, commits: Sequence[str], rp: Dict[str, Any]) -> Dict[str
             sha = test_sha(r.stdout or "")
             return {"ok": sha == rp.get("sha256"), "commit": str(c)[:12], "sha256": sha[:12]}
     return {"ok": False, "reason": f"no commit of this objective holds {rp.get('test')}"}
+
+
+# ——— phase 2: SYRAX hunts the repro of its own failures (2026-10-22) ———
+#
+# A hunt is an objective whose task finds, in SYRAX's own code, the step that made a measured failure, and leaves
+# ONE new test and a fix in its worktree. It never releases. After the task, judge code (harvest) screens what it
+# left, requires the test to quote the evidence, proves it, and files the brief that the next task lands like any
+# other. Only failures with a code cause in a non-judge module are hunted: a tool's own error (not the caller's
+# mistake, not the environment), a quality case that failed twice the same way after SYRAX's own nudge, claim
+# check or tool error, or the same exception in two tasks.
+
+HUNT_KIND = "repro_proven"
+HUNT_MARK = "[REPRO HUNT]"
+HUNTS_PER_DAY = 3
+FRESH_S = 7 * 86400.0
+WATERMARK = "repro_since"
+MIN_TASKS = 2
+ANCHOR_LEN = 12
+TOOL_WINDOW = 3000
+ENVIRONMENT = re.compile(r"(?i)actively refused|connection (?:closed|refused|reset|aborted)|websocket|timed? ?out|unreachable|"
+                         r"rate.?limit|\b429\b|\b50[234]\b|no space left|all brains failed|ran out of time|aborted|"
+                         r"journal unavailable|chrome (?:is )?not running|could not start a worker|out of memory")
+EXCEPTION = re.compile(r"\b[A-Z]\w*(?:Error|Exception)\b|unsupported operand|has no attribute|not subscriptable|codec can't")
+# The built-in tools a hunt may fix, by the non-judge module that implements them. A tool in a judge file
+# (python_execute, release, skills, experiments, versions) is fixed by a human.
+TOOL_MODULES = {
+    "str_replace_editor": "backend/syrax/editor.py", "apply_patch": "backend/syrax/selfedit.py", "repo_map": "backend/syrax/selfedit.py",
+    "present": "backend/syrax/presentation.py", "research": "backend/syrax/research.py", "learn": "backend/syrax/research.py",
+    "know": "backend/syrax/research.py", "desktop": "backend/syrax/desktop.py", "self_inspect": "backend/syrax/selfmodel.py",
+    "journal_query": "backend/syrax/journal_query.py", "remember": "backend/syrax/memory.py", "recall": "backend/syrax/memory.py",
+    "forget": "backend/syrax/memory.py", "remind": "backend/syrax/reminders.py", "undo": "backend/syrax/undo.py",
+    "watch_topic": "backend/syrax/topics.py",
+}
+_OBSERVED = re.compile(r"^Observed output of cmd `[^`]*` executed:\s*")
+_NUDGE = "[SYRAX check, not a new request]"
+
+
+def enabled() -> bool:
+    """SYRAX_REPRO=1 or 0 decides; unset, SYRAX hunts only in the service (SYRAX_ISOLATE=1, set by syrax.py), so a
+    test run never derives a hunt."""
+    flag = os.getenv("SYRAX_REPRO", "").strip()
+    if flag in ("0", "1"):
+        return flag == "1"
+    return os.getenv("SYRAX_ISOLATE", "0") == "1"
+
+
+def norm_error(output: str) -> str:
+    """The first line of an error with quoted text, paths, hashes and numbers abstracted: one signature per cause."""
+    body = _OBSERVED.sub("", str(output or ""), count=1).strip()
+    line = next((ln for ln in body.splitlines() if ln.strip()), "")
+    line = re.sub(r"'[^']*'|\"[^\"]*\"", "Q", line)
+    line = re.sub(r"[A-Za-z]:\\\S*|/[\w./-]+", "P", line)
+    line = re.sub(r"\b[0-9a-f]{7,}\b", "H", line)
+    return re.sub(r"\d+", "N", line).lower()[:100]
+
+
+def _sha8(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
+
+
+def _start_of(journal, failed: dict) -> dict:
+    """The tool.started event of a failed call: its arguments are the input that broke the tool."""
+    cid = failed["payload"].get("id")
+    for e in journal.events(failed.get("task_id") or "", limit=5000):
+        if e["type"] == "tool.started" and e["payload"].get("id") == cid:
+            return e
+    return {}
+
+
+def _changed_since(root: Path, path: str, ts: float) -> bool:
+    return bool(_git(["log", f"--since=@{int(ts)}", "--format=%h", "--", path], Path(root)).stdout.strip())
+
+
+def _tool_signals(journal, since: float, root: Path) -> List[dict]:
+    from syrax.journal import misuse
+
+    groups: Dict[tuple, Dict[str, Any]] = {}
+    for e in journal.events_of_type("tool.failed", since=since, limit=TOOL_WINDOW):
+        p = e["payload"]
+        name, out = p.get("name") or "", str(p.get("output") or "")
+        if p.get("refused") or name not in TOOL_MODULES or misuse(name, out) or ENVIRONMENT.search(out[:600]):
+            continue
+        g = groups.setdefault((name, norm_error(out)), {"tasks": [], "last": e})
+        if e.get("task_id") and e["task_id"] not in g["tasks"]:
+            g["tasks"].append(e["task_id"])
+        g["last"] = e
+    out_signals = []
+    for (name, sig), g in groups.items():
+        last = g["last"]
+        if len(g["tasks"]) < MIN_TASKS or _changed_since(root, TOOL_MODULES[name], last["ts"]):
+            continue  # one task is not a pattern; a module changed since may already be fixed
+        args = (_start_of(journal, last).get("payload") or {}).get("args") or {}
+        error = _OBSERVED.sub("", str(last["payload"].get("output") or ""), count=1)[:600]
+        out_signals.append({
+            "id": f"tool:{name}:{_sha8(sig)}", "kind": "tool", "tool": name, "module": TOOL_MODULES[name], "ts": last["ts"],
+            "summary": f"`{name}` failed the same way in {len(g['tasks'])} tasks: {error.splitlines()[0][:200] if error else sig}",
+            "tasks": g["tasks"][-5:], "args": args, "error": error,
+            "sources": [json.dumps(args, ensure_ascii=False), error],
+        })
+    return out_signals
+
+
+def _symptom(row: dict) -> str:
+    bad = [re.sub(r"\b[0-9a-f]{7,}\b|\d+", "N", str(c.get("check") or "")) for c in row.get("checks") or [] if not c.get("ok")]
+    return " | ".join(sorted(bad))
+
+
+def _syrax_steps(journal, task_id: str) -> List[str]:
+    """What SYRAX itself put into a failed task: a nudge or claim check it injected, a guard refusal, a tool's own
+    error. A failure with none of these is the model's choice: no code to fix."""
+    from syrax.journal import misuse
+
+    steps: List[str] = []
+    for e in journal.events(task_id, limit=5000):
+        p = e["payload"]
+        if e["type"].startswith("claim.") or e["type"] == "permission.refused":
+            steps.append(f"{e['type']}: {str(p.get('text') or p.get('reason') or '')[:200]}")
+        elif e["type"] == "tool.failed" and not p.get("refused") and not misuse(p.get("name"), p.get("output")) \
+                and not ENVIRONMENT.search(str(p.get("output") or "")[:600]):
+            steps.append(f"{p.get('name')} failed: {_OBSERVED.sub('', str(p.get('output') or ''), count=1)[:200]}")
+    try:
+        cp = journal.latest_checkpoint(task_id) or {}
+    except Exception:
+        cp = {}
+    for m in cp.get("context") or []:
+        text = str((m or {}).get("content") or "") if isinstance(m, dict) else ""
+        if _NUDGE in text:
+            steps.append("SYRAX nudge: " + text.replace(_NUDGE, "").strip()[:200])
+    return list(dict.fromkeys(steps))
+
+
+def _case_signals(journal, since: float) -> List[dict]:
+    from syrax import quality
+
+    runs = [r for r in journal.quality_runs(limit=6) if (r.get("ts") or 0) >= since]
+    if len(runs) < 2:
+        return []
+    try:
+        cases = {c["id"]: c for c in quality._cases(quality.WORKSPACE)}
+    except Exception:
+        cases = {}
+    out = []
+    for row in runs[0]["results"]:
+        cid = row.get("id")
+        if row.get("ok") or not row.get("task_id") or cid not in cases:
+            continue
+        prev = next((r2 for r in runs[1:] for r2 in r["results"] if r2.get("id") == cid), None)
+        symptom = _symptom(row)
+        if not symptom or not prev or prev.get("ok") or _symptom(prev) != symptom:
+            continue  # a single failure, or a different one, is not a pattern
+        steps = _syrax_steps(journal, row["task_id"])
+        if not steps:
+            continue  # nothing SYRAX said or did made the model fail: no code cause to hunt
+        prompt = str(cases[cid].get("prompt") or "")
+        out.append({
+            "id": f"case:{cid}:{_sha8(symptom)}", "kind": "case", "case": cid, "ts": runs[0].get("ts") or 0,
+            "summary": f"quality case {cid} failed twice the same way ({symptom[:200]})",
+            "tasks": [prev.get("task_id"), row["task_id"]], "prompt": prompt[:600], "steps": steps[:6],
+            "sources": [prompt, *steps],
+        })
+    return out
+
+
+def _task_signals(journal, since: float) -> List[dict]:
+    groups: Dict[str, Dict[str, Any]] = {}
+    for e in journal.events_of_type("task.failed", since=since, limit=500):
+        err = str(e["payload"].get("error") or "")
+        task = journal.task(e.get("task_id") or "") or {}
+        if not EXCEPTION.search(err) or ENVIRONMENT.search(err) or str(task.get("goal") or "").startswith("[MAINTENANCE]"):
+            continue  # an outage is not a bug; maintenance runs judge code, which a human fixes
+        g = groups.setdefault(norm_error(err), {"tasks": [], "error": err, "ts": e["ts"]})
+        if e.get("task_id") and e["task_id"] not in g["tasks"]:
+            g["tasks"].append(e["task_id"])
+        g["error"], g["ts"] = err, e["ts"]
+    return [{"id": f"task:{_sha8(sig)}", "kind": "task", "ts": g["ts"], "tasks": g["tasks"][-5:], "error": g["error"][:600],
+             "summary": f"{len(g['tasks'])} tasks failed with: {g['error'].splitlines()[0][:200]}", "sources": [g["error"]]}
+            for sig, g in groups.items() if len(g["tasks"]) >= MIN_TASKS]
+
+
+def signals(journal, now: Optional[float] = None, root: Path = REPO_ROOT) -> List[dict]:
+    """The failures worth a hunt, newest first: only those after the watermark set when hunting was first enabled
+    (older ones were the human's to judge) and within a week."""
+    import time
+
+    now = now or time.time()
+    since = max(now - FRESH_S, float(journal.get_meta(WATERMARK) or 0))
+    found = _case_signals(journal, since) + _tool_signals(journal, since, root) + _task_signals(journal, since)
+    return sorted(found, key=lambda s: -(s.get("ts") or 0))
+
+
+def trace_excerpt(journal, task_id: str, budget: int = 1500) -> str:
+    """A failed task as the model saw it: calls with their arguments, results, SYRAX's own checks, the answer.
+    The nudge prefix is relabelled: an answer that echoes it is rewritten by the agent (ECHO)."""
+    lines: List[str] = []
+    for e in journal.events(task_id, limit=5000):
+        p = e["payload"]
+        if e["type"] == "tool.started":
+            lines.append(f"call {p.get('name')} {json.dumps(p.get('args'), ensure_ascii=False)[:160]}")
+        elif e["type"] in ("tool.completed", "tool.failed"):
+            lines.append(f"  -> {'ok' if e['type'] == 'tool.completed' else 'FAILED'}: "
+                         + _OBSERVED.sub("", str(p.get("output") or ""), count=1).replace("\n", " | ")[:200])
+        elif e["type"].startswith("claim.") or e["type"] == "permission.refused":
+            lines.append(f"{e['type']}: {str(p.get('text') or p.get('reason') or '')[:200]}")
+        elif e["type"] == "final":
+            lines.append(f"final answer: {str(p.get('text') or '')[:300]}")
+    text = "\n".join(lines).replace(_NUDGE, "(SYRAX nudge)")
+    return text if len(text) <= budget else text[:budget // 3] + "\n...\n" + text[-(budget * 2 // 3):]
+
+
+def hunt_goal(journal, signal: dict) -> str:
+    evidence = [f"{HUNT_MARK} {signal['summary']}", f"Module: {signal['module']}" if signal.get("module") else ""]
+    if signal.get("args"):
+        evidence.append("The call that failed, its arguments: " + json.dumps(signal["args"], ensure_ascii=False)[:600])
+    if signal.get("error"):
+        evidence.append("Its error: " + signal["error"][:600])
+    if signal.get("prompt"):
+        evidence.append("The case's request, verbatim: " + signal["prompt"])
+    if signal.get("steps"):
+        evidence.append("What SYRAX itself did in the failed task: " + "; ".join(signal["steps"])[:900])
+    if signal.get("tasks"):
+        evidence.append(f"The last failed task ({signal['tasks'][-1]}), step by step:\n" + trace_excerpt(journal, signal["tasks"][-1]))
+    return "\n".join(x for x in evidence if x).replace(_NUDGE, "(SYRAX nudge)")
+
+
+def derive(journal, now: Optional[float] = None, root: Path = REPO_ROOT) -> int:
+    """At most one hunt at a time and HUNTS_PER_DAY a day, the newest failure first. The first call only sets the
+    watermark."""
+    import time
+
+    now = now or time.time()
+    if not journal.get_meta(WATERMARK):
+        journal.set_meta(WATERMARK, str(now))
+        return 0
+    live = journal.objectives(limit=500, status=["OPEN", "ACTIVE"])
+    if any((o.get("check_spec") or {}).get("kind") == HUNT_KIND or (o.get("check_spec") or {}).get("repro") for o in live):
+        return 0
+    midnight = time.mktime(time.localtime(now)[:3] + (0, 0, 0, 0, 0, -1))
+    if sum(1 for o in journal.objectives_since(midnight) if str(o.get("key") or "").startswith("repro:")) >= HUNTS_PER_DAY:
+        return 0
+    for s in signals(journal, now, root):
+        compact_signal = {k: v for k, v in s.items() if k in ("id", "kind", "tool", "module", "case", "tasks", "summary")}
+        row = journal.add_objective_sync(
+            hunt_goal(journal, s), "a measured failure with a code cause: find it, prove it with a new test, fix it", 2, "repro",
+            {"kind": HUNT_KIND, "signal": s["id"]}, key=f"repro:{s['id']}:g1",
+            evidence={"signal": compact_signal, "sources": [str(x)[:1500] for x in s.get("sources") or []][:6]})
+        if row:
+            return 1
+    return 0
+
+
+def bound(text: str, sources: Iterable[str], n: int = ANCHOR_LEN) -> bool:
+    """The test quotes at least ``n`` consecutive characters of the evidence (whitespace collapsed): it is about
+    the failure that was measured, not a constant the model chose (objective #283 pinned TEST_TIMEOUT_S)."""
+    flat = " ".join(norm_text(text).split())
+    for src in sources:
+        s = " ".join(str(src or "").split())
+        if any(s[i:i + n] in flat for i in range(0, max(0, len(s) - n + 1))):
+            return True
+    return False
+
+
+def parse_snapshot(text: str) -> tuple:
+    """(diff of the tracked files, {untracked path: text}) from a devloop snapshot."""
+    parts = re.split(r"\n# untracked: (\S+)\n", "\n" + norm_text(text))
+    diff = parts[0].lstrip("\n")
+    new = {parts[i]: parts[i + 1] for i in range(1, len(parts) - 1, 2)}
+    return diff, new
+
+
+def new_file_diff(path: str, text: str) -> str:
+    lines = norm_text(text).splitlines()
+    return f"--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{len(lines)} @@\n" + "".join(f"+{ln}\n" for ln in lines)
+
+
+def _final_of(journal, task_id: str) -> str:
+    finals = [e["payload"].get("text") for e in journal.events(task_id, limit=5000) if e["type"] == "final"]
+    return str(finals[-1] or "") if finals else ""
+
+
+def harvest(journal, objective: dict, task: Optional[dict], root: Path = REPO_ROOT) -> Dict[str, Any]:
+    """What a hunt task left in its worktree, judged: screened, bound to the evidence, proved; a proven test and
+    fix become a brief. Recorded as repro.proven or repro.rejected (task-less: the task has ended)."""
+    from syrax.devloop import case_files
+
+    tid = (task or {}).get("task_id")
+    ev = objective.get("evidence") or {}
+    signal = ev.get("signal") or {}
+
+    def record(kind: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        journal.record_sync(kind, {"objective_id": objective["id"], "task_id": tid, **payload}, dedupe_key=f"{kind}:{objective['id']}:{tid}")
+        return {"event": kind, **payload}
+
+    if not tid:
+        return {"event": None}
+    final = _final_of(journal, tid)
+    if final.strip().upper().startswith("NO CODE CAUSE"):
+        return record("repro.rejected", {"verdict": "NO_CODE_CAUSE", "reason": final[:300]})
+    snap = next((e["payload"].get("snapshot") for e in reversed(journal.events(tid, limit=5000))
+                 if e["type"] == "rollback.created" and e["payload"].get("snapshot")), None)
+    if not snap or not Path(snap).is_file():
+        return record("repro.rejected", {"verdict": "NOTHING", "reason": "the task left no new test in its worktree"})
+    diff, new = parse_snapshot(Path(snap).read_bytes().decode("utf-8", "replace"))
+    tests = {p: t for p, t in new.items() if TEST_PATH.match(p)}
+    if len(tests) != 1:
+        return record("repro.rejected", {"verdict": "SCREEN", "reason": f"leave exactly one new backend/syrax/test_*.py (found {len(tests)})"})
+    test_rel, text = next(iter(tests.items()))
+    fix = diff + "".join(new_file_diff(p, t) for p, t in new.items() if p != test_rel)
+    files = [f for f in changed_by(fix)]
+    head = resolve(root, "HEAD")
+    problems = screen(test_rel, text, files, root, head)
+    if not bound(text, ev.get("sources") or []):
+        problems.append(f"the test quotes none of the evidence: use the input that broke it ({ANCHOR_LEN}+ characters of the "
+                        "tool arguments, the error or the request, verbatim)")
+    if signal.get("case"):
+        named = case_files([signal["case"]])
+        problems += [f"{f}: named by quality case {signal['case']}; change SYRAX's behaviour, never the case's files" for f in files if f in named]
+    if problems:
+        return record("repro.rejected", {"verdict": "SCREEN", "reason": "; ".join(problems)[:600], "test": test_rel})
+    proof = prove(root, test_rel, text, fix_diff=fix or None, base=head)
+    if proof["verdict"] in ("PROVEN", "RED") and not (proof.get("red") or {}).get("failed"):
+        # a model's test that is red only because it imports a name its own fix adds proves nothing about the bug
+        return record("repro.rejected", {"verdict": "RED_ERROR", "test": test_rel, "proof": compact(proof),
+                                         "reason": "the test must fail on HEAD by an assertion about what the code does now, "
+                                                   "not by importing a name the fix adds"})
+    if proof["verdict"] not in (("PROVEN",) if fix else ("RED",)):
+        return record("repro.rejected", {"verdict": proof["verdict"], "reason": str(proof.get("reason") or "")[:300], "test": test_rel,
+                                         "proof": compact(proof)})
+    goal = (f"Fix what hunt #{objective['id']} proved: {signal.get('summary') or signal.get('id')}. "
+            f"The hunt's own words: {final[:400]}")
+    if fix and len(fix) <= 4000:
+        goal += f"\n\nThe change that made the test pass in the hunt (apply it with `apply_patch`):\n{fix}"
+    brief = file_brief(journal, goal, f"repro hunt #{objective['id']} ({signal.get('id')})", test_rel, text, files, proof,
+                       priority=1, source="repro", origin={"signal": signal.get("id"), "hunt": objective["id"]})
+    if brief is None:
+        return record("repro.rejected", {"verdict": "FILED_BEFORE", "reason": "this test was filed before", "test": test_rel})
+    return record("repro.proven", {"brief_id": brief["id"], "verdict": proof["verdict"], "test": test_rel, "sha256": proof["sha256"]})
+
+
+def judge_hunt(journal, objective: dict, task: Optional[dict]) -> tuple:
+    """DONE once a proof of this hunt filed a brief; BLOCKED when the hunt found no code cause; else RETRY."""
+    since = (objective.get("created") or 0) - 1
+    mine = lambda e: e["payload"].get("objective_id") == objective.get("id")  # noqa: E731
+    proven = [e for e in journal.events_of_type("repro.proven", since=since, limit=500) if mine(e)]
+    if proven:
+        return "DONE", {"proven": proven[-1]["payload"]}
+    rejected = [e for e in journal.events_of_type("repro.rejected", since=since, limit=500) if mine(e)]
+    last = rejected[-1]["payload"] if rejected else {}
+    if last.get("verdict") == "NO_CODE_CAUSE":
+        return "BLOCKED", {"rejected": last}
+    return "RETRY", ({"rejected": last} if last else {"reason": "nothing harvested yet"})
 
 
 def replay(root: Path, commit: str) -> Dict[str, Any]:

@@ -217,6 +217,31 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Brief Factory, phase 2: SYRAX hunts the repro of its own failures (2026-10-22)
+
+- Phase 1 proved itself live: the first brief filed with `brief_add`
+  (objective 306, covering_tests: the system map's test paths were mangled
+  so none of 50 ran, and a touched test could be cut by the 16-file cap) was
+  PROVEN by the judge, seeded into the task, re-proved red at release, and
+  landed by SYRAX as 3d05189; the judge checked the committed test's sha256
+  (DONE, attribution own). The daily ledger, dead on cp1252 since 10-19,
+  published again (01ea7f1).
+- Phase 2: the cycle derives one `repro_proven` hunt at a time (three a day)
+  from a failure with a code cause after the `repro_since` watermark: a
+  tool's own error in two tasks (caller mistakes, refusals, the environment
+  and judge-file tools excluded), a quality case that failed twice the same
+  way after SYRAX's own check, nudge, refusal or tool error, or one exception
+  in two tasks. The hunt never releases; it leaves a test and a fix in its
+  worktree or answers NO CODE CAUSE. `repro.harvest` (judge code) requires
+  the test to quote 12+ characters of the evidence and to fail on HEAD by an
+  assertion, proves test and fix, refuses a quality case's own files, and
+  files the brief that lands like phase 1's.
+- Integrity choices from the design panel (four designs, three judges, kept
+  in the scratchpad): the proof decides, never the model's words; binding to
+  the evidence stops a constant pin (objective #283's TEST_TIMEOUT_S); one
+  live hunt and a daily cap stop loops; a failure SYRAX's own code did not
+  touch is not hunted.
+
 ### Brief Factory, phase 1: a change lands with a test the judge saw fail (2026-10-22)
 
 - Measured on the journal (2026-10-19, 302 objectives): 208 of the 243 DONE

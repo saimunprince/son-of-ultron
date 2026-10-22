@@ -68,6 +68,23 @@ seen fail. `repro.py` (a judge: in `devloop.JUDGES`) does that part without trus
 - `python -m syrax.repro --replay <commit>...` proves a commit's added test against its parent with the
   rest of the commit as the fix: the acceptance run for this module.
 
+**Repro hunts (phase 2).** In the service (`SYRAX_ISOLATE=1`; `SYRAX_REPRO=1/0` overrides) the cycle derives
+at most one `repro_proven` objective at a time, three a day, key `repro:<signal>:g1`, P2, source `repro`, from
+failures after the `repro_since` watermark (set on the first cycle) and within a week:
+
+- a tool's own error (not refused, not a caller's mistake, not the environment) in two tasks, for a tool
+  implemented in a non-judge module, whose module has not changed since;
+- a quality case that failed twice the same way, after SYRAX's own claim check, nudge, guard refusal or tool
+  error in the trace (a failure with none of these is the model's choice);
+- the same exception in two tasks ([MAINTENANCE] tasks run judge code and are left to the human).
+
+The hunt's task never releases (`repro.release_problems` refuses it): it leaves one new test and the fix in
+its worktree, or answers `NO CODE CAUSE` (BLOCKED, no follow-up). After it, `repro.harvest` reads the kept
+snapshot, screens the test, requires it to quote 12+ characters of the evidence and to fail on HEAD by an
+assertion (an ImportError of a name the fix adds proves nothing), proves test and fix, refuses files a
+quality case names, and files the P1 brief (source `repro`) that lands like any other; `repro.proven` makes
+the hunt DONE.
+
 ## The cycle (`Autonomy.run_once`)
 
 ```
@@ -108,9 +125,8 @@ objectives are never retried blindly.
 
 ## What this is not (yet)
 
-- SYRAX does not yet derive repro briefs from its own failures: its self-derived objectives research,
-  verify tools or measure; code changes come from `change_released` objectives a human filed (with a
-  repro through `brief_add`, or a verbatim test in the goal).
+- Hunts read the journal's failures only: a defect nobody's task ran into is not found, and a failure in a
+  judge file (python_execute, release, the ledger) is left to the human.
 - No natural-language planning beyond the single autonomous brief; lessons are
   derived strings, not model reflections.
 - Resource gate looks at CPU load and free RAM only.

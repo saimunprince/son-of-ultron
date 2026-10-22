@@ -407,7 +407,8 @@ class DevLoop:
             oid = self._active_objective_id(task)
             active = self.journal.objective(oid) if oid is not None else None
             problems += fixture_problems(files, active)
-        if not problems and active and ((active.get("check_spec") or {}).get("repro")):
+        if not problems and active and ((active.get("check_spec") or {}).get("repro")
+                                         or (active.get("check_spec") or {}).get("kind") == "repro_proven"):
             # a brief filed with a judge-proven test lands with exactly that test, still failing on this base
             from syrax import repro
 

@@ -26,7 +26,7 @@ MAX_DEPTH = 2
 # what is missing is a fix, not knowledge, so they get no learning objective.
 # Live 2026-10-03: a quality regression spawned "learn how to fix a quality
 # regression" research.
-MEASURED = {"quality_recovered", "quality_case_passes", "benchmark_recovered", "verification_green", "change_released"}
+MEASURED = {"quality_recovered", "quality_case_passes", "benchmark_recovered", "verification_green", "change_released", "repro_proven"}
 KEEP = ("limitation", "plan", "plan_checks")
 
 

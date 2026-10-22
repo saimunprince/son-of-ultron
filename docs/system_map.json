@@ -409,7 +409,7 @@
         "the performance gate (bench.py) is advisory, not required (laptop noise)",
         "rollback covers the repository only",
         "one release per tool call; the full gate takes about 7-8 minutes (900+ tests and a production UI build)",
-        "a repro brief is filed by a human (brief_add); SYRAX does not yet derive repro briefs from its own failures"
+        "repro hunts start only from journaled failures (tool errors in two tasks, a case failing twice after SYRAX's own step, an exception in two tasks); a failure in a judge file is left to the human"
       ],
       "code": [
         "backend/syrax/devloop.py",
@@ -423,7 +423,8 @@
         "backend/syrax/test_repro_screen.py",
         "backend/syrax/test_repro_prove.py",
         "backend/syrax/test_repro_release.py",
-        "backend/syrax/test_brief_ws.py"
+        "backend/syrax/test_brief_ws.py",
+        "backend/syrax/test_repro_hunt.py"
       ],
       "failure_modes": [
         "gate BLOCKED \u2192 rollback.created, tree restored",
