@@ -54,6 +54,7 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import starlette.websockets
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -841,6 +842,13 @@ def _explain(e: Exception) -> str:
     return text[:500]
 
 
+# Live 2026-10-22 18:07: a client connected while the core was still building its agent (~14 s after a start) and
+# left before boot ended; Session.send swallowed the failed sends, the loop then read the socket, and starlette 1.x
+# raised WebSocketDisconnected, a RuntimeError and not a WebSocketDisconnect: a full "SYRAX session error"
+# traceback in the human's console for a client that had simply gone.
+CLIENT_GONE = tuple(c for c in (WebSocketDisconnect, getattr(starlette.websockets, "WebSocketDisconnected", None)) if c)
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     ok, why = _ws_allowed(ws)
@@ -853,7 +861,7 @@ async def ws_endpoint(ws: WebSocket):
     session = Session(ws, probe=ws.query_params.get("probe") == "1")
     try:
         await session.boot()
-        while True:
+        while not session.closed:  # a send that failed means the client is gone
             raw = await ws.receive_text()
             try:
                 msg = json.loads(raw)
@@ -867,7 +875,7 @@ async def ws_endpoint(ws: WebSocket):
             except Exception as e:  # one bad command must not kill the session
                 logger.exception("SYRAX command failed")
                 await session.send({"type": "error", "message": _explain(e)})
-    except WebSocketDisconnect:
+    except CLIENT_GONE:
         pass
     except Exception as e:
         logger.exception("SYRAX session error")
