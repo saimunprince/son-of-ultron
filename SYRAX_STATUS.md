@@ -217,6 +217,27 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### The first live hunt: right cause, wrong facts (2026-10-22)
+
+- `hunt_add {summary, evidence, module?}` (70f38e8) lets a human point
+  SYRAX at a failure; SYRAX writes the test and the fix and the judge proves
+  them. Hunt #307 (self_inspect named backend/app/tool/str_replace_editor.py
+  for the editor and "unknown" for four tools) found the cause on its first
+  attempt, left a test and a fix, and the harvest proved them (PROVEN) and
+  filed brief 308.
+- But the test and the fix agreed on two wrong paths: journal_query in
+  journal.py (it is journal_query.py) and watch_topic in a watch.py that does
+  not exist. A proof shows that a test and a fix agree, not that they are
+  true. Brief 308 was dropped by hand before it landed; a corrected brief
+  (309, filed with `brief_add`, its test also checking that every named
+  implementation is a file) was landed by SYRAX as bc736e2, after a review
+  rejection rolled back the first release and SYRAX re-created the pinned
+  test from the brief. Twenty-one own commits.
+- fa06eb8: a fix may name only repository files that exist at the base or
+  that it creates (`repro.phantom_paths`, in harvest and in `brief_add`).
+  It would have stopped watch.py; it cannot stop a wrong file that exists
+  (journal.py). Briefs SYRAX files for itself are read before they land.
+
 ### With hunts on, the hollow loops stop (2026-10-22)
 
 - Over the 14 days to 2026-10-22 the cycle spent about 1000 brain calls on
