@@ -408,6 +408,10 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
         )
         created += bool(ok)
     for f in behavior["recent_failures"]:
+        if str(f.get("goal") or "").startswith("[MAINTENANCE]"):
+            # maintenance runs judge code: a web search cannot fix it (live 2026-10-19, objective 299 researched a
+            # TypeError raised in ledger.py); the failed task's error names the file and line for the human
+            continue
         topic = _research_topic(f.get("error") or "")
         if topic:
             ok = journal.add_objective_sync(
@@ -446,8 +450,12 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
             evidence={"quality": {"id": q[0]["id"], "failed": failed, "delta": q[0]["delta"]}},
         )
         created += bool(ok)
-    # a quality case that failed in the last two runs is a defect to fix, not a fluke
-    runs = journal.quality_runs(limit=2)
+    # a quality case that failed in the last two runs is a defect to fix, not a fluke. With repro hunts on, a case
+    # with a code cause is hunted (repro.py) and one without is the model's choice: the free-form objective is not
+    # derived (24 of them, 2026-09-30..10-19, produced no commit; #217 and #283 tried to change the case's own files)
+    from syrax import repro
+
+    runs = journal.quality_runs(limit=2) if not repro.enabled() else []
     if len(runs) == 2:
         failed_now = {r["id"]: r for r in runs[0]["results"] if not r.get("ok")}
         failed_before = {r["id"] for r in runs[1]["results"] if not r.get("ok")}
