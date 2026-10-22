@@ -737,6 +737,8 @@ class Session:
         try:
             base = await asyncio.to_thread(repro.resolve, REPO_ROOT, "HEAD")
             problems = await asyncio.to_thread(repro.screen, test_rel, code, files, REPO_ROOT, base)
+            if fix:
+                problems += await asyncio.to_thread(repro.phantom_paths, fix, REPO_ROOT, base)
             if problems:
                 await self.send({"type": "brief", "event": "refused", "problems": problems})
                 return

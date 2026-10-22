@@ -729,6 +729,25 @@ def bound(text: str, sources: Iterable[str], n: int = ANCHOR_LEN) -> bool:
     return False
 
 
+_REPO_PATH = re.compile(r"\b(?:backend|frontend|docs|hud)/[\w./-]*\w\.\w+\b")
+
+
+def phantom_paths(diff: str, root: Path, base: str) -> List[str]:
+    """Repository paths the fix's added lines name that exist neither at the base nor in the fix. Live 2026-10-22
+    (hunt #307): a fix pointed watch_topic at backend/syrax/watch.py, which does not exist; its test pinned the same
+    path, so test and fix agreed and the proof said PROVEN. A proof checks agreement, not truth: what can be checked
+    is that the code names files that are there."""
+    created = set(changed_by(diff))
+    out: List[str] = []
+    for ln in norm_text(diff).splitlines():
+        if not ln.startswith("+") or ln.startswith("+++"):
+            continue
+        for path in _REPO_PATH.findall(ln):
+            if path not in created and path not in out and not exists_at(Path(root), base, path):
+                out.append(path)
+    return [f"the fix names {p}, which does not exist at {base[:7]} and is not created by the fix" for p in out]
+
+
 def parse_snapshot(text: str) -> tuple:
     """(diff of the tracked files, {untracked path: text}) from a devloop snapshot."""
     parts = re.split(r"\n# untracked: (\S+)\n", "\n" + norm_text(text))
@@ -781,6 +800,7 @@ def harvest(journal, objective: dict, task: Optional[dict], root: Path = REPO_RO
     if not bound(text, ev.get("sources") or []):
         problems.append(f"the test quotes none of the evidence: use the input that broke it ({ANCHOR_LEN}+ characters of the "
                         "tool arguments, the error or the request, verbatim)")
+    problems += phantom_paths(fix, root, head)
     if signal.get("case"):
         named = case_files([signal["case"]])
         problems += [f"{f}: named by quality case {signal['case']}; change SYRAX's behaviour, never the case's files" for f in files if f in named]
