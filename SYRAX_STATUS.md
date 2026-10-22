@@ -217,6 +217,34 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Deep quality cases; words beside an action are never the answer (2026-10-22)
+
+- With hunts on, SYRAX sat idle ("no open objective"): runs #54-#61 passed
+  90-100 %, so the suite showed little to improve and the hunts had no
+  failures to work on.
+- 41181c3: nine deep cases (61 in all), several steps of the work a human
+  asks for, judged by running the result: two bugs in two modules with the
+  tests unchanged, TODO comments collated into a table, the top spender from
+  two CSVs, the commonest code on ERROR lines, a todo CLI driven in five
+  separate calls, parse_duration against hidden acceptance tests, an API
+  rename with an alias, the three largest files in a tree, JSON to CSV. Each
+  has a trap for the shortcut (the customer with the most orders is not the
+  top spender; counting a code anywhere in the log picks the wrong one; a
+  folder named "largest" holds the smallest files; a text-mode csv writer on
+  Windows doubles every line end). `test_deep_cases.py` shows each case
+  solvable by a reference solution and failed by doing nothing or by its
+  shortcut. Deep cases get 420 s; a first run of new cases is a BASELINE.
+- 54c3853: quality run #58's build_cli built and ran the project, but its
+  final answer was step 2's "Now I will create the `main.py` file": the last
+  steps ran tools without a word, and the agent's promise pattern does not
+  match "Now I will". A reply written beside a tool call is now never the
+  final answer; the agent asks once for the answer (1 of 1238 finals in 30
+  days took this path, so the extra brain call is rare).
+- 414059a: self_patch_docs (#58) diffed an existing doc from /dev/null, then
+  wrote ../docs/EXECUTION_PLAN.md and called the file out of reach. A refused
+  path now comes with the repository path it meant, and a /dev/null diff for
+  an existing file shows how the file ends.
+
 ### The first live hunt: right cause, wrong facts (2026-10-22)
 
 - `hunt_add {summary, evidence, module?}` (70f38e8) lets a human point
