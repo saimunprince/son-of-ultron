@@ -588,7 +588,8 @@ class SelfInspectTool(BaseTool):
                 "enum": list(SECTIONS),
                 "description": "Which part to read. 'summary' is compact; 'all' is everything.",
             },
-            "task_id": {"type": "string", "description": "Read this one journaled task instead of a section."},
+            "task_id": {"type": "string", "description": "Read this one journaled task instead of a section: an id the human, "
+                                                         "the evidence or journal_query gave you, never one you made up."},
         },
     }
     model: Optional[Any] = None  # SelfModel, set by the core
