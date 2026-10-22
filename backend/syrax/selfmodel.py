@@ -533,7 +533,7 @@ def _implementation_of(tool: str) -> str:
         return "backend/syrax/skills.py"
     return {
         "python_execute": "backend/syrax/tools.py AsyncPythonExecute",
-        "str_replace_editor": "backend/app/tool/str_replace_editor.py",
+        "str_replace_editor": "backend/syrax/editor.py",
         "desktop": "backend/syrax/desktop.py",
         "remember": "backend/syrax/memory.py",
         "recall": "backend/syrax/memory.py",
@@ -550,6 +550,11 @@ def _implementation_of(tool: str) -> str:
         "present": "backend/syrax/presentation.py",
         "experiment": "backend/syrax/experiments.py",
         "compare_versions": "backend/syrax/versions.py",
+        "journal_query": "backend/syrax/journal_query.py",
+        "remind": "backend/syrax/reminders.py",
+        "undo": "backend/syrax/undo.py",
+        "watch_topic": "backend/syrax/topics.py",
+        "skill_create": "backend/syrax/skills.py",
     }.get(tool, "unknown")
 
 
