@@ -273,14 +273,24 @@ def covering_tests(root: Path, files: List[str]) -> List[str]:
     from syrax.devloop import impact_of
 
     wanted: List[str] = []
-    for pat in impact_of({f: "M" for f in files}, root).get("component_tests", []):
-        mod = pat.split("::")[0].replace(".", "/")
-        wanted.append(f"backend/{mod}.py" if not mod.startswith("backend/") else f"{mod}.py")
     for f in files:
         p = Path(f)
         if p.name.startswith("test_") and p.suffix == ".py":
             wanted.append(f)
-        elif p.suffix == ".py" and f.startswith(MODULE_DIR + "/"):
+    for pat in impact_of({f: "M" for f in files}, root).get("component_tests", []):
+        head = pat.split("::")[0]
+        if head.endswith(".py"):
+            mod = head if head.startswith("backend/") else f"backend/{head}"
+            if mod not in wanted:
+                wanted.append(mod)
+        else:
+            mod = head.replace(".", "/")
+            tpath = f"backend/{mod}.py" if not mod.startswith("backend/") else f"{mod}.py"
+            if tpath not in wanted:
+                wanted.append(tpath)
+    for f in files:
+        p = Path(f)
+        if p.suffix == ".py" and f.startswith(MODULE_DIR + "/") and not (p.name.startswith("test_")):
             wanted.append(f"{MODULE_DIR}/test_{p.stem}.py")
             wanted += importing_tests(root, p.stem)
     out: List[str] = []
