@@ -1,18 +1,80 @@
 # SYRAX devlog
 
-Generated 2026-10-17 10:49 +0600 by `python -m syrax.devlog` at commit `09e97df`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+Generated 2026-10-22 12:25 +0600 by `python -m syrax.devlog` at commit `9a9b640`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+
+## 2026-10-22
+
+- Tasks: 3 finished, 0 failed (152 journal events).
+- Objectives closed: 3
+  - #303 My biggest measured limitation right now: Core: one task at a time; no queue scheduling. I
+  - #304 My biggest measured limitation right now: Core: brain events from a running task are journ
+  - #305 My biggest measured limitation right now: Journal: file edits are reality-checked and call
+
+## 2026-10-19
+
+- Tasks: 277 finished, 1 failed (8320 journal events).
+- Objectives closed: 25
+  - #277 My biggest measured limitation right now: Frontend HUD: history/today views are polled on 
+  - #278 My biggest measured limitation right now: Frontend HUD: HUD regions (orb, controls, consol
+  - #279 My biggest measured limitation right now: WebSocket server + Session: an allowed Origin is
+  - #280 apply_patch says TESTS NOT RUN when no test ran. Quality run #48: apply_patch created a mo
+  - #285 A tool the human forbids is not a tool the human asks for. Cause of quality cases self_pat
+  - #283 Quality case `self_patch_edit` failed in the last two runs (tool release not used → tools:
+  - #284 Quality case `self_patch_new` failed in the last two runs (tool release not used → tools: 
+  - #281 My biggest measured limitation right now: `apply_patch` failed 7 of its last 40 uses (18%)
+- Quality run #57: 100.0 % of 3 cases.
+- Incidents: rollbacks 33, claims sent back 4, restarts 16.
+- Commits SYRAX made to itself: 9
+  - `c476788` syrax: Expand negation check in named_tools to cover more words and characters.
+  - `0ab1705` syrax: Allow LearnTool to accept sources cited as knowledge_id=536 or id=536.
+  - `aa66fbb` syrax: Fix apply_patch to detect and correct undercounted hunk headers.
+  - `ad9cd44` syrax: Fix table header argument handling and _clip function to correctly display 0.
+  - `7450f07` syrax: Mask credentials in final answers unless requested by the human
+  - `92f3936` syrax: Require new_str in str_replace to prevent accidental file-emptying when new_str is omitted.
+  - `2431cec` syrax: Editor: missing file reports close names using difflib sequence matcher
+  - `a26aae2` syrax: Prevent named_tools from matching forbidden or negated tools (e.g. Do not call release)
+  - `7c55302` syrax: Fix apply_patch test reporting when no tests ran and update ApplyPatchTool description
+- Commits by its maintainers: 7
+  - `9a9b640` docs: the ledger's cp1252 failure and its replay; quality run #54
+  - `607aaa6` fix(devloop): releases read and write UTF-8; the daily ledger publishes again
+  - `a04ae49` fix(prompt): a question about SYRAX itself is read with self_inspect; quality case self_capabilities
+  - `dc8a0f1` fix(tools): python_execute keeps what the code printed before a timeout or an exception
+  - `83c2dd3` fix(present): the error says where a table's header goes; docs for SYRAX's 14th-17th changes
+  - `c678a48` docs: SYRAX's eleventh to thirteenth own changes; the close-names hint made readable
+  - `9798b6e` fix(tools): keep python_execute output before sys.exit; five more caller mistakes
 
 ## 2026-10-17
 
-- Tasks: 4 finished, 0 failed (315 journal events).
-- Objectives closed: 4
+- Tasks: 70 finished, 0 failed (2664 journal events).
+- Objectives closed: 9
   - #267 Brain latency. Three steps, one apply_patch each, then one release. (1) backend/syrax/brai
   - #268 My biggest measured limitation right now: Self-model: performance history: task durations 
   - #269 My biggest measured limitation right now: Research engine + knowledge store: keyword overl
   - #270 My biggest measured limitation right now: Research engine + knowledge store: only web and 
-- Incidents: interrupted 1, rollbacks 1, restarts 1.
-- Commits SYRAX made to itself: 1
+  - #272 Brain latency, steps 2 and 3 (step 1 landed in 09e97df: every "answered" brain event carri
+  - #273 self_inspect says the running build first. Quality run #46: self_inspect returned "version
+  - #274 Memory: a new value for the same subject replaces the old one. Today "Prince's favourite e
+  - #275 The stall watchdog must not report a machine sleep as a stall. 2026-10-17 the PC slept thr
+- Quality run #47: 100.0 % of 6 cases.
+- Incidents: stalls 2, interrupted 1, rollbacks 12, claims sent back 1, restarts 14.
+- Commits SYRAX made to itself: 7
+  - `56dc711` syrax: Editor: a worktree path to an untracked file reads the running tree.
+  - `c6342ec` syrax: Add SLEEP_GAP_S to stallwatch watchdog to prevent false stall reports after machine sleep
+  - `0b42181` syrax: Add memory subject matching and contradiction replacement in MemoryStore.
+  - `5218b36` syrax: Add Running build headline to self_inspect output when identity has a version
+  - `e2c362a` syrax: Add brain_ms performance metric to SelfModel and test_brain_ms.py
+  - `b46c45f` syrax: docs(rise): the ledger, the devlog and the capability matrix, regenerated from evidence
   - `09e97df` syrax: Add ms timing to BrainRouter.ask_tool answered events
+- Commits by its maintainers: 9
+  - `1881bb2` docs: SYRAX's seventh to ninth own changes; the map's memory limitation follows
+  - `c92f74e` fix(verify): time the machine slept does not count against a gate's timeout
+  - `31d59e2` feat(hud): the BRAIN row shows how long the last answer took
+  - `6599ef4` fix(brains): a pooled provider whose model answers empty tries its other models before failing over
+  - `a965856` fix(agent): an answer after a refused call says what was not done; repo_map lists matching files
+  - `e867425` docs: SYRAX's sixth own change (e2c362a, brain latency); the map's performance limitation follows
+  - `0ab202d` fix(autonomy): a change_released check may name its files; part of the change is not done
+  - `f5ec401` fix(tools): python_execute reads and writes UTF-8 unless the code names an encoding
+  - `ef68178` fix(autonomy): a restart points the next attempt at the interrupted task's kept diff
 
 ## 2026-10-15
 

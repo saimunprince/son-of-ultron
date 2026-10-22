@@ -1,14 +1,43 @@
 # SYRAX archive
 
-Generated 2026-10-17 10:49 +0600 by the daily ledger at commit `09e97df`, from the journal's `archive` table: every release attempt SYRAX made to its own code, the commit it started from, the commit it produced, and the quality score measured at that commit. Parent selection (Darwin Gödel Machine style) favours a high score and penalises an ancestor that already has many children. Nothing here is typed by hand.
+Generated 2026-10-22 12:25 +0600 by the daily ledger at commit `9a9b640`, from the journal's `archive` table: every release attempt SYRAX made to its own code, the commit it started from, the commit it produced, and the quality score measured at that commit. Parent selection (Darwin Gödel Machine style) favours a high score and penalises an ancestor that already has many children. Nothing here is typed by hand.
 
-- Variants committed: 6; attempts that did not land: 29; scored: 0.
-- Best parent now: `09e97df` (newest committed variant; no quality run has scored it yet).
-- Lineage of the running build: `09e97df`
+- Variants committed: 21; attempts that did not land: 43; scored: 4.
+- Best parent now: `e2c362a` (score 88% with 0 child(ren): weight 0.979).
+- Lineage of the running build: `c476788` ← `0ab1705`
 
 | when | decision | parent → head | score | children | weight | objective | summary |
 |---|---|---|---|---|---|---|---|
-| 2026-10-17 10:36 | COMMITTED | `60dbf24` → `09e97df` | - | 0 | 0.000 | #267 | Add ms timing to BrainRouter.ask_tool answered events |
+| 2026-10-19 13:32 | COMMITTED | `0ab1705` → `c476788` | - | 0 | 0.000 | #298 | Expand negation check in named_tools to cover more words and character |
+| 2026-10-19 13:18 | REFUSED | `0ab1705` → `-` | - | 0 | 0.000 | #294 | Dummy release for workspace check |
+| 2026-10-19 13:18 | REFUSED | `0ab1705` → `-` | - | 0 | 0.000 | #294 | Improve python_execute robustness against subprocess communication err |
+| 2026-10-19 13:12 | COMMITTED | `83c2dd3` → `0ab1705` | - | 3 | 0.000 | #296 | Allow LearnTool to accept sources cited as knowledge_id=536 or id=536. |
+| 2026-10-19 12:47 | REFUSED | `aa66fbb` → `-` | - | 0 | 0.000 | #288 | Improve python_execute robustness against timeouts and process errors |
+| 2026-10-19 12:42 | COMMITTED | `ad9cd44` → `aa66fbb` | - | 1 | 0.000 | #292 | Fix apply_patch to detect and correct undercounted hunk headers. |
+| 2026-10-19 12:29 | COMMITTED | `7450f07` → `ad9cd44` | - | 1 | 0.000 | #291 | Fix table header argument handling and _clip function to correctly dis |
+| 2026-10-19 12:20 | REFUSED | `7450f07` → `-` | - | 0 | 0.000 | #291 | Fix table header argument handling and _clip function to correctly dis |
+| 2026-10-19 12:16 | COMMITTED | `92f3936` → `7450f07` | - | 2 | 0.000 | #290 | Mask credentials in final answers unless requested by the human |
+| 2026-10-19 12:06 | REFUSED | `92f3936` → `-` | - | 0 | 0.000 | #290 | Mask credentials in final answers unless requested by the human |
+| 2026-10-19 12:06 | REFUSED | `92f3936` → `-` | - | 0 | 0.000 | #290 | Mask credentials in final answers unless requested by the human |
+| 2026-10-19 12:06 | REFUSED | `92f3936` → `-` | - | 0 | 0.000 | #290 | Mask credentials in final answers unless requested by the human |
+| 2026-10-19 12:06 | REFUSED | `92f3936` → `-` | - | 0 | 0.000 | #290 | Mask credentials in final answers unless requested by the human |
+| 2026-10-19 12:03 | COMMITTED | `c678a48` → `92f3936` | - | 5 | 0.000 | #289 | Require new_str in str_replace to prevent accidental file-emptying whe |
+| 2026-10-19 11:27 | COMMITTED | `a26aae2` → `2431cec` | - | 0 | 0.000 | #282 | Editor: missing file reports close names using difflib sequence matche |
+| 2026-10-19 11:07 | COMMITTED | `7c55302` → `a26aae2` | 100% | 1 | 0.497 | #285 | Prevent named_tools from matching forbidden or negated tools (e.g. Do  |
+| 2026-10-19 10:48 | REFUSED | `7c55302` → `-` | - | 0 | 0.000 | #283 | Update TEST_TIMEOUT_S to 400 in backend/syrax/selfedit.py |
+| 2026-10-19 10:43 | REFUSED | `7c55302` → `-` | - | 0 | 0.000 | #283 | Update TEST_TIMEOUT_S to 400 in backend/syrax/selfedit.py. |
+| 2026-10-19 10:34 | COMMITTED | `9798b6e` → `7c55302` | 75% | 3 | 0.231 | #280 | Fix apply_patch test reporting when no tests ran and update ApplyPatch |
+| 2026-10-17 16:12 | COMMITTED | `1881bb2` → `56dc711` | 86% | 0 | 0.974 | #276 | Editor: a worktree path to an untracked file reads the running tree. |
+| 2026-10-17 15:48 | COMMITTED | `c92f74e` → `c6342ec` | - | 0 | 0.000 | #275 | Add SLEEP_GAP_S to stallwatch watchdog to prevent false stall reports  |
+| 2026-10-17 15:14 | COMMITTED | `5218b36` → `0b42181` | - | 0 | 0.000 | #274 | Add memory subject matching and contradiction replacement in MemorySto |
+| 2026-10-17 14:59 | ROLLED_BACK | `5218b36` → `-` | - | 0 | 0.000 | #274 | Add memory subject matching and contradiction replacement in MemorySto |
+| 2026-10-17 13:15 | COMMITTED | `31d59e2` → `5218b36` | - | 2 | 0.000 | #273 | Add Running build headline to self_inspect output when identity has a  |
+| 2026-10-17 11:51 | COMMITTED | `0ab202d` → `e2c362a` | 88% | 0 | 0.979 | #272 | Add brain_ms performance metric to SelfModel and test_brain_ms.py |
+| 2026-10-17 11:36 | REFUSED | `0ab202d` → `-` | - | 0 | 0.000 | #271 | Add brain_ms calculation to SelfModel.performance() and test_brain_ms. |
+| 2026-10-17 11:36 | REFUSED | `0ab202d` → `-` | - | 0 | 0.000 | #271 | Add brain_ms calculation to SelfModel.performance() and test_brain_ms. |
+| 2026-10-17 11:35 | REFUSED | `0ab202d` → `-` | - | 0 | 0.000 | #271 | Add brain_ms calculation to SelfModel.performance() and test_brain_ms. |
+| 2026-10-17 11:07 | COMMITTED | `09e97df` → `b46c45f` | - | 0 | 0.000 | - | docs(rise): the ledger, the devlog and the capability matrix, regenera |
+| 2026-10-17 10:36 | COMMITTED | `60dbf24` → `09e97df` | - | 1 | 0.000 | #267 | Add ms timing to BrainRouter.ask_tool answered events |
 | 2026-10-15 18:24 | REFUSED | `9932b91` → `-` | - | 0 | 0.000 | #266 | Add brain latency metrics to SelfModel and brain answered events. |
 | 2026-10-15 18:11 | REFUSED | `92c3bd1` → `-` | - | 0 | 0.000 | #266 | Use Journal.emit in test_brain_ms.py |
 | 2026-10-15 18:09 | REFUSED | `92c3bd1` → `-` | - | 0 | 0.000 | #266 | Fix Journal method calls in test_brain_ms.py |
