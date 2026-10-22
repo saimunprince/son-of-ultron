@@ -338,6 +338,7 @@ class SyraxAgent(Manus):
     checkpoint: Optional[Callable[..., Awaitable[None]]] = Field(default=None, exclude=True)
     ask_tool: WebAskHuman = Field(default_factory=WebAskHuman, exclude=True)
     last_reply: str = ""
+    reply_before_action: bool = False  # last_reply was written beside a tool call: it says what was about to happen
     seen_calls: dict = Field(default_factory=dict)  # tool+args already run this turn
     repeats: int = 0  # consecutive calls that were repeats of an earlier one
     loop_stopped: bool = False  # the task was ended because it kept repeating one call
@@ -388,6 +389,7 @@ class SyraxAgent(Manus):
         self.current_step = 0
         self.state = AgentState.IDLE
         self.last_reply = ""
+        self.reply_before_action = False
         self.seen_calls = {}
         self.repeats = 0
         self.loop_stopped = False
@@ -432,7 +434,11 @@ class SyraxAgent(Manus):
             )
         if self.last_reply.startswith("SYRAX:"):
             self.last_reply = self.last_reply[len("SYRAX:"):].strip()
-        if (not self.last_reply or PROMISE.search(self.last_reply)) and any(m.role == "tool" for m in self.memory.messages):
+        # Live 2026-10-22 (quality run #58, build_cli): step 2 said "Now I will create the `main.py` file" beside its
+        # tool call, the last steps ran tools without a word, and that sentence became the final answer. Words
+        # written beside an action are what was about to happen, never the answer: ask once for the answer.
+        if ((not self.last_reply or self.reply_before_action or PROMISE.search(self.last_reply))
+                and any(m.role == "tool" for m in self.memory.messages)):
             await self._final_answer()
         if self.last_reply and ECHO.search(self.last_reply):
             await self._send({"type": "notice", "text": "The answer repeated a console nudge: asking once for the answer itself."})
@@ -518,6 +524,7 @@ class SyraxAgent(Manus):
         text = (getattr(msg, "content", None) or "").strip()
         if text:
             self.last_reply = text
+            self.reply_before_action = False
             self.memory.add_message(Message.assistant_message(text))
             await self._send({"type": "think", "step": self.current_step, "content": text, "tools": []})
 
@@ -531,6 +538,7 @@ class SyraxAgent(Manus):
         content = (last.content or "").strip() if last and last.role == "assistant" else ""
         if content:
             self.last_reply = content
+            self.reply_before_action = any(c.function.name != "terminate" for c in self.tool_calls)
 
         await self._send(
             {
