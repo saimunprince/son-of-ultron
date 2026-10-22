@@ -11,6 +11,8 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     brief_check {test_path, test_code, files?, fix_diff?} |
                     brief_add {goal, test_path, test_code, files, fix_diff?, reason?, priority?} (repro.py proves the
                     test fails on a clean HEAD, then files a change_released objective pinned to it) |
+                    hunt_add {summary, evidence: [str], module?, tasks?, priority?} (SYRAX hunts the code cause:
+                    writes the test and the fix; the judge proves both and files the brief) |
                     objective_update {id, status, note} (a human reopens, drops or closes) | proposals {limit?} |
                     dismiss {task_id, note} (cancel an INTERRUPTED task instead of resuming it) |
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
@@ -30,6 +32,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     skills | skill {event} | presentation {event} | presentation_plan |
                     benchmarks | experiments | benchmark {event} | experiment {event} |
                     quality_runs | quality {event} | brief {event: checked|filed|refused, proof?, problems?, objective_id?} |
+                    hunt {event: filed|refused, objective_id?, problems?} |
                     reflection {event} |
                     notice | error | pong | brain | brains | brain_models | brain_test
 
@@ -623,6 +626,21 @@ class Session:
                     await journal.update_objective(oid, status=status, note=f"human: {note}")
             except JournalError as e:
                 await self.send({"type": "notice", "text": str(e)})
+        elif kind == "hunt_add":
+            from syrax import repro
+
+            evidence = msg.get("evidence") if isinstance(msg.get("evidence"), list) else [msg.get("evidence")]
+            tasks = msg.get("tasks") if isinstance(msg.get("tasks"), list) else []
+            try:
+                priority = int(msg.get("priority") or 1)
+            except (TypeError, ValueError):
+                priority = 1
+            row, problems = await journal.run(repro.human_hunt, journal, str(msg.get("summary") or ""), evidence,
+                                              str(msg.get("module") or "") or None, tasks, priority)
+            if problems:
+                await self.send({"type": "hunt", "event": "refused", "problems": problems})
+            else:
+                await self.send({"type": "hunt", "event": "filed", "objective_id": row["id"]})
         elif kind in ("brief_check", "brief_add"):
             if self.core.busy or getattr(getattr(self.core, "quality", None), "running", False):
                 await self.send({"type": "notice", "text": "A brief is proved while SYRAX is idle: try again when the task ends."})

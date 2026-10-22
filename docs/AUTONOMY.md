@@ -83,7 +83,8 @@ its worktree, or answers `NO CODE CAUSE` (BLOCKED, no follow-up). After it, `rep
 snapshot, screens the test, requires it to quote 12+ characters of the evidence and to fail on HEAD by an
 assertion (an ImportError of a name the fix adds proves nothing), proves test and fix, refuses files a
 quality case names, and files the P1 brief (source `repro`) that lands like any other; `repro.proven` makes
-the hunt DONE.
+the hunt DONE. A human points a hunt at a failure with WebSocket `hunt_add {summary, evidence: [str], module?,
+tasks?}` (`repro.human_hunt`): SYRAX writes the test and the fix, the judge proves both.
 
 **Self-measurement (phase 3).** When the service hunts and the last quality run is older than 20 h, the idle
 cycle runs `repro.measure_subset`: the last run's failures (a second same failure is a hunt signal, a pass

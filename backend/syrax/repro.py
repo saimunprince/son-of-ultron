@@ -654,7 +654,7 @@ def hunt_goal(journal, signal: dict) -> str:
     if signal.get("args"):
         evidence.append("The call that failed, its arguments: " + json.dumps(signal["args"], ensure_ascii=False)[:600])
     if signal.get("error"):
-        evidence.append("Its error: " + signal["error"][:600])
+        evidence.append(("The evidence, verbatim: " if signal.get("kind") == "human" else "Its error: ") + signal["error"][:600])
     if signal.get("prompt"):
         evidence.append("The case's request, verbatim: " + signal["prompt"])
     if signal.get("steps"):
@@ -688,6 +688,34 @@ def derive(journal, now: Optional[float] = None, root: Path = REPO_ROOT) -> int:
         if row:
             return 1
     return 0
+
+
+def human_hunt(journal, summary: str, evidence: Sequence[str], module: Optional[str] = None,
+               tasks: Sequence[str] = (), priority: int = 1) -> tuple:
+    """A hunt a human points at: a failure they saw, in their words and with the evidence that shows it. SYRAX
+    then does the rest (the test, the fix; the judge proves both and files the brief). Returns (objective, problems)."""
+    summary = " ".join(str(summary or "").split())
+    sources = [str(e) for e in evidence or [] if isinstance(e, str) and e.strip()]
+    tasks = [str(t) for t in tasks or [] if t]
+    problems = []
+    if len(summary) < 12:
+        problems.append("hunt_add needs a summary of the failure (a sentence)")
+    if not any(len(" ".join(s.split())) >= ANCHOR_LEN for s in sources):
+        problems.append(f"hunt_add needs evidence: at least one string of {ANCHOR_LEN}+ characters the test can quote "
+                        "(an error, a tool's arguments, an output)")
+    if module and (module in JUDGES or not FIX_PATH.match(module) or module.rsplit("/", 1)[-1].startswith("test_")):
+        problems.append(f"{module}: a hunt changes a non-judge module in backend/syrax")
+    if problems:
+        return None, problems
+    sid = f"human:{_sha8(summary + '|'.join(sources))}"
+    signal = {"id": sid, "kind": "human", "summary": summary, "module": module, "tasks": tasks[-5:],
+              "error": "\n".join(sources)[:600], "sources": sources}
+    row = journal.add_objective_sync(
+        hunt_goal(journal, signal), "a human pointed at this failure: find the code cause, prove it with a new test, fix it",
+        max(1, min(int(priority or 1), 9)), "human", {"kind": HUNT_KIND, "signal": sid}, key=f"repro:{sid}:g1",
+        evidence={"signal": {k: v for k, v in signal.items() if k in ("id", "kind", "module", "tasks", "summary")},
+                  "sources": [s[:1500] for s in sources][:6]})
+    return row, ([] if row else ["this hunt was filed before"])
 
 
 def bound(text: str, sources: Iterable[str], n: int = ANCHOR_LEN) -> bool:
