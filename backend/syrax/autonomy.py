@@ -309,6 +309,8 @@ def own_work_may_not_call(journal: Journal, name: str) -> bool:
 
 def derive_objectives(journal: Journal, selfmodel: Any) -> int:
     """Turn evidence-based weaknesses into objectives. Idempotent via keys."""
+    from syrax import repro  # with repro hunts on, some derivations give way to hunts
+
     created = 0
     caps = selfmodel.capabilities()
     # Phase 5: contradicting conclusions are settled by fresh research
@@ -369,7 +371,9 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
                 evidence={"capability": c},
             )
             created += bool(ok)
-        elif c["status"] == "FAILING":
+        elif c["status"] == "FAILING" and not repro.enabled():
+            # with repro hunts on, a tool's own failure is hunted with a proof; a repair objective only called the
+            # tool once more (34 of them in 14 days to 2026-10-22, no change)
             ok = journal.add_objective_sync(
                 goal=f"The `{name}` tool failed on its last use. Diagnose why, then call it again with a harmless action that should succeed and report the result.",
                 reason=f"last use failed ({c['failures']}/{c['uses']} failures)",
@@ -453,8 +457,6 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
     # a quality case that failed in the last two runs is a defect to fix, not a fluke. With repro hunts on, a case
     # with a code cause is hunted (repro.py) and one without is the model's choice: the free-form objective is not
     # derived (24 of them, 2026-09-30..10-19, produced no commit; #217 and #283 tried to change the case's own files)
-    from syrax import repro
-
     runs = journal.quality_runs(limit=2) if not repro.enabled() else []
     if len(runs) == 2:
         failed_now = {r["id"]: r for r in runs[0]["results"] if not r.get("ok")}

@@ -217,6 +217,18 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### With hunts on, the hollow loops stop (2026-10-22)
+
+- Over the 14 days to 2026-10-22 the cycle spent about 1000 brain calls on
+  objectives that changed nothing: tool_reliability (21 objectives, 493
+  calls), repair-capability (34, 157 calls: one more call of the failing
+  tool) and the weekly re-research of the same known limitations (34),
+  against 870 calls for all the human's briefs. With repro hunts on, a tool's
+  own failure is hunted with a proof instead: `limits.choose` skips
+  tool_reliability and any known limitation a DONE objective researched in
+  the last 90 days, and `derive_objectives` derives no repair objective.
+  With hunts off nothing changes (the existing tests pin that behaviour).
+
 ### Brief Factory, phase 3: SYRAX measures itself every day (2026-10-22)
 
 - None of the 57 quality runs up to 2026-10-19 was started by SYRAX, so a

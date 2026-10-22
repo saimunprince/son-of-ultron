@@ -194,13 +194,33 @@ def kind_stats(journal: Journal) -> Dict[str, dict]:
             for k, v in out.items()}
 
 
+RESEARCHED_FOR_S = 90 * 86400.0
+
+
+def researched_subjects(journal: Journal, now: Optional[float] = None) -> set:
+    """Known limitations a DONE objective already researched in the last RESEARCHED_FOR_S."""
+    since = (now or time.time()) - RESEARCHED_FOR_S
+    return {((o.get("evidence") or {}).get("limitation") or {}).get("subject")
+            for o in journal.objectives_since(since, limit=2000)
+            if o.get("status") == "DONE" and str(o.get("key") or "").startswith("limit:known_limitation:")} - {None}
+
+
 def choose(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> Optional[dict]:
     """Create an objective for the strongest limitation not yet offered this
     week. Returns the created objective, or None."""
     ranked = rank(journal, selfmodel, now)
     week = _week(now)
     chosen = None
+    # With repro hunts on (repro.py), a tool's own failures are hunted with a proof, and a limitation already
+    # researched stays researched: 14 days to 2026-10-22 spent ~1000 brain calls on tool_reliability, repair and
+    # weekly re-research objectives that changed nothing (34 known-limitation objectives on recurring subjects).
+    from syrax import repro
+
+    hunting = repro.enabled()
+    researched = researched_subjects(journal, now) if hunting else set()
     for lim in ranked:
+        if hunting and (lim["kind"] == "tool_reliability" or (lim["kind"] == "known_limitation" and lim["subject"] in researched)):
+            continue
         key = f"limit:{lim['kind']}:{lim['subject']}:{week}"
         obj = journal.add_objective_sync(
             goal=f"My biggest measured limitation right now: {lim['detail']}. Improve it. Plan: " + " ".join(f"({i + 1}) {s}" for i, s in enumerate(lim["plan"])),
