@@ -175,6 +175,7 @@ JUDGES = (
     "backend/syrax/tools.py", "backend/syrax/review.py",
     # and what measures it: a system that reports its own rise must not edit the ruler
     "backend/syrax/rise.py", "backend/syrax/capmatrix.py", "backend/syrax/contracts.py", "backend/syrax/ledger.py",
+    "backend/syrax/repro.py",
     "backend/syrax/archive.py", "backend/syrax/auth.py",
     "backend/syrax/devlog.py",
     "backend/syrax/codebench.py", "backend/syrax/probe.py",
@@ -401,9 +402,16 @@ class DevLoop:
         task = self.journal.task(task_id) if task_id else None
         judged = judge_problems(files)  # every task kind: only a human-made commit changes the judges
         problems += judged
+        active = None
         if task and task.get("kind") == "autonomous":
             oid = self._active_objective_id(task)
-            problems += fixture_problems(files, self.journal.objective(oid) if oid is not None else None)
+            active = self.journal.objective(oid) if oid is not None else None
+            problems += fixture_problems(files, active)
+        if not problems and active and ((active.get("check_spec") or {}).get("repro")):
+            # a brief filed with a judge-proven test lands with exactly that test, still failing on this base
+            from syrax import repro
+
+            problems += repro.release_problems(self.root, self.live_root, files, active)
         if judged and task and task.get("kind") not in ("autonomous", "eval"):
             problems.append("the edit stays in the working tree: tell the human it is there for them to review and commit")
         if problems:

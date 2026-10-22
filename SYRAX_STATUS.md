@@ -217,6 +217,42 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Brief Factory, phase 1: a change lands with a test the judge saw fail (2026-10-22)
+
+- Measured on the journal (2026-10-19, 302 objectives): 208 of the 243 DONE
+  objectives changed nothing in the repository or the skills, and every one
+  of the 23 that produced a commit came from a human's brief. SYRAX's own
+  objectives (selfmodel, followup: 259) produced none; they close on stored
+  knowledge, one tool call, or a later measurement. The briefs that landed on
+  the first attempt (13 of 13 since 10-17) carried a test the human had run
+  on a clean tree of HEAD and seen fail, and the human checked the commit
+  against the brief afterwards.
+- `backend/syrax/repro.py`, a new judge, does that part without a model:
+  `screen` (a new test that asserts more than a constant, imports the module
+  it is about, no secret-shaped literal, nothing above WRITE, no judge in the
+  brief), `prove` (pytest in a throwaway worktree of HEAD under %TEMP% with
+  the secret-free config: RED, RED_ERROR, NOT_RED, INVALID; with a fix diff
+  PROVEN, NOT_FIXED, CONTRACT or FIX_DOES_NOT_APPLY), `file_brief` (a P1
+  change_released objective whose check pins the test's sha256 and text),
+  `release_problems` (the release refuses a missing, changed or no-longer-red
+  test and any file outside the brief) and `fidelity` (the judge needs the
+  committed test to match the pin). The cycle writes the pinned test into the
+  task's worktree, so no model retypes it (2431cec and ad9cd44 each lost one
+  of the brief's tests that way).
+- WebSocket `brief_check` / `brief_add`, and `python -m syrax.repro --check`:
+  one message replaces the scratch worktree, config copy, dry-run script and
+  diff scan the human ran for every brief.
+- Acceptance: `python -m syrax.repro --replay` on the 13 commits SYRAX landed
+  from human briefs (5218b36 … c476788): 13 of 13 PROVEN, each test red on its
+  parent (7450f07's by an ImportError) and green with the rest of its commit
+  together with every test importing the changed module. The first replay ran
+  the proof under the python_execute guard and called 5 of them CONTRACT:
+  test_bridge and test_guard_isolation start guarded children of their own.
+  Proofs now run like the gate, unguarded, after `screen`.
+- Not yet: SYRAX deriving its own repro briefs from failures (phase 2, from
+  the design panel's synthesis: bind each test to the evidence, hunt only
+  failures with a SYRAX-authored step, re-measure the origin).
+
 ### The daily ledger died on cp1252; releases read and write UTF-8 (2026-10-19)
 
 - The 13:41 ledger release failed with "unsupported operand type(s) for +:

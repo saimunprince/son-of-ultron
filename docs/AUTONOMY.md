@@ -24,7 +24,10 @@ Events: `objective.created / updated / completed / blocked / dropped`,
 
 ### Where objectives come from
 
-- **Human**: WebSocket `objective_add {goal, reason?, priority?}` (check = `task_success`).
+- **Human**: WebSocket `objective_add {goal, reason?, priority?, check}`; the check is required (a check-less
+  objective is BLOCKED without a task), see `server.OBJECTIVE_CHECKS`.
+- **Human, with a proven repro** (`brief_add`, below): a `change_released` objective pinned to a test that
+  judge code saw fail on a clean tree of HEAD.
 - **Self-model weaknesses** (`derive_objectives`, run at the start of every cycle, idempotent by key):
   - a registered tool with no journal evidence → `verify-capability:<tool>` (P5, check `tool_verified`);
   - a tool whose last use failed → `repair-capability:<tool>:<failures>` (P2, check `tool_verified`);
@@ -39,6 +42,31 @@ Events: `objective.created / updated / completed / blocked / dropped`,
     `experiment`, `present`, `terminate`, `ask_human`): verifying them on their
     own would mean junk releases, junk skills or fake memories. Their evidence
     comes from real use; stale objectives of that kind are DROPPED.
+
+### Briefs with a proven repro (`backend/syrax/repro.py`, 2026-10-22)
+
+Measured 2026-10-19: 208 of 243 DONE objectives changed nothing; all 23 that changed the code came from a
+human's brief, and the briefs that landed first time carried a test the human had run on a clean tree and
+seen fail. `repro.py` (a judge: in `devloop.JUDGES`) does that part without trusting any model:
+
+- `brief_check {test_path, test_code, files?, fix_diff?}` / `brief_add {goal, test_path, test_code, files,
+  fix_diff?, reason?, priority?}` over the WebSocket, or `python -m syrax.repro --check TEST --as
+  backend/syrax/test_x.py --files ... [--fix DIFF]` read-only.
+- `screen`: a new `backend/syrax/test_*.py` that asserts something other than a constant, imports the module
+  the brief changes, holds no secret-shaped literal and does nothing above WRITE; the brief changes only
+  non-judge modules in `backend/syrax`.
+- `prove`: pytest in a throwaway worktree of HEAD under `%TEMP%`, with the tracked secret-free config: RED
+  (assertions failed twice the same way), RED_ERROR (only errors, e.g. a name the change adds), NOT_RED or
+  INVALID; with a fix diff, PROVEN (the test and every test importing a changed module pass), NOT_FIXED,
+  CONTRACT (an existing test pins the old behaviour: a human decides) or FIX_DOES_NOT_APPLY.
+- `file_brief`: P1 `change_released` objective, key `repro-brief:<sha256[:16]>`, check `{files, repro: {test,
+  sha256, base, verdict, text}}`, the verbatim test in the goal.
+- The cycle writes the test into the task's worktree (`core.write_seed`); the release refuses a missing,
+  changed or no-longer-red test and any file outside the brief (`repro.release_problems`, called by
+  `DevLoop.inspect`); the `change_released` judge needs the newest commit holding the test to match the
+  pinned sha256 (`repro.fidelity`).
+- `python -m syrax.repro --replay <commit>...` proves a commit's added test against its parent with the
+  rest of the commit as the fix: the acceptance run for this module.
 
 ## The cycle (`Autonomy.run_once`)
 
@@ -80,9 +108,9 @@ objectives are never retried blindly.
 
 ## What this is not (yet)
 
-- No research engine: the agent works only with its current tools.
-- No self-modification: autonomous tasks do not change the codebase; the
-  verification gate exists but no objective type drives code changes through it.
+- SYRAX does not yet derive repro briefs from its own failures: its self-derived objectives research,
+  verify tools or measure; code changes come from `change_released` objectives a human filed (with a
+  repro through `brief_add`, or a verbatim test in the goal).
 - No natural-language planning beyond the single autonomous brief; lessons are
   derived strings, not model reflections.
 - Resource gate looks at CPU load and free RAM only.

@@ -603,8 +603,15 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         # Live 2026-10-17 (objective 267): step 1 of three landed alone (09e97df) and any commit counted as DONE.
         touched = {f for e in commits for f in (e["payload"].get("files") or [])}
         missing = [f for f in spec.get("files") or [] if f not in touched]
-        return ("DONE" if commits and not missing else "RETRY"), {"commits": [e["payload"].get("commit") for e in commits][:5],
-                                                                 "tasks": sorted(ids), **({"missing_files": missing} if missing else {})}
+        verdict = "DONE" if commits and not missing else "RETRY"
+        ev = {"commits": [e["payload"].get("commit") for e in commits][:5], "tasks": sorted(ids), **({"missing_files": missing} if missing else {})}
+        if verdict == "DONE" and isinstance(spec.get("repro"), dict):
+            # a brief filed with a judge-proven test is done only when that very test was committed (repro.py)
+            from syrax import repro
+
+            ev["repro"] = repro.fidelity(REPO_ROOT_PATH, [e["payload"].get("commit") for e in commits], spec["repro"])
+            verdict = "DONE" if ev["repro"].get("ok") else "RETRY"
+        return verdict, ev
     if kind in ("file_present", "file_absent"):
         # a world-state check: the file must be inside the repository or the
         # workspace, and a present file counts only if it changed after the
@@ -875,6 +882,9 @@ class Autonomy:
             return await self._finish(rep)
         try:
             budget = {"max_steps": RELEASE_STEPS} if spec.get("kind") == "change_released" else {}
+            rp = spec.get("repro") if isinstance(spec.get("repro"), dict) else None
+            if budget and rp and rp.get("test") and rp.get("text"):
+                budget["seed"] = {rp["test"]: rp["text"]}  # the proven test is written, not retyped by a model
             task_id = await self.core.submit(brief, said=objective["goal"], session_id=None, kind="autonomous", **budget)
         except RuntimeError as e:  # e.g. the agent could not be built: the objective must not stay ACTIVE
             await self.journal.update_objective(objective["id"], status="OPEN", note=f"could not start: {e}")

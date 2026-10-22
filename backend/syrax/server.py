@@ -8,6 +8,9 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     history {limit?} | task_events {task_id} | resume {task_id} |
                     verifications {limit?} | self_model {section?} |
                     objectives {limit?} | objective_add {goal, reason?, priority?, check?} | briefing {hours?} |
+                    brief_check {test_path, test_code, files?, fix_diff?} |
+                    brief_add {goal, test_path, test_code, files, fix_diff?, reason?, priority?} (repro.py proves the
+                    test fails on a clean HEAD, then files a change_released objective pinned to it) |
                     objective_update {id, status, note} (a human reopens, drops or closes) | proposals {limit?} |
                     dismiss {task_id, note} (cancel an INTERRUPTED task instead of resuming it) |
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
@@ -26,7 +29,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     task_detail | replay | knowledge | research {event} | knowledge {event} |
                     skills | skill {event} | presentation {event} | presentation_plan |
                     benchmarks | experiments | benchmark {event} | experiment {event} |
-                    quality_runs | quality {event} |
+                    quality_runs | quality {event} | brief {event: checked|filed|refused, proof?, problems?, objective_id?} |
                     reflection {event} |
                     notice | error | pong | brain | brains | brain_models | brain_test
 
@@ -620,6 +623,11 @@ class Session:
                     await journal.update_objective(oid, status=status, note=f"human: {note}")
             except JournalError as e:
                 await self.send({"type": "notice", "text": str(e)})
+        elif kind in ("brief_check", "brief_add"):
+            if self.core.busy or getattr(getattr(self.core, "quality", None), "running", False):
+                await self.send({"type": "notice", "text": "A brief is proved while SYRAX is idle: try again when the task ends."})
+                return
+            self.spawn(self._brief(msg, file=kind == "brief_add"), detached=True)
         elif kind == "autonomy":
             if "enabled" in msg:
                 on = bool(msg.get("enabled"))
@@ -693,6 +701,48 @@ class Session:
             await self.send({"type": "notice", "text": str(e)})
             return
         await self.core.broadcast({"type": "notice", "text": f"CODE BENCHMARK · {codebench.summary(res)}"})
+
+    async def _brief(self, msg: dict, file: bool) -> None:
+        """The human's brief, proved by repro.py: the test must fail on a clean tree of HEAD (and, with a fix diff,
+        pass after it) before the change_released objective pinned to it is filed."""
+        from syrax import repro
+        from syrax.devloop import REPO_ROOT
+
+        test_rel = str(msg.get("test_path") or "").strip()
+        code = str(msg.get("test_code") or "")
+        files = [str(f) for f in (msg.get("files") or []) if isinstance(f, str) and f.strip()]
+        fix = str(msg.get("fix_diff") or "") or None
+        goal = str(msg.get("goal") or "").strip()
+        if file and (not goal or not files):
+            await self.send({"type": "brief", "event": "refused", "problems": ["brief_add needs a goal and the files it changes"]})
+            return
+        try:
+            base = await asyncio.to_thread(repro.resolve, REPO_ROOT, "HEAD")
+            problems = await asyncio.to_thread(repro.screen, test_rel, code, files, REPO_ROOT, base)
+            if problems:
+                await self.send({"type": "brief", "event": "refused", "problems": problems})
+                return
+            await self.send({"type": "notice", "text": f"Proving {test_rel} on {base[:7]}..."})
+            proof = await asyncio.to_thread(repro.prove, REPO_ROOT, test_rel, code, fix, base)
+        except Exception as e:  # a proof that cannot run is not a verdict
+            await self.send({"type": "brief", "event": "refused", "problems": [f"the proof could not run: {e}"]})
+            return
+        ok = proof.get("verdict") in (repro.ACCEPT_WITH_FIX if fix else repro.ACCEPT_WITHOUT_FIX)
+        if not file or not ok:
+            await self.send({"type": "brief", "event": "checked" if ok else "refused", "proof": repro.compact(proof)})
+            return
+        try:
+            priority = max(1, min(int(msg.get("priority") or 1), 9))
+        except (TypeError, ValueError):
+            priority = 1
+        journal = self.core.journal
+        row = await journal.run(repro.file_brief, journal, goal, str(msg.get("reason") or "") or None, test_rel, code, files,
+                                proof, priority)
+        if row is None:
+            await self.send({"type": "brief", "event": "refused", "proof": repro.compact(proof),
+                             "problems": ["this test was filed before (same sha256)"]})
+            return
+        await self.send({"type": "brief", "event": "filed", "objective_id": row["id"], "proof": repro.compact(proof)})
 
     async def _quality(self, only, brain=None) -> None:
         from syrax.quality import format_report

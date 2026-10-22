@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, List, Optional
@@ -305,7 +306,7 @@ class Core:
 
     async def submit(
         self, goal: str, said: Optional[str], session_id: Optional[str], kind: str = "conversation",
-        max_steps: Optional[int] = None,
+        max_steps: Optional[int] = None, seed: Optional[dict] = None,
     ) -> Optional[str]:
         """Start a task. Returns its id, or None when SYRAX is already busy
         (also when another submit got there first while this one waited)."""
@@ -324,6 +325,9 @@ class Core:
                     _editor.ROOT_MAP = (self.devloop.live_root, wt)
                     goal = goal + ISOLATION_NOTE.format(worktree=wt, live=self.devloop.live_root)
                     await self.journal.record("isolation.started", {"worktree": str(wt)}, task_id=task_id)
+                    seeded = await asyncio.to_thread(write_seed, wt, seed)
+                    if seeded:
+                        await self.journal.record("repro.seeded", {"files": seeded}, task_id=task_id)
                 except Exception as e:
                     logger.warning(f"could not isolate task {task_id}: {e}")
                     await self.journal.record("isolation.failed", {"error": str(e)[:300]}, task_id=task_id)
@@ -650,6 +654,26 @@ async def _cross_review(info: dict, summary: str, authors: List[str]) -> dict:
     from syrax.review import review
 
     return await review(get_router(), info, summary, authors)
+
+
+SEED_PATH = re.compile(r"^backend/syrax/test_[a-z0-9_]+\.py$")
+
+
+def write_seed(worktree: Path, seed: Optional[dict]) -> List[str]:
+    """Write a brief's proven test into the task's worktree: only a new backend/syrax/test_*.py, UTF-8 with LF,
+    never over an existing file. The release still holds it to the filed sha256 (repro.release_problems);
+    this only spares the model retyping it (live 2026-10-19: 2431cec and ad9cd44 lost a brief test that way)."""
+    written = []
+    for rel, text in (seed or {}).items():
+        if not isinstance(rel, str) or not isinstance(text, str) or not SEED_PATH.match(rel):
+            continue
+        target = Path(worktree) / rel
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes((text.replace("\r\n", "\n").rstrip("\n") + "\n").encode("utf-8"))
+        written.append(rel)
+    return written
 
 
 ISOLATION_NOTE = (
