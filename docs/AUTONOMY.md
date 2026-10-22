@@ -85,6 +85,11 @@ assertion (an ImportError of a name the fix adds proves nothing), proves test an
 quality case names, and files the P1 brief (source `repro`) that lands like any other; `repro.proven` makes
 the hunt DONE.
 
+**Self-measurement (phase 3).** When the service hunts and the last quality run is older than 20 h, the idle
+cycle runs `repro.measure_subset`: the last run's failures (a second same failure is a hunt signal, a pass
+closes the loop on a landed fix) and a slice of 10 cases that rotates daily over the whole suite. Until
+2026-10-22 every quality run had been started by a human.
+
 ## The cycle (`Autonomy.run_once`)
 
 ```

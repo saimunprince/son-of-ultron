@@ -851,6 +851,23 @@ class Autonomy:
                     except Exception as e:
                         logger.warning(f"the code benchmark failed: {e}")
                     return await self._finish(rep)
+            runner = getattr(self.core, "quality", None)
+            if self.reflect and runner is not None:
+                # phase 3 of the Brief Factory: SYRAX measures itself daily (repro.measure_subset), so a failure is
+                # seen twice before a hunt and a landed fix is measured again
+                from syrax import repro
+
+                if repro.enabled() and await asyncio.to_thread(repro.measure_due, self.journal):
+                    try:
+                        from syrax import quality
+
+                        only = repro.measure_subset(self.journal, [c["id"] for c in quality._cases(quality.WORKSPACE)])
+                        row = await runner.run(only=only)
+                        rep.outcome, rep.reason = "RAN", (f"self-measurement: quality run #{row.get('id')} on {len(only)} "
+                                                          f"cases, {row.get('pass_rate')}%")
+                    except Exception as e:
+                        logger.warning(f"self-measurement failed: {e}")
+                    return await self._finish(rep)
             if os.getenv("SYRAX_FEATURES", "0") == "1":
                 from syrax import topics
 

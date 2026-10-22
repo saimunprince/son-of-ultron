@@ -792,6 +792,40 @@ def judge_hunt(journal, objective: dict, task: Optional[dict]) -> tuple:
     return "RETRY", ({"rejected": last} if last else {"reason": "nothing harvested yet"})
 
 
+# ——— phase 3: SYRAX measures itself every day (2026-10-22) ———
+#
+# None of the 57 quality runs up to 2026-10-19 was started by SYRAX: a failure was measured only when a human ran
+# the suite, so hunts would starve and a landed fix would never be re-measured. When the service hunts and the last
+# run is older than MEASURE_EVERY_S, the idle cycle runs a small subset: the cases that failed in the last run
+# (a second same failure is a hunt signal, a pass closes the loop) and a slice that rotates daily over all cases.
+
+MEASURE_EVERY_S = 20 * 3600.0
+MEASURE_SIZE = 10
+
+
+def measure_due(journal, now: Optional[float] = None) -> bool:
+    import time
+
+    last = journal.quality_runs(limit=1)
+    return not last or (now or time.time()) - float(last[0].get("ts") or 0) >= MEASURE_EVERY_S
+
+
+def measure_subset(journal, case_ids: Sequence[str], now: Optional[float] = None) -> List[str]:
+    """Last run's failures first, then today's slice of the rotation (MEASURE_SIZE cases, so every case comes round
+    within len(cases) / MEASURE_SIZE days; a re-measured failure is added to the slice, never instead of part of it)."""
+    import time
+
+    ids = list(dict.fromkeys(case_ids))
+    if not ids:
+        return []
+    last = journal.quality_runs(limit=1)
+    failed = [r.get("id") for r in (last[0]["results"] if last else []) if not r.get("ok") and r.get("id") in ids]
+    day = int((now or time.time()) // 86400)
+    start = (day * MEASURE_SIZE) % len(ids)
+    rotation = [ids[(start + i) % len(ids)] for i in range(min(MEASURE_SIZE, len(ids)))]
+    return list(dict.fromkeys(failed + rotation))
+
+
 def replay(root: Path, commit: str) -> Dict[str, Any]:
     """Prove the test a commit added against its parent, with the rest of the commit as the fix: the judge's
     verdict on a change that is known to be right (acceptance for this module)."""

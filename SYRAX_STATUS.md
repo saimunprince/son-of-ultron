@@ -217,6 +217,27 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Brief Factory, phase 3: SYRAX measures itself every day (2026-10-22)
+
+- None of the 57 quality runs up to 2026-10-19 was started by SYRAX, so a
+  failure was seen only when the human ran the suite: hunts (phase 2) would
+  starve, and a fix that landed was never measured again. Now, when the
+  service hunts and the last run is older than 20 hours, the idle cycle runs
+  the last run's failures plus a slice of ten cases that rotates daily over
+  all 52 (`repro.measure_subset`, about 30 brain calls a day).
+- Also today: with hunts on, a quality case that failed twice no longer gets
+  the free-form "fix it" objective (24 such objectives produced no commit;
+  #217 and #283 tried to change the case's own files), and a failed
+  [MAINTENANCE] task is no longer researched on the web (objective 299)
+  (f94edbf). The console rule for questions about SYRAX itself (a04ae49)
+  made gemini call self_inspect with invented task ids on "Reply with the
+  single word: ready" (runs #54, #58): it now says an instruction or a
+  greeting needs no tool, and self_inspect's task_id is never made up
+  (f449508).
+- Quality run #58 (full, 8b179ac): 47 of 52; unit_convert was cancelled by
+  the PC sleeping 13:53-14:53 mid-run, restraint by the rule above,
+  act_concise, build_cli and self_patch_docs by the model.
+
 ### Brief Factory, phase 2: SYRAX hunts the repro of its own failures (2026-10-22)
 
 - Phase 1 proved itself live: the first brief filed with `brief_add`
