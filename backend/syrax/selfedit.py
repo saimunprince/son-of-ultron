@@ -189,13 +189,35 @@ def diff_paths(diff: str) -> List[str]:
 _HUNK = re.compile(r"^@@ -(\d+)", re.M)
 
 
+def repo_relative(f: str, root: Path) -> Optional[str]:
+    """Live 2026-10-22 (quality run #58, self_patch_docs): the brain wrote "../docs/EXECUTION_PLAN.md", a path from
+    backend/ where python_execute starts, was told only that paths must be repository-relative, and answered that
+    the file was out of reach. A path written from backend/, or an absolute one inside the repository (the task's
+    tree or the running one), names the file it meant when that file or its folder exists."""
+    if f.startswith("/") or re.match(r"^[A-Za-z]:", f):
+        candidates = [(Path(f), base) for base in (root, REPO_ROOT)]
+    else:
+        candidates = [(start / f, root) for start in (root / "backend", root / "backend" / "syrax")]
+    for path, base in candidates:
+        try:
+            rel = Path(os.path.normpath(path)).relative_to(Path(os.path.normpath(base)))
+        except ValueError:
+            continue
+        if rel.parts and ".." not in rel.parts and ((root / rel).exists() or (root / rel).parent.is_dir()):
+            return rel.as_posix()
+    return None
+
+
 def context_hint(diff: str, root: Path, around: int = 6) -> str:
     """Live 2026-10-14 (quality run #34, self_patch_docs): the brain's hunk named line 159 of a
     217-line file with context that is not there, twice. When a patch does not apply, show what the
     file really holds around each hunk, numbered, so the next diff is made from the file, not memory."""
     out = []
-    current = None
+    current = old = None
     for line in diff.split("\n"):
+        if line.startswith("--- "):
+            old = line[4:].split("\t")[0].strip()
+            continue
         if line.startswith("+++ "):
             m = _DIFF_PATH.match(line)
             current = m.group(1) if m else None
@@ -210,6 +232,15 @@ def context_hint(diff: str, root: Path, around: int = 6) -> str:
         try:
             lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
+            continue
+        if old == "/dev/null":
+            # Live 2026-10-22 (quality run #58, self_patch_docs): asked to add a line at the end of an existing doc,
+            # the brain diffed it from /dev/null and was shown its first lines; the end is where the change goes.
+            tail = "\n".join(f"{i:>5}: {lines[i - 1]}" for i in range(max(1, len(lines) - around + 1), len(lines) + 1))
+            out.append(f"{current} already exists: a diff from /dev/null only creates new files. Diff it as "
+                       f"'--- a/{current}' / '+++ b/{current}' with its current lines as context; it has {len(lines)} "
+                       f"lines and ends:\n{tail}")
+            current = None  # one note per file
             continue
         start = int(h.group(1))
         lo, hi = max(1, start - around), min(len(lines), start + around)
@@ -382,7 +413,9 @@ def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dic
         raise ValueError("not a unified diff: no '--- a/path' / '+++ b/path' headers")
     for f in files:
         if f.startswith("/") or re.match(r"^[A-Za-z]:", f) or ".." in Path(f).parts:
-            raise ValueError(f"{f}: paths must be repository-relative, inside the repository")
+            meant = repo_relative(f, root)
+            raise ValueError(f"{f}: paths must be repository-relative, inside the repository"
+                             + (f"; write it as {meant} (paths start at the repository root, not in backend/)" if meant else ""))
     # As written first; then file by file with the hunk counts recounted (the brains' most common slip).
     # Live 2026-10-15 (objective 232): --recount on a whole multi-file diff read the next file's
     # "--- /dev/null" header as a line of the hunk before it, so every correct two-file patch failed.
