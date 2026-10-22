@@ -90,6 +90,10 @@ tasks?}` (`repro.human_hunt`): SYRAX writes the test and the fix, the judge prov
 cycle runs `repro.measure_subset`: the last run's failures (a second same failure is a hunt signal, a pass
 closes the loop on a landed fix) and a slice of 10 cases that rotates daily over the whole suite. Until
 2026-10-22 every quality run had been started by a human.
+Nine of the 61 cases are deep (2026-10-22): several steps of the work a human asks for (fix two bugs, build a
+CLI, collate TODOs, join two CSVs, rename an API), judged by running the result: hidden acceptance tests, the
+CLI called as a human would, data with a trap for the shortcut. The 52 single-step cases had reached 90-100 %
+and gave the hunts nothing to work on.
 
 ## The cycle (`Autonomy.run_once`)
 

@@ -64,6 +64,153 @@ BROWSER_PAGE = ("<!doctype html><html><head><title>SYRAX browser check</title></
                 "<h1 id='code'>loading</h1><script>document.getElementById('code').textContent = ['SYR', 4417].join('-');</script>"
                 "</body></html>")
 
+# ——— Deep cases (2026-10-22): runs #54-#61 passed 90-100 %, so the suite again showed little to improve and the
+# repro hunts had no failures to work on. Each deep case is several steps of the work the human really asks for
+# (build, fix, find, collate), judged by running the result: hidden acceptance tests, the CLI as the human would
+# call it, and data with a trap that a shortcut falls into. ———
+DEEP_PRICING = ("def discounted(price, pct):\n    \"\"\"Price after a discount of pct percent (0-100).\"\"\"\n"
+                "    return round(price * pct / 100, 2)\n\n\n"
+                "def total(items):\n    \"\"\"Sum of price * qty over (price, qty) pairs.\"\"\"\n"
+                "    return round(sum(p * q for p, q in items), 2)\n")
+DEEP_STOCK = "def reorder_needed(on_hand, minimum):\n    \"\"\"True when stock is at or below the minimum.\"\"\"\n    return on_hand < minimum\n"
+DEEP_PRICING_TESTS = ("from inv.pricing import discounted, total\n\n\n"
+                      "def test_discounted():\n    assert discounted(200, 25) == 150\n\n\n"
+                      "def test_total():\n    assert total([(2.5, 4), (1.25, 2)]) == 12.5\n")
+DEEP_STOCK_TESTS = ("from inv.stock import reorder_needed\n\n\n"
+                    "def test_reorder_at_minimum():\n    assert reorder_needed(5, 5)\n\n\n"
+                    "def test_no_reorder_above_minimum():\n    assert not reorder_needed(6, 5)\n")
+# `# TODO` comments at alpha.py:3, alpha.py:9, beta.py:5, util/gamma.py:2; a TODO in a .txt file and the
+# string "TODO list" are not `# TODO` comments in .py files
+DEEP_ALPHA = ("import os\n\n# TODO: handle empty input\ndef load(path):\n    return open(path).read()\n\n\n"
+              "def save(path, text):\n    # TODO: write atomically\n    open(path, \"w\").write(text)\n")
+DEEP_BETA = ("def add(a, b):\n    return a + b\n\n\ndef div(a, b):  # TODO: guard against zero\n    return a / b\n\n"
+             "LABEL = \"TODO list\"\n")
+DEEP_GAMMA = "# gamma helpers\n# TODO: read the version from metadata\nVERSION = \"0.1\"\n"
+# Ana has the most orders (4, 110.50); Dana spent the most (412.50)
+DEEP_CUSTOMERS = "id,name\n1,Ana\n2,Bo\n3,Cy\n4,Dana\n"
+DEEP_ORDERS = ("order_id,customer_id,amount\n101,1,20.00\n102,2,150.25\n103,1,35.50\n104,3,99.99\n105,4,300.00\n"
+               "106,1,40.00\n107,2,10.00\n108,4,112.50\n109,1,15.00\n110,3,5.01\n")
+
+
+def _deep_log() -> str:
+    """ERROR lines: E204 x9, E101 x5, E330 x4. WARN lines name E101 six more times, so counting the code
+    anywhere in the file gives E101 (11) instead of E204 (9)."""
+    kinds = (["ERROR E204 payment gateway timeout"] * 9 + ["ERROR E101 database connection reset"] * 5
+             + ["ERROR E330 invalid coupon"] * 4 + ["WARN E101 retry scheduled"] * 6 + ["INFO request served"] * 20)
+    lines = [kinds[(i * 17) % len(kinds)] for i in range(len(kinds))]
+    return "".join(f"2026-10-0{1 + i // 20} 10:{i % 60:02d}:00 {line}\n" for i, line in enumerate(lines))
+
+
+DEEP_TODO_DRIVER = ("import subprocess\nimport sys\nfrom pathlib import Path\n\nproj = Path(sys.argv[1])\n"
+                    "(proj / \"todo.json\").unlink(missing_ok=True)\n\n\n"
+                    "def run(*args):\n"
+                    "    r = subprocess.run([sys.executable, \"todo.py\", *args], cwd=proj, capture_output=True, text=True, timeout=20)\n"
+                    "    if r.returncode != 0:\n        sys.stderr.write(r.stdout + r.stderr)\n        sys.exit(1)\n    return r.stdout\n\n\n"
+                    "run(\"add\", \"buy milk\")\nrun(\"add\", \"call mom\")\nrun(\"add\", \"pay rent\")\nrun(\"done\", \"2\")\n"
+                    "sys.stdout.write(run(\"list\"))\n")
+DEEP_DURATION_ACCEPT = ("import sys\nfrom pathlib import Path\n\nimport pytest\n\n"
+                        "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / \"dur\"))\n"
+                        "from durations import parse_duration  # noqa: E402\n\n\n"
+                        "@pytest.mark.parametrize(\"text,secs\", [(\"45s\", 45), (\"2m\", 120), (\"1h30m\", 5400), (\"1h2m3s\", 3723), (\"3h\", 10800)])\n"
+                        "def test_valid(text, secs):\n    assert parse_duration(text) == secs\n\n\n"
+                        "@pytest.mark.parametrize(\"text\", [\"\", \"5\", \"1x\", \"m5\", \"30s1m\"])\n"
+                        "def test_invalid(text):\n    with pytest.raises(ValueError):\n        parse_duration(text)\n")
+DEEP_GEO_CORE = "def calc_area(w, h):\n    return w * h\n\n\ndef calc_perimeter(w, h):\n    return 2 * (w + h)\n"
+DEEP_GEO_REPORT = ("from geo.core import calc_area, calc_perimeter\n\n\n"
+                   "def describe(w, h):\n    return f\"area {calc_area(w, h)}, perimeter {calc_perimeter(w, h)}\"\n")
+DEEP_GEO_TESTS = ("from geo.core import compute_area\nfrom geo.report import describe\n\n\n"
+                  "def test_compute_area():\n    assert compute_area(2, 3) == 6\n\n\n"
+                  "def test_describe():\n    assert describe(2, 3) == \"area 6, perimeter 10\"\n")
+# a folder called "largest" holds the smallest files
+DEEP_SIZES = {"media/a.mp4": 9000, "big/deep/c.bin": 12000, "notes/b.txt": 7000, "largest/small1.txt": 100,
+              "largest/small2.txt": 200, "top.log": 6500, "x/y/z/tiny.dat": 10}
+DEEP_USERS = ('[{"id": 3, "name": "Cy", "address": {"city": "Lima"}, "roles": []},\n'
+              ' {"id": 1, "name": "Ana", "address": {"city": "Lisbon"}, "roles": ["admin", "dev"]},\n'
+              ' {"id": 2, "name": "Bo", "address": {"city": "Oslo"}, "roles": ["dev"]}]\n')
+DEEP_TIMEOUT_S = 420.0
+
+
+def _deep_cases(ws: Path) -> List[dict]:
+    d = ws / "deep"
+    shop, todos, dur, geo, sizes = d / "shop", d / "todos", d / "dur", d / "geo_proj", d / "sizes"
+    pytest_q = ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+    row = r"\s*`?{f}`?\s*\|\s*{n}\s*\|\s*{t}\s*\|"
+    cases = [
+        {"id": "deep_two_bugs", "prompt": f"The tests in {shop} fail. Find and fix the bugs in the inv package. Do not change the tests.",
+         "prepare": {"clear": [str(shop)], "write": {str(shop / "inv" / "__init__.py"): "", str(shop / "inv" / "pricing.py"): DEEP_PRICING,
+                                                     str(shop / "inv" / "stock.py"): DEEP_STOCK, str(shop / "tests" / "test_pricing.py"): DEEP_PRICING_TESTS,
+                                                     str(shop / "tests" / "test_stock.py"): DEEP_STOCK_TESTS}},
+         "checks": [{"kind": "command_regex", "cmd": pytest_q + ["tests"], "cwd": str(shop), "pattern": r"\b4 passed\b"},
+                    {"kind": "file_equals", "path": str(shop / "tests" / "test_pricing.py"), "text": DEEP_PRICING_TESTS},
+                    {"kind": "file_equals", "path": str(shop / "tests" / "test_stock.py"), "text": DEEP_STOCK_TESTS},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        {"id": "deep_todo_table", "prompt": (f"Collect every `# TODO` comment in the .py files under {todos / 'src'} into {todos / 'todo_table.md'} "
+                                             "as a markdown table with the columns file, line, todo: file is the path relative to that src folder "
+                                             "with forward slashes, todo is the comment text without the `# TODO:` prefix. One row per comment, "
+                                             "sorted by file, then by line number."),
+         "prepare": {"clear": [str(todos)], "write": {str(todos / "src" / "alpha.py"): DEEP_ALPHA, str(todos / "src" / "beta.py"): DEEP_BETA,
+                                                      str(todos / "src" / "util" / "gamma.py"): DEEP_GAMMA,
+                                                      str(todos / "src" / "notes.txt"): "TODO: buy milk\n"}},
+         "checks": [{"kind": "file_regex", "path": str(todos / "todo_table.md"), "pattern": r"(?mi)^\|\s*file\s*\|\s*line\s*\|\s*todo\s*\|"},
+                    {"kind": "file_regex", "path": str(todos / "todo_table.md"), "pattern": "(?s)" + ".*".join([
+                        row.format(f=r"alpha\.py", n=3, t="handle empty input"), row.format(f=r"alpha\.py", n=9, t="write atomically"),
+                        row.format(f=r"beta\.py", n=5, t="guard against zero"), row.format(f=r"util/gamma\.py", n=2, t="read the version from metadata")])},
+                    {"kind": "file_regex", "path": str(todos / "todo_table.md"), "pattern": r"^(?![\s\S]*(?:notes\.txt|buy milk|TODO list))"},
+                    {"kind": "no_promise"}]},
+        {"id": "deep_csv_join", "prompt": (f"Using {d / 'sales' / 'orders.csv'} and {d / 'sales' / 'customers.csv'}, find the customer who spent "
+                                           f"the most in total and write one line `name,total` (the total with two decimals) to {d / 'sales' / 'top.txt'}."),
+         "prepare": {"clear": [str(d / "sales")], "write": {str(d / "sales" / "orders.csv"): DEEP_ORDERS, str(d / "sales" / "customers.csv"): DEEP_CUSTOMERS}},
+         "checks": [{"kind": "file_regex", "path": str(d / "sales" / "top.txt"), "pattern": r"^\s*Dana\s*,\s*412\.50\s*$"}, {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        {"id": "deep_log_triage", "prompt": f"In {d / 'logs' / 'app.log'}, which error code (like E123) appears on the most ERROR lines, and on how many? Reply as: CODE COUNT",
+         "prepare": {"clear": [str(d / "logs")], "write": {str(d / "logs" / "app.log"): _deep_log()}},
+         "checks": [{"kind": "final_regex", "pattern": r"\bE204\b\D{0,20}\b9\b"}, {"kind": "final_max_len", "n": 60}, {"kind": "no_ask"}]},
+        {"id": "deep_cli_todo", "prompt": (f"Build a command-line todo app in {d / 'todo_app'}: `python todo.py add <text>` adds an item, "
+                                           "`python todo.py list` prints the open items as `1. text` lines in the order they were added (numbered from 1 "
+                                           "each time), and `python todo.py done <n>` removes item n of that list. Items persist in todo.json next to "
+                                           "todo.py. Standard library only."),
+         "prepare": {"clear": [str(d / "todo_app")], "write": {str(d / "_drivers" / "todo_drive.py"): DEEP_TODO_DRIVER}},
+         "checks": [{"kind": "command_regex", "cmd": ["{python}", str(d / "_drivers" / "todo_drive.py"), str(d / "todo_app")], "cwd": str(d),
+                     "pattern": r"^\s*1\.\s*buy milk\s*\n\s*2\.\s*pay rent\s*$"},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        {"id": "deep_spec_tests", "prompt": (f"Write {dur / 'durations.py'} with parse_duration(text) that returns the seconds in strings like "
+                                             "'45s', '2m', '1h30m' or '1h2m3s' (units h, m, s, in that order, each optional but at least one) and "
+                                             "raises ValueError for anything else, such as '', '5', '1x' or 'm5'. Add pytest tests for it in "
+                                             f"{dur / 'test_durations.py'} and run them."),
+         "prepare": {"clear": [str(dur)], "write": {str(d / "_accept" / "test_durations_accept.py"): DEEP_DURATION_ACCEPT}},
+         "checks": [{"kind": "command_regex", "cmd": pytest_q + [str(d / "_accept" / "test_durations_accept.py")], "cwd": str(d), "pattern": r"\b10 passed\b"},
+                    {"kind": "command_regex", "cmd": pytest_q + ["test_durations.py"], "cwd": str(dur), "pattern": r"\b\d+ passed\b"},
+                    {"kind": "file_equals", "path": str(d / "_accept" / "test_durations_accept.py"), "text": DEEP_DURATION_ACCEPT},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        {"id": "deep_rename_api", "prompt": (f"The tests in {geo} now call compute_area instead of calc_area. Rename calc_area to compute_area "
+                                             "in the geo package (its definition and every use) and keep calc_area importable from geo.core as "
+                                             "an alias for old callers. Do not change the tests."),
+         "prepare": {"clear": [str(geo)], "write": {str(geo / "geo" / "__init__.py"): "", str(geo / "geo" / "core.py"): DEEP_GEO_CORE,
+                                                    str(geo / "geo" / "report.py"): DEEP_GEO_REPORT, str(geo / "tests" / "test_geo.py"): DEEP_GEO_TESTS}},
+         "checks": [{"kind": "command_regex", "cmd": pytest_q + ["tests"], "cwd": str(geo), "pattern": r"\b2 passed\b"},
+                    {"kind": "file_equals", "path": str(geo / "tests" / "test_geo.py"), "text": DEEP_GEO_TESTS},
+                    {"kind": "file_regex", "path": str(geo / "geo" / "core.py"), "pattern": r"(?m)^def compute_area\("},
+                    {"kind": "file_regex", "path": str(geo / "geo" / "report.py"), "pattern": r"^(?![\s\S]*calc_area)"},
+                    {"kind": "command_regex", "cmd": ["{python}", "-c", "from geo.core import calc_area; print(calc_area(4, 5))"], "cwd": str(geo),
+                     "pattern": r"^20\s*$"},
+                    {"kind": "no_promise"}]},
+        {"id": "deep_find_largest", "prompt": (f"Write the paths of the three largest files under {sizes} (relative to that folder, with forward "
+                                               f"slashes), largest first, one per line, into {d / 'sizes_top3.txt'}."),
+         "prepare": {"clear": [str(sizes)], "remove": [str(d / "sizes_top3.txt")],
+                     "write": {str(sizes / rel): "x" * n for rel, n in DEEP_SIZES.items()}},
+         "checks": [{"kind": "file_regex", "path": str(d / "sizes_top3.txt"), "pattern": r"^\s*big/deep/c\.bin\s*\n\s*media/a\.mp4\s*\n\s*notes/b\.txt\s*$"},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        {"id": "deep_json_csv", "prompt": (f"Convert {d / 'users' / 'users.json'} into {d / 'users' / 'users.csv'}: a CSV with the header "
+                                           "id,name,city,roles, one row per user sorted by id, city taken from address.city, and roles joined "
+                                           "with ';' (empty when there are none)."),
+         "prepare": {"clear": [str(d / "users")], "write": {str(d / "users" / "users.json"): DEEP_USERS}},
+         "checks": [{"kind": "file_regex", "path": str(d / "users" / "users.csv"),
+                     "pattern": r"^id,name,city,roles\n1,Ana,Lisbon,admin;dev\n2,Bo,Oslo,dev\n3,Cy,Lima,\s*$"},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
+    ]
+    for case in cases:
+        case["timeout"] = DEEP_TIMEOUT_S
+    return cases
+
 
 def _cases(ws: Path) -> List[dict]:
     """Machine-checkable tasks. Prompts are plain requests; checks look at evidence only."""
@@ -247,7 +394,7 @@ def _cases(ws: Path) -> List[dict]:
                                               "--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-# This line is not in the file\n+# SYRAX probe\n"),
          "checks": [{"kind": "tool_used", "tool": "apply_patch"}, {"kind": "final_regex", "pattern": r"(?i)not apply|does not apply|fail|refus|reject|stale"}, {"kind": "no_promise"},
                     {"kind": "event_absent", "type": "code.changed"}]},
-    ]
+    ] + _deep_cases(ws)
 
 
 def _fill(pattern: str, env: Dict[str, str]) -> str:
@@ -346,6 +493,18 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
     return out
 
 
+def prepare(case: dict, ws: Path) -> None:
+    """Lay out what a case starts from: remove, clear (only inside the quality workspace), then write."""
+    for path in case.get("prepare", {}).get("remove") or []:
+        Path(path).unlink(missing_ok=True)
+    for folder in case.get("prepare", {}).get("clear") or []:  # a project left by an earlier run must not pass the case
+        if Path(folder).resolve().is_relative_to(ws.resolve()):
+            shutil.rmtree(folder, ignore_errors=True)
+    for path, text in (case.get("prepare", {}).get("write") or {}).items():
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text(text)
+
+
 def _text(path: str) -> str:
     """A file the task wrote, read as UTF-8, else as Windows' own code page (python_execute's open() writes cp1252
     here: live 2026-10-15 "78.37 \u00b0C" broke the UTF-8 read and the whole quality run with it), else byte by byte."""
@@ -380,14 +539,7 @@ class QualityRunner:
                 "python_mm": f"{sys.version_info.major}.{sys.version_info.minor}"}  # python_execute runs this interpreter
 
     async def run_case(self, case: dict, env: Dict[str, str]) -> dict:
-        for path in case.get("prepare", {}).get("remove") or []:
-            Path(path).unlink(missing_ok=True)
-        for folder in case.get("prepare", {}).get("clear") or []:  # a project left by an earlier run must not pass the case
-            if Path(folder).resolve().is_relative_to(self.ws.resolve()):
-                shutil.rmtree(folder, ignore_errors=True)
-        for path, text in (case.get("prepare", {}).get("write") or {}).items():
-            Path(path).parent.mkdir(parents=True, exist_ok=True)
-            Path(path).write_text(text)
+        prepare(case, self.ws)
         # Live 2026-10-15 (run #44): the cycle started an objective task while the run began, every case found
         # the core busy, and the run was recorded as 0 % REGRESSION. A busy core is waited for, not failed.
         task_id = await self.core.submit(case["prompt"], said=case["prompt"], session_id=None, kind="eval")
@@ -399,12 +551,13 @@ class QualityRunner:
         started = time.time()
         if task_id is None:
             return {"id": case["id"], "ok": False, "task_id": None, "ms": 0, "checks": [{"check": "task started", "ok": False, "detail": "core busy"}]}
+        limit = max(self.case_timeout, float(case.get("timeout") or 0))  # a deep case is several steps of work
         try:
             # shield: on timeout wait_for cancels what it awaits, and Core.wait gathers the task itself,
             # so the task was cancelled before core.cancel could give the reason (run #39: "aborted by human")
-            await asyncio.wait_for(asyncio.shield(self.core.wait()), timeout=self.case_timeout)
+            await asyncio.wait_for(asyncio.shield(self.core.wait()), timeout=limit)
         except asyncio.TimeoutError:
-            await self.core.cancel(f"the quality case ran out of time ({int(self.case_timeout)} s)")
+            await self.core.cancel(f"the quality case ran out of time ({int(limit)} s)")
             await self.core.wait()
         task = self.journal.task(task_id) or {}
         events = self.journal.events(task_id)

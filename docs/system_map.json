@@ -510,7 +510,7 @@
       "limitations": [
         "performance gate is optional (laptop noise)",
         "experiments compare tool calls, not code versions",
-        "quality suite: 51 cases, brain-dependent; runs on demand or when a quality objective needs a measured run"
+        "quality suite: 61 cases (9 deep: several steps each, judged by running the result), brain-dependent; runs on demand, and with repro hunts on as a daily self-measurement (the last failures plus a 10-case rotation)"
       ],
       "code": [
         "backend/syrax/bench.py",
@@ -525,6 +525,7 @@
         "backend/syrax/test_autonomy.py (self-improvement)",
         "backend/syrax/test_bridge.py (experiments section)",
         "backend/syrax/test_quality.py",
+        "backend/syrax/test_deep_cases.py (each deep case solvable, and failed by doing nothing or by its shortcut)",
         "backend/syrax/test_versions.py"
       ],
       "failure_modes": [
