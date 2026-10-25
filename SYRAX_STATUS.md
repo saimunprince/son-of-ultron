@@ -228,6 +228,33 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Deadlines, a boot policy, the HUD's queue; the deep cases pass (2026-10-25)
+
+- Quality run #64, 13:37: the nine deep cases' first live run, 9/9 (BASELINE,
+  gemini, 4.5 min): two bugs in two modules fixed with the tests untouched,
+  the TODO table, the CSV join, the log triage, the todo CLI driven in five
+  calls, parse_duration against hidden acceptance tests, the API rename with
+  an alias, the three largest files, JSON to CSV. The suite's hardest cases
+  no longer show a weakness on this brain; harder ones are the next ruler.
+- cfb1cde: runtime limits. A conversation task ends at 30 min and SYRAX's
+  own task at 90 min (`SYRAX_TASK_DEADLINE_S`, `SYRAX_OWN_TASK_DEADLINE_S`;
+  quality cases keep the runner's own limits), cancelled with the reason
+  journaled; a browser/MCP tool call is abandoned after 180 s
+  (`SYRAX_MCP_TOOL_TIMEOUT_S`) as a failed result and the task goes on;
+  `task.failed` and `task.cancelled` carry an `error_class` (journal, brain,
+  timeout, tool, deadline, human, quality_timeout, other) so failures can be
+  counted by cause.
+- 12ad3e3: a boot policy for interrupted tasks, journaled: an eval case cut
+  by a restart is dismissed (the suite runs it again); an autonomous attempt
+  that could resume is dismissed and its objective set back to OPEN for a
+  fresh attempt; an UNCERTAIN autonomous attempt waits 7 days for the human
+  the `uncertain-task:` objective asks, then is dismissed; a human's
+  conversation waits an hour for the human, an UNCERTAIN one indefinitely.
+  The UI offers DISMISS beside RESUME. 17 tests.
+- 72b7edf: the HUD shows the queue (TASK row "· QUEUE n", a QUEUED line per
+  request), the guard's reason and target on a refusal, and "WAITING FOR
+  YOU · <question>" while SYRAX is blocked on an answer. 8 contract tests.
+
 ### Memory tells the truth about who said what (2026-10-25)
 
 - 63f017c: `remember` is called by the model, so until today its text became a
