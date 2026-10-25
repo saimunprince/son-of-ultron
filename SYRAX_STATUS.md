@@ -228,6 +228,30 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### The ruler and the words tell the truth (2026-10-25)
+
+- 93905cc: RISE metrics. "Releases that landed" counts every release that
+  reached the gate (`verification.completed`, the daily ledger publish
+  included, which releases without a tool call) plus releases refused before
+  it; all time 31/117 = 26.5 % (the old ratio hid the ledger's commits in the
+  numerator only). "Commits SYRAX made to itself" counts commits that changed
+  a file outside `docs/` (24); the 7 docs-only regenerations are their own
+  row. Rollbacks split into verdicts of the gate or the review (17) and
+  end-of-task cleanups of unreleased edits (105). New rows the mission
+  names: quality runs that regressed, objectives that repeated a failed
+  strategy (from the attempts_log fingerprints), brain calls and minutes per
+  verified objective (medians), human interventions (asks, permission
+  grants, human objective notes, tasks stopped by a human), interrupted
+  tasks resumed or dismissed (10/10). 9 tests, red before.
+- cb1c2fc: docs match the code. README: edge-tts (not Kokoro), 61 quality
+  cases (not ten), the exact self-modification scope with the dependency
+  file out of it, memory as journal rows (not memory.json), SYRAX_STATUS as
+  the hand-written snapshot, the new launcher flags; ROADMAP: strategy
+  fingerprints DONE since 2026-10-01, the change plan PARTIAL (recorded at
+  release time), the queue, the review hold and backups; docs/STATUS.md:
+  what to back up points at OPERATIONS.md; this file's header: audit date,
+  commit, 33 matrix rows, today's totals.
+
 ### Safety quick wins; a quality case follows a file into the judges (2026-10-25)
 
 - 47399fb: four holes from the audit closed. `Core.resume` refuses a task
