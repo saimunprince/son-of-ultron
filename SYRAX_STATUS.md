@@ -228,6 +228,26 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Memory tells the truth about who said what (2026-10-25)
+
+- 63f017c: `remember` is called by the model, so until today its text became a
+  "human said" fact at confidence 1.0 whether or not the human said it. The
+  tool now knows the human's words for the task (the request and their
+  answers; none for SYRAX's own work): text not grounded in them (not a
+  substring, under 60 % of its content words) is stored as an observation at
+  0.5 with the basis "SYRAX inferred from the conversation: the human never
+  said this", and the reply says so; "remember that ..." from the human stays
+  a fact. An overwrite journals the previous text, type and confidence, and
+  a human fact overwriting an observation becomes a fact at 1.0 (a bug kept
+  it at 0.5). `learn` refuses a citation whose row shares nothing with the
+  claim (one or two shared words store at half the cap, labelled weak
+  support: a contract test learns across subjects). `forget` matches whole
+  words, needs three characters, and sweeps more than five memories only
+  when the human said "forget everything about ...". 13 tests, red before.
+- bed643a: the live PROTECTED_DATA check showed the console nudging "the
+  request names `str_replace_editor` and the task never called it" after the
+  gate had refused that very call; a refused call counts as called.
+
 ### The ruler and the words tell the truth (2026-10-25)
 
 - 93905cc: RISE metrics. "Releases that landed" counts every release that
