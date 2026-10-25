@@ -240,32 +240,45 @@ def test_a_new_name_that_duplicates_a_verified_skill_is_refused_the_same_name_is
     j, f, coll = factory(tmp_path)
     root = tmp_path / "skills"
     assert run(f.create("word_count", "count the words in a text", GOOD, GOOD_TEST))["status"] == "VERIFIED"
-    shout, shout_test = skill_code("shout", "Upper-case a text.", ["text"], "text.upper()"), skill_test("shout", {"text": "hi"}, "HI")
-    # the same argument names → the existing skill is named, nothing is written
+    # a purpose that says the same thing (overlap 1.0) → the existing skill is named, nothing is written
+    wc2, wc2_test = skill_code("word_total", "Words of a file.", ["path"], "'ok'"), skill_test("word_total", {"path": "x"}, "ok")
     with pytest.raises(ValueError, match=r"^a skill for this exists: word_count — count the words in a text; "
                                          r"extend it \(skill_create with that name\) instead of a duplicate$"):
-        run(f.create("shout", "upper-case what it is given", shout, shout_test))
-    assert not (root / "shout").exists() and j.skill("shout") is None
-    # other arguments but a purpose that says the same thing
-    wc2 = skill_code("word_total", "Words of a file.", ["path"], "str(len(open(path).read().split()))")
-    with pytest.raises(ValueError, match="a skill for this exists: word_count"):
-        run(f.create("word_total", "count words in the text", wc2, skill_test("word_total", {"path": __file__}, "x")))
-    assert not (root / "word_total").exists()
+        run(f.create("word_total", "count words in the text", wc2, wc2_test))
+    assert not (root / "word_total").exists() and j.skill("word_total") is None
     # the tool says the same, as a refusal
     create = SkillCreateTool()
     create.factory = f
-    out = run(create.execute(name="shout", purpose="upper-case what it is given", code=shout, test_code=shout_test))
+    out = run(create.execute(name="word_total", purpose="count words in the text", code=wc2, test_code=wc2_test))
     assert out.error.startswith("skill_create refused: a skill for this exists: word_count")
-    # other arguments and another purpose: a skill of its own
+    # the same single argument name alone is no duplicate: `text` is what most text tools take
+    translate = skill_code("translate", "Translate a text.", ["text"], "text[::-1]")
+    assert run(f.create("translate", "translate a text into another language", translate, skill_test("translate", {"text": "ab"}, "ba")))["status"] == "VERIFIED"
+    # ... even with half the purpose in common (0.5): one name is below SAME_ARGS_MIN
+    lengths = skill_code("word_lengths", "Lengths of words.", ["text"], '" ".join(str(len(w)) for w in text.split())')
+    assert run(f.create("word_lengths", "the words in a text and their lengths", lengths, skill_test("word_lengths", {"text": "ab c"}, "2 1")))["status"] == "VERIFIED"
+    # two identical argument names AND a purpose that overlaps 0.4+ (here 3/7): refused, with the skill to extend
+    summarize = skill_code("summarize_text", "Shorten a text.", ["text", "max_words"], '" ".join(text.split()[: int(max_words)])')
+    assert run(f.create("summarize_text", "shorten a text to at most max_words words", summarize,
+                        skill_test("summarize_text", {"text": "a b c", "max_words": "2"}, "a b")))["status"] == "VERIFIED"
+    shorten = summarize.replace('"summarize_text"', '"shorten_text"')
+    with pytest.raises(ValueError, match="a skill for this exists: summarize_text — shorten a text to at most max_words words"):
+        run(f.create("shorten_text", "cut a text down to max_words words", shorten, skill_test("shorten_text", {"text": "a b c", "max_words": "2"}, "a b")))
+    assert not (root / "shorten_text").exists()
+    # the same two argument names with an unrelated purpose (overlap 0): allowed
+    title = skill_code("title_case", "Title-case a heading.", ["text", "max_words"], "text.title()")
+    assert run(f.create("title_case", "capitalize every word of a heading, the limit caps how many", title,
+                        skill_test("title_case", {"text": "a b", "max_words": "9"}, "A B")))["status"] == "VERIFIED"
+    # other arguments and another purpose: a skill of its own, tested like any other
     lines = skill_code("line_count", "Lines of a file.", ["path"], "str(len(open(path).read().splitlines()))")
     assert run(f.create("line_count", "number of lines in a file", lines, skill_test("line_count", {"path": __file__}, "x")))["status"] == "FAILED"
     assert (root / "line_count" / "skill.py").exists()  # written and tested (the test's expectation is wrong, on purpose)
     # the same name stays the way to improve a skill
     row = run(f.create("word_count", "count the words in a text", GOOD_V2, GOOD_TEST))
     assert row["status"] == "VERIFIED" and row["code_version"] == 2
-    # only VERIFIED skills claim a purpose: once word_count is disabled, shout is free to exist
+    # only VERIFIED skills claim a purpose: once word_count is disabled, word_total is free to exist
     run(f.remove("word_count"))
-    assert run(f.create("shout", "upper-case what it is given", shout, shout_test))["status"] == "VERIFIED"
+    assert run(f.create("word_total", "count words in the text", wc2, wc2_test))["status"] == "VERIFIED"
 
 
 # ——— over the bridge ———

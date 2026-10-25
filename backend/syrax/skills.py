@@ -66,10 +66,12 @@ UNSAFE = HOST_HARM + (TREE_DELETE,) + WEAKENS_GUARD
 # Skill lifecycle (audit 2026-10-25): `version` in the registry counts verifications; `code_version` follows the
 # content hash and moves only when the code does. Before new files go over a VERIFIED skill its files are kept under
 # .versions/<code_version>/ (the last KEPT_VERSIONS), so the human can roll back; DISABLED sticks until the human
-# enables; a new name that duplicates a VERIFIED skill's arguments or purpose is refused.
+# enables; a new name that duplicates a VERIFIED skill's purpose (or its arguments and much of its purpose) is refused.
 VERSIONS_DIR = ".versions"
 KEPT_VERSIONS = 5
-DUPLICATE_OVERLAP = 0.7
+DUPLICATE_OVERLAP = 0.7  # purposes this alike are the same skill, whatever the arguments
+SAME_ARGS_MIN = 2  # identical argument names count only from this many (translate {text} may live beside word_count {text})
+SAME_ARGS_OVERLAP = 0.4  # ... and only with this much of the purpose in common
 
 
 def hash_sources(sources: Dict[str, str]) -> str:
@@ -432,18 +434,22 @@ class SkillFactory:
         return result
 
     def duplicate_of(self, name: str, purpose: str, code: str) -> Optional[dict]:
-        """The VERIFIED skill (another name) that `code`/`purpose` would duplicate: the same non-empty set of
-        `parameters` property names, or purposes whose content words overlap by DUPLICATE_OVERLAP or more."""
-        props = schema_properties(code)
+        """The VERIFIED skill (another name) that `code`/`purpose` would duplicate: purposes whose content words
+        overlap by DUPLICATE_OVERLAP or more, or the same set of SAME_ARGS_MIN+ `parameters` property names with
+        SAME_ARGS_OVERLAP of the purpose in common. Identical argument names alone never refuse: `text` is what
+        most text tools take."""
+        props = schema_properties(code) or set()
         for row in self.journal.skills(status="VERIFIED"):
             if row["name"] == name:
                 continue
-            src = self.root / row["name"] / "skill.py"
-            theirs = schema_properties(src.read_text(encoding="utf-8", errors="replace")) if src.is_file() else None
-            if props and theirs and props == theirs:
+            overlap = purpose_overlap(purpose, row.get("purpose") or "")
+            if overlap >= DUPLICATE_OVERLAP:
                 return row
-            if purpose_overlap(purpose, row.get("purpose") or "") >= DUPLICATE_OVERLAP:
-                return row
+            if len(props) >= SAME_ARGS_MIN and overlap >= SAME_ARGS_OVERLAP:
+                src = self.root / row["name"] / "skill.py"
+                theirs = schema_properties(src.read_text(encoding="utf-8", errors="replace")) if src.is_file() else None
+                if theirs == props:
+                    return row
         return None
 
     async def create(self, name: str, purpose: str, code: str, test_code: str,
@@ -558,8 +564,9 @@ class SkillCreateTool(BaseTool):
         "plus pytest tests (test_code) that import it via "
         "`from skills.<name>.skill import Skill`. The skill is registered ONLY if the tests pass; "
         "otherwise you get the failure output. Re-running with the same name replaces the skill (the verified version "
-        "it replaces is kept for the human's rollback). A new name whose arguments or purpose match an existing skill is "
-        "refused: extend that skill under its own name. A name the human disabled stays refused until they enable it."
+        "it replaces is kept for the human's rollback). A new name whose purpose matches an existing skill (or shares its "
+        "arguments and much of its purpose) is refused: extend that skill under its own name. A name the human disabled "
+        "stays refused until they enable it."
     )
     parameters: dict = {
         "type": "object",

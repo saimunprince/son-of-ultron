@@ -89,10 +89,12 @@ is refused with "<name> was disabled by the human; `skill_enable` turns it back
 on" until the human's WS `skill_enable {name}` (MindPanel ENABLE) re-verifies and
 re-registers it (`skill.enabled`).
 
-Duplicates. `skill_create` for a new name is refused when a VERIFIED skill has
-the same `parameters` property names or a purpose whose content words overlap by
-0.7 or more (Jaccard): "a skill for this exists: <name> — <purpose>; extend it
-(skill_create with that name) instead of a duplicate". Re-creating under the
+Duplicates. `skill_create` for a new name is refused when a VERIFIED skill has a
+purpose whose content words overlap by 0.7 or more (Jaccard), or the same set of
+two or more `parameters` property names with a purpose overlap of 0.4 or more:
+"a skill for this exists: <name> — <purpose>; extend it (skill_create with that
+name) instead of a duplicate". Identical argument names alone never refuse
+(`translate {text}` lives beside `word_count {text}`). Re-creating under the
 same name stays allowed; that is how a skill is improved.
 
 ## Truthfulness
