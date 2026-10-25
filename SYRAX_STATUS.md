@@ -217,6 +217,29 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Safety quick wins; a quality case follows a file into the judges (2026-10-25)
+
+- 47399fb: four holes from the audit closed. `Core.resume` refuses a task
+  whose last operation is UNCERTAIN unless the human forces it with a note
+  (`task.resume_forced` journaled; the UI and the history view ask first).
+  A writing call aimed at `brains.json`, `brains.tmp`, `ws.token` or the
+  journal files is refused for every task kind (permissions PROTECTED_DATA:
+  "only a human changes it by hand"); `config.toml`, `memory.json`,
+  `mcp.json` are refused for SYRAX's own work only (OWNER_DATA). A skill's
+  tests run under the python_execute guard (SYRAX_GUARD_PATHS and the
+  sitecustomize on the child's PYTHONPATH), so a skill test can no longer
+  write the keys or the journal. `forget` is refused for autonomous and eval
+  work: the human's memory goes only on the human's word. 16 tests, red
+  before the change. The three INTERRUPTED tasks the audit found (10-14,
+  10-15, 10-22) were dismissed by hand with notes; none is open.
+- ba1f987: quality run #63 (the first after selfedit.py became a judge) had
+  `self_patch_edit` fail for a correct refusal, and it would have failed every
+  run and fed the hunts a non-bug. The case now edits a constant in
+  `reminders.py`; `test_fixture_guard`'s fixture name follows it. Run #63:
+  self_patch_docs passed again (the path hint), self_patch_stale was still
+  refused (the content locator accepts no invented context), self_patch_new
+  passed.
+
 ### Milestones 2-4: review holds, backups, HUD truth, apply_patch by content (2026-10-25)
 
 Built in parallel by agents in their own worktrees from the audit's backlog
