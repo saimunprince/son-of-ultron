@@ -525,7 +525,7 @@ export type ClientMessage =
   | { type: "history"; limit?: number }
   | { type: "task_events"; task_id: string }
   | { type: "verifications"; limit?: number }
-  | { type: "resume"; task_id: string }
+  | { type: "resume"; task_id: string; force?: boolean; note?: string }
   | { type: "self_model"; section?: string }
   | { type: "objectives"; limit?: number }
   | { type: "objective_add"; goal: string; reason?: string; priority?: number; check: ObjectiveCheck }

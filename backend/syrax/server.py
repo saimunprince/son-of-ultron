@@ -7,7 +7,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
   client -> server: task {text, voice?, queue?} (queue: a request made while a task runs waits for it
                     instead of being refused) | queue | queue_cancel {task_id, note?} |
                     answer {text} | stop | reset | ping |
-                    history {limit?} | task_events {task_id} | resume {task_id} |
+                    history {limit?} | task_events {task_id} | resume {task_id, force?, note?} |
                     verifications {limit?} | self_model {section?} |
                     objectives {limit?} | objective_add {goal, reason?, priority?, check?} | briefing {hours?} |
                     brief_check {test_path, test_code, files?, fix_diff?} |
@@ -699,7 +699,9 @@ class Session:
         elif kind == "resume":
             tid = str(msg.get("task_id") or "")
             try:
-                problem = await self.core.resume(tid, session_id=self.id)
+                # force + note: the human's word for a task whose last operation is UNCERTAIN (core.resume)
+                problem = await self.core.resume(tid, session_id=self.id, force=bool(msg.get("force")),
+                                                 note=str(msg.get("note") or "").strip())
             except JournalError as e:
                 problem = str(e)
             if problem:

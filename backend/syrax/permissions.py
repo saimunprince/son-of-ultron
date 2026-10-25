@@ -67,6 +67,15 @@ DECLARED: Dict[str, str] = {}  # dynamic skills, set by SkillFactory at registra
 DESKTOP_READ = {"list_apps", "system_info", "screenshot", "find_files", "clipboard_get", "find_text"}
 EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 
+# Live 2026-10-25 (audit): editor.resolve_path takes any absolute path, so the editor, apply_patch and a
+# python_execute path literal could overwrite the files that hold SYRAX's keys and evidence; the
+# python_execute guard covers only the code it runs. These are refused at the gate for EVERY task kind:
+# only a human changes them, by hand. The owner's settings and memory are closed to SYRAX's own work
+# (autonomous, eval) only: in conversation the human may ask for them to be changed.
+PROTECTED_DATA = ("backend/config/brains.json", "backend/config/brains.tmp", "backend/config/ws.token",
+                  "backend/config/journal.db", "backend/config/journal.db-wal", "backend/config/journal.db-shm")
+OWNER_DATA = ("backend/config/config.toml", "backend/config/memory.json", "backend/config/mcp.json")
+
 # Stems, so "removal", "deleting", "wiped" count as naming the action too
 # (live 2026-10-03: SYRAX asked "confirm the removal of the folder X?", the
 # human said yes, and the gate asked again because only "remove" matched).
@@ -311,12 +320,35 @@ def protected_targets(targets: Iterable[str]) -> List[str]:
     return sorted({rel for t in targets if (rel := repo_relative(t)) in JUDGES})
 
 
+def data_targets(targets: Iterable[str], files: Tuple[str, ...]) -> List[str]:
+    """Targets among ``files`` (PROTECTED_DATA / OWNER_DATA, repository paths), matched on the
+    normalized path: absolute under the repository root or repository-relative, either slash,
+    any case, `..` folded (live 2026-10-25, audit)."""
+    hits = set()
+    for t in targets:
+        s = str(t or "").strip()
+        if not s:
+            continue
+        rel = repo_relative(os.path.normpath(s))
+        if rel and (rel := rel.replace("\\", "/").lower()) in files:
+            hits.add(rel)
+    return sorted(hits)
+
+
 def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[str, str]] = (), grants: Optional[Dict[str, bool]] = None) -> Verdict:
     kind = kind if kind in KINDS else "conversation"
     grants = grants or {}
     if decision.harm:
         return Verdict("refuse", None, f"the code {'; '.join(decision.harm)}; SYRAX must not harm the host")
     level = decision.level
+    if level != READ_ONLY and (held := data_targets(decision.targets, PROTECTED_DATA)):
+        # Live 2026-10-25 (audit): the keys and the evidence are nobody's to write through a tool, whatever the task
+        return Verdict("refuse", None, f"{', '.join(held)}: this file holds SYRAX's keys/evidence; only a human changes it by hand")
+    if kind in ("autonomous", "eval") and level != READ_ONLY and (owned := data_targets(decision.targets, OWNER_DATA)):
+        return Verdict("refuse", None, f"{', '.join(owned)}: this file holds the owner's settings; SYRAX's own work never changes it, leave it to the human")
+    if kind in ("autonomous", "eval") and decision.tool == "forget":
+        # Live 2026-10-25 (audit): forget is an ordinary WRITE, so SYRAX's own work could delete the human's memories
+        return Verdict("refuse", None, "the human's memory is deleted only on the human's word")
     if kind == "eval" and decision.tool == "release":
         # live 2026-10-14 (quality run #39, self_patch_stale): an eval task rewrote README's title and called
         # release; the gate ran four minutes before the case's timeout stopped it. A measurement never commits.

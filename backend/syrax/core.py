@@ -51,6 +51,14 @@ RESUME_NOTE = (
 )
 
 
+def _op_summary(op: dict) -> str:
+    """The in-flight operation of an interrupted task, short enough for a notice."""
+    if not op:
+        return "no operation recorded"
+    args = repr(op.get("args") or {})
+    return f"{op.get('name') or '?'} {args[:120]}{'…' if len(args) > 120 else ''}"
+
+
 def _journal_type(event: dict) -> Optional[str]:
     t = event.get("type")
     if t == "tool_start":
@@ -632,21 +640,32 @@ class Core:
             self.agent.reset_conversation()
         self._human_context = None
 
-    async def resume(self, task_id: str, session_id: Optional[str]) -> Optional[str]:
+    async def resume(self, task_id: str, session_id: Optional[str], force: bool = False, note: str = "") -> Optional[str]:
         """Continue an INTERRUPTED task from its last checkpoint. Returns an
-        error string, or None when the resume started."""
+        error string, or None when the resume started.
+
+        Live 2026-10-25 (audit): a task whose last operation recovery could not
+        verify (UNCERTAIN: a write, code, a page) was resumed by one click like any
+        other, and the only protection was RESUME_NOTE asking the model to look
+        first. Such a task now starts only on the human's explicit word (``force``
+        with a ``note``), journaled as task.resume_forced before the resume."""
         if self.busy:
             return "Already executing. Stop it first."
         try:
             ctx = self.journal.resume_context(task_id)
         except JournalError as e:
             return str(e)
-        agent = await self.ensure_agent()
         task, cp, recovery = ctx["task"], ctx["checkpoint"], ctx["recovery"]
+        op = recovery.get("operation") or {}
+        if recovery.get("state") == "UNCERTAIN":
+            if not force:
+                return (f"task {task_id}'s last operation is UNCERTAIN ({_op_summary(op)}): check what happened "
+                        "first, then resume with force and a note")
+            await self.journal.record("task.resume_forced", {"note": note, "session_id": session_id}, task_id=task_id)
+        agent = await self.ensure_agent()
         if cp and cp.get("context"):
             agent.import_context(cp["context"])
         agent.repair_memory()
-        op = recovery.get("operation") or {}
         agent.memory.add_message(
             Message.system_message(
                 RESUME_NOTE.format(

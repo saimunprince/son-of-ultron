@@ -5,6 +5,11 @@ import type { JournalEvent, TaskDetail, TaskSummary } from "@/lib/syraxClient";
 /** HISTORY (what SYRAX did), WHY (one task: goal, steps, checkpoints, lesson) and
  *  TODAY (a replay generated from the real event stream). Read-only. */
 
+/** Live 2026-10-25 (audit): what the person confirms before an UNCERTAIN task is resumed. */
+export const UNCERTAIN_RESUME =
+  "This task's last operation is UNCERTAIN: SYRAX cannot tell whether it ran, so resuming may repeat it or skip it. " +
+  "Check what happened first (files, outputs). Resume anyway?";
+
 export function hhmm(ts: number): string {
   const d = new Date(ts * 1000);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
@@ -55,6 +60,8 @@ export function describeEvent(e: JournalEvent): string | null {
       return "Task cancelled by human";
     case "task.interrupted":
       return `Interrupted at step ${p["step"]} · ${s("recovery_state")}`;
+    case "task.resume_forced":
+      return `Human resumed it despite an UNCERTAIN operation${s("note") ? ` · ${s("note").slice(0, 80)}` : ""}`;
     case "recovery.started":
       return `Recovery started for ${(p["task_ids"] as string[] | undefined)?.length ?? 0} task(s)`;
     case "recovery.verified":
@@ -146,7 +153,7 @@ export function HistoryList({ tasks, onOpen }: { tasks: TaskSummary[]; onOpen: (
   );
 }
 
-export function WhyView({ detail, onBack, onResume }: { detail: TaskDetail; onBack: () => void; onResume?: (id: string) => void }) {
+export function WhyView({ detail, onBack, onResume }: { detail: TaskDetail; onBack: () => void; onResume?: (id: string, force?: boolean) => void }) {
   const t = detail.task;
   const steps = detail.events.filter(
     (e) =>
@@ -209,7 +216,14 @@ export function WhyView({ detail, onBack, onResume }: { detail: TaskDetail; onBa
       <h5>RESULT</h5>
       <p className={t.error ? "why-err" : ""}>{t.result ?? t.error ?? "none recorded"}</p>
       {t.status === "INTERRUPTED" && onResume && (
-        <button type="button" className="hud-btn entry-action" onClick={() => onResume(t.task_id)}>
+        <button
+          type="button"
+          className="hud-btn entry-action"
+          onClick={() => {
+            if (rec?.state !== "UNCERTAIN") return onResume(t.task_id);
+            if (window.confirm(UNCERTAIN_RESUME)) onResume(t.task_id, true);
+          }}
+        >
           RESUME
         </button>
       )}

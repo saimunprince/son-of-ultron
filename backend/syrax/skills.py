@@ -53,7 +53,7 @@ MAX_CODE_CHARS = 60_000
 # the owner's machine. A skill's tests execute its code on the host, so code
 # that can hurt the machine is refused before anything runs. A human who wants
 # such a capability writes it by hand.
-from syrax import permissions  # noqa: E402
+from syrax import guard, permissions  # noqa: E402
 from syrax.guard import HOST_HARM, TREE_DELETE  # noqa: E402  (one list for skills, python_execute and permissions)
 
 UNSAFE = HOST_HARM + (TREE_DELETE,)
@@ -114,9 +114,14 @@ def run_skill_tests(skill_dir: Path, timeout: float = TEST_TIMEOUT_S) -> dict:
             return {"status": "FAILED", "stage": "compile", "file": f, "evidence": str(e)[-1500:], "passed": 0, "failed": 0, "ms": 0}
         except FileNotFoundError:
             return {"status": "FAILED", "stage": "compile", "file": f, "evidence": f"{f} missing", "passed": 0, "failed": 0, "ms": 0}
+    # Live 2026-10-25 (audit): this child inherited a plain os.environ, so a skill's test could write brains.json
+    # or the journal that python_execute's children are kept away from. It gets the same guard now, as an env of
+    # its own (guard.child_env would set it on the server's os.environ): SYRAX_GUARD_PATHS, and the sitecustomize
+    # that installs the guard first on PYTHONPATH.
     env = {
         **os.environ,
-        "PYTHONPATH": os.pathsep.join([str(skill_dir.parent.parent), str(BACKEND_ROOT)]),
+        "PYTHONPATH": os.pathsep.join([guard.SITE_DIR, str(skill_dir.parent.parent), str(BACKEND_ROOT)]),
+        guard.ENV: os.pathsep.join(guard.protected_paths()),
         "SYRAX_JOURNAL_FILE": str(skill_dir / ".test-journal.db"),
         "OPENMANUS_DISABLE_BROWSER_USE": "1",
         "PYTHONDONTWRITEBYTECODE": "1",

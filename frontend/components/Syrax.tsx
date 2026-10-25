@@ -29,7 +29,7 @@ type ConsoleTab = "live" | "history" | "today";
 import BrainPanel from "@/components/BrainPanel";
 import SelfPanel from "@/components/SelfPanel";
 import MindPanel, { mindRequest, type MindData, type MindTab } from "@/components/MindPanel";
-import { HistoryList, ReplayView, WhyView } from "@/components/HistoryView";
+import { HistoryList, ReplayView, UNCERTAIN_RESUME, WhyView } from "@/components/HistoryView";
 import Stage from "@/components/Stage";
 import BootSequence from "@/components/BootSequence";
 import UltronEyes from "@/components/UltronEyes";
@@ -57,7 +57,7 @@ type Entry =
       image?: string;
     }
   | { kind: "ask"; id: number; text: string }
-  | { kind: "notice"; id: number; text: string; action?: { label: string; msg: ClientMessage } }
+  | { kind: "notice"; id: number; text: string; action?: NoticeAction }
   | { kind: "error"; id: number; text: string };
 
 function startOfToday(): number {
@@ -69,6 +69,17 @@ function startOfToday(): number {
 function recoveredText(t: { task_id: string; goal: string; step: number; tool?: string | null; recovery_state: string }) {
   const where = t.tool ? ` during ${t.tool}` : "";
   return `RECOVERED · "${t.goal.slice(0, 80)}" was interrupted at step ${t.step}${where} · ${t.recovery_state}`;
+}
+
+type NoticeAction = { label: string; msg: ClientMessage; confirm?: string };
+
+/** Live 2026-10-25 (audit): a task whose last operation is UNCERTAIN (recovery could not tell
+ *  whether it ran) is resumed only after the person confirms; the server refuses it otherwise. */
+function resumeAction(task_id: string, recovery_state: string | null | undefined): NoticeAction {
+  if (recovery_state === "UNCERTAIN") {
+    return { label: "RESUME", msg: { type: "resume", task_id, force: true, note: "confirmed in the UI" }, confirm: UNCERTAIN_RESUME };
+  }
+  return { label: "RESUME", msg: { type: "resume", task_id } };
 }
 
 const MODE_LABEL: Record<TrackerStatus["mode"], string> = {
@@ -317,7 +328,7 @@ export default function Syrax() {
               kind: "notice",
               id: nextId++,
               text: recoveredText(t),
-              action: { label: "RESUME", msg: { type: "resume", task_id: t.task_id } },
+              action: resumeAction(t.task_id, t.recovery_state),
             });
           }
           if (e.running) push({ kind: "notice", id: nextId++, text: `RUNNING · "${e.running.goal.slice(0, 80)}" · step ${e.running.step}` });
@@ -1145,7 +1156,11 @@ export default function Syrax() {
         {consoleOpen && consoleTab === "history" && (
           <div className="console-feed">
             {taskDetail ? (
-              <WhyView detail={taskDetail} onBack={() => setTaskDetail(null)} onResume={(id) => clientRef.current?.send({ type: "resume", task_id: id })} />
+              <WhyView
+                detail={taskDetail}
+                onBack={() => setTaskDetail(null)}
+                onResume={(id, force) => clientRef.current?.send(force ? { type: "resume", task_id: id, force: true, note: "confirmed in the UI" } : { type: "resume", task_id: id })}
+              />
             ) : historyTasks === null ? (
               <div className="entry entry-notice">Reading the journal…</div>
             ) : (
@@ -1230,7 +1245,11 @@ export default function Syrax() {
                         <button
                           type="button"
                           className="hud-btn entry-action"
-                          onClick={() => clientRef.current?.send(e.action!.msg)}
+                          onClick={() => {
+                            const a = e.action!;
+                            if (a.confirm && !window.confirm(a.confirm)) return;
+                            clientRef.current?.send(a.msg);
+                          }}
                         >
                           {e.action.label}
                         </button>
