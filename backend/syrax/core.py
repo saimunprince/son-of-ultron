@@ -29,8 +29,8 @@ from typing import Awaitable, Callable, List, Optional
 from app.logger import logger
 from app.schema import Message
 
-from syrax.agent import SyraxAgent
-from syrax.brains import get_router
+from syrax.agent import SyraxAgent, ToolCrash
+from syrax.brains import BrainError, get_router
 from syrax import phases
 from syrax.devloop import REPO_ROOT, DevLoop, ReleaseTool
 from syrax.experiments import ExperimentEngine, ExperimentTool
@@ -118,6 +118,50 @@ def _is_release(goal: str) -> bool:
     return RELEASE_MARK in (goal or "")
 
 
+# Audit 2026-10-25 ("Task runtime"): no task had a wall-clock deadline; only quality cases were cancelled, by the
+# quality runner (240/420 s). One deadline per kind, in seconds: a conversation gets 30 min, SYRAX's own autonomous
+# work 90 min (a release task runs the gate, ~8 min, and the review inside that), an eval keeps the quality
+# runner's own timeouts (None: no core deadline). A task still running when its deadline passes is cancelled
+# through the usual cancel path (task.cancelled, error_class "deadline"), and the notice says so.
+TASK_DEADLINE_S = {
+    "conversation": float(os.getenv("SYRAX_TASK_DEADLINE_S", "1800")),
+    "autonomous": float(os.getenv("SYRAX_OWN_TASK_DEADLINE_S", "5400")),
+    "eval": None,
+}
+DEADLINE_REASON = "ran out of time: the task's deadline ({span}) passed"
+QUALITY_TIMEOUT_REASON = "the quality case ran out of time"  # quality.py's runner cancels with this text
+
+
+def _span(seconds: float) -> str:
+    return f"{seconds / 60:g} min" if seconds >= 60 else f"{seconds:g} s"
+
+
+def cancel_class(reason: str) -> str:
+    """Who or what stopped a task, from its journaled reason: deadline | human | quality_timeout | other."""
+    text = reason or ""
+    if text.startswith(DEADLINE_REASON.split("{")[0]):
+        return "deadline"
+    if "by human" in text:
+        return "human"
+    if QUALITY_TIMEOUT_REASON in text:
+        return "quality_timeout"
+    return "other"
+
+
+def error_class(e: BaseException) -> str:
+    """Why a task failed: journal | brain | timeout | tool | other (task.failed carries it beside the free text)."""
+    if isinstance(e, (sqlite3.Error, JournalError)):
+        return "journal"
+    cause = e.__cause__ or e
+    if isinstance(e, BrainError) or isinstance(cause, BrainError) or "All brains failed" in str(e):
+        return "brain"
+    if isinstance(e, (asyncio.TimeoutError, TimeoutError)) or isinstance(cause, (asyncio.TimeoutError, TimeoutError)):
+        return "timeout"
+    if isinstance(e, ToolCrash):
+        return "tool"
+    return "other"
+
+
 class Core:
     def __init__(self, journal: Optional[Journal] = None):
         self.journal = journal or get_journal()
@@ -131,6 +175,7 @@ class Core:
         self.state: dict = {"state": "idle"}  # last direct state event
         self._last_tool_args: dict = {}
         self._queued_requests: dict = {}  # task_id -> (request, said) of queued requests made in this process
+        self._deadline: Optional[asyncio.TimerHandle] = None  # the running task's deadline watchdog (TASK_DEADLINE_S)
         self.journal.subscribe(self._on_journal_event)
         self.selfmodel = SelfModel(self.journal)
         self.selfmodel.tools_provider = self.tool_names
@@ -317,9 +362,14 @@ class Core:
             logger.warning(f"checkpoint failed for {self.current.task_id}: {e}")
 
     async def _mark(self, kind: str, payload: dict) -> None:
-        """Terminal marks: best effort, logged, never raised (we are in except paths)."""
+        """Terminal marks: best effort, logged, never raised (we are in except paths). task.failed and
+        task.cancelled always carry an ``error_class`` beside the free text."""
         if self.current is None:
             return
+        if kind == "task.failed":
+            payload = {"error_class": "other", **payload}
+        elif kind == "task.cancelled":
+            payload = {"error_class": cancel_class(str(payload.get("error") or "")), **payload}
         try:
             await self.journal.record(kind, payload, task_id=self.current.task_id)
         except (sqlite3.Error, JournalError) as e:
@@ -445,8 +495,30 @@ class Core:
             if hasattr(self.agent, "import_context"):
                 self.agent.import_context(self._human_context)
             self._human_context = None
-        self.current.task = asyncio.create_task(self._run(goal, said))
+        self._launch(goal, said)
         return task_id
+
+    def _launch(self, request: str, said: Optional[str]) -> None:
+        """Start ``current``'s coroutine and arm its deadline (``_begin`` and ``resume`` both come through here)."""
+        assert self.current is not None
+        self.current.task = asyncio.create_task(self._run(request, said))
+        limit = TASK_DEADLINE_S.get(self.current.kind)
+        if limit is not None and limit > 0:
+            self._deadline = asyncio.get_running_loop().call_later(limit, self._deadline_passed, self.current.task_id, limit)
+
+    def _deadline_passed(self, task_id: str, limit: float) -> None:
+        """The watchdog: the task is still running after its deadline, so it is cancelled with the reason the
+        journal and the notice carry. A task that already ended (or a later one) is left alone."""
+        self._deadline = None
+        if self.current is None or self.current.task_id != task_id or not self.busy:
+            return
+        logger.warning(f"task {task_id} ran past its deadline ({_span(limit)}): cancelling")
+        self._cancel_now(DEADLINE_REASON.format(span=_span(limit)))
+
+    def _disarm_deadline(self) -> None:
+        if self._deadline is not None:
+            self._deadline.cancel()
+            self._deadline = None
 
     async def _install_prebuilt(self) -> None:
         from syrax import prebuilt
@@ -516,21 +588,25 @@ class Core:
             # "conversation"); history.jsonl is no longer written.
         except asyncio.CancelledError:
             self.agent.repair_memory(aborted=True)
-            await self._mark("task.cancelled", {"error": self.current.cancel_reason})
-            await self.broadcast({"type": "notice", "text": "Task aborted."})
+            reason = self.current.cancel_reason
+            why = cancel_class(reason)
+            await self._mark("task.cancelled", {"error": reason, "error_class": why})
+            # a human's stop reads as before; anything else (the deadline, a runner's timeout) says what stopped it
+            await self.broadcast({"type": "notice", "text": "Task aborted." if why == "human" else f"Task aborted: {reason}."})
             raise
         except (sqlite3.Error, JournalError) as e:
             # The work may have finished, but we cannot prove it: say so, never claim success.
             logger.exception("SYRAX journal failure during task")
             self.agent.repair_memory()
-            await self._mark("task.failed", {"error": f"journal unavailable: {e}"})
+            await self._mark("task.failed", {"error": f"journal unavailable: {e}", "error_class": "journal"})
             await self.broadcast({"type": "error", "message": f"Journal unavailable: {str(e)[:200]}"})
         except Exception as e:
             logger.exception("SYRAX task failed")
             self.agent.repair_memory()
-            await self._mark("task.failed", {"error": _explain(e)})
+            await self._mark("task.failed", {"error": _explain(e), "error_class": error_class(e)})
             await self.broadcast({"type": "error", "message": _explain(e)})
         finally:
+            self._disarm_deadline()  # the task ended: no timer may outlive it
             await self._clean_repo_after_task()
             self.current = None
             await self.broadcast({"type": "state", "state": "idle"})
@@ -617,10 +693,13 @@ class Core:
         (live 2026-10-12: a quality case that ran out of time read "aborted by human")."""
         if not self.busy:
             return False
+        self._cancel_now(reason)
+        return True
+
+    def _cancel_now(self, reason: str) -> None:
         assert self.current is not None and self.current.task is not None
         self.current.cancel_reason = reason
         self.current.task.cancel()
-        return True
 
     async def answer(self, text: str, session_id: Optional[str] = None) -> bool:
         if self.agent is None or not self.agent.ask_tool.answer(text):
@@ -696,7 +775,7 @@ class Core:
             steps=list((cp or {}).get("completed_steps") or []),
         )
         request = f"Continue the interrupted task: {task['goal']}"
-        self.current.task = asyncio.create_task(self._run(request, None))
+        self._launch(request, None)  # a resumed task gets its kind's deadline too
         return None
 
     async def auto_resume(self) -> List[str]:
@@ -966,7 +1045,7 @@ def _settle_kept_why(t: dict) -> str:
 
 def _explain(e: Exception) -> str:
     cause = e.__cause__ or e
-    text = str(cause) or cause.__class__.__name__
+    text = str(e) if isinstance(e, ToolCrash) else (str(cause) or cause.__class__.__name__)  # a crash names its tool
     if "api_key" in text.lower() or "401" in text or "authentication" in text.lower():
         return "LLM authentication failed. Check api_key in backend/config/config.toml."
     return text[:500]

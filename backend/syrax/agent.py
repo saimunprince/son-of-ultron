@@ -1,5 +1,8 @@
+import asyncio
 import json
+import os
 import re
+import sqlite3
 from typing import Any, Awaitable, Callable, Iterable, List, Optional
 
 from pydantic import Field
@@ -11,11 +14,13 @@ from app.config import config
 from app.logger import logger
 from app.schema import AgentState, Message, ToolCall, ToolChoice
 from app.tool import Terminate, ToolCollection
+from app.tool.mcp import MCPClientTool
 
 from syrax import browser  # noqa: F401  (sets BU_CDP_URL before MCP starts)
 from syrax.brains import get_router
 from syrax.desktop import DesktopControl
 from syrax.editor import SyraxEditor
+from syrax.journal import JournalError
 from syrax.journal_query import JournalQueryTool
 from syrax.devloop import ReleaseTool
 from syrax.selfedit import ApplyPatchTool, RepoMapTool
@@ -215,6 +220,27 @@ LOOP_STOPPED = (
 
 
 READ_ONLY_TOOLS = {"self_inspect", "know", "recall", "skill_list", "repo_map"}
+
+# Audit 2026-10-25 ("Task runtime"): an MCP call (browser_exec, browser_screenshot, any tool an MCP server
+# provides) had no timeout, so one hung page held the single task slot until a human stopped it. A call to
+# such a tool is abandoned after this many seconds and answered with a failed result; the task goes on.
+# Tools with a cap of their own are never wrapped: python_execute (600 s), release (the gate), skill_create
+# and skill_test (their test runs), experiment, quality, desktop (15 s), str_replace_editor, ask_human (600 s).
+MCP_TOOL_TIMEOUT_S = float(os.getenv("SYRAX_MCP_TOOL_TIMEOUT_S", "180"))
+OWN_TIMEOUT_TOOLS = {"python_execute", "release", "skill_create", "skill_test", "experiment", "quality", "desktop",
+                     "str_replace_editor", "ask_human"}
+TOOL_TIMED_OUT = ("Error: {name} did not answer within {limit:g} s; the call was abandoned (the page or server may "
+                  "still be busy): try once more with a simpler step, or report it")
+
+
+class ToolCrash(RuntimeError):
+    """An exception that escaped a tool call (upstream turns a tool's own exceptions into a failed result, so
+    this is the call path around it: the browser check, the permission question, the result handling). The
+    core classes the task's failure as "tool" by it; the cause is chained."""
+
+    def __init__(self, tool: str, cause: BaseException):
+        super().__init__(f"{tool} crashed: {str(cause) or cause.__class__.__name__}")
+        self.tool = tool
 
 # Live 2026-10-03: three autonomous attempts read the journal, changed nothing,
 # and ended "Fixed task quality regression ... by ensuring prompt alignment".
@@ -586,6 +612,31 @@ class SyraxAgent(Manus):
         )
         await self._send({"type": "state", "state": "acting", "tool": name})
         self.ask_tool.unattended = self.task_kind == "eval"  # an evaluation has nobody to answer: the console does
+        try:
+            result = await self._execute_guarded(command, name)
+        except (asyncio.CancelledError, sqlite3.Error, JournalError):
+            raise  # a stop is a stop; a journal failure keeps its own class in the core
+        except Exception as e:
+            raise ToolCrash(name, e) from e
+        event = {
+            "type": "tool_result",
+            "id": command.id,
+            "name": name,
+            "ok": _succeeded(result),
+            "output": result[:RESULT_PREVIEW_CHARS],
+            "truncated": len(result) > RESULT_PREVIEW_CHARS,
+            "step": self.current_step,
+        }
+        if _refused(name, result):
+            event["refused"] = True
+        if self._current_base64_image:
+            event["image"] = self._current_base64_image
+        await self._send(event)
+        return result
+
+    async def _execute_guarded(self, command: ToolCall, name: str) -> str:
+        """The result the model gets for one call: the loop guard, the browser check, the permission gate, then
+        the tool itself (``_call_tool``, under the MCP timeout) and the bookkeeping on its result."""
         key = _call_key(command)
         seen = self.seen_calls
         problem = await browser.ensure_browser() if name.startswith("browser_") else None
@@ -613,9 +664,9 @@ class SyraxAgent(Manus):
                 seen[key] = self.current_step  # the same call again is a loop, not a second chance
             else:
                 self.called.add(name)
-                result = await ToolCallAgent.execute_tool(self, command)
+                result = await self._call_tool(command, name)
                 if name.startswith("browser_") and browser.never_ran(result) and await browser.ensure_browser() is None:
-                    result = await ToolCallAgent.execute_tool(self, command)  # once: the code never ran, so nothing repeats
+                    result = await self._call_tool(command, name)  # once: the code never ran, so nothing repeats
                 if name == "release":
                     self.release_called = True
                     if "RELEASE COMMITTED" in result:
@@ -630,21 +681,27 @@ class SyraxAgent(Manus):
                 self.tests = state_of_tests(name, result) or self.tests
                 if name == "ask_human":  # a yes to a question that names a target authorizes it (permissions.named_in)
                     self.consents.append((str(_args_of(command).get("inquire", "")), _OBSERVED.sub("", result, count=1).strip()))
-        event = {
-            "type": "tool_result",
-            "id": command.id,
-            "name": name,
-            "ok": _succeeded(result),
-            "output": result[:RESULT_PREVIEW_CHARS],
-            "truncated": len(result) > RESULT_PREVIEW_CHARS,
-            "step": self.current_step,
-        }
-        if _refused(name, result):
-            event["refused"] = True
-        if self._current_base64_image:
-            event["image"] = self._current_base64_image
-        await self._send(event)
         return result
+
+    def is_mcp_tool(self, name: str) -> bool:
+        """A tool an MCP server provides (browser_* or an MCPClientTool proxy): it has no timeout of its own."""
+        if name in OWN_TIMEOUT_TOOLS:
+            return False
+        if name.startswith("browser_"):
+            return True
+        tool = self.available_tools.tool_map.get(name)
+        return isinstance(tool, MCPClientTool) or type(tool).__module__ == MCPClientTool.__module__
+
+    async def _call_tool(self, command: ToolCall, name: str) -> str:
+        """Run the tool. An MCP tool that has not answered within MCP_TOOL_TIMEOUT_S is abandoned: the model
+        gets a failed result (journaled tool.failed like any failure) and the task continues."""
+        if not self.is_mcp_tool(name):
+            return await ToolCallAgent.execute_tool(self, command)
+        try:
+            return await asyncio.wait_for(ToolCallAgent.execute_tool(self, command), MCP_TOOL_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            logger.warning(f"{name} did not answer within {MCP_TOOL_TIMEOUT_S:g} s; the call was abandoned")
+            return TOOL_TIMED_OUT.format(name=name, limit=MCP_TOOL_TIMEOUT_S)
 
     async def _permit(self, command: ToolCall) -> Optional[str]:
         """Permission levels (permissions.py). None = run it; otherwise the

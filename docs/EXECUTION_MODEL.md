@@ -77,6 +77,25 @@ its error). SYRAX's own work (eval, autonomous) never queues, and the autonomy c
 request waits. After a restart a queued request younger than an hour (`SYRAX_QUEUE_STALE_S`) starts once recovery
 is done; an older one is cancelled with a note rather than run late.
 
+**Deadlines and timeouts (2026-10-25).** Every task has a wall-clock deadline of its kind
+(`core.TASK_DEADLINE_S`, seconds): a conversation 30 min (`SYRAX_TASK_DEADLINE_S`, default 1800),
+SYRAX's own autonomous work 90 min (`SYRAX_OWN_TASK_DEADLINE_S`, default 5400: a release task's gate
+and review fit inside), an eval none (the quality runner cancels its cases itself, at 240/420 s). A task
+still running when its deadline passes is cancelled through the usual cancel path: `task.cancelled
+{error: "ran out of time: the task's deadline (30 min) passed", error_class: "deadline"}` plus a notice
+with the same text; the timer is disarmed when the task ends (no stray timers), and a resumed task gets
+the deadline of its kind too. A call to an MCP tool (`browser_*`, or any `MCPClientTool` an MCP server
+provides) is abandoned after `SYRAX_MCP_TOOL_TIMEOUT_S` seconds (default 180) with a failed result
+(`tool.failed`, "did not answer within N s; the call was abandoned"); the task continues. Tools with a
+cap of their own are never wrapped: `python_execute` (600 s), `release` (the gate), `skill_create` /
+`skill_test`, `experiment`, `quality`, `desktop` (15 s), `str_replace_editor`, `ask_human` (600 s).
+**Error classes.** `task.failed` carries `error_class` beside its text: `journal` (the journal refused
+a write), `brain` (`BrainError`: all brains failed), `timeout` (a `TimeoutError`), `tool` (an exception
+escaped a tool call; the text names the tool), else `other`. `task.cancelled` carries `error_class`:
+`deadline` (the watchdog), `human` (the reason says "by human"), `quality_timeout` (the quality
+runner's case timeout), else `other`. Both are additive fields: the event sequences are unchanged
+(`test_task_deadline.py`, `test_mcp_timeout.py`, `test_error_class.py`).
+
 Transition table (anything else raises `JournalError` and rolls back —
 `test_transition_table_is_enforced` covers every pair):
 
