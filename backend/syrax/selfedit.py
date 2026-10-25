@@ -9,6 +9,9 @@ apply_patch a unified diff applied with `git apply` to that tree; then every
            touched .py file is compiled and the tests the system map says cover
            the touched files run (pytest, bounded). The report says what was
            applied, what ran and what failed; a failed patch applies nothing.
+           When git cannot place the hunks, each one's old-side lines are looked
+           for in the file and placed where they occur exactly once (plan 3,
+           2026-10-25); the report then says APPLIED BY CONTENT.
            Protected files (devloop.JUDGES) are refused for SYRAX's own work by
            permissions.decide before this runs, and by the release gate after.
 """
@@ -21,7 +24,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from app.tool.base import BaseTool, ToolResult
 from syrax.journal import BACKEND_ROOT
@@ -396,6 +399,151 @@ def numstat(part: str, opts: List[str], root: Path) -> Optional[Tuple[int, int]]
     return added, deleted
 
 
+# ——— plan 3: place hunks by their lines, not their numbers ———
+# Measured 2026-10-25 (docs/AUDIT_2026-10-25.md item 5; 30 days of the journal replayed): of the 51 refused diffs
+# that still fail with the two git plans, 19 apply when each hunk's old side is found in the file as one block that
+# occurs exactly once, with no wrong placement and none of the ten stale probes accepted. The common case: a hunk
+# with no trailing context, which git reads as "must end the file" (apply.c match_end), so `-TEST_TIMEOUT_S = 300`
+# with its line above was refused 15 times. `git apply -C1`, `-C0`, `--ignore-whitespace` and `--unidiff-zero`
+# put hunks in the wrong place on the same diffs; they are not used.
+
+_HUNK_HEAD = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+_NUMBERED = re.compile(r"^\s*\d+\t")  # a `cat -n` line pasted into the diff
+
+
+def parse_hunks(section: str) -> List[List[Tuple[str, str]]]:
+    """One file's diff as hunks of (tag, text): ' ' context, '-' old, '+' new. An empty body line is a blank context
+    line whose leading space was lost (git reads it the same way); a '\\ No newline' marker is dropped. Raises
+    ValueError for a body line that is none of these (a context line without its space, `cat -n` numbering, an ed
+    command such as `12a`: pasted, not diffed) and for a section without hunks."""
+    hunks: List[List[Tuple[str, str]]] = []
+    lines = section.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    for line in lines:
+        if _HUNK_HEAD.match(line):
+            hunks.append([])
+            continue
+        if not hunks or line.startswith("\\"):
+            continue  # the headers above the first hunk; "\ No newline at end of file"
+        if line == "":
+            tag, text = " ", ""
+        elif line[0] in " -+":
+            tag, text = line[0], line[1:]
+        else:
+            raise ValueError(f"hunk {len(hunks)} holds a line that is not a diff line: {line[:60]!r}")
+        if _NUMBERED.match(text):
+            raise ValueError(f"hunk {len(hunks)} holds a numbered line (`cat -n` output, not file text): {line[:60]!r}")
+        hunks[-1].append((tag, text))
+    if not hunks:
+        raise ValueError("no @@ hunks")
+    return hunks
+
+
+def locate_block(lines: List[str], old: List[str]) -> Tuple[List[int], str]:
+    """Where a hunk's old-side block sits in the file: every line equal, else every line equal after rstrip(), else
+    after strip(). The first tier with a match decides; its positions (0-based) and its name are returned."""
+    n = len(old)
+    for tier, norm in (("exact", None), ("rstrip", str.rstrip), ("strip", str.strip)):
+        want = [norm(x) for x in old] if norm else old
+        have = [norm(x) for x in lines] if norm else lines
+        hits = [i for i in range(len(have) - n + 1) if have[i:i + n] == want]
+        if hits:
+            return hits, tier
+    return [], "none"
+
+
+def locate_hunks(lines: List[str], hunks: List[List[Tuple[str, str]]]) -> Union[List[Tuple[int, int, list]], str]:
+    """(position, old-line count, hunk) for every hunk in file order, or the reason none is placed: a hunk without
+    context or '-' lines has nothing to anchor on; a block must occur exactly once; hunks must stay in order and
+    apart. The '+' lines never choose the place (they are what is not in the file yet)."""
+    out: List[Tuple[int, int, list]] = []
+    for k, h in enumerate(hunks, 1):
+        old = [t for tag, t in h if tag != "+"]
+        if not old:
+            return f"hunk {k} has no context or '-' lines to anchor on"
+        hits, tier = locate_block(lines, old)
+        if not hits:
+            return f"hunk {k}: its old lines are not in the file (first: {old[0].strip()[:60]!r})"
+        if len(hits) > 1:
+            return (f"hunk {k}: ambiguous, its old lines occur at {len(hits)} places (lines "
+                    + ", ".join(str(i + 1) for i in hits[:6]) + "); add context lines that make it one")
+        pos = hits[0]
+        if out and pos < out[-1][0] + out[-1][1]:
+            return f"hunk {k} (line {pos + 1}) overlaps or precedes hunk {k - 1} (line {out[-1][0] + 1})"
+        out.append((pos, len(old), h))
+    return out
+
+
+def apply_by_content(section_diff: str, path: Path) -> Union[Tuple[str, int], str]:
+    """One file's diff applied by finding each hunk's old side in the file (locate_hunks). Returns (new text, hunks
+    placed) or the reason it refused. The file's newline style (CRLF or LF) and its final newline stay as they are;
+    where the diff's context differs from the file only in whitespace, the file's own line is kept."""
+    try:
+        hunks = parse_hunks(section_diff)
+        text = path.read_bytes().decode("utf-8")
+    except ValueError as e:
+        return str(e)  # a UnicodeDecodeError is a ValueError
+    except OSError as e:
+        return f"cannot read {path.name}: {e}"
+    crlf = "\r\n" in text
+    body = text.replace("\r\n", "\n")
+    lines = body.split("\n")
+    trailing = body.endswith("\n")
+    if trailing:
+        lines.pop()
+    placed = locate_hunks(lines, hunks)
+    if isinstance(placed, str):
+        return placed
+    for pos, n_old, h in reversed(placed):  # from the bottom, so the earlier positions stay valid
+        block, at = [], pos
+        for tag, t in h:
+            if tag == " ":
+                block.append(lines[at])
+                at += 1
+            elif tag == "-":
+                at += 1
+            else:
+                block.append(t)
+        lines[pos:pos + n_old] = block
+    out = "\n".join(lines) + ("\n" if trailing else "")
+    return (out.replace("\n", "\r\n") if crlf else out), len(placed)
+
+
+def content_plan(diff: str, root: Path) -> Union[Dict[str, Any], str]:
+    """Every file section of a diff placed by content, all computed before anything is written: {"texts": {path:
+    bytes}, "hunks": n} or the reason the plan is refused. A new file or a deletion (a /dev/null side) is git's to
+    apply, not the locator's, and refuses the whole plan; so does a file that is not there."""
+    texts: Dict[str, bytes] = {}
+    hunks = 0
+    for section in file_sections(diff):
+        old = new = None
+        for line in section.split("\n"):
+            if line.startswith("--- "):
+                old = line[4:].split("\t")[0].strip()
+            elif line.startswith("+++ "):
+                new = line[4:].split("\t")[0].strip()
+                break
+        if not old or not new or "/dev/null" in (old, new):
+            return f"{new or old or 'a section'}: a new file or a deletion is not placed by content"
+        path = re.sub(r"^[ab]/", "", new)
+        if not (root / path).is_file():
+            return f"{path}: no such file"
+        got = apply_by_content(section, root / path)
+        if isinstance(got, str):
+            return f"{path}: {got}"
+        texts[path] = got[0].encode("utf-8")
+        hunks += got[1]
+    return {"texts": texts, "hunks": hunks}
+
+
+def _restore(root: Path, before: Dict[str, Optional[bytes]]) -> None:
+    for f, data in before.items():
+        if data is None:
+            (root / f).unlink(missing_ok=True)
+        else:
+            (root / f).write_bytes(data)
+
 
 def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dict[str, Any]:
     """Apply a unified diff to the task's tree, compile the touched Python, run the covering tests."""
@@ -428,7 +576,7 @@ def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dic
     if as_written is not None and None not in recounted and as_written != tuple(sum(c) for c in zip(*recounted)):
         plans = plans[1:]
 
-    failure = None
+    failure = located = None
     for plan in plans:
         checks = [(part, _git(["apply", "--check", *opts, "--whitespace=nowarn", "-"], root, stdin=part)) for part, opts in plan]
         failure = next(((part, c) for part, c in checks if c.returncode != 0), None)
@@ -440,22 +588,31 @@ def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dic
         # <stdin>:56" with brains.py's context, while selfmodel.py's hunk at line 341 was the one that did not match.
         part, check = failure
         hint = context_hint(part, root)
-        raise ValueError("the patch does not apply cleanly: " + (check.stderr or check.stdout).strip()[:600]
-                         + "\nMake the next diff from what the file holds now (context lines must match exactly):\n" + hint)
+        # Plan 3 (2026-10-25): the hunks placed by their lines, when every old-side block is in the file exactly once.
+        located = content_plan(diff, root)
+        if isinstance(located, str):
+            raise ValueError("the patch does not apply cleanly: " + (check.stderr or check.stdout).strip()[:600]
+                             + "\nMake the next diff from what the file holds now (context lines must match exactly):\n" + hint
+                             + "\ncontent locator: " + located)
     # All or nothing: a section that fails after others applied puts the files back as they were (objective 266,
     # attempt 1: a half-applied patch was reported as failed, and the retry found its hunks "already applied").
     before = {f: ((root / f).read_bytes() if (root / f).is_file() else None) for f in files}
-    for part, opts in plan:
+    if located is not None:
+        try:
+            for f, data in located["texts"].items():
+                (root / f).write_bytes(data)
+        except OSError as e:
+            _restore(root, before)
+            raise RuntimeError(f"writing the located hunks failed; nothing was changed: {e}")
+    for part, opts in (plan if located is None else []):
         applied = _git(["apply", *opts, "--whitespace=nowarn", "-"], root, stdin=part)
         if applied.returncode != 0:
-            for f, data in before.items():
-                if data is None:
-                    (root / f).unlink(missing_ok=True)
-                else:
-                    (root / f).write_bytes(data)
+            _restore(root, before)
             raise RuntimeError("git apply failed after --check passed; nothing was changed: "
                                + (applied.stderr or applied.stdout).strip()[:600])
     report: Dict[str, Any] = {"root": str(root), "files": files, "compiled": [], "tests": None}
+    if located is not None:
+        report["relaxed"] = {"hunks": located["hunks"], "files": list(located["texts"])}
     broken = []
     for f in files:
         p = root / f
@@ -476,6 +633,10 @@ def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dic
 
 def render_report(rep: Dict[str, Any]) -> str:
     lines = [f"patched {len(rep['files'])} file(s) in {rep['root']}: " + ", ".join(rep["files"])]
+    relaxed = rep.get("relaxed")
+    if relaxed:
+        lines.append(f"APPLIED BY CONTENT: {relaxed['hunks']} hunk(s) placed by matching their lines, not their line numbers"
+                     " — the diff's context was stale; check the result")
     if rep["compiled"]:
         lines.append("compiled: " + ", ".join(rep["compiled"]))
     t = rep.get("tests")

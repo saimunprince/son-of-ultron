@@ -880,6 +880,15 @@ gate result of each phase is recorded in the next phase's entry.
   times. `apply_patch` now tries the diff as written first, then file by file
   with the counts recounted (`file_sections`); a test covers a correct and a
   miscounted two-file patch.
+  Since 2026-10-25 (Milestone 4, `content_plan`) a third plan runs when both
+  fail: each hunk's old-side lines (' ' and '-') are looked for in the file
+  as one block, exact first, then whitespace-trimmed, and placed only where
+  they occur exactly once; the common rescue is a hunk with no trailing
+  context, which git reads as "must end the file" (19 of the 51 residue
+  diffs of the 30-day replay, no wrong placement). Ambiguous or invented old
+  lines, junk lines, hunks without old lines, /dev/null diffs and deletions
+  stay refused, and the report says APPLIED BY CONTENT so the brain and the
+  release reviewer check the result (`test_apply_patch_locator.py`).
 
 ### SYRAX's ledger of 2026-10-15 and the gate row (2026-10-15)
 
