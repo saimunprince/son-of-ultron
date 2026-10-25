@@ -31,7 +31,7 @@ from app.schema import Message
 
 from syrax.agent import SyraxAgent, ToolCrash
 from syrax.brains import BrainError, get_router
-from syrax import phases, redact
+from syrax import intent, phases, redact
 from syrax.devloop import REPO_ROOT, DevLoop, ReleaseTool
 from syrax.experiments import ExperimentEngine, ExperimentTool
 from syrax.journal import Event, Journal, JournalError, get_journal
@@ -71,6 +71,8 @@ def _journal_type(event: dict) -> Optional[str]:
         return f"permission.{event['event']}"
     if t == "claim" and event.get("event") in ("rejected", "uncited"):
         return f"claim.{event['event']}"
+    if t == "intent" and event.get("event") in ("recorded", "done", "refused"):
+        return f"intent.{event['event']}"  # the intent ledger (intent.py): recovery reads recorded-without-done
     if t in ("think", "ask", "final"):
         return t
     return None
@@ -751,25 +753,31 @@ class Core:
             return str(e)
         task, cp, recovery = ctx["task"], ctx["checkpoint"], ctx["recovery"]
         op = recovery.get("operation") or {}
+        # the intent ledger: sends recorded and never seen to finish (recovery's `intent`, or the journal's open entries)
+        open_intents = self.journal.open_intents(task_id)
+        external = recovery.get("intent") or (open_intents[-1] if open_intents else None)
         if recovery.get("state") == "UNCERTAIN":
             if not force:
                 return (f"task {task_id}'s last operation is UNCERTAIN ({_op_summary(op)}): check what happened "
-                        "first, then resume with force and a note")
+                        "first, then resume with force and a note"
+                        + (f"; an external action may have happened: {external.get('summary')}" if external else ""))
             await self.journal.record("task.resume_forced", {"note": note, "session_id": session_id}, task_id=task_id)
         agent = await self.ensure_agent()
         if cp and cp.get("context"):
             agent.import_context(cp["context"])
         agent.repair_memory()
-        agent.memory.add_message(
-            Message.system_message(
-                RESUME_NOTE.format(
-                    step=task.get("current_step"),
-                    stage=task.get("stage"),
-                    op=(f"{op.get('name')} {op.get('args')}" if op else "none"),
-                    op_state=recovery.get("operation_state", "UNKNOWN"),
-                )
-            )
+        resume_note = RESUME_NOTE.format(
+            step=task.get("current_step"),
+            stage=task.get("stage"),
+            op=(f"{op.get('name')} {op.get('args')}" if op else "none"),
+            op_state=recovery.get("operation_state", "UNKNOWN"),
         )
+        if external:  # even with force: the model is told, and the agent's ledger refuses the same send again (HELD)
+            resume_note += " " + intent.RESUME_NOTE.format(summary=external.get("summary") or external.get("tool") or "?")
+        agent.memory.add_message(Message.system_message(resume_note))
+        agent.inherited_intents = {intent.key(i.get("tool"), i["args_hash"]): {**i, "done": False} for i in open_intents if i.get("args_hash")}
+        if external and external.get("args_hash"):
+            agent.inherited_intents.setdefault(intent.key(external.get("tool"), external["args_hash"]), {**external, "done": False})
         await self.journal.mark_resumed(task_id, session_id)
         await asyncio.to_thread(self.devloop.begin_task)
         kind = task.get("kind") or "conversation"
@@ -1008,6 +1016,8 @@ def _interrupted_summary(t: dict) -> dict:
         "question": (op.get("args") or {}).get("inquire") if op.get("name") == "ask_human" else None,
         "recovery_state": rec.get("state", "UNKNOWN"),
         "operation_state": rec.get("operation_state"),
+        # the intent ledger: {tool, args_hash, summary, step} of a send that may have gone out (EXTERNAL_UNCERTAIN), else None
+        "intent": rec.get("intent"),
         "when": t.get("updated"),
     }
 

@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional
 
 from syrax import redact  # the one credential pattern; imports nothing but `re` itself
+from syrax import intent  # the intent ledger's pure helpers (stdlib only)
 
 log = logging.getLogger("syrax.journal")
 
@@ -88,6 +89,7 @@ CHECKABLE_TOOLS = frozenset({"str_replace_editor"})
 # Tools that run arbitrary code or page scripts are left out: their level is read from the code
 # by patterns, which cannot rule out a side effect (python stays UNCERTAIN, test_journal).
 NO_EFFECT_LEVELS = frozenset({"READ_ONLY", "EXTERNAL_READ"})
+EXTERNAL_LEVEL = "EXTERNAL_WRITE"  # a send or payment in flight: EXTERNAL_UNCERTAIN, with its intent ledger entry
 CODE_TOOLS = frozenset({"python_execute", "skill_create"})
 
 MAX_CONTEXT_CHARS = 200_000
@@ -253,7 +255,7 @@ _WIRE = {
     "checkpoint.created": "checkpoint",
     "verification.completed": "verification",
 }
-_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback", "maintenance", "presentation", "benchmark", "experiment", "quality", "permission", "claim", "reminder", "alert", "topic", "checkin", "camera", "live", "presence")
+_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback", "maintenance", "presentation", "benchmark", "experiment", "quality", "permission", "claim", "reminder", "alert", "topic", "checkin", "camera", "live", "presence", "intent")
 
 
 @dataclass(frozen=True)
@@ -875,6 +877,13 @@ class Journal:
                                                                "a human checks whether the release landed"}}
         if name not in CHECKABLE_TOOLS:
             seen = self._effects_of(name, args, cur)
+            # the intent ledger (intent.py): a send or payment in flight, by its level or by an intent.recorded this task
+            # never saw done, may already have gone out; a human verifies before anything repeats it
+            held = [i for i in (self.open_intents(task_id, cur) if task_id else []) if i.get("tool") == name]
+            if seen["level"] == EXTERNAL_LEVEL or held:
+                rec = held[-1] if held else intent.entry(name, args, op.get("step"))
+                return {"state": "EXTERNAL_UNCERTAIN", "intent": rec,
+                        "checks": {**seen, "reason": f"{name} may have sent a message or money ({rec['summary']}); verify before repeating"}}
             if seen["level"] in NO_EFFECT_LEVELS and not seen["harm"] and name not in CODE_TOOLS and not name.startswith("browser_"):
                 return {"state": "HARMLESS", "checks": {**seen, "reason": f"{name} only reads ({seen['level']}); repeating it changes nothing"}}
             return {"state": "UNCERTAIN", "checks": {**seen, "reason": f"{name} side effects cannot be inspected"}}
@@ -906,6 +915,13 @@ class Journal:
                 return {"state": "NOT_STARTED", "checks": checks}
             return {"state": "UNCERTAIN", "checks": checks}
         return {"state": "UNCERTAIN", "checks": checks}
+
+    def open_intents(self, task_id: str, cur: Optional[sqlite3.Cursor] = None) -> List[dict]:
+        """The task's intent.recorded entries without an intent.done (intent.py open_of): sends that may have gone
+        out. Recovery passes its own cursor (it holds the journal lock)."""
+        q = "SELECT type, payload FROM events WHERE task_id=? AND type IN ('intent.recorded', 'intent.done') ORDER BY seq, id"
+        rows = (cur.execute(q, (task_id,)) if cur is not None else self._db.execute(q, (task_id,))).fetchall()
+        return intent.open_of((str(r[0]), _loads(r[1]) or {}) for r in rows)
 
     def _effects_of(self, name: str, args: dict, cur: Optional[sqlite3.Cursor] = None) -> dict:
         """The permission level, targets and harm of a call (permissions.py). A skill's level
@@ -1013,6 +1029,7 @@ class Journal:
             "state": state,
             "operation_state": op_state,
             "operation": op,
+            "intent": verdict.get("intent"),  # the send that may have gone out (EXTERNAL_UNCERTAIN), else None
             "checks": checks,
             "last_event_id": row["last_event_id"],
             "last_checkpoint_id": cp["id"] if cp else None,

@@ -47,9 +47,12 @@
   function dayStart(nowMs) { const d = new Date(nowMs); d.setHours(0, 0, 0, 0); return d.getTime() / 1000; }
   // one interrupted task, as hello.interrupted (core.py _interrupted_summary) and task.interrupted
   // (journal.py recover_interrupted) both describe it: goal + how recovery classified it
+  // + the intent ledger (intent.py): `intent` {tool, args_hash, summary, step} when the operation was a send or payment
+  // that may have gone out (operation_state EXTERNAL_UNCERTAIN); core.py _interrupted_summary and recovery.intent carry it
   function interruptedLine(t) {
+    const sent = t.intent && t.intent.summary ? ' · EXTERNAL ACTION MAY HAVE HAPPENED: ' + short(t.intent.summary, 40).toUpperCase() : '';
     return 'INTERRUPTED · ' + short(t.goal, 40).toUpperCase() + ' · ' + String(t.recovery_state || 'UNKNOWN').toUpperCase()
-      + (t.tool ? ' · ' + String(t.tool).toUpperCase() + (t.operation_state ? ' ' + String(t.operation_state).toUpperCase() : '') : '');
+      + (t.tool ? ' · ' + String(t.tool).toUpperCase() + (t.operation_state ? ' ' + String(t.operation_state).toUpperCase() : '') : '') + sent;
   }
   // one waiting request: a hello.queue item (core.py queued(): {task_id, goal, created, session_id, position}) or task.queued (journal.py:706 {goal, kind})
   function queuedLine(goal, position) { return 'QUEUED · ' + short(goal, 40).toUpperCase() + ' · POSITION ' + position; }
@@ -141,7 +144,7 @@
         else if (e.event === 'blocked') log('TASK BLOCKED · ' + short(e.reason || e.error, 40).toUpperCase());
         else if (e.event === 'unknown') log('TASK OUTCOME UNKNOWN' + (e.error ? ' · ' + short(e.error, 40).toUpperCase() : ''));
         // journal.py recover_interrupted task.interrupted {error, goal, step, stage, tool, question, recovery_state, recovery}
-        else if (e.event === 'interrupted') { s.interrupted = (s.interrupted || 0) + 1; log(interruptedLine({ goal: e.goal, recovery_state: e.recovery_state, tool: e.tool, operation_state: e.recovery && e.recovery.operation_state })); }
+        else if (e.event === 'interrupted') { s.interrupted = (s.interrupted || 0) + 1; log(interruptedLine({ goal: e.goal, recovery_state: e.recovery_state, tool: e.tool, operation_state: e.recovery && e.recovery.operation_state, intent: e.recovery && e.recovery.intent })); }
         break;
       case 'think':
         if (e.tools && e.tools.length && e.content) cog('STEP ' + (e.step || '?') + ' · ' + short(e.content, 70));
@@ -187,6 +190,15 @@
         break;
       case 'claim':
         if (e.event === 'rejected') { s.counters.claims++; log('FALSE CLAIM SENT BACK'); }
+        break;
+      case 'intent':
+        // the intent ledger, agent.py _execute_guarded: recorded {tool, args_hash, summary, step} before an EXTERNAL_WRITE call
+        // runs, done {tool, args_hash, ok, step} after it, refused {tool, args_hash, summary, step, first_step} when the same send
+        // is asked again while the first was never seen to finish (intent.HELD). A refused intent is followed by a refused
+        // tool_result (agent.py execute_tool): lastRefusal pairs them so the guard counter (permission.refused only) stays true.
+        if (e.event === 'recorded') log('INTENT · ' + short(e.summary || e.tool, 50).toUpperCase());
+        else if (e.event === 'done') log((e.ok ? 'INTENT DONE' : 'INTENT FAILED') + ' · ' + String(e.tool || '').toUpperCase());
+        else if (e.event === 'refused') { s.lastRefusal = { tool: e.tool, step: e.step == null ? null : e.step }; log('INTENT HELD · ' + String(e.tool || '').toUpperCase() + ' · MAY ALREADY HAVE GONE OUT' + (e.first_step != null ? ' (STEP ' + e.first_step + ')' : '')); cog('⊘ ' + short(e.summary || e.tool, 60) + ' · NOT REPEATED'); }
         break;
       case 'commit':
         // devloop.py commit.created {commit, files, summary, verification_id} / commit.failed {error}; the hash field is `commit`

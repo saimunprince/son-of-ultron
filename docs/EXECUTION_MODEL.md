@@ -40,6 +40,7 @@ durably, then fanned out) iff replay or recovery needs it:
 | `brain` failover / answered | `brain.failover` / `brain.answered` |
 | `permission` authorized (agent, through `emit`) | `permission.authorized` — payload `tool`, `level`, `task_kind`, `reason`, `targets`, `authorized_by` (`goal` or `human`), `answer?`, `harm?` |
 | `permission` refused (agent, through `emit`) | `permission.refused` — same payload, `authorized_by` null |
+| `intent` recorded / done / refused (agent, through `emit`) | `intent.recorded` / `intent.done` / `intent.refused` — the intent ledger (`intent.py`): payload `tool`, `args_hash` (sha256 of the canonical JSON of the arguments, 16 hex), `summary` (the tool and its most telling argument, 120 chars), `step`; `done` carries `ok`, `refused` carries `first_step` |
 | written by the core / journal | `task.started`, `task.queued`, `task.completed`, `task.failed`, `task.cancelled`, `task.blocked`, `task.interrupted`, `task.unknown`, `checkpoint.created`, `recovery.started`, `recovery.verified`, `recovery.resumed`, `recovery.completed`, `verification.completed`, `stage.started` |
 
 Direct (never stored): `state`, `hello`, `brains`, `brain_models`, `brain_test`,
@@ -206,6 +207,7 @@ On every `Journal` open (server `lifespan` and the first `get_journal()`),
 3. **verify reality** (`verify_operation`):
    - `str_replace_editor create` → target file missing = `NOT_STARTED`, content equal = `COMPLETED`, else `PARTIAL`;
    - `str_replace_editor str_replace|insert` → `new_str` present and `old_str` absent = `COMPLETED`, the reverse = `NOT_STARTED`, both/neither = `UNCERTAIN`;
+   - an `EXTERNAL_WRITE` call (`python_execute` whose code sends, a skill declared `EXTERNAL_WRITE`), or any tool with an `intent.recorded` this task never saw `intent.done` → `EXTERNAL_UNCERTAIN`, with the ledger entry as `recovery.intent`;
    - `ask_human` → `BLOCKED`; any other tool (`python_execute`, `browser_*`, `desktop`) → `UNCERTAIN`; no operation → `NONE`;
    - plus `journal_consistent`, `git_head_unchanged`, `workspace_present`;
 4. classify: `BLOCKED` (question pending), `RESUMABLE` (`NONE|COMPLETED|NOT_STARTED`), else `UNCERTAIN`;
@@ -216,6 +218,18 @@ is one transaction, so a second run in the same or a later boot writes nothing
 (`test_recovery_is_idempotent_across_reruns_and_boots`) and a crash inside
 recovery loses nothing and is redone on the next boot
 (`test_crash_inside_recovery_loses_nothing_and_next_boot_redoes_it`).
+
+**Intent ledger** (`intent.py`, `test_intent_ledger.py`; audit 2026-10-25 "no idempotency keys for external side effects").
+Before an `EXTERNAL_WRITE` call runs (`agent.py _execute_guarded`, after the permission gate allowed it) the agent
+journals `intent.recorded {tool, args_hash, summary, step}`, and after it `intent.done {tool, args_hash, ok}`;
+`args_hash` is the idempotency key (sha256 of the canonical JSON of the arguments, 16 hex). Only `EXTERNAL_WRITE`
+calls are keyed, so the event sequence of an ordinary task is unchanged. A recorded entry the task never saw done
+(a crash, a cancel, an exception inside the call) means the send may already have gone out: the same arguments
+again in that task are refused before anyone is asked (`intent.refused`, a final refusal like the gate's: "the same
+<tool> action may already have gone out (step N): check what happened first; do not repeat it blindly"); a
+finished one is caught by the repeat guard as before. Recovery classifies such an operation `EXTERNAL_UNCERTAIN`
+(task `UNCERTAIN`) and carries the entry as `recovery.intent`, `hello.interrupted[].intent` and the
+`task.interrupted` payload, so the UI and the HUD say "an external action may have happened: <summary>".
 
 SIGKILL matrix (`test_sigkill_keeps_exactly_the_committed_state`): killed after
 `task.started`, after five `think`s, mid-transaction, after `tool.started`,
@@ -232,6 +246,11 @@ after a checkpoint — the reopened journal holds exactly the committed rows and
   records `recovery.resumed` (`INTERRUPTED → IN_PROGRESS`, new `boot_id`) and
   runs the agent with "Continue the interrupted task: <goal>"
   (`test_resume_continues_interrupted_task_with_restored_context`).
+- A task whose recovery carries an `intent` (or whose journal holds an `intent.recorded` without `intent.done`)
+  gets one more sentence in that note, force or not: "An external action may already have happened: <summary>.
+  Never repeat it; verify with a read-only check and report." The agent's ledger is seeded with the open entries,
+  so the same send is refused even if the model tries it, and the refusal without `force` names the send too
+  (`test_a_resumed_task_is_told_about_the_send_and_held_from_repeating_it`).
 - Auto-resume at boot is **off** by default. `SYRAX_AUTO_RESUME=1` resumes only
   tasks classified `RESUMABLE`; `UNCERTAIN` and `BLOCKED` tasks always wait for a human.
 - `ResumeHook` on `Journal.recover()` is the seam for later autonomous phases.
@@ -290,7 +309,8 @@ evidence (`test_verify.py`).
 - Tasks are agent turns of kind `conversation`, `eval` (the quality suite) or
   `autonomous` (the autonomy cycle's `core.submit(..., kind="autonomous")`).
 - Only `str_replace_editor` operations are verified against reality; all other
-  tools are `UNCERTAIN` after a crash.
+  tools are `UNCERTAIN` after a crash (a send or payment `EXTERNAL_UNCERTAIN`, with its intent ledger entry;
+  whether it went out is still for a human or a read-only check to find).
 - Retention is partial: once a day an idle cycle prunes `think` / `brain.*`
   events of tasks that ended more than 30 days ago and truncates the WAL
   (`Journal.maintain`, `docs/OPERATIONS.md` "Journal maintenance"); task rows,

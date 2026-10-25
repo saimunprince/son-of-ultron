@@ -63,6 +63,15 @@ export interface TaskSummary {
   last_checkpoint_id: number | null;
 }
 
+/** The intent ledger (backend/syrax/intent.py): one EXTERNAL_WRITE call, keyed before it runs. `args_hash` is the
+ *  sha256 of the canonical JSON of its arguments (16 hex), `summary` the tool and its most telling argument. */
+export interface IntentEntry {
+  tool: string;
+  args_hash: string;
+  summary: string;
+  step: number | null;
+}
+
 export interface InterruptedTask {
   task_id: string;
   goal: string;
@@ -71,7 +80,9 @@ export interface InterruptedTask {
   tool: string | null;
   question: string | null;
   recovery_state: RecoveryState;
+  /** verify_operation's state; EXTERNAL_UNCERTAIN: a send or payment may have gone out (`intent` says which) */
   operation_state: string | null;
+  intent: IntentEntry | null;
   when: number | null;
 }
 
@@ -436,6 +447,8 @@ export type ServerEvent =
       tool?: string | null;
       question?: string | null;
       recovery_state?: RecoveryState;
+      /** task.interrupted only (journal.py recover_interrupted): recovery's classification, with the intent ledger entry of a send in flight */
+      recovery?: { state?: RecoveryState; operation_state?: string | null; intent?: IntentEntry | null };
     } & Journaled)
   | ({ type: "checkpoint"; checkpoint_id: number; seq: number; stage: string; completed_steps: number; evidence_state: string } & Journaled)
   | ({ type: "recovery"; event: "started" | "verified" | "resumed" | "completed"; count?: number; task_ids?: string[] } & Journaled)
@@ -493,6 +506,9 @@ export type ServerEvent =
       answer?: string;
       harm?: string[];
     } & Journaled)
+  /** the intent ledger (agent.py _execute_guarded): recorded before an EXTERNAL_WRITE call runs, done after it,
+   *  refused when the same call is asked again while the first was never seen to finish (first_step: where it was) */
+  | ({ type: "intent"; event: "recorded" | "done" | "refused"; tool: string; args_hash: string; summary?: string; ok?: boolean; step?: number; first_step?: number | null } & Journaled)
   | ({ type: "autonomy"; event: "toggled"; enabled: boolean } & Journaled)
   | ({
       type: "objective";

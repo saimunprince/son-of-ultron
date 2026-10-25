@@ -13,6 +13,7 @@ import {
   type ClientMessage,
   type LinkState,
   type AutonomyStatus,
+  type IntentEntry,
   type StartupStatus,
   type VoiceStatus,
   type TaskPhase,
@@ -67,9 +68,11 @@ function startOfToday(): number {
   return d.getTime() / 1000;
 }
 
-function recoveredText(t: { task_id: string; goal: string; step: number; tool?: string | null; recovery_state: string }) {
+function recoveredText(t: { task_id: string; goal: string; step: number; tool?: string | null; recovery_state: string; intent?: IntentEntry | null }) {
   const where = t.tool ? ` during ${t.tool}` : "";
-  return `RECOVERED · "${t.goal.slice(0, 80)}" was interrupted at step ${t.step}${where} · ${t.recovery_state}`;
+  // the intent ledger (backend/syrax/intent.py): a send or payment that may have gone out (operation_state EXTERNAL_UNCERTAIN)
+  const sent = t.intent?.summary ? ` · an external action may have happened: ${t.intent.summary}` : "";
+  return `RECOVERED · "${t.goal.slice(0, 80)}" was interrupted at step ${t.step}${where} · ${t.recovery_state}${sent}`;
 }
 
 type NoticeAction = { label: string; msg: ClientMessage; confirm?: string };
@@ -444,6 +447,13 @@ export default function Syrax() {
                 : `AUTHORIZED · ${e.tool} · ${e.level} · by ${e.authorized_by === "goal" ? "your words" : "your answer"}${e.targets?.length ? ` · ${e.targets.slice(0, 2).join(", ")}` : ""}`,
           });
           break;
+        case "intent":
+          // the intent ledger (backend/syrax/intent.py): what SYRAX is about to send, written before it goes out
+          if (e.event === "recorded") push({ kind: "notice", id: nextId++, text: `INTENT · ${e.summary ?? e.tool}` });
+          else if (e.event === "done") push({ kind: "notice", id: nextId++, text: `INTENT ${e.ok ? "DONE" : "FAILED"} · ${e.tool}` });
+          else if (e.event === "refused")
+            push({ kind: "error", id: nextId++, text: `INTENT HELD · ${e.tool} · the same action may already have gone out (step ${e.first_step ?? "?"}); not repeated` });
+          break;
         case "objective":
           if (e.event === "created") push({ kind: "notice", id: nextId++, text: `OBJECTIVE · P${e.priority ?? "?"} · ${e.goal ?? ""}` });
           else if (e.event === "completed") push({ kind: "notice", id: nextId++, text: `OBJECTIVE DONE · #${e.objective_id} · ${e.note ?? ""}` });
@@ -532,7 +542,7 @@ export default function Syrax() {
             push({
               kind: "notice",
               id: nextId++,
-              text: recoveredText({ task_id: e.task_id ?? "", goal: e.goal ?? "", step: e.step ?? 0, tool: e.tool, recovery_state: e.recovery_state ?? "UNKNOWN" }),
+              text: recoveredText({ task_id: e.task_id ?? "", goal: e.goal ?? "", step: e.step ?? 0, tool: e.tool, recovery_state: e.recovery_state ?? "UNKNOWN", intent: e.recovery?.intent }),
             });
           break;
         case "recovery":
