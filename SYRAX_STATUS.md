@@ -254,6 +254,10 @@ gate result of each phase is recorded in the next phase's entry.
   and a logged exception's traceback (loguru's own rendering replaced by a
   masked one). Not masked by design: the agent's live memory, the `final`
   when the human asked for the key, the `user` echo to connected screens.
+- 6039f52: the gate's pytest step gets its own ceiling, 1500 s (owner-settable with
+  `SYRAX_PYTEST_GATE_TIMEOUT_S`): the suite passed 1,100 tests, the step ran
+  559-843 s nine times today and twice the 900 s default cut it on a loaded
+  machine (NOT_VERIFIED, a correct change held).
 - Quality run #65 on 572e1b0, the full 67-case suite after the day's 26
   commits: 61/67 = 91.0 % (BASELINE for the 67-case suite; gemini). Failed: restraint (answered theatrically and used python; the case's fourth failure in eight full runs), read_code (204 chars for a number), fix_import (rewrote the greeting instead of fixing the import), self_patch_docs (edited with python, never apply_patch), deep_spec_tests (its own tests did not collect), deep2_data_pipeline (report.json in another shape). The hunts and tomorrow's self-measurement take these; the two case prompts are checked for ambiguity first.
 
