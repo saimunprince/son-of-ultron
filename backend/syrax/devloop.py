@@ -179,6 +179,7 @@ JUDGES = (
     # and what guards the evidence: the journal's owner/read-only rules and the
     # python_execute guard (an agent must not take down its own guard rails)
     "backend/syrax/journal.py", "backend/syrax/guard.py", "backend/syrax/_guard_site/sitecustomize.py",
+    "backend/syrax/backup.py",  # it guards the evidence: human commits only
     "backend/syrax/tools.py", "backend/syrax/review.py",
     # and what measures it: a system that reports its own rise must not edit the ruler
     "backend/syrax/rise.py", "backend/syrax/capmatrix.py", "backend/syrax/contracts.py", "backend/syrax/ledger.py",

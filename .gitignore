@@ -36,6 +36,8 @@ backend/config/journal.db-wal
 backend/config/journal.db-shm
 backend/config/journal.db.owner
 backend/config/rollback/
+# verified snapshots of the journal and config (they hold the API keys)
+backend/config/backups/
 syrax.pid
 syrax.log
 # skills SYRAX builds are verified by the skill factory (their own pytest), live outside git,

@@ -1792,6 +1792,23 @@ class Journal:
         with self._lock:
             return self._db.execute(f"PRAGMA {name}").fetchone()[0]
 
+    def backup_to(self, path: Path | str) -> int:
+        """Copy the whole journal into a new SQLite file at `path` with the online backup API (syrax.backup).
+        The lock is held for the copy, so no write of this process interleaves and the copy is one consistent
+        state even under WAL; the copy is turned into a plain rollback-journal file, so nothing (-wal, -shm)
+        has to travel with it. A read-only handle can copy too: that is how `python -m syrax.backup
+        --snapshot` works beside a running SYRAX. Returns the copy's size in bytes."""
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        dst = sqlite3.connect(str(path))
+        try:
+            with self._lock:
+                self._db.backup(dst)
+            dst.execute("PRAGMA journal_mode=DELETE")
+        finally:
+            dst.close()
+        return path.stat().st_size
+
     def close(self) -> None:
         global _journal
         with self._lock:

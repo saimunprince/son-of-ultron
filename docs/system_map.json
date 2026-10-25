@@ -158,7 +158,8 @@
         "idempotent recovery with dedupe keys",
         "verify_operation for str_replace_editor create/str_replace/insert",
         "bounded context storage (200 KB)",
-        "maintain(): 30-day retention of chatty events and checkpoint contexts for finished tasks, WAL truncate, measured counts"
+        "maintain(): 30-day retention of chatty events and checkpoint contexts for finished tasks, WAL truncate, measured counts",
+        "backup.snapshot(): once a day when idle, a verified copy (integrity_check, row counts, sha256) of journal.db, brains.json, memory.json and config.toml into backend/config/backups/<stamp>, 7 kept; restore only by a human (python syrax.py --restore)"
       ],
       "limitations": [
         "file edits are reality-checked and calls that only read resume safely (F5); code, browser and writing calls stay UNCERTAIN with their level and targets listed",
@@ -166,10 +167,12 @@
         "maintenance never deletes tasks, knowledge or evidence; no full compaction"
       ],
       "code": [
-        "backend/syrax/journal.py"
+        "backend/syrax/journal.py",
+        "backend/syrax/backup.py (daily verified snapshot of journal.db, brains.json, memory.json, config.toml; human-run restore)"
       ],
       "tests": [
-        "backend/syrax/test_journal.py (SIGKILL crash matrix, transition table, recovery, resume, fan-out)"
+        "backend/syrax/test_journal.py (SIGKILL crash matrix, transition table, recovery, resume, fan-out)",
+        "backend/syrax/test_backup.py (snapshot/verify/prune/due, a flipped byte is caught, restore reproduces rows and refuses while running)"
       ],
       "failure_modes": [
         "JournalError on invalid transition/unknown task/terminal task \u2192 rolled back",
@@ -246,7 +249,8 @@
         "resource gate; never runs while a human task runs",
         "background loop with interval; off by default",
         "quiet hours and battery/disk pressure skip cycles (human cycle_now ignores them)",
-        "idle cycles run Journal.maintain once per 24 h (retention, WAL truncate)"
+        "idle cycles run Journal.maintain once per 24 h (retention, WAL truncate)",
+        "idle cycles take a verified backup once per 24 h (backup.snapshot) before maintenance; a failure is journaled as backup.failed and never stops the cycle"
       ],
       "limitations": [
         "lessons are derived strings, not model reflections",

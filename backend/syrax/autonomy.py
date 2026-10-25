@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional
 from app.logger import logger
 
 from syrax import resources
-from syrax import contracts, followup, plan
+from syrax import backup, contracts, followup, plan
 from syrax.journal import ALL_OBJECTIVES, BACKEND_ROOT, Journal, JournalError
 
 REPO_ROOT_PATH = BACKEND_ROOT.parent
@@ -884,11 +884,19 @@ class Autonomy:
                     except Exception as e:
                         logger.warning(f"watched topics failed: {e}")
                     return await self._finish(rep)
+            try:
+                # the evidence copies itself once a day (verified; backup.KEEP kept), before maintenance prunes anything
+                if await asyncio.to_thread(backup.due, self.journal):
+                    m = await self.journal.run(backup.snapshot, self.journal)
+                    gone = await asyncio.to_thread(backup.prune, Path(m["dir"]).parent)
+                    rep.reason = f"no open objective; backup: {Path(m['dir']).name}, {m['bytes']} bytes, {len(gone)} old pruned"
+            except Exception as e:  # snapshot journaled backup.failed; the cycle goes on
+                logger.warning(f"backup failed: {e}")
             if self.journal.maintenance_due(MAINTENANCE_EVERY_S):
                 # useful idle work: keep the journal bounded (measured, journaled)
                 try:
                     m = await self.journal.run(self.journal.maintain)
-                    rep.reason = f"no open objective; maintenance: pruned {m['events_pruned']} events, trimmed {m['checkpoint_contexts_trimmed']} contexts"
+                    rep.reason = f"{rep.reason}; maintenance: pruned {m['events_pruned']} events, trimmed {m['checkpoint_contexts_trimmed']} contexts"
                 except Exception as e:
                     logger.warning(f"maintenance failed: {e}")
             return await self._finish(rep)

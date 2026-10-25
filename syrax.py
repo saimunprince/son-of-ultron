@@ -8,6 +8,8 @@
     python syrax.py --uninstall-service remove the login service
     python syrax.py --status            show the login service
     python syrax.py --gate              run the release gate (pytest, tsc, eslint, build...)
+    python syrax.py --backup            verified copy of the journal and config into backend/config/backups
+    python syrax.py --restore DIR       put a backup folder back (SYRAX must be stopped)
 
 Missing pieces are installed on first run: the backend venv (uv or venv),
 Python requirements, frontend node_modules, and config.toml from the example.
@@ -568,6 +570,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--uninstall-service", action="store_true")
     ap.add_argument("--status", action="store_true", help="login service status")
     ap.add_argument("--gate", action="store_true", help="run the release gate and exit")
+    ap.add_argument("--backup", action="store_true", help="copy the journal, brains, memory and config into backend/config/backups (verified, 7 kept)")
+    ap.add_argument("--restore", metavar="DIR", help="put a backup folder back into backend/config; refuses while SYRAX runs")
     ap.add_argument("--token", action="store_true", help="print the token a non-browser client needs for /ws, /live and the voice endpoints")
     ap.add_argument("--stop", action="store_true", help="stop the running SYRAX")
     ap.add_argument("--restart", action="store_true", help="stop, then start in the background")
@@ -604,6 +608,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if a.gate:
         setup(verbose=False)
         return subprocess.run([str(venv_python()), "-m", "syrax.verify"], cwd=str(BACKEND)).returncode
+    if a.backup or a.restore:  # syrax.backup is stdlib only: the venv is all it needs, even on a bare machine
+        if not venv_python().exists():
+            setup(verbose=False)
+        cmd = ["--snapshot"] if a.backup else ["--restore", str(Path(a.restore).resolve())]
+        return subprocess.run([str(venv_python()), "-m", "syrax.backup", *cmd], cwd=str(BACKEND)).returncode
     return launch(dev=a.dev, service=a.service)
 
 
