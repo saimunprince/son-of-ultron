@@ -302,10 +302,11 @@ class Core:
             await self.broadcast(event)
             return
         payload = {k: v for k, v in event.items() if k not in ("type", "image")}
-        if kind in ("tool.completed", "tool.failed") and isinstance(payload.get("output"), str):
-            # the journal is evidence, not a vault (audit 2026-10-25): a key a tool printed is masked in the record, and
-            # so in what the UI shows; the agent's own event is untouched, the model may need the key to do the work
-            payload["output"] = redact.mask(payload["output"])
+        if kind in ("think", "tool.started", "tool.completed", "tool.failed"):
+            # the journal is evidence, not a vault (audit 2026-10-25): a key a tool printed, a key the model passed as an
+            # argument or wrote in its reasoning is masked in the record, and so in what the UI shows; the agent's own
+            # event is untouched, the model may need the key to do the work
+            payload = redact.mask_deep(payload)
         volatile = {"image": event["image"]} if event.get("image") else None
         if kind == "tool.started":
             self._last_tool_args = event.get("args") if isinstance(event.get("args"), dict) else {}
@@ -349,6 +350,8 @@ class Core:
         await self.broadcast({"type": "phase", "event": "changed", **payload, "task_id": self.current.task_id})
 
     async def _checkpoint(self, stage: str, verified: Optional[dict] = None, next_action: Optional[str] = None) -> None:
+        """A resume point: the agent's exported context goes to the journal, which stores a masked copy of it
+        (journal.checkpoint_sync); the agent's live memory keeps the real text."""
         if self.current is None or self.agent is None:
             return
         try:
@@ -425,6 +428,7 @@ class Core:
             if not pending:
                 return None
             nxt = pending[0]
+            # the raw words live in memory; after a restart only the journal's masked copy of the goal is left to run
             goal, said = self._queued_requests.pop(nxt["task_id"], (nxt["goal"], nxt["goal"]))
             await self.broadcast({"type": "notice", "text": f"Queued request starting: {str(said or goal)[:80]}"})
             tid = await self._begin(goal, said, nxt.get("session_id"), "conversation", None, None, task_id=nxt["task_id"])
@@ -456,9 +460,9 @@ class Core:
         await self.ensure_agent()
         await asyncio.to_thread(self.devloop.begin_task)  # a task owns only the changes it makes
         if task_id is None:
-            task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)
-        else:
-            await self.journal.record("task.started", {"goal": said or goal, "kind": kind}, task_id=task_id)
+            task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)  # the row's goal is masked there
+        else:  # a queued task starts: the journal's copy of the human's words is masked, the agent gets them raw below
+            await self.journal.record("task.started", {"goal": redact.mask(said or goal), "kind": kind}, task_id=task_id)
         if kind == "autonomous" and os.getenv("SYRAX_ISOLATE", "0") == "1":
             # M1, isolated evolution: SYRAX's own work happens in a worktree, never in the running tree
             try:

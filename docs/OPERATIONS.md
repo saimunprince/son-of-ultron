@@ -94,3 +94,6 @@ and refuses while running, the idle cycle backs up before maintenance.
 - No disk quota for `backend/workspace/`, `backend/skills/` or rollback snapshots.
 - Maintenance never deletes tasks or knowledge; there is no full-history compaction.
 - Backups stay on the same disk; copying a snapshot folder somewhere else is the owner's job.
+- Credential masking happens when the journal writes: the agent's live memory, the
+  `user` echo to connected UIs and a `final` the human asked a key for keep the real
+  text, and a task resumed from a checkpoint reads `[credential masked]` where a key was.

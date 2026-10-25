@@ -347,7 +347,11 @@ credential-shaped strings (OpenAI, Groq, Gemini, GitHub, Slack and AWS key shape
 replaced by `[credential masked]`, and the final answer masks them unless the request
 asked for a key; the model's own context keeps the real output. What `research` and
 the `browser_*` tools bring back is headed `UNTRUSTED WEB CONTENT`, so the model reads
-a page as data, never as instructions.
+a page as data, never as instructions. The journal's copies of the human's request
+(the task goal, queued or started), the model's `think` text and tool arguments and
+the saved checkpoint context are masked the same way, as is a logged exception's
+traceback; the agent's live memory is not, so a task resumed from a checkpoint reads
+`[credential masked]` where a key was.
 
 ## Permissions
 

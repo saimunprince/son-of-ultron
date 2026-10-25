@@ -36,6 +36,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional
 
+from syrax import redact  # the one credential pattern; imports nothing but `re` itself
+
 log = logging.getLogger("syrax.journal")
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -683,6 +685,10 @@ class Journal:
         kind: str = "conversation",
         pending: bool = False,
     ) -> str:
+        """A new task row and its task.started (or task.queued) event. The stored goal is the journal's copy of the
+        human's words, masked (audit 2026-10-25: a key pasted into a request landed in the journal); the caller keeps
+        the raw text for the agent."""
+        goal = redact.mask(goal)
         task_id = uuid.uuid4().hex[:12]
         ts = _now()
         status = "PENDING" if pending else "IN_PROGRESS"
@@ -743,10 +749,14 @@ class Journal:
         context: Optional[list] = None,
         evidence_state: str = "NOT_VERIFIED",
     ) -> Event:
+        """A checkpoint row (plus its checkpoint.created event) a resume can start from. The stored ``context`` is a
+        bounded, masked copy of the agent's messages (audit 2026-10-25: it held every tool output as it came, keys
+        included); the agent's live memory is untouched. So a task resumed from a checkpoint reads
+        "[credential masked]" where a key was: a key in a resumed context is the exception, the journal is evidence."""
         if evidence_state not in EVIDENCE_STATES:
             raise JournalError(f"bad evidence_state {evidence_state!r}")
         ts = _now()
-        ctx = _bound_context(context or [])
+        ctx = redact.mask_deep(_bound_context(context or []))
         with self._txn() as cur:
             row = self._row(cur, task_id)
             if row["status"] in TERMINAL:
