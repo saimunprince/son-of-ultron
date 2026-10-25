@@ -84,12 +84,13 @@ CAPABILITIES: List[Capability] = [
     Capability("desktop", "Desktop automation (apps, media, clipboard, windows)", CURRENT, "backend/syrax/desktop.py, winctl.py",
                tools=["desktop"], tests=["syrax.test_desktop::*"], quality_cases=["desktop_cpu"]),
     Capability("memory", "Memory (remember / recall / forget)", CURRENT, "backend/syrax/memory.py",
-               tools=["remember", "recall", "forget"], tests=["syrax.test_memory::*", "syrax.test_memory_types::*"],
+               tools=["remember", "recall", "forget"], tests=["syrax.test_memory::*", "syrax.test_memory_types::*", "syrax.test_memory_truth::*"],
                note="typed: fact / preference / rule from the human, observation (SYRAX's inference, half the weight) kept apart; "
-                    "keyword recall, no embeddings"),
+                    "keyword recall, no embeddings; remember grounds a fact in the human's words (else an observation at 0.5), "
+                    "forget needs three characters and cannot sweep"),
     Capability("knowledge", "Research and knowledge (research / know / learn)", CURRENT, "backend/syrax/research.py, consolidate.py",
-               tools=["research", "know", "learn"], tests=["syrax.test_research::*", "syrax.test_consolidate::*"],
-               quality_cases=["know_honest", "research_cite"]),
+               tools=["research", "know", "learn"], tests=["syrax.test_research::*", "syrax.test_consolidate::*", "syrax.test_learn_supports_claim::*"],
+               quality_cases=["know_honest", "research_cite"], note="learn refuses a citation whose row shares nothing with the claim"),
     Capability("journal", "Durable journal (WAL, owner lock, retention)", CURRENT, "backend/syrax/journal.py",
                tests=["syrax.test_journal::test_open_sets_wal_full_sync_and_private_mode", "syrax.test_journal::test_sigkill_keeps_exactly_the_committed_state",
                       "syrax.test_journal::test_a_second_live_process_cannot_recover_the_journal"], live=["journal_wal"]),
@@ -120,8 +121,13 @@ CAPABILITIES: List[Capability] = [
     Capability("autonomy", "Self-improvement loop (objectives, judge, follow-ups)", CURRENT, "backend/syrax/autonomy.py, limits.py, plan.py, followup.py",
                tests=["syrax.test_autonomy::*", "syrax.test_limits::*", "syrax.test_plan::*", "syrax.test_followup::*"], live=["cycles"]),
     Capability("release", "Autonomous self-modification (release, review, rollback)", PARTIAL, "backend/syrax/devloop.py, review.py",
-               tools=["release"], tests=["syrax.test_devloop::*"],
-               note="gate + rollback + cross-brain review; the landing rate is in RISE.md (Releases that landed)"),
+               tools=["release"], tests=["syrax.test_devloop::*", "syrax.test_review_unavailable::*"],
+               note="gate + rollback + cross-brain review; a change no second brain could review is held (REVIEW_UNAVAILABLE, nothing committed); "
+                    "the landing rate is in RISE.md (Releases that landed)"),
+    Capability("selfedit", "Self-editing tools (repo_map, apply_patch by content)", CURRENT, "backend/syrax/selfedit.py",
+               tools=["apply_patch", "repo_map"], tests=["syrax.test_selfedit::*", "syrax.test_apply_patch_*::*"],
+               note="a hunk git cannot place is placed by its lines (each old block found exactly once, exact then whitespace-trimmed) "
+                    "and the report says APPLIED BY CONTENT; invented context is refused"),
     Capability("isolation", "Isolated evolution (own changes in a worktree, fast-forward landing)", CURRENT,
                "backend/syrax/devloop.py (isolate, land), editor.py (redirect), guard.py (isolation rules)",
                tests=["syrax.test_isolated_evolution::*", "syrax.test_isolated_redirect::*", "syrax.test_guard_isolation::*", "syrax.test_m1_gaps::*"],
@@ -141,7 +147,9 @@ CAPABILITIES: List[Capability] = [
                note="stage only; restored from the journal after a restart (a day, not dismissed, within ttl)"),
     Capability("permissions", "Tool permission levels enforced in code", CURRENT, "syrax/permissions.py, agent._permit",
                tests=["syrax.test_permissions*::*"], quality_cases=["act_delete"], live=["permissions"],
-               note="READ_ONLY..DESTRUCTIVE + harm; conversation authorizes by goal or consent, eval never asks, autonomous refuses SYSTEM and above (improvement 001)"),
+               note="READ_ONLY..DESTRUCTIVE + harm; conversation authorizes by goal or consent, eval never asks, autonomous refuses SYSTEM and above (improvement 001); "
+                    "brains.json, ws.token and the journal are refused for every kind, a protected basename in any literal counts as that file, "
+                    "code that weakens the guard is harm (test_protected_data, test_judge_targets, test_guard_weakening)"),
     Capability("phases", "Task phase model (understand/plan/act/observe/verify)", CURRENT,
                "backend/syrax/phases.py, core.py (_record_phase), frontend/components/Syrax.tsx (phase strip)",
                tests=["syrax.test_phases::*"], live=["phases"],
@@ -157,7 +165,47 @@ CAPABILITIES: List[Capability] = [
                tests=["syrax.test_presence::*", "syrax.test_hud::*"],
                note="Level 1-2 on the HUD (task, phase, tool, target window, log from the journal) and the three levels by text "
                     "or voice; the target window is observed only right after a desktop or browser call, private titles never recorded; "
-                    "Level 3 (live workspace) is the owner's decision"),
+                    "Level 3 (live workspace) is the owner's decision; hud/*.test.js (node --test, not pytest) pin the queue rows, "
+                    "the guard's reason and the waiting question"),
+    Capability("queue", "Task queue (a request made while busy waits its turn)", CURRENT,
+               "backend/syrax/core.py (submit queue=True, queued, _start_next, requeue_after_boot), server.py (queue, queue_cancel)",
+               tests=["syrax.test_task_queue::*"],
+               note="M1; the human's request is journaled PENDING (task.queued), answered 'Queued (position n)' with REMOVE, starts when the running "
+                    "task ends; survives a restart while under an hour old; SYRAX's own work never queues; live probe pending (hello.queue over /ws)"),
+    Capability("backups", "Backups with verified restore", CURRENT, "backend/syrax/backup.py (snapshot, verify, restore), autonomy.py (idle cycle)",
+               tests=["syrax.test_backup::*"],
+               note="M3; journal.db through SQLite's online backup API with brains.json, memory.json, config.toml into backend/config/backups/<stamp>/ "
+                    "(manifest: sha256, row counts, integrity_check), seven kept; restore only by a human while SYRAX is stopped; no agent tool; "
+                    "live probe pending (the newest snapshot verifies and is younger than 48 h)"),
+    Capability("intent", "Intent ledger (external actions never repeated blindly)", CURRENT,
+               "backend/syrax/intent.py, agent.py (EXTERNAL_WRITE calls), core.py, journal.py (recovery)",
+               tests=["syrax.test_intent_ledger::*"],
+               note="intent.recorded before an EXTERNAL_WRITE call, intent.done after; the same send is held while the first never finished; "
+                    "a crash inside one is EXTERNAL_UNCERTAIN and a resume carries the summary; no live probe (it would send something real)"),
+    Capability("masking", "Credential masking (logs and the record)", CURRENT,
+               "backend/syrax/redact.py, core.py (emit), journal.py (start_task, checkpoint), agent.py (mask_credentials)",
+               tests=["syrax.test_redact::*", "syrax.test_redact_leftovers::*", "syrax.test_answer_masks_credentials::*"],
+               note="every log line (a traceback included), journaled think/tool args/tool output, the task goal and the checkpoint context are masked "
+                    "at write time; the agent's own context keeps the key; the final answer too when the human asked for it"),
+    Capability("memory_export", "Memory inspection, export and correction", CURRENT,
+               "backend/syrax/memory.py (facts provenance, correct, export), server.py (memories, memory_correct, memory_export)",
+               tests=["syrax.test_memory_export::*", "syrax.test_memory_correct::*"],
+               note="each fact carries type, confidence, basis, last use and use count; memory_correct rewrites a fact in place (previous text journaled); "
+                    "memory_export writes a credential-masked JSON to backend/config/exports; live probe pending (memory_export over /ws, the file deleted after)"),
+    Capability("deadlines", "Task deadlines and tool timeouts", CURRENT,
+               "backend/syrax/core.py (TASK_DEADLINE_S, _deadline_passed, error_class), agent.py (MCP_TOOL_TIMEOUT_S)",
+               tests=["syrax.test_task_deadline::*", "syrax.test_mcp_timeout::*", "syrax.test_error_class::*"],
+               note="a conversation ends at 30 min, SYRAX's own task at 90 min, an MCP tool call is abandoned after 180 s; task.failed and task.cancelled "
+                    "carry an error_class; no live probe (it would need a real timeout)"),
+    Capability("boot_policy", "Boot policy for interrupted tasks", CURRENT, "backend/syrax/core.py (settle_interrupted), server.py (boot)",
+               tests=["syrax.test_boot_policy::*"],
+               note="an eval case cut by a restart is dismissed, an autonomous attempt is dismissed and its objective reopened, an UNCERTAIN one waits "
+                    "7 days for the human, a human's conversation waits an hour (UNCERTAIN: indefinitely); each decision journaled"),
+    Capability("skill_lifecycle", "Skill lifecycle (versions, rollback, disable)", CURRENT,
+               "backend/syrax/skills.py (content_hash, keep_version, rollback, enable, duplicate_of), journal.py (skills.code_version)",
+               tests=["syrax.test_skill_lifecycle::*"],
+               note="code_version follows the content hash; the last five versions are kept under .versions/ and the human can ROLLBACK (re-verified); "
+                    "DISABLED sticks across restarts and prebuilt installs; a duplicate of a verified skill is refused naming the one to extend"),
 ]
 
 
