@@ -217,6 +217,60 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Milestones 2-4: review holds, backups, HUD truth, apply_patch by content (2026-10-25)
+
+Built in parallel by agents in their own worktrees from the audit's backlog
+(Prince: "use multiple agents"), each diff reviewed by hand, gated GREEN
+(two full gates), landed as separate commits; SYRAX ran on the new code
+within the hour and published its daily ledger through the new review path.
+
+- b86ca33: release-policy holes. A self-change that no second brain could
+  review is HELD (REVIEW_UNAVAILABLE: rolled back, `review.unavailable`
+  journaled, nothing committed, the objective stays open) instead of landing
+  unreviewed; the reviewer reads new files whole (/dev/null diffs, cap 24k
+  chars with the cut named); `backend/requirements-syrax.txt` is out of
+  SYRAX's scope (dependencies are the owner's decision); `selfedit.py` and
+  `conftest.py` join the judges. The daily ledger publish is held too when
+  only one brain can answer. 15 tests.
+- 83ce415: HUD truth. `hud/link.js` reads the fields the backend really sends
+  (commit hash `commit`, failover `provider` = the brain that failed, quality
+  `status`, skill `skill`, push started/completed/failed), shows interrupted
+  tasks from `hello` and resumes, and the "GUARD REFUSED TODAY" counter is
+  seeded from today's journal instead of the HUD session.
+  `link.contract.test.js`: 12 tests whose fixtures cite the emitting line.
+- 0ab288e: backups. `backup.py` (a judge, stdlib only) copies the journal
+  through SQLite's online backup API with `brains.json`, `memory.json`,
+  `config.toml` into `backend/config/backups/<stamp>/` with a manifest
+  (sha256, row counts, integrity_check), verified, seven kept; daily from the
+  idle cycle before maintenance, by hand with `python syrax.py --backup`;
+  `--restore DIR` only while SYRAX is stopped, the replaced files kept aside.
+  No agent tool exposes it. Measured on a copy of the live journal (152 MB):
+  snapshot 0.84 s, verify 0.29 s. 11 tests.
+- e5df149: apply_patch places hunks by their lines when git cannot (plan 3).
+  Measured first: the last 30 days' 141 "does not apply" failures replayed
+  against the files at their commit (scratchpad `patch_replay/REPORT.md`):
+  58 apply with today's tool already (older CRLF and --recount bugs), 10 were
+  the stale probe meant to fail, 35 had unknown file state; of the 51 left,
+  a content locator (each hunk's old-side block found exactly once, exact
+  then whitespace-trimmed) recovered 19 with no wrong placement, while
+  `git apply -C1`, `-C0`, `--ignore-whitespace` and `--unidiff-zero` placed
+  hunks wrongly and were not adopted. The implementation recovers 15 of the
+  51 (mixed diffs with a new file stay git's), accepts none of the probes,
+  and the report says APPLIED BY CONTENT so the brain and the reviewer know.
+  Commonest cause it fixes: a hunk with no trailing context, which git reads
+  as "must end the file". 15 tests, 14 red before.
+- Live, 11:33-12:06: SYRAX started on the new code; the queue took Prince's
+  own "hii" and a test request while a quality case ran and ran both after
+  it (`queue_live.py` PASS); quality run #62 2/2; the first idle cycles ran
+  three "biggest limitation" research objectives (310-312: new limitation
+  wording in `system_map.json` spawns one each — hollow, three brain calls
+  apiece) and the radar's OSV scan proposed upgrades for brotli 1.2.0
+  (critical), filelock 4.0.7 and pypdf 6.19.0 (the owner decides); the ledger
+  publish d723e7c passed the gate, a second brain approved it, committed; the
+  first automatic backup landed at 12:08:15 (`backups/20261025-120815`:
+  journal 153 MB, integrity ok, brains.json and config.toml, manifest with
+  sha256 and row counts).
+
 ### Evolution mission, audit and Milestone 1: the queue (2026-10-25)
 
 - Prince's mission document: audit the real repository first, then
