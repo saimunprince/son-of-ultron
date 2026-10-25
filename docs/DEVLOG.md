@@ -1,14 +1,53 @@
 # SYRAX devlog
 
-Generated 2026-10-22 12:25 +0600 by `python -m syrax.devlog` at commit `9a9b640`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+Generated 2026-10-25 11:43 +0600 by `python -m syrax.devlog` at commit `0ab288e`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+
+## 2026-10-25
+
+- Tasks: 24 finished, 0 failed (491 journal events).
+- Objectives closed: 3
+  - #310 My biggest measured limitation right now: Core: one task runs at a time; a human request m
+  - #311 My biggest measured limitation right now: Self-model: performance history: task durations 
+  - #312 My biggest measured limitation right now: Research engine + knowledge store: no cache, rat
+- Quality run #62: 100.0 % of 2 cases.
+- Commits by its maintainers: 5
+  - `0ab288e` feat(backup): verified snapshots of the journal and config, restored only by a human
+  - `83ce415` fix(hud): the event log reads the fields the backend really sends
+  - `b86ca33` fix(release): a review that could not happen holds the change; the reviewer reads new files whole; d
+  - `b5c711f` docs: the 2026-10-25 audit and Milestone 1 (queue) in SYRAX_STATUS
+  - `005b871` feat(core): a human request made while SYRAX works is queued, not dropped
 
 ## 2026-10-22
 
-- Tasks: 3 finished, 0 failed (152 journal events).
-- Objectives closed: 3
+- Tasks: 67 finished, 0 failed (2094 journal events).
+- Objectives closed: 6
   - #303 My biggest measured limitation right now: Core: one task at a time; no queue scheduling. I
   - #304 My biggest measured limitation right now: Core: brain events from a running task are journ
   - #305 My biggest measured limitation right now: Journal: file edits are reality-checked and call
+  - #306 covering_tests runs the system map's test paths and never cuts a touched test. In backend/
+  - #307 [REPRO HUNT] self_inspect's capabilities send SYRAX to the wrong file: str_replace_editor'
+  - #309 self_inspect names the right file for each tool. In backend/syrax/selfmodel.py (view `_imp
+- Quality run #61: 100.0 % of 3 cases.
+- Incidents: interrupted 1, rollbacks 6, restarts 13.
+- Commits SYRAX made to itself: 3
+  - `bc736e2` syrax: Fix capability implementation paths in backend/syrax/selfmodel.py and add test_capability_fil
+  - `3d05189` syrax: Fix covering_tests to correctly handle map path entries and protect touched tests from cap cu
+  - `01ea7f1` syrax: docs(rise): the ledger, the devlog and the capability matrix, regenerated from evidence
+- Commits by its maintainers: 14
+  - `3163baf` fix(server): a client gone during boot ends its session quietly
+  - `f021713` docs: deep quality cases; words beside an action are never the answer; apply_patch path hints
+  - `414059a` fix(apply_patch): name the repository path a backend/-relative one meant; show how a file ends when 
+  - `41181c3` feat(quality): nine deep cases, several steps of real work judged by running the result
+  - `54c3853` fix(agent): words written beside a tool call are never the final answer
+  - `1a69ff4` docs: the first live hunt, right cause and wrong facts; the phantom path guard
+  - `fa06eb8` fix(repro): a fix may name only files that exist or that it creates
+  - `70f38e8` feat(repro): hunt_add, a human points SYRAX at a failure and SYRAX writes the test and the fix
+  - `93f3513` fix(limits): with repro hunts on, no tool_reliability, repair or repeated research objectives
+  - `1ba114c` feat(repro): Brief Factory phase 3, SYRAX measures itself every day
+  - `f449508` fix(prompt): only a question about SYRAX itself needs self_inspect; never a made-up task id
+  - `f94edbf` fix(autonomy): no web research for maintenance failures; hunts replace free-form quality-case object
+  - `8b179ac` feat(repro): Brief Factory phase 2, SYRAX hunts the repro of its own failures
+  - `c6e684c` feat(repro): Brief Factory phase 1, a change lands with a test the judge saw fail
 
 ## 2026-10-19
 
@@ -454,7 +493,6 @@ Generated 2026-10-22 12:25 +0600 by `python -m syrax.devlog` at commit `9a9b640`
   - #6 Verify that the `recall` tool works on this machine by calling it with a harmless, read-on
   - #7 Verify that the `research` tool works on this machine by calling it with a harmless, read-
   - #8 Verify that the `skill_list` tool works on this machine by calling it with a harmless, rea
-- Quality run #8: 90.0 % of 10 cases; failed: research_cite.
 - Incidents: interrupted 3, rollbacks 1.
 - Commits by its maintainers: 21
   - `dc2a754` docs: Phase 0 evidence after the first live day on Windows

@@ -1,13 +1,20 @@
 # SYRAX archive
 
-Generated 2026-10-22 12:25 +0600 by the daily ledger at commit `9a9b640`, from the journal's `archive` table: every release attempt SYRAX made to its own code, the commit it started from, the commit it produced, and the quality score measured at that commit. Parent selection (Darwin Gödel Machine style) favours a high score and penalises an ancestor that already has many children. Nothing here is typed by hand.
+Generated 2026-10-25 11:43 +0600 by the daily ledger at commit `0ab288e`, from the journal's `archive` table: every release attempt SYRAX made to its own code, the commit it started from, the commit it produced, and the quality score measured at that commit. Parent selection (Darwin Gödel Machine style) favours a high score and penalises an ancestor that already has many children. Nothing here is typed by hand.
 
-- Variants committed: 21; attempts that did not land: 43; scored: 4.
+- Variants committed: 24; attempts that did not land: 47; scored: 4.
 - Best parent now: `e2c362a` (score 88% with 0 child(ren): weight 0.979).
-- Lineage of the running build: `c476788` ← `0ab1705`
+- Lineage of the running build: `bc736e2`
 
 | when | decision | parent → head | score | children | weight | objective | summary |
 |---|---|---|---|---|---|---|---|
+| 2026-10-22 16:57 | COMMITTED | `70f38e8` → `bc736e2` | - | 0 | 0.000 | #309 | Fix capability implementation paths in backend/syrax/selfmodel.py and  |
+| 2026-10-22 16:43 | REFUSED | `70f38e8` → `-` | - | 0 | 0.000 | #309 | Fix capability implementation paths in backend/syrax/selfmodel.py for  |
+| 2026-10-22 16:43 | REFUSED | `70f38e8` → `-` | - | 0 | 0.000 | #309 | Fix self_inspect capability mappings for editor, journal_query, remind |
+| 2026-10-22 16:43 | REVIEW_REJECTED | `70f38e8` → `-` | - | 0 | 0.000 | #309 | Fix self_inspect capability mappings for editor, journal_query, remind |
+| 2026-10-22 16:25 | REFUSED | `70f38e8` → `-` | - | 0 | 0.000 | #309 | Fix capability paths in selfmodel and add test_capability_files.py |
+| 2026-10-22 13:21 | COMMITTED | `c6e684c` → `3d05189` | - | 0 | 0.000 | #306 | Fix covering_tests to correctly handle map path entries and protect to |
+| 2026-10-22 12:45 | COMMITTED | `9a9b640` → `01ea7f1` | - | 0 | 0.000 | - | docs(rise): the ledger, the devlog and the capability matrix, regenera |
 | 2026-10-19 13:32 | COMMITTED | `0ab1705` → `c476788` | - | 0 | 0.000 | #298 | Expand negation check in named_tools to cover more words and character |
 | 2026-10-19 13:18 | REFUSED | `0ab1705` → `-` | - | 0 | 0.000 | #294 | Dummy release for workspace check |
 | 2026-10-19 13:18 | REFUSED | `0ab1705` → `-` | - | 0 | 0.000 | #294 | Improve python_execute robustness against subprocess communication err |
