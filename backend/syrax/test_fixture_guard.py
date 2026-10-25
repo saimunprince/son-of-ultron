@@ -18,7 +18,8 @@ def test_the_files_a_case_names_are_found_in_its_prompt():
     named = case_files(["self_patch_stale", "self_patch_docs", "self_patch_edit"])
     assert named["README.md"] == ["self_patch_stale"]
     assert named["docs/EXECUTION_PLAN.md"] == ["self_patch_docs"]
-    assert named["backend/syrax/selfedit.py"] == ["self_patch_edit"]
+    # 2026-10-25: selfedit.py became a judge (it chooses the preflight tests), so the case names reminders.py now
+    assert named["backend/syrax/reminders.py"] == ["self_patch_edit"]
     assert case_files(["arith"]) == {}
 
 
