@@ -64,10 +64,15 @@ async def install(factory: Any, root: Path = PREBUILT_ROOT) -> List[Dict[str, An
             out.append({"skill": name, "outcome": "KEPT", "reason": "a skill of this name was made by SYRAX itself"})
             continue
         row = factory.journal.skill(name)
+        if row and row.get("status") == "DISABLED":
+            # the human disabled it (skill_test remove); a reinstall would register it again behind their back
+            out.append({"skill": name, "outcome": "DISABLED", "reason": "disabled by the human; skill_enable turns it back on"})
+            continue
         have = marker.read_text(encoding="utf-8").strip() if marker.exists() else None
         if have == want and row and row.get("status") == "VERIFIED":
             out.append({"skill": name, "outcome": "CURRENT"})
             continue
+        factory.keep_version(name)  # a VERIFIED copy stays under .versions/ for the human's skill_rollback
         dst.mkdir(parents=True, exist_ok=True)
         for f in FILES:
             shutil.copyfile(src / f, dst / f)

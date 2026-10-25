@@ -443,9 +443,19 @@ CREATE TABLE IF NOT EXISTS skills (
   created_task_id   TEXT,
   created           REAL NOT NULL,
   updated           REAL NOT NULL,
-  last_verified     REAL
+  last_verified     REAL,
+  content_hash      TEXT,
+  code_version      INTEGER NOT NULL DEFAULT 1
 );
 """
+
+# Columns added after their table shipped (CREATE TABLE IF NOT EXISTS leaves an older journal without them), added in
+# place at open. Additive only: no existing column changes meaning. 2026-10-25 (skill lifecycle): a skill's `version`
+# keeps counting verifications; `code_version` follows its `content_hash` and moves only when the code does.
+_ADDED_COLUMNS = (
+    ("skills", "content_hash", "TEXT"),
+    ("skills", "code_version", "INTEGER NOT NULL DEFAULT 1"),
+)
 
 SKILL_STATUSES = ("NOT_TESTED", "VERIFIED", "FAILED", "DISABLED")
 
@@ -519,6 +529,9 @@ class Journal:
         self._db.execute("PRAGMA synchronous=FULL")
         self._db.execute("PRAGMA foreign_keys=ON")
         self._db.executescript(_DDL)
+        for table, column, decl in _ADDED_COLUMNS:
+            if column not in {r["name"] for r in self._db.execute(f"PRAGMA table_info({table})").fetchall()}:
+                self._db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
         self._db.execute(
             "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)",
             (str(SCHEMA_VERSION),),
@@ -1482,29 +1495,39 @@ class Journal:
         known_limitations: Optional[List[str]] = None,
         created_task_id: Optional[str] = None,
         event: Optional[str] = None,
+        content_hash: Optional[str] = None,
     ) -> dict:
+        """`version` counts verifications (every call bumps it). `code_version` counts code: it moves only when
+        `content_hash` differs from the stored one (skills.content_hash: sha256 over the skill's .py files); a row
+        that has no hash yet takes the first one it is given without a bump, and a call without a hash keeps both."""
         if status not in SKILL_STATUSES:
             raise JournalError(f"bad skill status {status!r}")
         ts = _now()
         with self._txn() as cur:
-            row = cur.execute("SELECT version FROM skills WHERE name=?", (name,)).fetchone()
+            row = cur.execute("SELECT version, content_hash, code_version FROM skills WHERE name=?", (name,)).fetchone()
             version = (int(row["version"]) + 1) if row else 1
+            code_version = int(row["code_version"] or 1) if row else 1
+            if row and content_hash and row["content_hash"] and row["content_hash"] != content_hash:
+                code_version += 1
+            content_hash = content_hash or (row["content_hash"] if row else None)
             cur.execute(
                 "INSERT INTO skills(name, version, purpose, path, status, tests_passed, tests_failed, evidence, "
-                "dependencies, known_limitations, created_task_id, created, updated, last_verified) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET version=excluded.version, "
+                "dependencies, known_limitations, created_task_id, created, updated, last_verified, content_hash, code_version) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(name) DO UPDATE SET version=excluded.version, "
                 "purpose=excluded.purpose, path=excluded.path, status=excluded.status, tests_passed=excluded.tests_passed, "
                 "tests_failed=excluded.tests_failed, evidence=excluded.evidence, dependencies=excluded.dependencies, "
-                "known_limitations=excluded.known_limitations, updated=excluded.updated, last_verified=excluded.last_verified",
+                "known_limitations=excluded.known_limitations, updated=excluded.updated, last_verified=excluded.last_verified, "
+                "content_hash=excluded.content_hash, code_version=excluded.code_version",
                 (
                     name, version, purpose, path, status, tests_passed, tests_failed, _dumps(evidence or {}),
                     _dumps(dependencies or []), _dumps(known_limitations or []), created_task_id, ts, ts,
-                    ts if status == "VERIFIED" else None,
+                    ts if status == "VERIFIED" else None, content_hash, code_version,
                 ),
             )
             self._insert_event(
                 cur, ts, created_task_id, event or f"skill.{status.lower()}",
-                {"skill": name, "version": version, "status": status, "tests_passed": tests_passed, "tests_failed": tests_failed, "purpose": purpose[:160]},
+                {"skill": name, "version": version, "status": status, "tests_passed": tests_passed, "tests_failed": tests_failed, "purpose": purpose[:160],
+                 "content_hash": content_hash, "code_version": code_version},
             )
         return self.skill(name)
 
@@ -1513,10 +1536,12 @@ class Journal:
             raise JournalError(f"bad skill status {status!r}")
         ts = _now()
         with self._txn() as cur:
-            if not cur.execute("SELECT 1 FROM skills WHERE name=?", (name,)).fetchone():
+            row = cur.execute("SELECT content_hash, code_version FROM skills WHERE name=?", (name,)).fetchone()
+            if not row:
                 raise JournalError(f"unknown skill {name}")
             cur.execute("UPDATE skills SET status=?, updated=? WHERE name=?", (status, ts, name))
-            self._insert_event(cur, ts, task_id, f"skill.{status.lower()}", {"skill": name, "status": status, "note": note})
+            self._insert_event(cur, ts, task_id, f"skill.{status.lower()}",
+                               {"skill": name, "status": status, "note": note, "content_hash": row["content_hash"], "code_version": row["code_version"]})
         return self.skill(name)
 
     def skill(self, name: str) -> Optional[dict]:

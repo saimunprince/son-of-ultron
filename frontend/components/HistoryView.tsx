@@ -117,6 +117,10 @@ export function describeEvent(e: JournalEvent): string | null {
       return `Skill ${s("skill")} verified (${p["tests_passed"]} tests)`;
     case "skill.failed":
       return `Skill ${s("skill")} FAILED tests`;
+    case "skill.rolled_back":
+      return `Skill ${s("skill")} rolled back · ${s("status")}`;
+    case "skill.enabled":
+      return `Skill ${s("skill")} enabled · ${s("status")}`;
     case "benchmark.completed":
       return `Benchmark ${s("status")}${(p["regressions"] as string[] | undefined)?.length ? ` · regressed ${(p["regressions"] as string[]).join(", ")}` : ""}`;
     case "experiment.started":

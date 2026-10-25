@@ -318,6 +318,11 @@ export interface SkillRow {
   registered: boolean;
   /** calls since the current version was verified (Phase 3) */
   real_use?: { uses: number; failures: number; version: number };
+  /** sha256 over the skill's .py files; code_version moves only when it does (version counts verifications) */
+  content_hash?: string | null;
+  code_version?: number;
+  /** code versions kept on disk under .versions/ (oldest first); skill_rollback restores the newest */
+  kept_versions?: number[];
 }
 
 export type PresentationKind = "status" | "card" | "code" | "terminal" | "table" | "list" | "image" | "notification" | "chart";
@@ -457,7 +462,7 @@ export type ServerEvent =
   | ({ type: "experiment"; event: "started" | "completed"; hypothesis: string; verdict?: ExperimentRow["verdict"]; metric: string; experiment_id?: number } & Journaled)
   | ({ type: "maintenance"; event: "completed"; tasks_examined: number; events_pruned: number; checkpoint_contexts_trimmed: number; retain_days: number } & Journaled)
   | { type: "skills"; skills: SkillRow[] }
-  | ({ type: "skill"; event: "created" | "verified" | "failed" | "disabled" | "not_tested"; skill: string; version?: number; status?: string; tests_passed?: number; tests_failed?: number; purpose?: string; note?: string | null } & Journaled)
+  | ({ type: "skill"; event: "created" | "verified" | "failed" | "disabled" | "not_tested" | "rolled_back" | "enabled" | "prebuilt"; skill: string; version?: number; status?: string; tests_passed?: number; tests_failed?: number; purpose?: string; note?: string | null; content_hash?: string | null; code_version?: number; from_hash?: string | null; to_hash?: string | null } & Journaled)
   | { type: "knowledge_list"; query: string; knowledge: Knowledge[] }
   | ({ type: "research"; event: "started" | "completed"; question: string; sources?: number; fetched?: number; stored?: number; failures?: string[]; ms?: number } & Journaled)
   | ({ type: "knowledge"; event: "stored"; knowledge_id: number; kind: Knowledge["kind"]; confidence: number; claim: string; source_url: string | null; tags: string[] } & Journaled)
@@ -553,6 +558,8 @@ export type ClientMessage =
   | { type: "replay"; since?: number; until?: number }
   | { type: "knowledge"; query?: string; limit?: number }
   | { type: "skills" }
+  | { type: "skill_rollback"; name: string }
+  | { type: "skill_enable"; name: string }
   | { type: "presentation" }
   | { type: "benchmarks"; limit?: number }
   | { type: "quality_run"; only?: string[]; brain?: string }

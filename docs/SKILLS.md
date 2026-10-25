@@ -54,13 +54,46 @@ skill_create {name, purpose, code, test_code, dependencies?, known_limitations?}
   → skill.json beside the code
 ```
 
-Events: `skill.created`, `skill.verified`, `skill.failed`, `skill.disabled`.
+Events: `skill.created`, `skill.verified`, `skill.failed`, `skill.disabled`,
+`skill.rolled_back`, `skill.enabled` (and `skill.prebuilt` from `prebuilt.py`).
 `skill_test {name}` re-runs the tests (version increments, status follows the
 result); `skill_test {name, action: remove}` disables and unregisters.
 `skill_list` shows status, tests, version and whether the skill is registered.
 
 At boot, `SkillFactory.attach()` registers every VERIFIED skill from the
 registry; one that no longer imports is demoted to FAILED with the reason.
+
+## Versions, rollback, disable, duplicates
+
+Two counters (audit 2026-10-25). `version` in the registry counts verifications
+and bumps on every `skill_test`, as before. `content_hash` is sha256 over the
+skill folder's `.py` files (sorted by name, newlines normalized) and
+`code_version` moves only when that hash changes; both are in the registry row,
+`skill.json`, `skill_list`, the WS `skills` reply and every `skill.*` event. A
+re-test of unchanged code therefore keeps `code_version` while `version` grows.
+
+Kept versions. Before `skill_create` (or a prebuilt reinstall) writes different
+code over a VERIFIED skill, the current files go to
+`backend/skills/<name>/.versions/<code_version>/` (the last 5 are kept). The
+human's WS `skill_rollback {name}` (MindPanel ROLLBACK; no agent tool) puts the
+newest kept version back, re-runs its tests through the normal verify path
+(VERIFIED and registered only when they pass, FAILED with the evidence otherwise),
+and journals `skill.rolled_back {skill, from_hash, to_hash, status}`. The code it
+replaces is kept too, so a second rollback undoes the first; with nothing kept
+the request is refused.
+
+Disable sticks. `skill_test {action: remove}` sets DISABLED in the registry and
+that is remembered: the skill is not registered at boot, `prebuilt.install`
+skips it (outcome `DISABLED`), and `skill_create` or `skill_test` with that name
+is refused with "<name> was disabled by the human; `skill_enable` turns it back
+on" until the human's WS `skill_enable {name}` (MindPanel ENABLE) re-verifies and
+re-registers it (`skill.enabled`).
+
+Duplicates. `skill_create` for a new name is refused when a VERIFIED skill has
+the same `parameters` property names or a purpose whose content words overlap by
+0.7 or more (Jaccard): "a skill for this exists: <name> — <purpose>; extend it
+(skill_create with that name) instead of a duplicate". Re-creating under the
+same name stays allowed; that is how a skill is improved.
 
 ## Truthfulness
 

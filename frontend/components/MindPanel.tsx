@@ -324,10 +324,35 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
                   {s.name} v{s.version}
                 </span>
                 <span className="mind-obj-meta">
+                  {s.code_version != null ? `code v${s.code_version}${s.content_hash ? ` ${s.content_hash.slice(0, 8)}` : ""} · ` : ""}
                   {s.tests_passed}✓ {s.tests_failed > 0 ? `${s.tests_failed}✗ ` : ""}· verified {ago(s.last_verified)}
                 </span>
               </div>
               <p className="self-dim">{s.purpose}</p>
+              {(s.status === "DISABLED" || (s.kept_versions?.length ?? 0) > 0) && (
+                <div className="mind-actions">
+                  {s.status === "DISABLED" && (
+                    <button type="button" className="hud-link" title="Re-test and register this skill again" onClick={() => send({ type: "skill_enable", name: s.name })}>
+                      ENABLE
+                    </button>
+                  )}
+                  {(s.kept_versions?.length ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      className="hud-link"
+                      title={`kept: code v${(s.kept_versions ?? []).join(", v")}`}
+                      onClick={() => {
+                        const back = (s.kept_versions ?? [])[(s.kept_versions ?? []).length - 1];
+                        if (window.confirm(`Roll ${s.name} back to code v${back}? Its tests run again before it is registered; the current code is kept.`)) {
+                          send({ type: "skill_rollback", name: s.name });
+                        }
+                      }}
+                    >
+                      ROLLBACK
+                    </button>
+                  )}
+                </div>
+              )}
               {s.real_use && (
                 <p className={s.real_use.failures > 0 ? "self-warn" : "self-dim"}>
                   real use: {s.real_use.uses} call{s.real_use.uses === 1 ? "" : "s"}

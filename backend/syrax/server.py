@@ -18,7 +18,8 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     objective_update {id, status, note} (a human reopens, drops or closes) | proposals {limit?} |
                     dismiss {task_id, note} (cancel an INTERRUPTED task instead of resuming it) |
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
-                    skills | presentation | benchmarks {limit?} | experiments {limit?} |
+                    skills | skill_rollback {name} (the newest kept version back in place, re-verified) |
+                    skill_enable {name} (a DISABLED skill re-verified and registered) | presentation | benchmarks {limit?} | experiments {limit?} |
                     quality_run {only?, brain?} | quality_runs {limit?} | compare_brains {a, b, only?} |
                     codebench_run {brains?} | features | feature_promote {id} | startup {enabled?} | task_phases {task_id} | memories | memory_forget {id} |
                     memory_correct {id, text} (the human rewrites one remembered fact in place) | memory_export | voice_set {voice} |
@@ -616,6 +617,18 @@ class Session:
             await self.core.presentation.expire()
             await self.send({"type": "presentation_plan", **self.core.presentation.plan()})
         elif kind == "skills":
+            await self.send({"type": "skills", "skills": await asyncio.to_thread(self.core.skills.list)})
+        elif kind in ("skill_rollback", "skill_enable"):
+            # the human's two skill switches (MindPanel ROLLBACK / ENABLE; no agent tool does either): the newest kept
+            # version goes back into place, or a DISABLED skill is turned on; both go through the normal verify path
+            name = str(msg.get("name") or "").strip()
+            try:
+                row = await (self.core.skills.rollback(name) if kind == "skill_rollback" else self.core.skills.enable(name))
+            except (ValueError, JournalError) as e:
+                await self.send({"type": "notice", "text": f"{kind}: {e}"})
+            else:
+                what = "rolled back to" if kind == "skill_rollback" else "enabled as"
+                await self.send({"type": "notice", "text": f"skill `{name}` {what} code v{row.get('code_version')}: {row['status']}"})
             await self.send({"type": "skills", "skills": await asyncio.to_thread(self.core.skills.list)})
         elif kind == "knowledge":
             query = str(msg.get("query") or "").strip()

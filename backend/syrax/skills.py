@@ -22,13 +22,16 @@ python_execute; the factory adds tests and a registry, not a sandbox.
 
 from __future__ import annotations
 
+import ast
 import asyncio
+import hashlib
 import importlib.util
 import inspect
 import json
 import os
 import py_compile
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -59,6 +62,60 @@ from syrax.guard import HOST_HARM, TREE_DELETE, WEAKENS_GUARD  # noqa: E402  (on
 # Live 2026-10-25 (audit): a skill runs in the server process, so code that assigns to, patches or reloads the
 # gate's own modules (guard.WEAKENS_GUARD) never runs here, not even its tests.
 UNSAFE = HOST_HARM + (TREE_DELETE,) + WEAKENS_GUARD
+
+# Skill lifecycle (audit 2026-10-25): `version` in the registry counts verifications; `code_version` follows the
+# content hash and moves only when the code does. Before new files go over a VERIFIED skill its files are kept under
+# .versions/<code_version>/ (the last KEPT_VERSIONS), so the human can roll back; DISABLED sticks until the human
+# enables; a new name that duplicates a VERIFIED skill's arguments or purpose is refused.
+VERSIONS_DIR = ".versions"
+KEPT_VERSIONS = 5
+DUPLICATE_OVERLAP = 0.7
+
+
+def hash_sources(sources: Dict[str, str]) -> str:
+    """sha256 over {file name: text}, sorted by name, newlines normalized (CRLF on disk never changes the hash)."""
+    h = hashlib.sha256()
+    for fname in sorted(sources):
+        text = (sources[fname] or "").replace("\r\n", "\n").replace("\r", "\n")
+        h.update(fname.encode("utf-8") + b"\0" + text.encode("utf-8") + b"\0")
+    return h.hexdigest()
+
+
+def content_hash(skill_dir: Path) -> Optional[str]:
+    """The hash of a skill folder's own .py files; None when there are none. Kept versions (.versions/) are not part of it."""
+    files = sorted(p for p in Path(skill_dir).glob("*.py") if p.is_file())
+    if not files:
+        return None
+    return hash_sources({p.name: p.read_text(encoding="utf-8", errors="replace") for p in files})
+
+
+def schema_properties(code: str) -> Optional[set]:
+    """The property names of `parameters` in `class Skill`, read from the source without running it (the code is not
+    trusted before its safety check). None when the class, the dict or its literal keys cannot be found."""
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return None
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.ClassDef) and node.name == "Skill"):
+            continue
+        for stmt in node.body:
+            target = stmt.target if isinstance(stmt, ast.AnnAssign) else (stmt.targets[0] if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 else None)
+            if not (isinstance(target, ast.Name) and target.id == "parameters" and isinstance(getattr(stmt, "value", None), ast.Dict)):
+                continue
+            for k, v in zip(stmt.value.keys, stmt.value.values):
+                if isinstance(k, ast.Constant) and k.value == "properties" and isinstance(v, ast.Dict):
+                    return {pk.value for pk in v.keys if isinstance(pk, ast.Constant) and isinstance(pk.value, str)}
+            return set()
+    return None
+
+
+def purpose_overlap(a: str, b: str) -> float:
+    """Jaccard overlap of two purposes' content words (memory.content_words: words of 3+ letters minus stop words)."""
+    from syrax.memory import content_words
+
+    wa, wb = content_words(a or ""), content_words(b or "")
+    return len(wa & wb) / max(1, len(wa | wb))
 
 
 def unsafe_reasons(*sources: str) -> List[str]:
@@ -291,6 +348,104 @@ class SkillFactory:
             return False
         return name in self.collection.tool_map and name not in self.loaded
 
+    # ——— lifecycle: kept versions, disable, duplicates ———
+
+    def versions_dir(self, name: str) -> Path:
+        return self.root / name / VERSIONS_DIR
+
+    def kept_versions(self, name: str) -> List[int]:
+        """The code versions kept on disk for `name`, oldest first."""
+        d = self.versions_dir(name)
+        if not d.is_dir():
+            return []
+        return sorted(int(p.name) for p in d.iterdir() if p.is_dir() and p.name.isdigit())
+
+    def keep_version(self, name: str, new_hash: Optional[str] = None) -> Optional[int]:
+        """Copy a VERIFIED skill's current files to .versions/<code_version>/ before new ones go over them, and
+        prune to the last KEPT_VERSIONS. Nothing is kept when the skill is not VERIFIED, when there are no files,
+        or when `new_hash` says the incoming code is the same. Returns the kept code version."""
+        row = self.journal.skill(name)
+        skill_dir = self.root / name
+        if row is None or row.get("status") != "VERIFIED":
+            return None
+        current = content_hash(skill_dir)
+        if current is None or (new_hash is not None and new_hash == current):
+            return None
+        code_version = int(row.get("code_version") or 1)
+        dst = self.versions_dir(name) / str(code_version)
+        shutil.rmtree(dst, ignore_errors=True)
+        dst.mkdir(parents=True, exist_ok=True)
+        for p in sorted(skill_dir.glob("*.py")) + [skill_dir / "skill.json"]:
+            if p.is_file():
+                shutil.copyfile(p, dst / p.name)
+        for old in self.kept_versions(name)[:-KEPT_VERSIONS]:
+            shutil.rmtree(self.versions_dir(name) / str(old), ignore_errors=True)
+        return code_version
+
+    async def rollback(self, name: str) -> dict:
+        """The human's undo (WS `skill_rollback`; there is no agent tool for it): the newest kept version goes back
+        into place and through the normal verify path, so it is registered only when its tests pass and ends FAILED
+        with the evidence otherwise. The code it replaces is kept too (when VERIFIED), so a rollback can be undone
+        by another. Refuses when nothing is kept. Journals skill.rolled_back {skill, from_hash, to_hash, status}."""
+        row = self.journal.skill(name)
+        if row is None:
+            raise ValueError(f"no skill named {name!r}")
+        kept = self.kept_versions(name)
+        if not kept:
+            raise ValueError(f"nothing kept for {name!r}: no earlier version to roll back to")
+        src = self.versions_dir(name) / str(kept[-1])
+        skill_dir = self.root / name
+        from_hash = content_hash(skill_dir) or row.get("content_hash")
+        to_hash = content_hash(src)
+        self.keep_version(name, new_hash=to_hash)
+        self._unregister(name)
+        for p in sorted(src.glob("*.py")):
+            shutil.copyfile(p, skill_dir / p.name)
+        shutil.rmtree(src, ignore_errors=True)  # it is the live code now; keep_version stores it again when it is replaced
+        _clean_bytecode(skill_dir)
+        result = await self.verify(name)
+        await self.journal.record("skill.rolled_back", {
+            "skill": name, "from_hash": from_hash, "to_hash": to_hash, "status": result["status"],
+            "from_code_version": row.get("code_version"), "code_version": result.get("code_version"), "kept_version": kept[-1],
+        }, task_id=self.task_id_provider())
+        return result
+
+    def disabled_reason(self, name: str) -> Optional[str]:
+        """Why skill_create/skill_test refuse `name`: the human disabled it (skill_test remove → DISABLED sticks in the
+        registry) and only the human's `skill_enable` turns it back on. None when the name is free to use."""
+        row = self.journal.skill(name)
+        if row is not None and row.get("status") == "DISABLED":
+            return f"{name} was disabled by the human; `skill_enable` turns it back on"
+        return None
+
+    async def enable(self, name: str) -> dict:
+        """The human turns a DISABLED skill back on (WS `skill_enable`; no agent tool): it goes through the normal
+        verify path and is registered again only when its tests pass. Journals skill.enabled {skill, status}."""
+        row = self.journal.skill(name)
+        if row is None:
+            raise ValueError(f"no skill named {name!r}")
+        if row.get("status") != "DISABLED":
+            raise ValueError(f"{name!r} is not disabled (it is {row.get('status')})")
+        result = await self.verify(name)
+        await self.journal.record("skill.enabled", {"skill": name, "status": result["status"], "code_version": result.get("code_version"),
+                                                    "content_hash": result.get("content_hash")}, task_id=self.task_id_provider())
+        return result
+
+    def duplicate_of(self, name: str, purpose: str, code: str) -> Optional[dict]:
+        """The VERIFIED skill (another name) that `code`/`purpose` would duplicate: the same non-empty set of
+        `parameters` property names, or purposes whose content words overlap by DUPLICATE_OVERLAP or more."""
+        props = schema_properties(code)
+        for row in self.journal.skills(status="VERIFIED"):
+            if row["name"] == name:
+                continue
+            src = self.root / row["name"] / "skill.py"
+            theirs = schema_properties(src.read_text(encoding="utf-8", errors="replace")) if src.is_file() else None
+            if props and theirs and props == theirs:
+                return row
+            if purpose_overlap(purpose, row.get("purpose") or "") >= DUPLICATE_OVERLAP:
+                return row
+        return None
+
     async def create(self, name: str, purpose: str, code: str, test_code: str,
                      dependencies: Optional[List[str]] = None, known_limitations: Optional[List[str]] = None) -> dict:
         if not NAME_RE.match(name or ""):
@@ -307,8 +462,14 @@ class SkillFactory:
             raise ValueError("code must define class Skill(BaseTool)")
         if "def test_" not in test_code:
             raise ValueError("test_code must define at least one test_ function")
+        if self.journal.skill(name) is None:  # a new name; the same name is how a skill is improved
+            twin = self.duplicate_of(name, purpose, code)
+            if twin is not None:
+                raise ValueError(f"a skill for this exists: {twin['name']} — {twin.get('purpose') or ''}; "
+                                 f"extend it (skill_create with that name) instead of a duplicate")
         skill_dir = self.root / name
         task_id = self.task_id_provider()
+        self.keep_version(name, new_hash=hash_sources({"skill.py": code, "test_skill.py": test_code, "__init__.py": ""}))
         _atomic_write(skill_dir / "skill.py", code)
         _atomic_write(skill_dir / "test_skill.py", test_code)
         _atomic_write(skill_dir / "__init__.py", "")
@@ -348,6 +509,7 @@ class SkillFactory:
             dependencies=dependencies or (existing or {}).get("dependencies") or [],
             known_limitations=known_limitations or (existing or {}).get("known_limitations") or [],
             created_task_id=created_task_id or (existing or {}).get("created_task_id"),
+            content_hash=content_hash(skill_dir),  # code_version moves only when this does (journal.upsert_skill_sync)
         )
         _atomic_write(skill_dir / "skill.json", json.dumps(row, indent=2, default=str))
         return row
@@ -361,15 +523,23 @@ class SkillFactory:
     def list(self) -> List[dict]:
         from syrax import skillevo
 
-        return skillevo.annotate([{**r, "registered": r["name"] in self.loaded} for r in self.journal.skills()], self.journal)
+        return skillevo.annotate([{**r, "registered": r["name"] in self.loaded, "kept_versions": self.kept_versions(r["name"])}
+                                  for r in self.journal.skills()], self.journal)
 
 
 # ——— tools ———
 
 
+def _code_tag(row: dict) -> str:
+    """`code v2 3fa9c0d1`: the code version and the short content hash (empty for a row that has neither)."""
+    cv, h = row.get("code_version"), row.get("content_hash")
+    return f"code v{cv} {str(h)[:8]}" if cv and h else (f"code v{cv}" if cv else "")
+
+
 def _report(row: dict) -> str:
     ev = row.get("evidence") or {}
-    head = f"skill `{row['name']}` v{row['version']}: {row['status']} ({row['tests_passed']} passed, {row['tests_failed']} failed)"
+    head = (f"skill `{row['name']}` v{row['version']}: {row['status']} ({row['tests_passed']} passed, {row['tests_failed']} failed"
+            + (f"; {_code_tag(row)}" if _code_tag(row) else "") + ")")
     if row["status"] == "VERIFIED":
         return head + ". It is registered now; call it by name like any other tool."
     return head + f"\nstage: {ev.get('stage')}\n{ev.get('evidence', '')}\nNot registered. Fix the code or the tests and create it again with the same name."
@@ -387,7 +557,9 @@ class SkillCreateTool(BaseTool):
         "which can only raise the level its source already shows; "
         "plus pytest tests (test_code) that import it via "
         "`from skills.<name>.skill import Skill`. The skill is registered ONLY if the tests pass; "
-        "otherwise you get the failure output. Re-running with the same name replaces the skill."
+        "otherwise you get the failure output. Re-running with the same name replaces the skill (the verified version "
+        "it replaces is kept for the human's rollback). A new name whose arguments or purpose match an existing skill is "
+        "refused: extend that skill under its own name. A name the human disabled stays refused until they enable it."
     )
     parameters: dict = {
         "type": "object",
@@ -407,6 +579,9 @@ class SkillCreateTool(BaseTool):
                       dependencies: Optional[list] = None, known_limitations: Optional[list] = None) -> ToolResult:
         if self.factory is None:
             return ToolResult(error="skill factory unavailable")
+        disabled = self.factory.disabled_reason(name)
+        if disabled:
+            return ToolResult(error=f"skill_create refused: {disabled}")
         try:
             row = await self.factory.create(name, purpose, code, test_code, dependencies, known_limitations)
         except (ValueError, JournalError) as e:
@@ -428,7 +603,8 @@ class SkillListTool(BaseTool):
             return ToolResult(output="No skills built yet.")
         return ToolResult(output="\n".join(
             f"- {r['name']} v{r['version']} {r['status']}{' (registered)' if r['registered'] else ''}: {r['purpose']} "
-            f"[{r['tests_passed']} passed/{r['tests_failed']} failed]" for r in rows
+            f"[{r['tests_passed']} passed/{r['tests_failed']} failed]" + (f" {_code_tag(r)}" if _code_tag(r) else "")
+            + (f" ({len(r['kept_versions'])} kept)" if r.get("kept_versions") else "") for r in rows
         ))
 
 
@@ -452,6 +628,9 @@ class SkillTestTool(BaseTool):
             if action == "remove":
                 row = await self.factory.remove(name)
                 return ToolResult(output=f"skill `{name}` disabled and unregistered.")
+            disabled = self.factory.disabled_reason(name)
+            if disabled:
+                return ToolResult(error=disabled)
             row = await self.factory.verify(name)
         except (ValueError, JournalError) as e:
             return ToolResult(error=str(e))
