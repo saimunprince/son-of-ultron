@@ -25,13 +25,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from syrax.journal import BACKEND_ROOT, DEFAULT_FILE
+from syrax.journal import BACKEND_ROOT, DEFAULT_FILE, TERMINAL
 
 REPO_ROOT = BACKEND_ROOT.parent
 WINDOW_DAYS = 7
 FULL_QUALITY_CASES = 10  # a quality run with fewer cases is a subset re-run, not a measurement of the whole suite
 WEAK_CHECKS = ("task_success",)  # the check that only asks whether the task said SUCCESS
 CHANGE_EVENTS = ("code.changed", "commit.created", "skill.created", "knowledge.stored")
+CLEANUP_REASON = "task ended without a committed release"  # core._clean_repo_after_task: not a verdict on the change
+TASK_END_EVENTS = ("task.completed", "task.failed", "task.cancelled", "task.interrupted")
 
 Value = Tuple[Optional[float], str]  # (number or None when there is no evidence, how it was counted)
 
@@ -107,12 +109,103 @@ def unfinished_own_tasks(c, t0, t1) -> Value:
     return _share(partial, done)
 
 
+def regression_rate(c, t0, t1) -> Value:
+    total = _one(c, "SELECT COUNT(*) FROM quality_runs WHERE ts>=? AND ts<?", t0, t1)
+    bad = _one(c, "SELECT COUNT(*) FROM quality_runs WHERE status='REGRESSION' AND ts>=? AND ts<?", t0, t1)
+    return _share(bad, total)
+
+
+def repeated_failures(c, t0, t1) -> Value:
+    """Objectives with two or more attempts whose progress.attempts_log (autonomy) holds two
+    attempts that were not DONE and went about it with the same strategy fingerprint."""
+    rows = c.execute("SELECT progress FROM objectives WHERE attempts>=2 AND updated>=? AND updated<?", (t0, t1)).fetchall()
+    n = 0
+    for (prog,) in rows:
+        log = ((json.loads(prog or "{}") or {}).get("attempts_log")) or []
+        failed = [tuple(a.get("strategy") or []) for a in log if a.get("verdict") != "DONE"]
+        if len(failed) != len(set(failed)):
+            n += 1
+    return _share(n, len(rows))
+
+
+def _verified_objective_tasks(c, t0, t1) -> List[List[str]]:
+    """For each objective closed DONE in the window by a machine check: the ids of the tasks that
+    worked on it (progress.attempts_log, evidence.task_id, last_task_id; autonomy writes all three)."""
+    rows = c.execute("SELECT check_spec, progress, evidence, last_task_id FROM objectives WHERE status='DONE' AND updated>=? AND updated<?",
+                     (t0, t1)).fetchall()
+    out = []
+    for spec, prog, ev, last in rows:
+        kind = (json.loads(spec or "{}") or {}).get("kind", "task_success")
+        if kind in WEAK_CHECKS or kind == "human":
+            continue
+        ids = {a.get("task_id") for a in ((json.loads(prog or "{}") or {}).get("attempts_log") or [])}
+        ids |= {(json.loads(ev or "{}") or {}).get("task_id"), last}
+        out.append(sorted(i for i in ids if i))
+    return out
+
+
+def _median_per_verified_objective(c, t0, t1, per_tasks: Callable[[sqlite3.Connection, List[str]], float], digits: int) -> Value:
+    groups = _verified_objective_tasks(c, t0, t1)
+    per = [per_tasks(c, ids) for ids in groups if ids]
+    if not per:
+        return None, "no verified objective with a task"
+    skipped = len(groups) - len(per)
+    return round(float(statistics.median(per)), digits), f"median of {len(per)}" + (f", {skipped} closed without a task" if skipped else "")
+
+
+def brain_calls_per_objective(c, t0, t1) -> Value:
+    def calls(c, ids):
+        return _one(c, f"SELECT COUNT(*) FROM events WHERE type='brain.answered' AND task_id IN ({','.join('?' * len(ids))})", *ids)
+    return _median_per_verified_objective(c, t0, t1, calls, 0)
+
+
+def minutes_per_objective(c, t0, t1) -> Value:
+    def minutes(c, ids):
+        marks = ",".join("?" * len(ids))
+        ends = ",".join("?" * len(TASK_END_EVENTS))
+        secs = _one(c, f"SELECT COALESCE(SUM(COALESCE((SELECT MIN(e.ts) FROM events e WHERE e.task_id=t.task_id AND e.type IN ({ends})), t.updated) - t.created), 0) "
+                       f"FROM tasks t WHERE t.task_id IN ({marks})", *TASK_END_EVENTS, *ids)
+        return secs / 60.0
+    return _median_per_verified_objective(c, t0, t1, minutes, 1)
+
+
 # ——— evolution ———
 
 def release_success(c, t0, t1) -> Value:
-    attempts = _one(c, "SELECT COUNT(*) FROM events WHERE type='tool.started' AND json_extract(payload,'$.name')='release' AND ts>=? AND ts<?", t0, t1)
+    """Every release that reaches the gate runs it exactly once (devloop._release), whether it was
+    called as a tool or directly by the daily ledger publish; a release refused before the gate
+    (scope, judge, test guard, preflight) is a failed tool call. Both are attempts."""
+    gated = _one(c, "SELECT COUNT(*) FROM events WHERE type='verification.completed' AND ts>=? AND ts<?", t0, t1)
+    refused = _one(c, "SELECT COUNT(*) FROM events WHERE type='tool.failed' AND json_extract(payload,'$.name')='release' AND ts>=? AND ts<?", t0, t1)
     commits = _one(c, "SELECT COUNT(*) FROM events WHERE type='commit.created' AND ts>=? AND ts<?", t0, t1)
-    return _share(commits, attempts)
+    return _share(commits, gated + refused)
+
+
+def _commits(docs_only: bool) -> Callable[[sqlite3.Connection, float, float], Value]:
+    """commit.created lists its files repo-relative with forward slashes (devloop.commit)."""
+    outside_docs = "EXISTS (SELECT 1 FROM json_each(payload,'$.files') WHERE value NOT LIKE 'docs/%')"
+
+    def fn(c: sqlite3.Connection, t0: float, t1: float) -> Value:
+        n = _one(c, f"SELECT COUNT(*) FROM events WHERE type='commit.created' AND {'NOT ' if docs_only else ''}{outside_docs} AND ts>=? AND ts<?", t0, t1)
+        return float(n), f"{n} commits"
+    return fn
+
+
+def _rollbacks(cleanup: bool) -> Callable[[sqlite3.Connection, float, float], Value]:
+    def fn(c: sqlite3.Connection, t0: float, t1: float) -> Value:
+        n = _one(c, f"SELECT COUNT(*) FROM events WHERE type='rollback.created' AND COALESCE(json_extract(payload,'$.reason'),'') {'=' if cleanup else '<>'} ? "
+                    "AND ts>=? AND ts<?", CLEANUP_REASON, t0, t1)
+        return float(n), f"{n} rollback.created"
+    return fn
+
+
+def human_interventions(c, t0, t1) -> Value:
+    asked = _one(c, "SELECT COUNT(*) FROM events WHERE type='ask' AND ts>=? AND ts<?", t0, t1)
+    perm = _one(c, "SELECT COUNT(*) FROM events WHERE type='permission.authorized' AND json_extract(payload,'$.authorized_by')='human' AND ts>=? AND ts<?", t0, t1)
+    obj = _one(c, "SELECT COUNT(*) FROM events WHERE type LIKE 'objective.%' AND (json_extract(payload,'$.note') LIKE 'human:%' "
+                  "OR json_extract(payload,'$.note') LIKE 'human dismissed%') AND ts>=? AND ts<?", t0, t1)
+    stopped = _one(c, "SELECT COUNT(*) FROM events WHERE type='task.cancelled' AND json_extract(payload,'$.error') LIKE '%by human%' AND ts>=? AND ts<?", t0, t1)
+    return float(asked + perm + obj + stopped), f"{asked} asked, {perm} permissions, {obj} objectives, {stopped} tasks stopped"
 
 
 def live_tree_edits(c, t0, t1) -> Value:
@@ -183,6 +276,16 @@ def guard_refusals(c, t0, t1) -> Value:
     return float(rel + perm), f"{rel} release, {perm} permission"
 
 
+def interrupted_resolved(c, t0, t1) -> Value:
+    """Tasks a crash or restart interrupted in the window that later ended: resumed to an end
+    (recovery.resumed, then completed or failed) or dismissed (task.cancelled). Their status now."""
+    marks = ",".join("?" * len(TERMINAL))
+    total = _one(c, "SELECT COUNT(DISTINCT task_id) FROM events WHERE type='task.interrupted' AND ts>=? AND ts<?", t0, t1)
+    ended = _one(c, f"SELECT COUNT(*) FROM tasks WHERE status IN ({marks}) AND task_id IN "
+                    "(SELECT DISTINCT task_id FROM events WHERE type='task.interrupted' AND ts>=? AND ts<?)", *sorted(TERMINAL), t0, t1)
+    return _share(ended, total)
+
+
 # ——— demonstration ———
 
 def published_matrix_age(c, t0, t1) -> Value:
@@ -206,14 +309,21 @@ METRICS: List[Metric] = [
     Metric("quality", "Brain", "Quality suite pass rate", "higher", "%", "Latest full quality run (at least 10 cases) in the window: real tasks through the real brains, judged by checks on disk and in the journal.", quality_pass_rate),
     Metric("objective_success", "Brain", "Machine-checked objectives done", "higher", "%", "Objectives closed in the window whose check is evidence (not task_success): DONE out of DONE + BLOCKED.", objective_success),
     Metric("attempts", "Brain", "Attempts per objective done", "lower", "attempts", "Median attempts of the machine-checked objectives closed DONE in the window.", attempts_to_done),
+    Metric("repeated_failures", "Brain", "Objectives that repeated a failed strategy", "lower", "%", "Objectives with two or more attempts, updated in the window, whose attempts_log holds two attempts that were not DONE and used the same strategy fingerprint (the distinct tool calls of the attempt, as autonomy records them), out of all objectives with two or more attempts.", repeated_failures),
+    Metric("brain_calls_per_objective", "Brain", "Brain calls per verified objective (median)", "lower", "calls", "Median over the machine-checked objectives closed DONE in the window of the brain.answered events of all their tasks (every attempt, from attempts_log, evidence.task_id and last_task_id); objectives closed without a task are left out and counted in the detail.", brain_calls_per_objective),
+    Metric("minutes_per_objective", "Brain", "Minutes per verified objective (median)", "lower", "minutes", "Median over the same objectives of the wall time of all their tasks, each from its start to the event that ended it (completed, failed, cancelled or interrupted; its last update when none did).", minutes_per_objective),
     Metric("tool_failures", "Brain", "Tool calls that failed", "lower", "%", "tool.failed out of all finished tool calls in the window (refusals by a guard count as failures).", tool_failure_share),
     Metric("unfinished", "Brain", "Own tasks left unfinished", "lower", "%", "Autonomous tasks that ended PARTIAL (step limit, loop stop) or FAILED, out of all finished ones.", unfinished_own_tasks),
-    Metric("own_commits", "Evolution", "Commits SYRAX made to itself", "higher", "count", "commit.created: a change that passed the gate, a second brain's review, and was committed by SYRAX's release.", _count_events("commit.created")),
-    Metric("release_success", "Evolution", "Releases that landed", "higher", "%", "commit.created out of release calls in the window.", release_success),
+    Metric("regressions", "Brain", "Quality runs that regressed", "lower", "%", "Quality runs in the window (full suite or a subset re-run) whose status was REGRESSION: a pass rate below the run they were compared to, out of all quality runs.", regression_rate),
+    Metric("own_commits", "Evolution", "Commits SYRAX made to itself", "higher", "count", "commit.created that changed a file outside docs/: code, tests or config that passed the gate and a second brain's review and was committed by SYRAX's release. The daily regeneration of the docs is counted apart.", _commits(docs_only=False)),
+    Metric("docs_commits", "Evolution", "Commits that only regenerated docs", "-", "count", "commit.created whose files are all under docs/: the daily publish of the ledger, the devlog, the archive and the capability matrix through the same gate and review, with no code changed.", _commits(docs_only=True)),
+    Metric("release_success", "Evolution", "Releases that landed", "higher", "%", "commit.created out of release attempts in the window: gate runs (verification.completed; every release that reaches the gate runs it once, the daily ledger publish included, which releases without a tool call) plus release calls refused before the gate (tool.failed).", release_success),
     Metric("live_tree_edits", "Evolution", "Own edits in the running tree", "lower", "count", "Editor edits by SYRAX's own tasks that landed in the running tree instead of the task's isolated worktree (M1; every edit before it counts).", live_tree_edits),
-    Metric("rollbacks", "Evolution", "Changes rolled back", "lower", "count", "rollback.created: an own change that failed the gate or the review, or a task that ended without releasing its edits.", _count_events("rollback.created")),
+    Metric("rollbacks", "Evolution", "Changes rolled back by the gate or the review", "lower", "count", "rollback.created by a release: the gate was BLOCKED, a second brain rejected the change, or no second brain could review it (any reason but the end-of-task cleanup).", _rollbacks(cleanup=False)),
+    Metric("cleanups", "Evolution", "Unreleased edits cleaned up after a task", "lower", "count", "rollback.created with reason \"task ended without a committed release\": a task left edits it never released (step limit, failure, cancel) and they were restored or kept as a diff; no verdict on the change.", _rollbacks(cleanup=True)),
     Metric("review_rejections", "Evolution", "Changes a second brain rejected", "-", "count", "review.completed with approve false.", review_rejections),
     Metric("experiments", "Evolution", "Experiments run", "higher", "count", "Rows in the experiments table: baseline against candidate, verdict computed from numbers.", experiments_run),
+    Metric("human_interventions", "Evolution", "Human interventions", "lower", "count", "Times a person had to step in: ask events (SYRAX asked a question), permission.authorized with authorized_by human, objective.* events whose note a human wrote (\"human: ...\", a dismissal), and task.cancelled by a human (aborted, removed from the queue or dismissed).", human_interventions),
     Metric("knowledge_stored", "Memory", "Conclusions stored", "-", "count", "knowledge.stored events (verified conclusions with sources).", _count_events("knowledge.stored")),
     Metric("knowledge_used", "Memory", "Conclusions read back", "higher", "count", "Stored conclusions whose last use falls in the window: memory that was used, not only kept.", knowledge_used),
     Metric("knowledge_settled", "Memory", "Conclusions reinforced or contradicted", "-", "count", "knowledge.reinforced and knowledge.contradiction: memory checked against new evidence.", knowledge_settled),
@@ -222,6 +332,7 @@ METRICS: List[Metric] = [
     Metric("weak_closures", "Evidence", "Objectives closed on words", "lower", "%", "Objectives closed DONE whose check was only task_success.", weak_closures),
     Metric("gate_green", "Evidence", "Gate verdicts GREEN", "higher", "%", "Journaled verifications that were GREEN.", gate_green),
     Metric("guard_refusals", "Evidence", "Guards that held", "-", "count", "Releases refused for touching a judge or an existing test, and calls refused by the permission gate.", guard_refusals),
+    Metric("interrupted_resolved", "Evidence", "Interrupted tasks resumed or dismissed", "higher", "%", "Tasks marked task.interrupted in the window (a crash or restart cut them) that have since reached a terminal status: resumed and finished, failed, or dismissed by a human (task.cancelled), out of all tasks interrupted in the window.", interrupted_resolved),
     Metric("matrix_age", "Demonstration", "Days since the capability matrix was generated", "lower", "days", "Age of docs/CAPABILITY_MATRIX.md at the end of the window, from its own header.", published_matrix_age),
 ]
 PILLARS = ("Brain", "Evolution", "Memory", "Evidence", "Demonstration")
@@ -249,7 +360,7 @@ def _fmt(v: Optional[float], unit: str, detail: str) -> str:
     if v is None:
         return "—"
     num = f"{v:g}" if unit != "%" else f"{v:g} %"
-    return f"{num} ({detail})" if unit in ("%", "attempts") else num
+    return f"{num} ({detail})" if unit in ("%", "attempts", "calls", "minutes") else num
 
 
 def trend(row: dict) -> str:
