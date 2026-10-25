@@ -217,6 +217,28 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Evolution mission, audit and Milestone 1: the queue (2026-10-25)
+
+- Prince's mission document: audit the real repository first, then
+  milestones, "GREEN = EVIDENCE". The audit (`docs/AUDIT_2026-10-25.md`,
+  three source-grounded passes plus journal measurements) found, among
+  others: a request made while SYRAX worked was dropped; `Core.resume`
+  resumed UNCERTAIN tasks on a click; the editor could overwrite
+  `brains.json`; skill tests ran without the guard; with one enabled brain a
+  self-change committed unreviewed; no backups of the journal; five HUD
+  fields never matched the backend; `apply_patch` failed 156 of 312 calls in
+  14 days, 113 of them on context lines that did not match. SYRAX had been
+  off since 10-22 18:19 (BOOT off, PC off 10-22/24).
+- 005b871: Milestone 1. A human request made while a task runs is queued
+  (journal PENDING, `task.queued`), answered "Queued (position n)" with a
+  REMOVE action, and starts when the running task ends; `queue` /
+  `queue_cancel` over the socket, the queue in `hello` and in the UI status
+  line; the autonomy cycle reports BUSY while a human request waits; queued
+  requests survive a restart (younger than an hour they start after
+  recovery, older ones are cancelled with a note). SYRAX's own work never
+  queues; a client that does not ask to queue keeps the old refusal, so the
+  existing contracts stand. `test_task_queue.py` 6/6, red without the change.
+
 ### Deep quality cases; words beside an action are never the answer (2026-10-22)
 
 - With hunts on, SYRAX sat idle ("no open objective"): runs #54-#61 passed
