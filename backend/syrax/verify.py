@@ -32,6 +32,7 @@ from syrax.journal import BACKEND_ROOT, Journal, _git_head
 
 REPO_ROOT = BACKEND_ROOT.parent
 FRONTEND_ROOT = REPO_ROOT / "frontend"
+PYTEST_GATE_TIMEOUT_S = 1500.0  # the pytest step's own ceiling (default_gates); SYRAX_PYTEST_GATE_TIMEOUT_S overrides
 TAIL_LINES = 40
 WINDOWS = sys.platform == "win32"
 
@@ -430,8 +431,10 @@ def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None) ->
         # their own settings only.
         # a test that runs past faulthandler_timeout prints every thread's stack into the evidence
         # (live 2026-10-12: the suite hung twice past the gate's timeout and nothing said where)
+        # 2026-10-25: the suite passed 1,100 tests and the step ran 559-843 s nine times that day; twice the 900 s
+        # default cut it on a loaded machine (NOT_VERIFIED, a correct change held). Its own ceiling, owner-settable.
         Gate("pytest", [py, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider", "-o", "faulthandler_timeout=300"],
-             cwd=backend, env=test_env,
+             cwd=backend, env=test_env, timeout=float(os.getenv("SYRAX_PYTEST_GATE_TIMEOUT_S", str(PYTEST_GATE_TIMEOUT_S))),
              drop_env_prefixes=("SYRAX_",)),
         fe("tsc", tsc),
         fe("eslint", eslint),
