@@ -20,6 +20,9 @@
     return {
       online: false, name: 'SYRAX', version: null, bootId: null, uptimeS: 0, restartPending: false, visibility: 'visible', window: null,
       state: 'offline', tool: null, phase: null, step: 0, task: null, pendingAsk: null,
+      // queue: the human requests waiting for the running task (core.py queued(): {task_id, goal, created, session_id, position});
+      // waiting: the question SYRAX is blocked on (tools.py:51 ask), cleared once the task moves on or ends
+      queue: [], waiting: null,
       lastReply: null, lastReplyAt: 0,
       cog: [], log: [],
       brain: { active: null, model: null, ready: 0, total: 0, ms: null },
@@ -48,6 +51,28 @@
     return 'INTERRUPTED · ' + short(t.goal, 40).toUpperCase() + ' · ' + String(t.recovery_state || 'UNKNOWN').toUpperCase()
       + (t.tool ? ' · ' + String(t.tool).toUpperCase() + (t.operation_state ? ' ' + String(t.operation_state).toUpperCase() : '') : '');
   }
+  // one waiting request: a hello.queue item (core.py queued(): {task_id, goal, created, session_id, position}) or task.queued (journal.py:706 {goal, kind})
+  function queuedLine(goal, position) { return 'QUEUED · ' + short(goal, 40).toUpperCase() + ' · POSITION ' + position; }
+  // the SYRAX panel's TASK row (hud.html): the running goal, then how many human requests wait behind it; nothing when none do
+  function taskRow(s) {
+    return (s.task ? String(s.task.goal || '').toUpperCase().slice(0, 26) : '—') + (s.queue && s.queue.length ? ' · QUEUE ' + s.queue.length : '');
+  }
+  // agent.py:657-664 tell(): {type:"permission", event, tool, level, task_kind, reason, targets, authorized_by, step, harm?, answer?}
+  // permissionLine is the event-log line (the refusal's text is pinned by link.contract.test.js); permissionDetail says why and on
+  // what (reason, first target), HOST HARM first when permissions.py refused for host harm (Decision.harm, permissions.py:99)
+  function firstTarget(e) { return Array.isArray(e.targets) && e.targets.length ? short(e.targets[0], 40) : ''; }
+  function permissionLine(e) {
+    const tool = String(e.tool || '').toUpperCase();
+    if (e.event === 'refused') return 'GUARD REFUSED ' + tool + (e.level ? ' · ' + e.level : '');
+    return 'AUTHORIZED ' + tool + ' BY ' + String(e.authorized_by || 'human').toUpperCase() + (firstTarget(e) ? ' · ' + firstTarget(e) : '');
+  }
+  function permissionDetail(e) {
+    const harm = Array.isArray(e.harm) ? e.harm.length > 0 : !!e.harm;
+    const parts = [harm ? 'HOST HARM' : 'GUARD'];
+    if (e.reason) parts.push(short(e.reason, 60));
+    if (firstTarget(e)) parts.push(firstTarget(e));
+    return parts.length === 1 && !harm ? '' : parts.join(' · ');
+  }
 
   // one backend event -> state change + effects for the HUD
   function reduce(s, e, now) {
@@ -65,8 +90,15 @@
         log('SYRAX LINK ESTABLISHED · ' + s.tools.length + ' TOOLS');
         // tasks a dead process left behind (server.py boot -> core.py snapshot -> _interrupted_summary)
         if (Array.isArray(e.interrupted)) { s.interrupted = e.interrupted.length; e.interrupted.slice(0, 3).forEach(t => log(interruptedLine(t))); }
+        // human requests waiting for the running task (server.py:396 <- core.py:730 snapshot <- core.py:342 queued(), oldest first)
+        s.queue = Array.isArray(e.queue) ? e.queue : [];
+        s.queue.forEach(q => log(queuedLine(q.goal, q.position)));
         if (e.running) { s.task = { id: e.running.task_id, goal: e.running.goal, step: e.running.step || 0, kind: e.running.kind || 'conversation' }; s.phase = e.running.phase || null; s.state = 'thinking'; mode('THINKING'); }
         else { s.state = 'idle'; mode('IDLE'); }
+        break;
+      case 'queue':
+        // core.py:338/355/370 broadcast {"type": "queue", "items": self.queued()} whenever the queue changes; server.py:456 answers a `queue` request the same way
+        s.queue = Array.isArray(e.items) ? e.items : [];
         break;
       case 'self_model': {
         const id = e.identity || (e.section === 'identity' ? e : null);
@@ -89,6 +121,7 @@
       case 'state':
         s.state = e.state || 'idle'; s.tool = e.tool || null; if (e.step) s.step = e.step;
         if (s.state === 'idle') { s.tool = null; s.task = null; s.phase = null; s.pendingAsk = null; s.window = null; }
+        if (/^(thinking|acting|idle)$/.test(s.state)) s.waiting = null;  // the question was answered or the task ended (agent.py:431/548/587, core.py:529)
         mode(s.pendingAsk ? 'LISTENING' : STATE_MODE[s.state] || 'IDLE');
         break;
       case 'phase':
@@ -100,6 +133,8 @@
           s.task = { id: e.task_id, goal: e.goal || '', step: 0, kind: e.kind || 'conversation' }; s.counters.tasks++;
           if (e.kind === 'autonomous') log('OWN WORK · ' + short(e.goal, 40).toUpperCase());
         }
+        // journal.py:706 task.queued {goal, kind}: a request made while SYRAX was busy waits (core.py:336); the `queue` broadcast with its position follows (core.py:338)
+        else if (e.event === 'queued') { const q = s.queue.find(i => i.task_id === e.task_id); log(queuedLine(e.goal, q ? q.position : s.queue.length + 1)); }
         else if (e.event === 'completed') log('TASK ' + (e.status || 'DONE') + (e.task_id ? ' · ' + String(e.task_id).slice(0, 8) : ''));  // core.py _mark task.completed {status, result}
         else if (e.event === 'failed') log('TASK FAILED · ' + short(e.error, 40));  // core.py _mark task.failed {error}
         else if (e.event === 'cancelled') log('TASK ABORTED' + (e.error ? ' · ' + short(e.error, 40).toUpperCase() : ''));  // core.py _mark task.cancelled {error: cancel_reason}
@@ -125,14 +160,19 @@
         else { s.counters.toolsFailed++; cog('✗ ' + e.name + (e.output ? ' · ' + short(e.output, 40) : '')); }
         break;
       case 'ask':
-        s.pendingAsk = e.question || ''; mode('LISTENING'); log('SYRAX ASKS'); fx.push({ kind: 'ask', question: s.pendingAsk });
+        // tools.py:51 {"type": "ask", "question": inquire}, journaled by the core (core.py:74) so event_id/ts/task_id ride along; hud.html speaks it from the `ask` effect
+        s.pendingAsk = e.question || ''; s.waiting = s.pendingAsk; mode('LISTENING'); log('WAITING FOR YOU · ' + short(s.pendingAsk, 60).toUpperCase()); fx.push({ kind: 'ask', question: s.pendingAsk });
         break;
       case 'final':
-        s.lastReply = e.text || ''; s.lastReplyAt = now; s.pendingAsk = null;
+        s.lastReply = e.text || ''; s.lastReplyAt = now; s.pendingAsk = null; s.waiting = null;
         fx.push({ kind: 'say', text: s.lastReply });
         break;
       case 'user':
-        break; // the HUD already shows what it sent
+        // the HUD already shows what it sent; the human's answer comes back as `user` with the task's id (journal.py:249 _WIRE "answer" -> "user", journal.py:277)
+        if (e.task_id) s.waiting = null;
+        break;
+      case 'answer':
+        s.waiting = null; break;
       case 'notice':
         if (e.text) log(short(e.text, 60).toUpperCase());
         break;
@@ -141,8 +181,9 @@
         break;
       case 'permission':
         // agent.py tell(): {type:"permission", event, tool, level, task_kind, reason, targets, authorized_by, step, harm?, answer?}
-        if (e.event === 'refused') { s.counters.refused++; s.lastRefusal = { tool: e.tool, step: e.step == null ? null : e.step }; log('GUARD REFUSED ' + String(e.tool || '').toUpperCase() + (e.level ? ' · ' + e.level : '')); }
-        else if (e.event === 'authorized') log('AUTHORIZED ' + String(e.tool || '').toUpperCase() + ' BY ' + String(e.authorized_by || 'human').toUpperCase());
+        // the log line is the verdict; why and on what go to the cognition panel, which shows 60 characters to the log's 40 (hud.html)
+        if (e.event === 'refused') { s.counters.refused++; s.lastRefusal = { tool: e.tool, step: e.step == null ? null : e.step }; log(permissionLine(e)); const why = permissionDetail(e); if (why) cog('⊘ ' + why); }
+        else if (e.event === 'authorized') log(permissionLine(e));
         break;
       case 'claim':
         if (e.event === 'rejected') { s.counters.claims++; log('FALSE CLAIM SENT BACK'); }
@@ -228,7 +269,7 @@
 
   function offline(s, now, reason) {
     const was = s.online;
-    s.online = false; s.state = 'offline'; s.tool = null; s.pendingAsk = null; s.task = null;
+    s.online = false; s.state = 'offline'; s.tool = null; s.pendingAsk = null; s.task = null; s.queue = []; s.waiting = null;
     const fx = [{ kind: 'mode', mode: 'IDLE' }];
     if (was || reason) { const text = was ? 'SYRAX LINK LOST' : 'SYRAX OFFLINE · ' + reason; push(s.log, { t: now, text }, MAX_LOG); fx.push({ kind: 'log', text }); }
     return fx;
@@ -287,5 +328,5 @@
     return link;
   }
 
-  return { initial, reduce, offline, connect, argSummary, short, dayStart, interruptedLine, ON_OPEN };
+  return { initial, reduce, offline, connect, argSummary, short, dayStart, interruptedLine, queuedLine, taskRow, permissionLine, permissionDetail, ON_OPEN };
 });
