@@ -228,6 +228,35 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Skills with a past, sends that never repeat, nothing raw in the record (2026-10-25)
+
+- 9203845: an intent ledger for external side effects. Before a call at
+  the EXTERNAL_WRITE level (a message, a payment) runs, `intent.recorded`
+  {tool, args_hash, summary} is journaled; `intent.done {ok}` after. The
+  same send while the first never finished (a crash, a cancel, an exception
+  in between) is held: "the same <tool> action may already have gone out
+  (step N): check what happened first". Recovery classifies such an
+  interrupted task EXTERNAL_UNCERTAIN with the intent's summary; the UI and
+  the HUD say "an external action may have happened: ...", and a resume,
+  forced or not, tells the model never to repeat it and to verify with a
+  read-only check. 9 tests, 6 red before.
+- a7394ac: skill lifecycle. A skill's `code_version` follows the content
+  hash of its files (re-verifying unchanged code no longer looks like a new
+  version); the files it replaces are kept under `.versions/` (last five)
+  and the human can ROLLBACK (re-verified; refused when nothing is kept);
+  a skill the human disabled stays disabled across restarts and prebuilt
+  installs until ENABLE; a new skill that duplicates a verified one (purpose
+  overlap >= 0.7, or the same two-plus argument names with a related
+  purpose) is refused naming the one to extend. 11 tests.
+- 64d11b0: the journal's remaining raw copies are masked at write time:
+  the task goal (a key pasted into a request stays with the agent, not in
+  the record), `think` text, tool arguments, the saved checkpoint context
+  and a logged exception's traceback (loguru's own rendering replaced by a
+  masked one). Not masked by design: the agent's live memory, the `final`
+  when the human asked for the key, the `user` echo to connected screens.
+- Quality run #65 on 572e1b0, the full 67-case suite after the day's 26
+  commits: 61/67 = 91.0 % (BASELINE for the 67-case suite; gemini). Failed: restraint (answered theatrically and used python; the case's fourth failure in eight full runs), read_code (204 chars for a number), fix_import (rewrote the greeting instead of fixing the import), self_patch_docs (edited with python, never apply_patch), deep_spec_tests (its own tests did not collect), deep2_data_pipeline (report.json in another shape). The hunts and tomorrow's self-measurement take these; the two case prompts are checked for ambiguity first.
+
 ### Secrets out of the logs, a harder ruler, memory in the open (2026-10-25)
 
 - 48ef95d: security hardening from the audit. Every log record and every
