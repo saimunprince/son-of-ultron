@@ -31,7 +31,7 @@ from app.schema import Message
 
 from syrax.agent import SyraxAgent, ToolCrash
 from syrax.brains import BrainError, get_router
-from syrax import phases
+from syrax import phases, redact
 from syrax.devloop import REPO_ROOT, DevLoop, ReleaseTool
 from syrax.experiments import ExperimentEngine, ExperimentTool
 from syrax.journal import Event, Journal, JournalError, get_journal
@@ -302,6 +302,10 @@ class Core:
             await self.broadcast(event)
             return
         payload = {k: v for k, v in event.items() if k not in ("type", "image")}
+        if kind in ("tool.completed", "tool.failed") and isinstance(payload.get("output"), str):
+            # the journal is evidence, not a vault (audit 2026-10-25): a key a tool printed is masked in the record, and
+            # so in what the UI shows; the agent's own event is untouched, the model may need the key to do the work
+            payload["output"] = redact.mask(payload["output"])
         volatile = {"image": event["image"]} if event.get("image") else None
         if kind == "tool.started":
             self._last_tool_args = event.get("args") if isinstance(event.get("args"), dict) else {}

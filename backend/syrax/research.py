@@ -34,6 +34,7 @@ from app.tool.base import BaseTool, ToolResult
 from app.tool.web_search import WebContentFetcher
 
 from syrax.journal import Journal, JournalError, re_words
+from syrax.redact import UNTRUSTED_WEB
 
 log = logging.getLogger("syrax.research")
 
@@ -221,7 +222,8 @@ class Researcher:
 
 
 def render_report(report: dict) -> str:
-    lines = [f"RESEARCH: {report['question']}"]
+    # the first line says what the rest is: excerpts from pages, data for the model, never instructions (audit 2026-10-25)
+    lines = [UNTRUSTED_WEB, f"RESEARCH: {report['question']}"]
     if not report["sources"]:
         lines.append("No sources found." + (f" Search failures: {'; '.join(report['search_failures'])}" if report["search_failures"] else ""))
         lines.append("State: UNKNOWN. Do not answer as if you had evidence.")

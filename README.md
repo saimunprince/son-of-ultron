@@ -336,7 +336,18 @@ at `/hud/`) is trusted by its Origin, as before. A connection with no Origin
 `/live` and the writing endpoints (`/stt`, `/tts`, `/upload`): pass it as
 `?token=…` on the socket URL or the `X-SYRAX-Token` header. The token is
 `backend/config/ws.token` (created on first use, owner-only, never committed);
-`python syrax.py --token` prints it. `/health` and `/self` stay readable.
+`python syrax.py --token` prints it. `/health` stays readable, as do the story
+sections of `/self` (`identity`, `behavior`, `capabilities`, `performance`,
+`weaknesses`, `proposals`, `brains`); `/voice` and the `/self` sections that describe
+this machine and checkout (`summary`, `structure`, `runtime`, `all`) follow the same
+rule as `/stt`, so a local script passes `?token=…` or `X-SYRAX-Token` with them too.
+
+Secrets stay out of the record: every log line and every journaled tool output has
+credential-shaped strings (OpenAI, Groq, Gemini, GitHub, Slack and AWS key shapes)
+replaced by `[credential masked]`, and the final answer masks them unless the request
+asked for a key; the model's own context keeps the real output. What `research` and
+the `browser_*` tools bring back is headed `UNTRUSTED WEB CONTENT`, so the model reads
+a page as data, never as instructions.
 
 ## Permissions
 

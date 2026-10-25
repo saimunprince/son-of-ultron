@@ -65,13 +65,16 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from app.logger import logger
 
-from syrax import auth, browser, presence, voice
+from syrax import auth, browser, presence, redact, voice
 from syrax import brains as brains_mod
 from syrax.brains import PROVIDERS, get_router
 from syrax.core import get_core
 from syrax import permissions
 from syrax import startup
 from syrax.journal import JournalError, get_journal
+from syrax.selfmodel import SECTIONS
+
+redact.install()  # every log line of this process has credential-shaped strings masked (audit 2026-10-25)
 
 VOICE_HINT = (
     "\n\n[Spoken aloud by voice. Answer in one or two short spoken English "
@@ -297,7 +300,8 @@ async def hud_file(name: str):
 
 
 @app.get("/voice")
-async def voice_status():
+async def voice_status(request: Request):
+    _check_origin(request)  # which ear and voice this machine runs is internal state (audit 2026-10-25)
     return {
         "tts_voice": voice.TTS_VOICE,
         "stt": "groq" if get_router().store.key("groq") else f"whisper-{voice.local_whisper.size}",
@@ -305,9 +309,18 @@ async def voice_status():
     }
 
 
+# /self: the story sections (who SYRAX is, how it did) stay readable like /health; the sections that describe this
+# machine and this checkout (host, disk, paths, git state, the running task: summary, structure, runtime, all) need an
+# allowed Origin or the token, as /stt does (audit 2026-10-25). The HUD and the UI never read /self; probe.py sends
+# the UI's Origin; a local script passes ?token= or X-SYRAX-Token (`python syrax.py --token`).
+SELF_OPEN_SECTIONS = {"identity", "behavior", "capabilities", "performance", "weaknesses", "proposals", "brains"}
+
+
 @app.get("/self")
-async def self_model(section: str = "summary"):
+async def self_model(request: Request, section: str = "summary"):
     """Read-only self-model (evidence-based). ?section=summary|identity|structure|runtime|behavior|capabilities|weaknesses|all"""
+    if section in SECTIONS and section not in SELF_OPEN_SECTIONS:
+        _check_origin(request)
     try:
         return await asyncio.to_thread(get_core().selfmodel.snapshot, section)
     except ValueError as e:
