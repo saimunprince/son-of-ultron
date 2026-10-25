@@ -115,6 +115,10 @@ async def lifespan(_: FastAPI):
     for tid in await core.auto_resume():
         logger.warning(f"auto-resumed task {tid}")
     try:
+        await core.settle_interrupted()  # the boot policy: what a restart cut is dismissed or kept for a human
+    except Exception as e:
+        logger.warning(f"boot policy for interrupted tasks failed: {e}")
+    try:
         rq = await core.requeue_after_boot()  # human requests that waited across the restart
         if rq["dropped"] or rq["started"]:
             logger.warning(f"queued requests after restart: started {rq['started']}, cancelled as stale {rq['dropped']}")

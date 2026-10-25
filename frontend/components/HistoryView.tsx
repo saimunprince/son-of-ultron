@@ -9,6 +9,9 @@ import type { JournalEvent, TaskDetail, TaskSummary } from "@/lib/syraxClient";
 export const UNCERTAIN_RESUME =
   "This task's last operation is UNCERTAIN: SYRAX cannot tell whether it ran, so resuming may repeat it or skip it. " +
   "Check what happened first (files, outputs). Resume anyway?";
+/** What the person confirms before an interrupted task is dismissed (journaled as cancelled; the boot policy
+ *  in Core.settle_interrupted keeps a human's interrupted work for the human, so the human ends it here). */
+export const DISMISS_INTERRUPTED = "Dismiss this interrupted task? It will be marked cancelled.";
 
 export function hhmm(ts: number): string {
   const d = new Date(ts * 1000);
@@ -153,7 +156,17 @@ export function HistoryList({ tasks, onOpen }: { tasks: TaskSummary[]; onOpen: (
   );
 }
 
-export function WhyView({ detail, onBack, onResume }: { detail: TaskDetail; onBack: () => void; onResume?: (id: string, force?: boolean) => void }) {
+export function WhyView({
+  detail,
+  onBack,
+  onResume,
+  onDismiss,
+}: {
+  detail: TaskDetail;
+  onBack: () => void;
+  onResume?: (id: string, force?: boolean) => void;
+  onDismiss?: (id: string) => void;
+}) {
   const t = detail.task;
   const steps = detail.events.filter(
     (e) =>
@@ -225,6 +238,17 @@ export function WhyView({ detail, onBack, onResume }: { detail: TaskDetail; onBa
           }}
         >
           RESUME
+        </button>
+      )}
+      {t.status === "INTERRUPTED" && onDismiss && (
+        <button
+          type="button"
+          className="hud-btn entry-action"
+          onClick={() => {
+            if (window.confirm(DISMISS_INTERRUPTED)) onDismiss(t.task_id);
+          }}
+        >
+          DISMISS
         </button>
       )}
     </div>

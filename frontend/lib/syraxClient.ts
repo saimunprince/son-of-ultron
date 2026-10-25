@@ -526,6 +526,8 @@ export type ClientMessage =
   | { type: "task_events"; task_id: string }
   | { type: "verifications"; limit?: number }
   | { type: "resume"; task_id: string; force?: boolean; note?: string }
+  /** dismiss: an INTERRUPTED task the person does not want continued is journaled as cancelled with the note */
+  | { type: "dismiss"; task_id: string; note: string }
   | { type: "self_model"; section?: string }
   | { type: "objectives"; limit?: number }
   | { type: "objective_add"; goal: string; reason?: string; priority?: number; check: ObjectiveCheck }

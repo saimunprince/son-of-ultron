@@ -29,7 +29,7 @@ type ConsoleTab = "live" | "history" | "today";
 import BrainPanel from "@/components/BrainPanel";
 import SelfPanel from "@/components/SelfPanel";
 import MindPanel, { mindRequest, type MindData, type MindTab } from "@/components/MindPanel";
-import { HistoryList, ReplayView, UNCERTAIN_RESUME, WhyView } from "@/components/HistoryView";
+import { DISMISS_INTERRUPTED, HistoryList, ReplayView, UNCERTAIN_RESUME, WhyView } from "@/components/HistoryView";
 import Stage from "@/components/Stage";
 import BootSequence from "@/components/BootSequence";
 import UltronEyes from "@/components/UltronEyes";
@@ -57,7 +57,8 @@ type Entry =
       image?: string;
     }
   | { kind: "ask"; id: number; text: string }
-  | { kind: "notice"; id: number; text: string; action?: NoticeAction }
+  // secondary: a second button beside `action` (an interrupted task offers RESUME and DISMISS); other notices keep one
+  | { kind: "notice"; id: number; text: string; action?: NoticeAction; secondary?: NoticeAction }
   | { kind: "error"; id: number; text: string };
 
 function startOfToday(): number {
@@ -80,6 +81,12 @@ function resumeAction(task_id: string, recovery_state: string | null | undefined
     return { label: "RESUME", msg: { type: "resume", task_id, force: true, note: "confirmed in the UI" }, confirm: UNCERTAIN_RESUME };
   }
   return { label: "RESUME", msg: { type: "resume", task_id } };
+}
+
+/** The boot policy (Core.settle_interrupted) keeps a human's interrupted work for the human: this is how they end it
+ *  (journaled as cancelled with the note; the server drops the uncertain-task objective that asked about it). */
+function dismissAction(task_id: string): NoticeAction {
+  return { label: "DISMISS", msg: { type: "dismiss", task_id, note: "dismissed in the UI" }, confirm: DISMISS_INTERRUPTED };
 }
 
 const MODE_LABEL: Record<TrackerStatus["mode"], string> = {
@@ -329,6 +336,7 @@ export default function Syrax() {
               id: nextId++,
               text: recoveredText(t),
               action: resumeAction(t.task_id, t.recovery_state),
+              secondary: dismissAction(t.task_id),
             });
           }
           if (e.running) push({ kind: "notice", id: nextId++, text: `RUNNING · "${e.running.goal.slice(0, 80)}" · step ${e.running.step}` });
@@ -1160,6 +1168,7 @@ export default function Syrax() {
                 detail={taskDetail}
                 onBack={() => setTaskDetail(null)}
                 onResume={(id, force) => clientRef.current?.send(force ? { type: "resume", task_id: id, force: true, note: "confirmed in the UI" } : { type: "resume", task_id: id })}
+                onDismiss={(id) => clientRef.current?.send({ type: "dismiss", task_id: id, note: "dismissed in the UI" })}
               />
             ) : historyTasks === null ? (
               <div className="entry entry-notice">Reading the journal…</div>
@@ -1252,6 +1261,19 @@ export default function Syrax() {
                           }}
                         >
                           {e.action.label}
+                        </button>
+                      )}
+                      {e.secondary && (
+                        <button
+                          type="button"
+                          className="hud-btn entry-action"
+                          onClick={() => {
+                            const a = e.secondary!;
+                            if (a.confirm && !window.confirm(a.confirm)) return;
+                            clientRef.current?.send(a.msg);
+                          }}
+                        >
+                          {e.secondary.label}
                         </button>
                       )}
                     </div>

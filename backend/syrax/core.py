@@ -102,6 +102,13 @@ AGENT_CREATE_TIMEOUT_S = float(os.getenv("SYRAX_AGENT_CREATE_TIMEOUT_S", "240"))
 # request made while a task runs is queued (journaled PENDING) and starts when the running task ends. A
 # queued request survives SYRAX's own restarts; one older than this is cancelled with a note, not run late.
 QUEUE_STALE_S = float(os.getenv("SYRAX_QUEUE_STALE_S", "3600"))
+# Boot policy for INTERRUPTED tasks (live 2026-10-25, audit "Task runtime"): three sat open for 3-11 days
+# until a hand dismissed them. SYRAX restarts itself into new code several times a day, so an interruption
+# is routine. A human's conversation that could resume waits this long for the human; an autonomous
+# attempt whose in-flight operation is UNCERTAIN waits this long for the human the `uncertain-task:`
+# objective asks. See Core.settle_interrupted and docs/EXECUTION_MODEL.md section 7.
+SETTLE_CONVERSATION_S = float(os.getenv("SYRAX_SETTLE_CONVERSATION_S", "3600"))
+SETTLE_UNCERTAIN_S = float(os.getenv("SYRAX_SETTLE_UNCERTAIN_S", str(7 * 86400)))
 
 
 def _is_release(goal: str) -> bool:
@@ -706,6 +713,57 @@ class Core:
                 started.append(t["task_id"])
         return started
 
+    async def settle_interrupted(self, now: Optional[float] = None) -> dict:
+        """Boot policy for INTERRUPTED tasks, run after auto_resume and before the queue restarts
+        (live 2026-10-25: an eval case cut by a restart and two autonomous attempts superseded by later
+        commits sat open for 3-11 days until a hand dismissed them). Each decision is journaled as
+        ``task.cancelled {"error": <note>}`` or the task is left alone:
+
+        - eval: dismissed; the quality suite runs the case again, it never resumes one.
+        - autonomous, RESUMABLE or BLOCKED: dismissed; the objective makes a fresh attempt, and an
+          objective still ACTIVE for this task goes back to OPEN.
+        - autonomous, UNCERTAIN: kept while younger than SETTLE_UNCERTAIN_S (the ``uncertain-task:``
+          BLOCKED objective asks a human); older: dismissed and that objective DROPPED with the same note.
+        - conversation, RESUMABLE or BLOCKED: kept while younger than SETTLE_CONVERSATION_S (the human
+          may resume it; hello.interrupted shows it); older: dismissed as too old to continue safely.
+        - conversation, UNCERTAIN: kept for the human, whatever its age; it is their work.
+        Returns {"dismissed": [...], "kept": [...]} (task_id, kind, recovery_state, note/why)."""
+        now = time.time() if now is None else float(now)
+        dismissed: List[dict] = []
+        kept: List[dict] = []
+        for t in self.journal.tasks(limit=500, status="INTERRUPTED"):
+            state = (t.get("recovery") or {}).get("state") or "UNKNOWN"
+            entry = {"task_id": t["task_id"], "kind": t.get("kind"), "recovery_state": state}
+            decision = _settle_decision(t, now)
+            if decision is None:
+                kept.append({**entry, "why": _settle_kept_why(t)})
+                continue
+            note, drop_uncertain = decision
+            await self.journal.record("task.cancelled", {"error": note}, task_id=t["task_id"])
+            if t.get("kind") == "autonomous":
+                await self._release_objectives_of(t, note, drop_uncertain)
+            dismissed.append({**entry, "note": note})
+        if dismissed or kept:
+            logger.warning(
+                "boot policy for interrupted tasks: dismissed "
+                + (", ".join(f"{d['task_id']} ({d['kind']} {d['recovery_state']}: {d['note']})" for d in dismissed) or "none")
+                + "; kept "
+                + (", ".join(f"{k['task_id']} ({k['kind']} {k['recovery_state']}: {k['why']})" for k in kept) or "none")
+            )
+        return {"dismissed": dismissed, "kept": kept}
+
+    async def _release_objectives_of(self, task: dict, note: str, drop_uncertain: bool) -> None:
+        """A dismissed autonomous task leaves no objective pointing at it: one still ACTIVE for this task
+        (its last_task_id, or the goal the cycle submitted as the task's goal; the cycle sets last_task_id
+        only when the task ends) goes back to OPEN, and with ``drop_uncertain`` the ``uncertain-task:<id>``
+        objective that asked a human is DROPPED."""
+        tid = task["task_id"]
+        for o in await asyncio.to_thread(self.journal.objectives, 500, ["OPEN", "ACTIVE", "BLOCKED"]):
+            if o.get("status") == "ACTIVE" and (o.get("last_task_id") == tid or o.get("goal") == task.get("goal")):
+                await self.journal.update_objective(o["id"], status="OPEN", note=f"task {tid} dismissed at boot: {note}")
+            elif drop_uncertain and o.get("key") == f"uncertain-task:{tid}":
+                await self.journal.update_objective(o["id"], status="DROPPED", note=f"task {tid} dismissed at boot: {note}")
+
     # ——— snapshot for (re)connecting observers ———
 
     def snapshot(self) -> dict:
@@ -865,6 +923,45 @@ def _interrupted_summary(t: dict) -> dict:
         "operation_state": rec.get("operation_state"),
         "when": t.get("updated"),
     }
+
+
+def _settle_age_s(t: dict, now: float) -> float:
+    """Seconds since the task was interrupted: recovery stamps ``updated`` when it marks the row
+    INTERRUPTED and nothing else touches the row until a resume or a dismissal."""
+    return max(0.0, now - float(t.get("updated") or t.get("created") or now))
+
+
+def _settle_decision(t: dict, now: float) -> Optional[tuple]:
+    """The boot policy for one INTERRUPTED task: ``(note, drop_uncertain_objective)`` to dismiss it
+    with that note, None to leave it alone. Pure; Core.settle_interrupted journals the result."""
+    kind = t.get("kind") or "conversation"
+    state = (t.get("recovery") or {}).get("state")
+    age = _settle_age_s(t, now)
+    if kind == "eval":
+        return ("a quality case cut by a restart; the suite runs it again", False)
+    if kind == "autonomous":
+        if state != "UNCERTAIN":
+            return ("an autonomous attempt cut by a restart; the objective makes a fresh attempt", False)
+        if age >= SETTLE_UNCERTAIN_S:
+            return (f"UNCERTAIN for {int(SETTLE_UNCERTAIN_S // 86400)} days, nobody resumed it; dismissed", True)
+        return None
+    if kind == "conversation":
+        if state == "UNCERTAIN":
+            return None
+        if age >= SETTLE_CONVERSATION_S:
+            return (f"interrupted {int(age // 3600)} h ago; too old to continue safely", False)
+        return None
+    return None  # an unknown kind is nobody's to dismiss
+
+
+def _settle_kept_why(t: dict) -> str:
+    kind = t.get("kind") or "conversation"
+    state = (t.get("recovery") or {}).get("state")
+    if kind == "autonomous":
+        return "UNCERTAIN: a human decides (uncertain-task objective)"
+    if kind == "conversation":
+        return "UNCERTAIN: the human's work" if state == "UNCERTAIN" else "young enough for the human to resume"
+    return f"kind {kind!r} is not settled at boot"
 
 
 def _explain(e: Exception) -> str:

@@ -201,6 +201,36 @@ after a checkpoint — the reopened journal holds exactly the committed rows and
 - Auto-resume at boot is **off** by default. `SYRAX_AUTO_RESUME=1` resumes only
   tasks classified `RESUMABLE`; `UNCERTAIN` and `BLOCKED` tasks always wait for a human.
 - `ResumeHook` on `Journal.recover()` is the seam for later autonomous phases.
+- `{"type":"dismiss","task_id","note"}` (or the DISMISS button beside RESUME, on the
+  recovered notice and in the WHY view, after a confirm) records `task.cancelled`
+  (`INTERRUPTED -> CANCELLED`, `error` = "dismissed by human: <note>") and DROPs the
+  `uncertain-task:<id>` objective that asked about it.
+
+### 7.1 Boot policy for interrupted tasks
+
+SYRAX restarts itself into new code several times a day, so an interruption is routine.
+Live 2026-10-25 (audit, "Task runtime"): an eval case cut by a restart and two autonomous
+attempts superseded by later commits sat `INTERRUPTED` for 3-11 days until a hand dismissed
+them. `Core.settle_interrupted()` runs in the server lifespan right after `auto_resume()` and
+before `requeue_after_boot()`; every dismissal is journaled as `task.cancelled {"error": <note>}`
+(`tasks.error` = the note), one warning line summarizes the boot, and the result is
+`{"dismissed": [...], "kept": [...]}` (`test_boot_policy.py`). Age is the time since recovery
+marked the row `INTERRUPTED` (`tasks.updated`).
+
+| kind | recovery | age | decision | note / side effect |
+|---|---|---|---|---|
+| `eval` | any | any | dismiss | "a quality case cut by a restart; the suite runs it again" (the quality runner never resumes a case) |
+| `autonomous` | `RESUMABLE` or `BLOCKED` | any | dismiss | "an autonomous attempt cut by a restart; the objective makes a fresh attempt"; an objective still `ACTIVE` for this task (its `last_task_id`, or the goal the cycle submitted) goes back to `OPEN` with the note |
+| `autonomous` | `UNCERTAIN` | < 7 days (`SYRAX_SETTLE_UNCERTAIN_S`) | keep | the `uncertain-task:<id>` BLOCKED objective asks a human (autonomy.derive_objectives) |
+| `autonomous` | `UNCERTAIN` | >= 7 days | dismiss | "UNCERTAIN for 7 days, nobody resumed it; dismissed"; the `uncertain-task:<id>` objective is DROPPED with the same note |
+| `conversation` | `RESUMABLE` or `BLOCKED` | < 1 h (`SYRAX_SETTLE_CONVERSATION_S`) | keep | the human may resume it: `hello.interrupted` shows it with RESUME and DISMISS |
+| `conversation` | `RESUMABLE` or `BLOCKED` | >= 1 h | dismiss | "interrupted N h ago; too old to continue safely" |
+| `conversation` | `UNCERTAIN` | any | keep | it is the human's work: they resume (force + note) or dismiss it in the UI |
+| other kinds | any | any | keep | nobody's to dismiss at boot |
+
+`Autonomy.recover_active()` (run when the core is built, before the policy) already reopens every
+`ACTIVE` objective and logs the interrupted attempt with its kept diff; the policy's reopening is the
+guard for an objective marked `ACTIVE` after that.
 
 ## 8. Journal write failure
 
