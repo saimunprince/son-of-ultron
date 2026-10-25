@@ -22,6 +22,7 @@ import os
 from pathlib import Path
 import re
 import sqlite3
+import time
 from dataclasses import dataclass, field
 from typing import Awaitable, Callable, List, Optional
 
@@ -88,6 +89,12 @@ class Running:
 # a time, and a build that hangs fails instead of freezing SYRAX.
 AGENT_CREATE_TIMEOUT_S = float(os.getenv("SYRAX_AGENT_CREATE_TIMEOUT_S", "240"))
 
+# Live 2026-10-25 (audit): every request made while SYRAX worked was answered "Already executing. Stop it
+# first." and dropped, voice and HUD included; the journal's PENDING status had waited unused. A human
+# request made while a task runs is queued (journaled PENDING) and starts when the running task ends. A
+# queued request survives SYRAX's own restarts; one older than this is cancelled with a note, not run late.
+QUEUE_STALE_S = float(os.getenv("SYRAX_QUEUE_STALE_S", "3600"))
+
 
 def _is_release(goal: str) -> bool:
     """An autonomous brief for an objective that closes only on a landed commit."""
@@ -108,6 +115,7 @@ class Core:
         self.observers: List[Observer] = []
         self.state: dict = {"state": "idle"}  # last direct state event
         self._last_tool_args: dict = {}
+        self._queued_requests: dict = {}  # task_id -> (request, said) of queued requests made in this process
         self.journal.subscribe(self._on_journal_event)
         self.selfmodel = SelfModel(self.journal)
         self.selfmodel.tools_provider = self.tool_names
@@ -306,58 +314,124 @@ class Core:
 
     async def submit(
         self, goal: str, said: Optional[str], session_id: Optional[str], kind: str = "conversation",
-        max_steps: Optional[int] = None, seed: Optional[dict] = None,
+        max_steps: Optional[int] = None, seed: Optional[dict] = None, queue: bool = False,
     ) -> Optional[str]:
         """Start a task. Returns its id, or None when SYRAX is already busy
-        (also when another submit got there first while this one waited)."""
+        (also when another submit got there first while this one waited).
+        With ``queue``, a human request (kind conversation) made while SYRAX is busy is not
+        refused: it is journaled PENDING, its id is returned, and it starts when the running
+        task ends (``_start_next``). SYRAX's own work (eval, autonomous) never queues."""
+        async with self._submit_lock:
+            if self.busy:
+                if not (queue and kind == "conversation"):
+                    return None
+                task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind, pending=True)
+                self._queued_requests[task_id] = (goal, said)
+                await self.broadcast({"type": "queue", "items": self.queued()})
+                return task_id
+            return await self._begin(goal, said, session_id, kind, max_steps, seed)
+
+    def queued(self) -> List[dict]:
+        """The waiting human requests, oldest first, with their position (1 = next)."""
+        rows = self.journal.tasks(limit=50, status="PENDING")
+        rows.sort(key=lambda r: r["created"])
+        return [{"task_id": r["task_id"], "goal": r["goal"], "created": r["created"], "session_id": r.get("session_id"),
+                 "position": i + 1} for i, r in enumerate(rows)]
+
+    async def cancel_queued(self, task_id: str, note: str = "removed by human") -> bool:
+        row = self.journal.task(task_id)
+        if not row or row.get("status") != "PENDING":
+            return False
+        await self.journal.record("task.cancelled", {"error": f"removed from the queue: {note}"}, task_id=task_id)
+        self._queued_requests.pop(task_id, None)
+        await self.broadcast({"type": "queue", "items": self.queued()})
+        return True
+
+    async def _start_next(self) -> Optional[str]:
+        """The oldest queued request starts when the core is free. Returns its id, or None."""
         async with self._submit_lock:
             if self.busy:
                 return None
-            await self.ensure_agent()
-            await asyncio.to_thread(self.devloop.begin_task)  # a task owns only the changes it makes
-            task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)
-            if kind == "autonomous" and os.getenv("SYRAX_ISOLATE", "0") == "1":
-                # M1, isolated evolution: SYRAX's own work happens in a worktree, never in the running tree
-                try:
-                    wt = await asyncio.to_thread(self.devloop.isolate, task_id)
-                    from syrax import editor as _editor
+            pending = self.queued()
+            if not pending:
+                return None
+            nxt = pending[0]
+            goal, said = self._queued_requests.pop(nxt["task_id"], (nxt["goal"], nxt["goal"]))
+            await self.broadcast({"type": "notice", "text": f"Queued request starting: {str(said or goal)[:80]}"})
+            tid = await self._begin(goal, said, nxt.get("session_id"), "conversation", None, None, task_id=nxt["task_id"])
+            await self.broadcast({"type": "queue", "items": self.queued()})
+            return tid
 
-                    _editor.ROOT_MAP = (self.devloop.live_root, wt)
-                    goal = goal + ISOLATION_NOTE.format(worktree=wt, live=self.devloop.live_root)
-                    await self.journal.record("isolation.started", {"worktree": str(wt)}, task_id=task_id)
-                    seeded = await asyncio.to_thread(write_seed, wt, seed)
-                    if seeded:
-                        await self.journal.record("repro.seeded", {"files": seeded}, task_id=task_id)
-                except Exception as e:
-                    logger.warning(f"could not isolate task {task_id}: {e}")
-                    await self.journal.record("isolation.failed", {"error": str(e)[:300]}, task_id=task_id)
-            await self._route(said or goal, task_id, release=kind == "autonomous" and _is_release(goal))
-            self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind, phase="understand")
-            await self._record_phase({"phase": "understand", "from": None})
-            if self.agent is not None:  # permissions: the kind and the human's own words (not the brief)
-                self.agent.task_kind = kind
-                self.agent.task_goal = said or goal
-                # a budget is per task: a release objective's 30 steps never leak into the next task
-                fields = getattr(type(self.agent), "model_fields", {})
-                if "max_steps" in fields:
-                    self.agent.max_steps = max_steps or fields["max_steps"].default
-            if kind in ("eval", "autonomous") and self.agent is not None:
-                # Self-contained work: earlier tasks' messages only cost tokens and
-                # confuse the model (a quality case once answered "clarify the task"
-                # after the previous run's history). System messages stay.
-                if self._human_context is None and hasattr(self.agent, "export_context"):
-                    self._human_context = list(self.agent.export_context() or [])  # kept once, across a run of own tasks
-                self.agent.reset_conversation()
-            elif self._human_context is not None and self.agent is not None:
-                # Live 2026-10-10: Prince said "hi" right after an autonomous task and
-                # SYRAX continued that task (edited sysinfo.py, answered with its own
-                # step prompt); a conversation task is never rolled back. The human's
-                # conversation resumes where the human left it.
-                if hasattr(self.agent, "import_context"):
-                    self.agent.import_context(self._human_context)
-                self._human_context = None
-            self.current.task = asyncio.create_task(self._run(goal, said))
-            return task_id
+    async def requeue_after_boot(self) -> dict:
+        """Queued requests survive a restart (SYRAX restarts itself into new code). After recovery a
+        young one starts; one older than QUEUE_STALE_S is cancelled with a note rather than run late."""
+        now = time.time()
+        kept, dropped = [], []
+        for q in self.queued():
+            age_min = int((now - q["created"]) / 60)
+            if now - q["created"] > QUEUE_STALE_S:
+                await self.journal.record("task.cancelled", {"error": f"SYRAX restarted before it got to this request (queued {age_min} min ago)"},
+                                          task_id=q["task_id"])
+                dropped.append(q["task_id"])
+            else:
+                kept.append(q["task_id"])
+        started = await self._start_next() if kept else None
+        return {"kept": kept, "dropped": dropped, "started": started}
+
+    async def _begin(
+        self, goal: str, said: Optional[str], session_id: Optional[str], kind: str,
+        max_steps: Optional[int], seed: Optional[dict], task_id: Optional[str] = None,
+    ) -> str:
+        """Start a task now (the caller holds ``_submit_lock`` and knows the core is free). A ``task_id``
+        names a queued (PENDING) task to begin; otherwise a new task row is created."""
+        await self.ensure_agent()
+        await asyncio.to_thread(self.devloop.begin_task)  # a task owns only the changes it makes
+        if task_id is None:
+            task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)
+        else:
+            await self.journal.record("task.started", {"goal": said or goal, "kind": kind}, task_id=task_id)
+        if kind == "autonomous" and os.getenv("SYRAX_ISOLATE", "0") == "1":
+            # M1, isolated evolution: SYRAX's own work happens in a worktree, never in the running tree
+            try:
+                wt = await asyncio.to_thread(self.devloop.isolate, task_id)
+                from syrax import editor as _editor
+
+                _editor.ROOT_MAP = (self.devloop.live_root, wt)
+                goal = goal + ISOLATION_NOTE.format(worktree=wt, live=self.devloop.live_root)
+                await self.journal.record("isolation.started", {"worktree": str(wt)}, task_id=task_id)
+                seeded = await asyncio.to_thread(write_seed, wt, seed)
+                if seeded:
+                    await self.journal.record("repro.seeded", {"files": seeded}, task_id=task_id)
+            except Exception as e:
+                logger.warning(f"could not isolate task {task_id}: {e}")
+                await self.journal.record("isolation.failed", {"error": str(e)[:300]}, task_id=task_id)
+        await self._route(said or goal, task_id, release=kind == "autonomous" and _is_release(goal))
+        self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind, phase="understand")
+        await self._record_phase({"phase": "understand", "from": None})
+        if self.agent is not None:  # permissions: the kind and the human's own words (not the brief)
+            self.agent.task_kind = kind
+            self.agent.task_goal = said or goal
+            # a budget is per task: a release objective's 30 steps never leak into the next task
+            fields = getattr(type(self.agent), "model_fields", {})
+            if "max_steps" in fields:
+                self.agent.max_steps = max_steps or fields["max_steps"].default
+        if kind in ("eval", "autonomous") and self.agent is not None:
+            # Self-contained work: earlier tasks' messages only cost tokens and
+            # confuse the model (a quality case once answered "clarify the task"
+            # after the previous run's history). System messages stay.
+            if self._human_context is None and hasattr(self.agent, "export_context"):
+                self._human_context = list(self.agent.export_context() or [])  # kept once, across a run of own tasks
+            self.agent.reset_conversation()
+        elif self._human_context is not None and self.agent is not None:
+            # Live 2026-10-10: Prince said "hi" right after an autonomous task and
+            # SYRAX continued that task (edited sysinfo.py, answered with its own
+            # step prompt); a conversation task is never rolled back. The human's
+            # conversation resumes where the human left it.
+            if hasattr(self.agent, "import_context"):
+                self.agent.import_context(self._human_context)
+            self._human_context = None
+        self.current.task = asyncio.create_task(self._run(goal, said))
+        return task_id
 
     async def _install_prebuilt(self) -> None:
         from syrax import prebuilt
@@ -445,6 +519,10 @@ class Core:
             await self._clean_repo_after_task()
             self.current = None
             await self.broadcast({"type": "state", "state": "idle"})
+            try:
+                await self._start_next()  # a human request that waited behind this task
+            except Exception as e:  # the queue never takes down the task that just ended
+                logger.warning(f"queued request did not start: {e}")
 
     async def _clean_repo_after_task(self) -> None:
         """Autonomous work may edit SYRAX's own repository, but only `release`
@@ -544,6 +622,8 @@ class Core:
         return True
 
     async def reset(self) -> None:
+        for q in self.queued():  # a reset starts over: nothing waits either
+            await self.cancel_queued(q["task_id"], note="reset by human")
         if self.busy:
             assert self.current is not None and self.current.task is not None
             self.current.task.cancel()
@@ -628,6 +708,7 @@ class Core:
         return {
             "state": dict(self.state),
             "running": running,
+            "queue": self.queued(),
             "interrupted": interrupted,
             "recent": [_task_summary(t) for t in self.journal.tasks(limit=10)],
             "presentation": self.presentation.plan(),

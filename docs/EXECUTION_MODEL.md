@@ -69,6 +69,14 @@ update it implies are committed together (`test_task_row_changes_in_same_transac
 
 Statuses: `PENDING, IN_PROGRESS, BLOCKED, SUCCESS, PARTIAL, FAILED, CANCELLED, INTERRUPTED, UNKNOWN`.
 
+**Queue (2026-10-25).** One task runs at a time. A human request made while a task runs is journaled `PENDING`
+(`task.queued`) when the client asks to queue it (`task {text, queue: true}`; the UI, the HUD and the voice path
+always do), and starts when the running task ends (`task.started`, PENDING → IN_PROGRESS), oldest first. `queue`
+lists the waiting requests with their position; `queue_cancel {task_id, note?}` removes one (CANCELLED, the note in
+its error). SYRAX's own work (eval, autonomous) never queues, and the autonomy cycle reports BUSY while a human
+request waits. After a restart a queued request younger than an hour (`SYRAX_QUEUE_STALE_S`) starts once recovery
+is done; an older one is cancelled with a note rather than run late.
+
 Transition table (anything else raises `JournalError` and rolls back —
 `test_transition_table_is_enforced` covers every pair):
 

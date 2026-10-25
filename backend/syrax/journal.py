@@ -1839,8 +1839,8 @@ class Journal:
     async def update_objective(self, *args, **kwargs) -> dict:
         return await self.run(self.update_objective_sync, *args, **kwargs)
 
-    async def start_task(self, goal: str, session_id: Optional[str] = None, kind: str = "conversation") -> str:
-        task_id = await asyncio.to_thread(self.start_task_sync, goal, session_id, kind)
+    async def start_task(self, goal: str, session_id: Optional[str] = None, kind: str = "conversation", pending: bool = False) -> str:
+        task_id = await asyncio.to_thread(self.start_task_sync, goal, session_id, kind, pending)
         first = self.events(task_id, limit=1)
         if first:
             e = first[0]

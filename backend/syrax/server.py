@@ -4,7 +4,9 @@ Run from the backend directory:
     .venv/bin/python -m syrax.server
 
 Protocol (JSON over ws://HOST:PORT/ws)
-  client -> server: task {text, voice?} | answer {text} | stop | reset | ping |
+  client -> server: task {text, voice?, queue?} (queue: a request made while a task runs waits for it
+                    instead of being refused) | queue | queue_cancel {task_id, note?} |
+                    answer {text} | stop | reset | ping |
                     history {limit?} | task_events {task_id} | resume {task_id} |
                     verifications {limit?} | self_model {section?} |
                     objectives {limit?} | objective_add {goal, reason?, priority?, check?} | briefing {hours?} |
@@ -23,7 +25,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
                     brain_models {id, api_key?} | brain_test {id}
-  server -> client: hello {name, tools, interrupted, running, recent} | state |
+  server -> client: hello {name, tools, interrupted, running, queue, recent} | state | queue {items} |
                     user | think | tool_start | tool_result | ask | final |
                     task {event} | checkpoint | recovery {event} | verification |
                     history | task_events | verifications | self_model |
@@ -112,6 +114,12 @@ async def lifespan(_: FastAPI):
     core = get_core()
     for tid in await core.auto_resume():
         logger.warning(f"auto-resumed task {tid}")
+    try:
+        rq = await core.requeue_after_boot()  # human requests that waited across the restart
+        if rq["dropped"] or rq["started"]:
+            logger.warning(f"queued requests after restart: started {rq['started']}, cancelled as stale {rq['dropped']}")
+    except Exception as e:
+        logger.warning(f"queue after restart failed: {e}")
     from syrax import stallwatch
 
     # if the event loop ever blocks, the stacks of every thread are kept (live 2026-10-12: two silent stalls)
@@ -385,6 +393,7 @@ class Session:
                 "tool_levels": permissions.levels_for(agent.available_tools.tool_map.keys()),
                 "interrupted": snap["interrupted"],
                 "running": snap["running"],
+                "queue": snap["queue"],
                 "recent": snap["recent"],
                 "autonomy": await asyncio.to_thread(self.core.autonomy.status),
                 "startup": startup.status(),
@@ -423,7 +432,8 @@ class Session:
         elif kind == "task":
             if not text:
                 return
-            if self.core.busy:
+            queue = bool(msg.get("queue"))
+            if self.core.busy and not queue:
                 await self.send(
                     {"type": "notice", "text": "Already executing. Stop it first."}
                 )
@@ -431,12 +441,24 @@ class Session:
             await self.core.broadcast({"type": "user", "text": text, "voice": bool(msg.get("voice"))})
             request = text + VOICE_HINT if msg.get("voice") else text
             try:
-                started = await self.core.submit(request, said=text, session_id=self.id)
+                started = await self.core.submit(request, said=text, session_id=self.id, queue=queue)
             except RuntimeError as e:
                 await self.send({"type": "error", "message": str(e)})
                 return
             if started is None:  # another task started while this one waited
                 await self.send({"type": "notice", "text": "Already executing. Stop it first."})
+                return
+            waiting = next((q for q in self.core.queued() if q["task_id"] == started), None)
+            if waiting is not None:
+                await self.send({"type": "notice", "text": f"Queued (position {waiting['position']}): it runs when the current task ends.",
+                                 "action": {"label": "REMOVE", "msg": {"type": "queue_cancel", "task_id": started}}})
+        elif kind == "queue":
+            await self.send({"type": "queue", "items": self.core.queued()})
+        elif kind == "queue_cancel":
+            tid = str(msg.get("task_id") or "")
+            note = str(msg.get("note") or "removed by human")[:200]
+            if not await self.core.cancel_queued(tid, note=note):
+                await self.send({"type": "notice", "text": "No such queued request."})
         elif kind == "answer":
             if not await self.core.answer(text, session_id=self.id):
                 await self.send({"type": "notice", "text": "No pending question."})

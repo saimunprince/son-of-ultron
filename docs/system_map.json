@@ -119,7 +119,7 @@
         "auto-resume of RESUMABLE tasks when SYRAX_AUTO_RESUME=1"
       ],
       "limitations": [
-        "one task at a time; no queue scheduling",
+        "one task runs at a time; a human request made meanwhile is queued (PENDING) and runs next, oldest first",
         "brain events from a running task are journaled only while current is set"
       ],
       "code": [

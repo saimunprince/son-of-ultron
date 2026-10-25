@@ -48,7 +48,7 @@ The single SYRAX entity: owns the agent and the running task, routes agent event
 | State | agent, current Running{task_id, goal, session_id, asyncio.Task, steps[], unjournaled}, last state event |
 | Persistence | via journal (tasks, events, checkpoints) |
 | Capabilities | task continues when all browsers disconnect; checkpoint after each tool step and at final; journal write failure → unjournaled flag, no fake success; auto-resume of RESUMABLE tasks when SYRAX_AUTO_RESUME=1 |
-| Limitations | one task at a time; no queue scheduling; brain events from a running task are journaled only while current is set |
+| Limitations | one task runs at a time (a human request made meanwhile is queued and runs next); brain events from a running task are journaled only while current is set |
 | Code | backend/syrax/core.py |
 | Tests | backend/syrax/test_bridge.py (journal + core section) |
 | Failure Modes | LLM error → task.failed + error event; cancel → task.cancelled + notice; sqlite error → task stays IN_PROGRESS, marked INTERRUPTED next boot |

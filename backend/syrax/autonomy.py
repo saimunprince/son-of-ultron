@@ -749,9 +749,12 @@ class Autonomy:
             rep.outcome, rep.reason = "DISABLED", "autonomy is off"
             return await self._finish(rep)
         measuring = bool(getattr(getattr(self.core, "quality", None), "running", False))
-        if self.core.busy or self._cycle_running or measuring:
+        queued = getattr(self.core, "queued", None)
+        waiting = bool(queued()) if callable(queued) else False  # a human request waits: it goes first (2026-10-25)
+        if self.core.busy or self._cycle_running or measuring or waiting:
             rep.outcome, rep.reason = "BUSY", ("a task is already running" if self.core.busy else
-                                               "a quality run is measuring" if measuring else "a cycle is already running")
+                                               "a quality run is measuring" if measuring else
+                                               "a human request is waiting in the queue" if waiting else "a cycle is already running")
             return await self._finish(rep)
         self._cycle_running = True
         try:

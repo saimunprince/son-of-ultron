@@ -139,6 +139,7 @@ export default function Syrax() {
   const [agent, setAgent] = useState<AgentState>("booting");
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [toolCount, setToolCount] = useState(0);
+  const [queued, setQueued] = useState(0); // human requests waiting for the running task to end
   const [brains, setBrains] = useState<BrainsState | null>(null);
   const [activeBrain, setActiveBrain] = useState<{ label: string; model: string } | null>(null);
   const [brainModels, setBrainModels] = useState<Record<string, { list: string[]; error?: string; loading: boolean }>>({});
@@ -320,6 +321,15 @@ export default function Syrax() {
             });
           }
           if (e.running) push({ kind: "notice", id: nextId++, text: `RUNNING · "${e.running.goal.slice(0, 80)}" · step ${e.running.step}` });
+          setQueued((e.queue ?? []).length);
+          for (const q of e.queue ?? []) {
+            push({
+              kind: "notice",
+              id: nextId++,
+              text: `QUEUED · "${q.goal.slice(0, 80)}" · position ${q.position}`,
+              action: { label: "REMOVE", msg: { type: "queue_cancel", task_id: q.task_id } },
+            });
+          }
           setPhase(e.running?.phase ? { phase: e.running.phase } : null);
           setAutonomy(e.autonomy);
           setStartup(e.startup ?? null);
@@ -590,7 +600,10 @@ export default function Syrax() {
           }
           break;
         case "notice":
-          push({ kind: "notice", id: nextId++, text: e.text });
+          push({ kind: "notice", id: nextId++, text: e.text, action: e.action });
+          break;
+        case "queue":
+          setQueued(e.items.length);
           break;
         case "error":
           push({ kind: "error", id: nextId++, text: e.message });
@@ -660,7 +673,7 @@ export default function Syrax() {
       const asking = pendingAskRef.current !== null;
       const sent = asking
         ? client.send({ type: "answer", text })
-        : client.send({ type: "task", text, voice });
+        : client.send({ type: "task", text, voice, queue: true }); // never lost while SYRAX works: it waits its turn
       if (!sent) {
         push({ kind: "error", id: nextId++, text: "LINK OFFLINE. Start the SYRAX backend." });
         return;
@@ -800,10 +813,8 @@ export default function Syrax() {
           arm(8000);
           break;
         case "command":
-          if (busyRef.current && pendingAskRef.current === null) {
-            push({ kind: "notice", id: nextId++, text: 'Busy. Say "stop" to abort.' });
-            return;
-          }
+          // 2026-10-25: a spoken request while SYRAX works is queued by the core (the server says "Queued"),
+          // no longer refused with 'Busy. Say "stop"'; "stop" still ends the running task.
           submit(h.text, true);
           // Instant spoken acknowledgement so silence never feels like death.
           if (pendingAskRef.current === null) say(ACKS[Math.floor(Math.random() * ACKS.length)], { followUp: false });
@@ -1092,7 +1103,7 @@ export default function Syrax() {
         )}
         {link === "online" && brainLine && (
           <button type="button" className="status-meta status-brain" onClick={openBrain} title="Brain settings (B)">
-            BRAIN · {brainLine} · {toolCount} TOOLS
+            BRAIN · {brainLine} · {toolCount} TOOLS{queued > 0 ? ` · QUEUE ${queued}` : ""}
           </button>
         )}
       </div>

@@ -393,6 +393,8 @@ export type ServerEvent =
       tool_levels?: Record<string, string>;
       interrupted: InterruptedTask[];
       running: RunningTask | null;
+      /** human requests waiting for the running task to end (core.queued()), oldest first */
+      queue?: QueuedTask[];
       recent: TaskSummary[];
       autonomy: AutonomyStatus;
       startup?: StartupStatus;
@@ -495,15 +497,27 @@ export type ServerEvent =
   | ({ type: "reflection"; event: "created"; objective_id: number; verdict: string; lesson: string; attempt: number } & Journaled)
   | ({ type: "self_model"; section: "summary" } & SelfModelSummary)
   | { type: "self_model"; section: string; [key: string]: unknown }
-  | { type: "notice"; text: string }
+  | { type: "notice"; text: string; action?: { label: string; msg: ClientMessage } }
+  | { type: "queue"; items: QueuedTask[] }
   | { type: "error"; message: string }
   | { type: "pong" };
+
+/** A human request journaled PENDING while another task ran; it starts when that task ends. */
+export interface QueuedTask {
+  task_id: string;
+  goal: string;
+  created: number;
+  position: number;
+}
 
 /** How an objective is proven done: a machine check, never the task's own words. */
 export type ObjectiveCheck = { kind: string } & Record<string, string>;
 
 export type ClientMessage =
-  | { type: "task"; text: string; voice?: boolean }
+  /** queue: a request made while a task runs waits for it instead of being refused */
+  | { type: "task"; text: string; voice?: boolean; queue?: boolean }
+  | { type: "queue" }
+  | { type: "queue_cancel"; task_id: string; note?: string }
   | { type: "answer"; text: string }
   | { type: "stop"; reason?: string }
   | { type: "reset" }

@@ -95,6 +95,9 @@ CLI, collate TODOs, join two CSVs, rename an API), judged by running the result:
 CLI called as a human would, data with a trap for the shortcut. The 52 single-step cases had reached 90-100 %
 and gave the hunts nothing to work on.
 
+The cycle yields to the human (2026-10-25): it reports BUSY while a human request waits in the queue
+(`core.queued()`), so a queued request always runs before SYRAX's own next objective.
+
 ## The cycle (`Autonomy.run_once`)
 
 ```
