@@ -24,8 +24,11 @@
       cog: [], log: [],
       brain: { active: null, model: null, ready: 0, total: 0, ms: null },
       autonomy: null, tools: [], toolLevels: {},
-      memories: null, objectives: null, skills: null, quality: null,
+      memories: null, objectives: null, skills: null, quality: null, interrupted: null,
+      // refused is TODAY's count: seeded from the journal (replay since local midnight) and kept live.
+      // One refusal fires permission.refused AND a refused tool_result; lastRefusal pairs them so it counts once.
       counters: { tasks: 0, toolsOk: 0, toolsFailed: 0, refused: 0, commits: 0, rollbacks: 0, claims: 0 },
+      lastRefusal: null, refusedSince: null,
     };
   }
 
@@ -37,6 +40,14 @@
     return k ? short(args[k], 48) : '';
   }
   function push(arr, item, max) { arr.push(item); while (arr.length > max) arr.shift(); }
+  // local midnight before `nowMs`, in epoch seconds: the journal's clock (journal.py _now) and replay's `since`
+  function dayStart(nowMs) { const d = new Date(nowMs); d.setHours(0, 0, 0, 0); return d.getTime() / 1000; }
+  // one interrupted task, as hello.interrupted (core.py _interrupted_summary) and task.interrupted
+  // (journal.py recover_interrupted) both describe it: goal + how recovery classified it
+  function interruptedLine(t) {
+    return 'INTERRUPTED · ' + short(t.goal, 40).toUpperCase() + ' · ' + String(t.recovery_state || 'UNKNOWN').toUpperCase()
+      + (t.tool ? ' · ' + String(t.tool).toUpperCase() + (t.operation_state ? ' ' + String(t.operation_state).toUpperCase() : '') : '');
+  }
 
   // one backend event -> state change + effects for the HUD
   function reduce(s, e, now) {
@@ -52,6 +63,8 @@
         s.autonomy = e.autonomy || s.autonomy;
         if (e.presence && e.presence.visibility) { s.visibility = e.presence.visibility; fx.push({ kind: 'presence', visibility: s.visibility }); }
         log('SYRAX LINK ESTABLISHED · ' + s.tools.length + ' TOOLS');
+        // tasks a dead process left behind (server.py boot -> core.py snapshot -> _interrupted_summary)
+        if (Array.isArray(e.interrupted)) { s.interrupted = e.interrupted.length; e.interrupted.slice(0, 3).forEach(t => log(interruptedLine(t))); }
         if (e.running) { s.task = { id: e.running.task_id, goal: e.running.goal, step: e.running.step || 0, kind: e.running.kind || 'conversation' }; s.phase = e.running.phase || null; s.state = 'thinking'; mode('THINKING'); }
         else { s.state = 'idle'; mode('IDLE'); }
         break;
@@ -70,7 +83,8 @@
       case 'brain':
         if (e.event === 'answered' && e.model) s.brain.model = e.model;
         if (e.event === 'answered' && typeof e.ms === 'number') s.brain.ms = e.ms;  // how long that answer took (09e97df)
-        if (e.event === 'failover') log('BRAIN FAILOVER → ' + (e.to || e.brain || '?').toUpperCase());
+        // brains.py Router._emit {"type":"brain","event":"failover","provider": pid,"reason"}: `provider` is the brain that FAILED, the router moves on to the next
+        if (e.event === 'failover') log('BRAIN FAILOVER · ' + String(e.provider || '?').toUpperCase() + ' FAILED' + (e.reason ? ' · ' + short(e.reason, 40).toUpperCase() : ''));
         break;
       case 'state':
         s.state = e.state || 'idle'; s.tool = e.tool || null; if (e.step) s.step = e.step;
@@ -86,9 +100,13 @@
           s.task = { id: e.task_id, goal: e.goal || '', step: 0, kind: e.kind || 'conversation' }; s.counters.tasks++;
           if (e.kind === 'autonomous') log('OWN WORK · ' + short(e.goal, 40).toUpperCase());
         }
-        else if (e.event === 'completed') log('TASK ' + (e.status || 'DONE') + (e.task_id ? ' · ' + String(e.task_id).slice(0, 8) : ''));
-        else if (e.event === 'failed') log('TASK FAILED · ' + short(e.error, 40));
-        else if (e.event === 'cancelled') log('TASK ABORTED');
+        else if (e.event === 'completed') log('TASK ' + (e.status || 'DONE') + (e.task_id ? ' · ' + String(e.task_id).slice(0, 8) : ''));  // core.py _mark task.completed {status, result}
+        else if (e.event === 'failed') log('TASK FAILED · ' + short(e.error, 40));  // core.py _mark task.failed {error}
+        else if (e.event === 'cancelled') log('TASK ABORTED' + (e.error ? ' · ' + short(e.error, 40).toUpperCase() : ''));  // core.py _mark task.cancelled {error: cancel_reason}
+        else if (e.event === 'blocked') log('TASK BLOCKED · ' + short(e.reason || e.error, 40).toUpperCase());
+        else if (e.event === 'unknown') log('TASK OUTCOME UNKNOWN' + (e.error ? ' · ' + short(e.error, 40).toUpperCase() : ''));
+        // journal.py recover_interrupted task.interrupted {error, goal, step, stage, tool, question, recovery_state, recovery}
+        else if (e.event === 'interrupted') { s.interrupted = (s.interrupted || 0) + 1; log(interruptedLine({ goal: e.goal, recovery_state: e.recovery_state, tool: e.tool, operation_state: e.recovery && e.recovery.operation_state })); }
         break;
       case 'think':
         if (e.tools && e.tools.length && e.content) cog('STEP ' + (e.step || '?') + ' · ' + short(e.content, 70));
@@ -98,7 +116,11 @@
         cog('▶ ' + e.name + (argSummary(e.args) ? ' · ' + argSummary(e.args) : ''));
         break;
       case 'tool_result':
-        if (e.refused) { s.counters.refused++; cog('⊘ ' + e.name + ' REFUSED'); }
+        if (e.refused) {  // agent.py tool_result {id, name, ok, output, truncated, step, refused: true}: the same refusal the guard just announced
+          const paired = s.lastRefusal && s.lastRefusal.tool === e.name && (s.lastRefusal.step == null || e.step == null || s.lastRefusal.step === e.step);
+          if (!paired) s.counters.refused++;
+          s.lastRefusal = null; cog('⊘ ' + e.name + ' REFUSED');
+        }
         else if (e.ok) { s.counters.toolsOk++; cog('✓ ' + e.name); }
         else { s.counters.toolsFailed++; cog('✗ ' + e.name + (e.output ? ' · ' + short(e.output, 40) : '')); }
         break;
@@ -118,32 +140,47 @@
         log('ERROR · ' + short(e.message, 50).toUpperCase());
         break;
       case 'permission':
-        if (e.event === 'refused') { s.counters.refused++; log('GUARD REFUSED ' + String(e.tool || '').toUpperCase() + (e.level ? ' · ' + e.level : '')); }
+        // agent.py tell(): {type:"permission", event, tool, level, task_kind, reason, targets, authorized_by, step, harm?, answer?}
+        if (e.event === 'refused') { s.counters.refused++; s.lastRefusal = { tool: e.tool, step: e.step == null ? null : e.step }; log('GUARD REFUSED ' + String(e.tool || '').toUpperCase() + (e.level ? ' · ' + e.level : '')); }
         else if (e.event === 'authorized') log('AUTHORIZED ' + String(e.tool || '').toUpperCase() + ' BY ' + String(e.authorized_by || 'human').toUpperCase());
         break;
       case 'claim':
         if (e.event === 'rejected') { s.counters.claims++; log('FALSE CLAIM SENT BACK'); }
         break;
       case 'commit':
-        s.counters.commits++; log('COMMIT ' + String(e.sha || e.head || '').slice(0, 7) + ' · ' + short(e.summary || e.message, 40).toUpperCase());
+        // devloop.py commit.created {commit, files, summary, verification_id} / commit.failed {error}; the hash field is `commit`
+        if (e.event === 'failed') { log('COMMIT FAILED · ' + short(e.error, 40).toUpperCase()); break; }
+        s.counters.commits++; log('COMMIT ' + String(e.commit || e.sha || e.head || '').slice(0, 7) + ' · ' + short(e.summary || e.message, 40).toUpperCase());
         break;
       case 'rollback':
         s.counters.rollbacks++; log('ROLLBACK · ' + short(e.reason, 40).toUpperCase());
         break;
       case 'push':
-        log('PUSHED ' + String(e.remote || 'ORIGIN').toUpperCase());
+        // devloop.py push.started {commit}; push.completed / push.failed carry push() -> {ok, branch, output} (pushed to `origin`, devloop.py push)
+        if (e.event === 'started') log('PUSH STARTED' + (e.commit ? ' · ' + String(e.commit).slice(0, 7) : ''));
+        else if (e.event === 'failed' || e.ok === false) log('PUSH FAILED' + (e.branch ? ' · ' + String(e.branch).toUpperCase() : '') + (e.output ? ' · ' + short(e.output, 40).toUpperCase() : ''));
+        else if (e.event === 'completed' || e.ok === true) log('PUSHED ORIGIN' + (e.branch ? '/' + String(e.branch).toUpperCase() : ''));
         break;
-      case 'skill':
-        log('SKILL ' + String(e.name || '').toUpperCase() + ' ' + String(e.status || e.event || '').toUpperCase());
+      case 'skill': {
+        // journal.py upsert_skill_sync skill.<status> {skill, version, status, tests_passed, tests_failed, purpose}; set_skill_status_sync {skill, status, note}; skills.py skill.created {skill, purpose, path}
+        const tests = typeof e.tests_passed === 'number' && typeof e.tests_failed === 'number' ? ' · ' + e.tests_passed + '/' + (e.tests_passed + e.tests_failed) + ' TESTS' : '';
+        log('SKILL ' + String(e.skill || e.name || '').toUpperCase() + ' ' + String(e.status || e.event || '').toUpperCase() + tests);
         break;
+      }
       case 'objective':
         log('OBJECTIVE ' + String(e.event || '').toUpperCase() + (e.goal ? ' · ' + short(e.goal, 36).toUpperCase() : ''));
         break;
       case 'cycle':
-        log('AUTONOMY CYCLE ' + String(e.event || e.outcome || '').toUpperCase());
+        // autonomy.py cycle.started {forced} / cycle.completed CycleReport.to_dict() {outcome, reason, verdict, ...}
+        log('AUTONOMY CYCLE ' + String(e.event || '').toUpperCase() + (e.outcome ? ' · ' + String(e.outcome).toUpperCase() : '') + (e.verdict ? ' · ' + String(e.verdict).toUpperCase() : ''));
         break;
       case 'quality':
-        if (e.pass_rate != null) { s.quality = e.pass_rate; log('QUALITY ' + e.pass_rate + '% · ' + String(e.verdict || '').toUpperCase()); }
+        // journal.py add_quality_run_sync quality.completed {quality_id, status: BASELINE|PASS|REGRESSION, pass_rate, delta, compared_to, brain, failed}
+        if (e.pass_rate != null) {
+          s.quality = e.pass_rate;
+          const failed = Array.isArray(e.failed) && e.failed.length ? ' · ' + e.failed.length + ' FAILING' : '';
+          log('QUALITY ' + e.pass_rate + '% · ' + String(e.status || e.verdict || '').toUpperCase() + failed);
+        }
         break;
       case 'quality_runs':
         if (e.runs && e.runs.length) s.quality = e.runs[0].pass_rate;
@@ -169,7 +206,20 @@
         }
         break;
       case 'recovery':
-        log('RECOVERY · ' + short(e.state || e.event, 30).toUpperCase()); break;
+        // journal.py recovery.started {boot_id, task_ids} / recovery.verified {recovery} / recovery.completed {boot_id, count, task_ids};
+        // mark_resumed_sync recovery.resumed {session_id, boot_id} + task_id (core.py resume): the interrupted task runs again
+        if (e.event === 'resumed') { if (s.interrupted) s.interrupted--; log('RESUMED' + (e.task_id ? ' · ' + String(e.task_id).slice(0, 8) : '')); }
+        else log('RECOVERY ' + String(e.event || '').toUpperCase() + (typeof e.count === 'number' ? ' · ' + e.count + ' TASK' + (e.count === 1 ? '' : 'S') : ''));
+        break;
+      case 'replay': {
+        // server.py replay -> journal.events_between(since, until): {type, since, until, events: [{id, ts, task_id, type, seq, payload}]}
+        // connect() asks for today's events once hello arrives; the refusals in it make `counters.refused` a true count for TODAY
+        if (!Array.isArray(e.events)) break;
+        if (s.refusedSince != null && Math.abs((Number(e.since) || 0) - s.refusedSince) > 1) break;  // someone else's window
+        s.counters.refused = e.events.filter(ev => ev && ev.type === 'permission.refused').length;
+        s.lastRefusal = null;
+        break;
+      }
       default:
         break;
     }
@@ -210,6 +260,8 @@
         let msg; try { msg = JSON.parse(ev.data); } catch (_) { return; }
         if (!msg || typeof msg !== 'object') return;
         emit(reduce(state, msg, now()));
+        // the guard counter says TODAY, so it is seeded from today's journal, not from this HUD session
+        if (msg.type === 'hello') { state.refusedSince = dayStart(now()); send({ type: 'replay', since: state.refusedSince }); }
       };
       ws.onclose = () => { link.ws = null; if (pingTimer) clearTimer(pingTimer); emit(offline(state, now(), '')); schedule(''); };
       ws.onerror = () => { /* onclose follows */ };
@@ -235,5 +287,5 @@
     return link;
   }
 
-  return { initial, reduce, offline, connect, argSummary, short, ON_OPEN };
+  return { initial, reduce, offline, connect, argSummary, short, dayStart, interruptedLine, ON_OPEN };
 });
