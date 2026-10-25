@@ -6,6 +6,11 @@ Two stores in backend/config (gitignored, mode 0600):
 
 Both are injected into the system prompt at the start of every task, and the
 agent manages facts itself with the remember / recall / forget tools.
+
+Inspection, correction and export (2026-10-25): `MemoryStore.facts()` carries each fact's provenance (type, confidence,
+basis, created, last_used, uses) for the memory panel; `correct` lets the human rewrite one fact in place (journaled
+as `knowledge.updated` with `previous`); `export` writes config/exports/memory-<stamp>.json (gitignored), also reachable
+as `python -m syrax.memory --export [path]`.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ import re
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, List, Optional
 
@@ -98,6 +104,35 @@ class ForgetRefused(ValueError):
     """`forget` turned the call down; str(e) says why (needle too short, or too many rows for words the human never said)."""
 
 
+class CorrectRefused(ValueError):
+    """`correct` turned the call down; str(e) says why (empty or secret-looking text, or no remembered fact with that id)."""
+
+
+CORRECTED_BASIS = "human corrected (UI)"
+
+
+def export_dir() -> Path:
+    """backend/config/exports (gitignored), or SYRAX_EXPORT_DIR; read at call time so a test can point it elsewhere."""
+    return Path(os.getenv("SYRAX_EXPORT_DIR") or PROJECT_ROOT / "config" / "exports")
+
+
+def _redacted(obj):
+    """`obj` with every string leaf run through agent.py's CREDENTIAL mask (imported lazily: agent.py imports this module).
+    Dicts, lists and scalars keep their shape, so the exported JSON stays valid."""
+    from syrax.agent import CREDENTIAL
+
+    def walk(x):
+        if isinstance(x, str):
+            return CREDENTIAL.sub("[credential masked]", x)
+        if isinstance(x, dict):
+            return {k: walk(v) for k, v in x.items()}
+        if isinstance(x, (list, tuple)):
+            return [walk(v) for v in x]
+        return x
+
+    return walk(obj)
+
+
 def _normal(text: str) -> str:
     return " ".join(re.findall(r"[\w']+", str(text or "").lower()))
 
@@ -134,7 +169,7 @@ def names(needle: str, said: str) -> bool:
 def _atomic_write(path: Path, data: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(data)
+    tmp.write_text(data, encoding="utf-8")
     os.chmod(tmp, 0o600)
     tmp.replace(path)
 
@@ -176,8 +211,10 @@ class MemoryStore:
 
     @staticmethod
     def _as_fact(k: dict) -> dict:
+        # provenance for the memory panel and the export: how the row came to be, how sure, how often it was used
         return {"id": str(k["id"]), "text": k["claim"], "created": k["created"], "updated": k.get("last_used"),
-                "type": type_of(k.get("tags")), "confidence": k.get("confidence")}
+                "type": type_of(k.get("tags")), "confidence": k.get("confidence"), "basis": k.get("basis"),
+                "last_used": k.get("last_used"), "uses": k.get("uses", 0)}
 
     def facts(self) -> List[dict]:
         try:
@@ -261,6 +298,63 @@ class MemoryStore:
                                     f"at a time, or only when the human says 'forget everything about {query}'.")
             gone = self._journal().forget_knowledge_sync([int(f["id"]) for f in hits if str(f["id"]).isdigit()])
             return [g["claim"] for g in gone]
+
+    # ——— inspection: correction and export (2026-10-25) ———
+    def correct(self, fact_id, text: str) -> dict:
+        """The human rewrites one remembered fact in place (memory panel EDIT). The row keeps its id and type, takes
+        the new text at confidence 1.0 with basis CORRECTED_BASIS, and `knowledge.updated` journals `previous` (what
+        it replaced). Raises CorrectRefused for an empty or secret-looking text, and for an id that is no remembered
+        fact (unknown, or a knowledge row of another kind). Returns the refreshed fact."""
+        text = " ".join(str(text or "").split())[:400]
+        if not text:
+            raise CorrectRefused("Refused: a corrected memory needs some text (use FORGET to drop it).")
+        if _SECRET.search(text):
+            raise CorrectRefused("Refused: that looks like a secret (password/key/token). Secrets are never stored.")
+        fid = str(fact_id or "").strip()
+        with self._lock:
+            j = self._journal()
+            self._migrate()
+            row = j.knowledge(int(fid)) if fid.isdigit() else None
+            if row is None or row.get("kind") != "human":
+                raise CorrectRefused(f"Refused: no remembered fact {fid!r}.")
+            kind = type_of(row.get("tags"))
+            tags = ["memory", f"type:{kind}"] + sorted(_words(text))[:6]
+            updated = j.update_knowledge_claim_sync(int(fid), text, confidence=1.0, tags=tags, basis=CORRECTED_BASIS)
+        return self._as_fact(updated)
+
+    def export(self, path=None) -> dict:
+        """Write every remembered fact (with its provenance) and the conclusion/web knowledge rows with their sources
+        to one JSON document, atomically (`_atomic_write`), at `path` or `export_dir()/memory-<YYYYMMDD-HHMMSS>.json`
+        (backend/config/exports, gitignored). Returns {path, count, knowledge, exported}.
+
+        Secrets: `remember` already refuses secret-looking text, and the whole document still goes through agent.py's
+        CREDENTIAL mask (`_redacted`), so a key that slipped into a conclusion, an excerpt or a URL leaves the file as
+        "[credential masked]"."""
+        from syrax.journal import _git_head
+
+        with self._lock:
+            j = self._journal()
+            self._migrate()
+            facts = []
+            for k in j.human_facts(1000):
+                f = self._as_fact(k)
+                if k.get("source_url"):
+                    f["source_url"] = k["source_url"]
+                facts.append(f)
+            knowledge = [{"id": k["id"], "kind": k["kind"], "text": k["claim"], "confidence": k["confidence"],
+                          "basis": k["basis"], "sources": k["sources"], "source_url": k.get("source_url"),
+                          "source_title": k.get("source_title"), "question": k.get("question"), "tags": k["tags"],
+                          "created": k["created"], "last_used": k.get("last_used"), "uses": k.get("uses", 0)}
+                         for k in j.knowledge_of_kind(("conclusion", "web"))]
+            now = time.time()
+            doc = _redacted({
+                "exported": datetime.fromtimestamp(now, timezone.utc).isoformat(timespec="seconds"), "exported_ts": now,
+                "git_head": _git_head(j.repo_root), "count": len(facts), "facts": facts,
+                "knowledge_count": len(knowledge), "knowledge": knowledge,
+            })
+            out = Path(path) if path else export_dir() / time.strftime("memory-%Y%m%d-%H%M%S.json", time.localtime(now))
+            _atomic_write(out, json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+        return {"path": str(out), "count": len(facts), "knowledge": len(knowledge), "exported": doc["exported"]}
 
     # ——— conversation history ———
     def add_exchange(self, user: str, reply: str) -> None:
@@ -409,3 +503,23 @@ class ForgetTool(BaseTool):
         if not removed:
             return "Nothing matched."
         return f"Forgot {len(removed)} {'memory' if len(removed) == 1 else 'memories'} matching {query!r}:\n" + "\n".join(f"- {t}" for t in removed)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """`python -m syrax.memory --export [path]`: write the memory export (see MemoryStore.export) and print its path."""
+    import argparse
+
+    p = argparse.ArgumentParser(prog="python -m syrax.memory", description="SYRAX long-term memory")
+    p.add_argument("--export", nargs="?", const="", metavar="PATH",
+                   help="write memory-<stamp>.json with every fact and the conclusion/web knowledge (default: config/exports/)")
+    a = p.parse_args(argv)
+    if a.export is None:
+        p.print_help()
+        return 2
+    out = get_memory().export(a.export or None)
+    print(f"{out['path']} ({out['count']} facts, {out['knowledge']} knowledge rows)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1285,6 +1285,18 @@ class Journal:
             rows = self._db.execute(sql, params).fetchall()
         return [self._knowledge_dict(r) for r in rows]
 
+    def knowledge_of_kind(self, kinds, limit: int = 2000) -> List[dict]:
+        """Rows of the given kinds (e.g. ("conclusion", "web")), oldest first, with their sources: the memory export."""
+        kinds = tuple(k for k in kinds if k in KNOWLEDGE_KINDS)
+        if not kinds:
+            return []
+        with self._lock:
+            rows = self._db.execute(
+                f"SELECT * FROM knowledge WHERE kind IN ({','.join('?' * len(kinds))}) ORDER BY created ASC LIMIT ?",
+                (*kinds, max(1, min(int(limit), 5000))),
+            ).fetchall()
+        return [self._knowledge_dict(r) for r in rows]
+
     def knowledge_search(self, query: str, limit: int = 8) -> List[dict]:
         """Keyword-overlap ranking over claim, excerpt, tags and question."""
         words = {w for w in re_words(query) if len(w) > 2}

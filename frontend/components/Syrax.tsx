@@ -415,6 +415,9 @@ export default function Syrax() {
         case "memories":
           setMind((m) => ({ ...m, memories: e.facts }));
           break;
+        case "memory_exported":
+          push({ kind: "notice", id: nextId++, text: `Memory exported (${e.count} facts): ${e.path}` });
+          break;
         case "startup_status": {
           const { type: _s, ...status } = e;
           void _s;

@@ -26,6 +26,8 @@ backend/.syrax-browser/
 backend/config/memory.json
 backend/config/history.jsonl
 backend/config/*.tmp
+# memory exports (memory_export / python -m syrax.memory --export): the human's facts, never committed
+backend/config/exports/
 
 # SYRAX's per-task worktrees (M1, isolated evolution)
 .syrax/

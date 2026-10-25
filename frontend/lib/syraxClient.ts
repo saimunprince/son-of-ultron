@@ -212,6 +212,12 @@ export interface MemoryFact {
   text: string;
   created?: number;
   updated?: number | null;
+  /** provenance (memory inspection): what kind of memory, how sure, and how the row came to be */
+  type?: "fact" | "preference" | "rule" | "observation";
+  confidence?: number | null;
+  basis?: string | null;
+  last_used?: number | null;
+  uses?: number;
 }
 
 /** Start with Windows (backend/syrax/startup.py): the next login only, never this run. */
@@ -462,6 +468,7 @@ export type ServerEvent =
   | ({ type: "startup_status" } & StartupStatus)
   | ({ type: "voice_status" } & VoiceStatus)
   | { type: "memories"; facts: MemoryFact[] }
+  | { type: "memory_exported"; path: string; count: number }
   | ({ type: "reminder"; event: "created" | "fired" | "cancelled"; id: string; text?: string; due_ts?: number; late_s?: number } & Journaled)
   | ({ type: "alert"; event: "raised"; kind: string; detail: string } & Journaled)
   | ({ type: "checkin"; event: "made"; text: string; items: string[] } & Journaled)
@@ -538,6 +545,8 @@ export type ClientMessage =
   | { type: "startup"; enabled?: boolean }
   | { type: "memories" }
   | { type: "memory_forget"; id: string }
+  | { type: "memory_correct"; id: string; text: string }
+  | { type: "memory_export" }
   | { type: "voice_set"; voice: string }
   | { type: "cycle_now" }
   | { type: "task_detail"; task_id: string }

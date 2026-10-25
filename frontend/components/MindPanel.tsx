@@ -263,25 +263,50 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
         </ul>
       );
   } else if (tab === "memory") {
+    // EDIT rewrites one fact in place (memory_correct: the old text stays in the journal); EXPORT writes the whole
+    // memory to backend/config/exports and the path comes back as a notice (memory_exported).
+    const correct = (f: MemoryFact) => {
+      const next = window.prompt("Correct this memory (the old text stays in the journal):", f.text);
+      const text = (next ?? "").trim();
+      if (text && text !== f.text) send({ type: "memory_correct", id: f.id, text });
+    };
     body =
       data.memories == null ? (
         <div className="brain-empty">Reading memory…</div>
-      ) : data.memories.length === 0 ? (
-        <div className="brain-empty">Nothing remembered yet. Say &quot;remember that …&quot; and it appears here.</div>
       ) : (
-        <ul className="brain-list mind-list">
-          {data.memories.map((f) => (
-            <li key={f.id} className="mind-card">
-              <div className="mind-obj-main">
-                <span className="mind-obj-goal">{f.text}</span>
-                <span className="mind-obj-meta">since {ago(f.created ?? null)}</span>
-                <button type="button" className="hud-link" onClick={() => send({ type: "memory_forget", id: f.id })}>
-                  FORGET
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <>
+          <div className="mind-obj-main">
+            <span className="mind-obj-meta">{data.memories.length} remembered</span>
+            <button type="button" className="hud-link" onClick={() => send({ type: "memory_export" })}>
+              EXPORT
+            </button>
+          </div>
+          {data.memories.length === 0 ? (
+            <div className="brain-empty">Nothing remembered yet. Say &quot;remember that …&quot; and it appears here.</div>
+          ) : (
+            <ul className="brain-list mind-list">
+              {data.memories.map((f) => (
+                <li key={f.id} className="mind-card">
+                  <div className="mind-obj-main">
+                    <span className="mind-obj-goal">{f.text}</span>
+                    <span className="mind-obj-meta">since {ago(f.created ?? null)}</span>
+                    <button type="button" className="hud-link" onClick={() => correct(f)}>
+                      EDIT
+                    </button>
+                    <button type="button" className="hud-link" onClick={() => send({ type: "memory_forget", id: f.id })}>
+                      FORGET
+                    </button>
+                  </div>
+                  <p className="mind-obj-meta">
+                    {f.type ?? "fact"} · {typeof f.confidence === "number" ? f.confidence.toFixed(1) : "?"} ·{" "}
+                    {f.basis ?? "basis unknown"}
+                    {f.uses ? ` · used ${f.uses}×` : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       );
   } else if (tab === "skills") {
     body =

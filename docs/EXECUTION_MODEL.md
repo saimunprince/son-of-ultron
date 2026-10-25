@@ -291,7 +291,13 @@ evidence (`test_verify.py`).
   stored at 1.0; what the model inferred becomes an observation at 0.5 (basis "SYRAX
   inferred from the conversation"). `forget` matches whole words of three or more
   characters and refuses to delete more than five rows unless the human said
-  "forget everything about X".
+  "forget everything about X". The memory panel's EDIT (`memory_correct`) rewrites
+  one fact in place through the same `knowledge.updated` event (basis "human
+  corrected (UI)", confidence 1.0, type kept), and the `memories` reply carries each
+  fact's basis, confidence and type. `memory_export` (or `python -m syrax.memory
+  --export`) writes `backend/config/exports/memory-<stamp>.json` (gitignored, written
+  atomically) with the facts and the conclusion/web knowledge rows and their sources,
+  every string run through the credential mask.
 - Conversation history for the prompt comes from `tasks` (kind conversation,
   SUCCESS/PARTIAL); `history.jsonl` is no longer written and is read only as a
   fallback when the journal has no conversations yet.

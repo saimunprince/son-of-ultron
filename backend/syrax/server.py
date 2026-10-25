@@ -20,7 +20,8 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     task_detail {task_id} | replay {since?, until?} | knowledge {query?, limit?} |
                     skills | presentation | benchmarks {limit?} | experiments {limit?} |
                     quality_run {only?, brain?} | quality_runs {limit?} | compare_brains {a, b, only?} |
-                    codebench_run {brains?} | features | feature_promote {id} | startup {enabled?} | task_phases {task_id} | memories | memory_forget {id} | voice_set {voice} |
+                    codebench_run {brains?} | features | feature_promote {id} | startup {enabled?} | task_phases {task_id} | memories | memory_forget {id} |
+                    memory_correct {id, text} (the human rewrites one remembered fact in place) | memory_export | voice_set {voice} |
                     presentation_feedback {presentation_id, action?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
@@ -35,7 +36,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     benchmarks | experiments | benchmark {event} | experiment {event} |
                     quality_runs | quality {event} | brief {event: checked|filed|refused, proof?, problems?, objective_id?} |
                     hunt {event: filed|refused, objective_id?, problems?} |
-                    reflection {event} |
+                    reflection {event} | memories {facts} | memory_exported {path, count} |
                     notice | error | pong | brain | brains | brain_models | brain_test
 
 Sessions are observers: the task runs in ``syrax.core`` and continues when the
@@ -518,6 +519,28 @@ class Session:
             gone = await asyncio.to_thread(get_memory().forget, fid) if fid.isdigit() else []
             await self.send({"type": "notice", "text": f"Forgot: {gone[0]}" if gone else f"No remembered fact {fid!r}."})
             await self.send({"type": "memories", "facts": await asyncio.to_thread(get_memory().facts)})
+        elif kind == "memory_correct":
+            # the human rewrites one remembered fact in place (memory panel EDIT); the old text stays in the journal
+            from syrax.memory import CorrectRefused, get_memory
+
+            fid, text = str(msg.get("id") or "").strip(), str(msg.get("text") or "")
+            try:
+                fact = await asyncio.to_thread(get_memory().correct, fid, text)
+            except CorrectRefused as e:
+                await self.send({"type": "notice", "text": str(e)})
+            else:
+                await self.send({"type": "notice", "text": f"Corrected: {fact['text']}"})
+            await self.send({"type": "memories", "facts": await asyncio.to_thread(get_memory().facts)})
+        elif kind == "memory_export":
+            # one JSON file with every fact (provenance included) and the conclusion/web knowledge, credential-masked
+            from syrax.memory import get_memory
+
+            try:
+                out = await asyncio.to_thread(get_memory().export)
+            except Exception as e:  # a full disk or a locked journal: say so, never pretend a file exists
+                await self.send({"type": "notice", "text": f"Memory export failed: {e}"})
+            else:
+                await self.send({"type": "memory_exported", "path": out["path"], "count": out["count"]})
         elif kind == "voice_set":
             try:
                 await asyncio.to_thread(voice.set_voice, journal, str(msg.get("voice") or ""))
