@@ -94,12 +94,17 @@ Working its own objectives, SYRAX twice reached for its judge instead of its beh
 
 These are guard rails against the paths SYRAX actually took, not a sandbox; they make each improvement it reports real.
 
+Added after the 2026-10-25 audit:
+
+- a GREEN gate is not a landing: an autonomous or eval release is read by a brain that did not write it, and when no other brain can review it the release is held (`REVIEW_UNAVAILABLE`), the edits rolled back and nothing committed, the objective stays open; `selfedit.py` and `conftest.py` joined the judges (`devloop.py`, `review.py`, `docs/DEVLOOP.md`);
+- backups are verified copies of `journal.db`, `brains.json`, `memory.json` and `config.toml` (sha256, row counts, `integrity_check`), taken once a day by the idle cycle or by `python syrax.py --backup`; restore is a human act (`python syrax.py --restore DIR`, refused while SYRAX runs) and no agent tool exposes snapshot or restore (`backup.py`, `docs/OPERATIONS.md` "Backups and restore").
+
 ## Phase 2 — Real self-improvement loop
 
 "What is my biggest limitation right now?" → research → learn → experiment →
 build → test → benchmark → better? keep : diagnose → new strategy.
 
-- TODO: strategy fingerprints in the journal; the same strategy that failed the same way is never retried blindly (today: BLOCKED after 3 attempts, no fingerprint).
+- DONE (2026-10-01, `96d1215`): strategy fingerprints. `autonomy.strategy_of` reduces an attempt to the ordered list of its tool calls with their telling argument, kept per attempt in the objective's `attempts_log`; an attempt that repeats a failed strategy without proving a new plan step is BLOCKED with the lesson "repeated the strategy of an earlier failed attempt", never retried blindly.
 - PARTIAL: experiments and benchmarks exist (`experiments.py`, `bench.py`, `versions.py`).
 
 ## Phase 3 — Skill evolution
@@ -119,7 +124,7 @@ point is → inspect → design → modify → test → benchmark → regression
 release → update self-model. Evidence-driven engineering, not random rewriting.
 
 - PARTIAL: `release` = gate → commit or rollback (`devloop.py`); push stays with the human unless `SYRAX_AUTOPUSH=1`.
-- TODO: a change plan recorded before editing (module, dependents from `system_map.json`, tests, target benchmark).
+- PARTIAL: the change plan is recorded at release time, not before editing. An autonomous `release` is refused without `why` / `risk` / `tests` (`devloop.PLAN_FIELDS`), and `release.planned` journals that plan with the system-map components the diff touches and the tests that cover them (`devloop.impact_of`, from `docs/system_map.json`). Still missing: a plan before the first edit, and a target benchmark.
 
 ## Phase 5 — Long-term memory / experience
 
@@ -180,6 +185,7 @@ select objective → research → work → experiment → learn → improve → 
 next objective; at low activity, observe the world and create new objectives.
 
 - PARTIAL: idle cycles, resource gate, quiet hours, maintenance (`autonomy.py`, `resources.py`).
+- DONE (2026-10-25): the task queue. One task runs at a time; a human request made while one runs is journaled `PENDING` (`task.queued`) and starts when the running task ends, oldest first (`queue` / `queue_cancel` over WebSocket); SYRAX's own eval and autonomous work never queues, and the cycle reports BUSY while a human request waits. After a restart a queued request younger than `SYRAX_QUEUE_STALE_S` (3600 s) starts once recovery is done; an older one is cancelled with a note rather than run late (`core.py`, `docs/EXECUTION_MODEL.md` "Queue").
 
 ## Phase 10 — Model development (eventually)
 

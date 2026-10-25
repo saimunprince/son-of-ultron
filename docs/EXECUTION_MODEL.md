@@ -223,14 +223,18 @@ evidence (`test_verify.py`).
 
 ## 10. Known limitations (honest list)
 
-- Tasks are conversational agent turns; `kind='autonomous'` is accepted by the
-  schema but nothing creates such tasks yet.
+- Tasks are agent turns of kind `conversation`, `eval` (the quality suite) or
+  `autonomous` (the autonomy cycle's `core.submit(..., kind="autonomous")`).
 - Only `str_replace_editor` operations are verified against reality; all other
   tools are `UNCERTAIN` after a crash.
-- No retention policy: the journal grows (tool outputs are capped at 4000 chars,
-  images are not stored).
-- One agent, one running task at a time; `PENDING` queueing exists in the
-  journal but the core does not schedule queued tasks.
+- Retention is partial: once a day an idle cycle prunes `think` / `brain.*`
+  events of tasks that ended more than 30 days ago and truncates the WAL
+  (`Journal.maintain`, `docs/OPERATIONS.md` "Journal maintenance"); task rows,
+  knowledge and evidence are never deleted, so the journal still grows (tool
+  outputs are capped at 4000 chars, images are not stored).
+- One agent, one running task at a time; human requests made meanwhile wait
+  in the `PENDING` queue and start oldest first (section 4, "Queue"); SYRAX's
+  own eval and autonomous work never queues.
 - Long-term facts (`remember` / `recall` / `forget`) are knowledge rows of kind
   `human` (confidence 1.0, basis "human said"); a legacy `memory.json` is imported
   once and then left untouched; forgetting deletes the row and journals

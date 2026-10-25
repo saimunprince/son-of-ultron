@@ -10,10 +10,14 @@
 > The question is no longer whether SYRAX can claim to have improved. The
 > question is whether it can prove it.
 
-The proof lives in three generated files, never typed by hand:
-[docs/RISE.md](docs/RISE.md) (is it getting better, week over week),
+The proof lives in two generated files, never typed by hand:
+[docs/RISE.md](docs/RISE.md) (is it getting better, week over week) and
 [docs/CAPABILITY_MATRIX.md](docs/CAPABILITY_MATRIX.md) (what works, with
-evidence) and [SYRAX_STATUS.md](SYRAX_STATUS.md). The plan they judge is
+evidence). SYRAX regenerates both through its own release at most once a day,
+in an idle cycle (no open objective, after the radar) when the login service
+set `SYRAX_PUBLISH_RISE=1`; `python -m syrax.capmatrix` regenerates the matrix
+by hand. [SYRAX_STATUS.md](SYRAX_STATUS.md) is the hand-written snapshot the
+owner's engineer keeps beside them. The plan they judge is
 [docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md).
 
 **An open-source personal AI whose job is to improve itself and to help its human.**
@@ -55,6 +59,10 @@ and a Chromium-based browser for the browser tool.
 python syrax.py --dev              # hot-reloading UI for development
 python syrax.py --setup            # install only, do not start
 python syrax.py --gate             # run the release gate
+python syrax.py --backup           # verified copy of journal.db, brains.json, memory.json, config.toml into backend/config/backups (7 kept)
+python syrax.py --restore DIR      # put a backup folder back; refuses while SYRAX runs
+python syrax.py --stop             # stop the running SYRAX (--restart: stop, then start in the background)
+python syrax.py --token            # print the token a non-browser client needs for /ws, /live and the voice endpoints
 ```
 
 Open http://localhost:3000. Ctrl+C stops everything, including SYRAX's browser.
@@ -88,8 +96,9 @@ build waits on disk; open objectives, skills, memories, the last quality run;
 tool calls OK / failed / refused by SYRAX's own guard; the event log of what
 SYRAX does to itself (commits, rollbacks, skills, guard refusals, false claims
 sent back); the cognition panel streams the real steps and tool calls of the
-running task; replies are spoken with SYRAX's own voice (`/tts`, Kokoro) and
-the browser voice only when the core is silent. Machine telemetry (CPU, GPU,
+running task; replies are spoken with SYRAX's own voice (`POST /tts`, edge-tts
+in `backend/syrax/voice.py`, the same voice as the browser UI) and the
+browser's own voice only when the core is silent. Machine telemetry (CPU, GPU,
 disks, processes) comes from the Electron main process. Type a command, or
 press **V** and speak; `stop` aborts the running task. When the HUD is
 installed, `python syrax.py --service` opens it at login instead of the
@@ -98,7 +107,7 @@ browser UI (`SYRAX_HUD=0` keeps the browser).
 ## Start at login
 
 ```bash
-python syrax.py --install-service     # systemd --user (Linux), launchd (macOS), Task Scheduler (Windows)
+python syrax.py --install-service     # systemd --user (Linux), launchd (macOS), Task Scheduler (Windows; the Startup folder's SYRAX.vbs when the task needs admin)
 python syrax.py --status              # is it running?
 python syrax.py --uninstall-service   # remove
 ```
@@ -110,8 +119,12 @@ running.
 
 ## Memory (facts live in the journal)
 
-SYRAX keeps lasting facts about you and your recent conversations across
-restarts (`backend/config/memory.json`, `history.jsonl`, gitignored, mode 600).
+SYRAX keeps lasting facts about you across restarts as rows of the journal's
+`knowledge` table (kind `human`, typed fact / preference / rule / observation;
+`backend/config/journal.db`, `backend/syrax/memory.py`). A legacy
+`backend/config/memory.json` is imported into the journal once and then left
+alone; recent conversations come from the journal's tasks, and `history.jsonl`
+is read only when the journal has none yet.
 Tell it things ("my name is Prince, I build Laravel apps") and it stores them
 with its `remember` tool; ask it to forget anything, or "forget everything".
 Passwords, keys and tokens are refused.
@@ -255,7 +268,7 @@ Without WebGL the UI falls back to a CSS orb and keeps working.
 
 ## Status, handover and setup on a new machine
 
-`SYRAX_STATUS.md` (repo root) is the measured snapshot: commit, test counts, the capability matrix totals and the next task; `docs/CAPABILITY_MATRIX.md` is generated from evidence by `python -m syrax.capmatrix`. `docs/STATUS.md` is the handover: what exists and is verified, what is
+`SYRAX_STATUS.md` (repo root) is the hand-written snapshot (the owner's engineer types it; its numbers come from the commands it names): commit, test counts, the capability matrix totals and the next task; `docs/CAPABILITY_MATRIX.md` is generated from evidence by `python -m syrax.capmatrix`. `docs/STATUS.md` is the handover: what exists and is verified, what is
 left, how to set up a fresh machine, and what to back up before wiping an OS.
 
 ## Durable execution (journal, recovery, resume)
@@ -370,9 +383,12 @@ After editing its repository with `str_replace_editor` or `skill_create`, SYRAX
 calls `release {summary}`. That runs the same gate as a human release and
 commits only on GREEN (the commit message carries the verification id);
 otherwise the change is rolled back and the failing gate's output is handed
-back so the next attempt is different. Only `backend/syrax`, `backend/skills`,
-`frontend`, `docs` and `README.md` are in scope; secrets and runtime state are
-refused before any gate runs. Pushing stays with you unless
+back so the next attempt is different. Only `backend/syrax/`, `backend/skills/`,
+`frontend/components/`, `frontend/lib/`, `frontend/app/`, `docs/` and
+`README.md` are in scope (`devloop.SCOPE`); `backend/requirements-syrax.txt`
+is out of scope since 2026-10-25 (dependencies are the owner's decision: the
+radar proposes, the human installs); secrets and runtime state are refused
+before any gate runs. Pushing stays with you unless
 `SYRAX_AUTOPUSH=1`. Details: `docs/DEVLOOP.md`.
 
 ## Measured, not asserted: benchmarks and experiments
@@ -384,7 +400,8 @@ first run is a BASELINE. The release gate records a benchmark on every
 release. The `experiment` tool runs a baseline and a candidate tool call,
 repeated, and computes the verdict from the numbers. Regressions, repeatedly
 blocked strategies and weakly supported knowledge become objectives about
-SYRAX itself. `quality_run` over WebSocket runs ten fixed tasks through the
+SYRAX itself. `quality_run` over WebSocket runs a fixed suite of 61 cases (52
+single-step tasks and 9 deep multi-step ones, `quality._cases`) through the
 real brain and checks the outcomes by machine (pass rate, compared run to run).
 `compare_versions` measures two commits against each other in clean worktrees;
 `compare_brains {a, b}` runs the quality suite once per brain. Closing a stage

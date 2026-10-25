@@ -68,16 +68,26 @@ Environment variables (all optional): `SYRAX_PORT`, `SYRAX_JOURNAL_FILE`,
 
 ## 5. Back up before wiping the OS (not in git)
 
+`python syrax.py --backup` writes a verified snapshot of what SYRAX keeps outside
+git into `backend/config/backups/<stamp>/` (manifest with sha256, row counts and
+`integrity_check`; the idle autonomy cycle takes the same snapshot once a day,
+seven kept). On the new machine: clone, copy one snapshot folder into
+`backend/config/backups/`, then `python syrax.py --restore backend/config/backups/<stamp>`
+while SYRAX is stopped. Details: [docs/OPERATIONS.md](OPERATIONS.md), "Backups and
+restore" (`backend/syrax/backup.py`, checked by `test_backup.py`).
+
 | What | Where | Why |
 |---|---|---|
-| Brain keys | `backend/config/brains.json` | Gemini + Groq keys, provider order and models |
-| OpenManus config | `backend/config/config.toml` | needed to boot; no secrets in the SYRAX setup |
-| The journal | `backend/config/journal.db` (+ `-wal`, `-shm`) | every task, objective, knowledge row, skill, benchmark, quality run and SYRAX's lessons; ~3 MB |
-| Skills SYRAX built | `backend/skills/` | none yet besides README |
-| Legacy memory | `backend/config/memory.json`, `history.jsonl` | already migrated into the journal; optional |
-| Rollback snapshots | `backend/config/rollback/` | optional |
-| Claude Code memory | `~/.claude/projects/-home-prince-son-of-ultron/memory/`, `~/CLAUDE.md` | the assistant's notes about this project and preferences |
-| systemd unit | `~/.config/systemd/user/syrax.service` | regenerate with `./syrax.sh --install-service` |
+| The journal | `backend/config/journal.db` | every task, event, verification, objective, knowledge row (the human's facts included), skill record, benchmark, quality run and lesson; in the snapshot (152 MB on 2026-10-25) |
+| Brain keys | `backend/config/brains.json` | provider order, models and API keys; in the snapshot, so the backups folder holds secrets: keep it as private as the file |
+| Legacy memory | `backend/config/memory.json` | the human's facts from before the journal took them over (migrated once); in the snapshot |
+| OpenManus config | `backend/config/config.toml` | needed to boot; in the snapshot |
+| Skills SYRAX built | `backend/skills/<name>/` | outside git (`.gitignore`), not in the snapshot: copy the folder by hand; each skill is verified by its own pytest tests before it is registered again at boot |
+| Claude Code memory | `%USERPROFILE%\.claude\projects\c--ai-agent-son-of-ultron\memory\` | the assistant's notes about this project; not in the snapshot |
+| Login service | Task Scheduler task `SYRAX`, or the Startup folder's `SYRAX.vbs` when the task needs admin | regenerate with `python syrax.py --install-service` |
+
+Not in the snapshot by design: `ws.token` (recreated on first use), `mcp.json`,
+`history.jsonl`, the workspace, logs and rollback patches.
 
 Without the journal SYRAX starts with no history: it will re-derive
 verify-capability objectives and rebuild its evidence within a few cycles.
