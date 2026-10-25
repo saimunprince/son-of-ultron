@@ -303,13 +303,35 @@ class KnowTool(BaseTool):
 # A cited source as `research` ("knowledge_id=536") or `know` ("id=536") prints it, or a bare number.
 _KNOWLEDGE_REF = re.compile(r"^(?:knowledge_id|id)?\s*[=:#]?\s*(\d+)$", re.I)
 
+# Memory truth (2026-10-25 audit): a cited row must support the claim, not merely exist. Support is textual: the
+# row's claim or excerpt shares SUPPORT_WORDS content words (lower-cased, no stopwords, 4+ letters) with the claim,
+# or a number of two or more digits (a year, a version, a figure). A row that shares nothing is refused; one that
+# shares a word or two is weak support (test_consolidate cites an SQLite row for a Python release): the conclusion
+# is stored at half the cap and says so.
+SUPPORT_WORDS = 3
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def content_words(text: str) -> set:
+    return {w for w in re_words(text) if len(w) >= 4 and w not in STOP}
+
+
+def support(claim: str, row: dict) -> int:
+    """How far the cited knowledge row's text supports the claim: the shared content words, SUPPORT_WORDS when a
+    number is shared (full support), 0 when nothing is."""
+    text = " ".join(str(row.get(k) or "") for k in ("claim", "excerpt"))
+    numbers = lambda s: {n for n in _NUMBER.findall(s or "") if len(n) >= 2}  # noqa: E731
+    if numbers(claim) & numbers(text):
+        return SUPPORT_WORDS
+    return min(SUPPORT_WORDS, len(content_words(claim) & content_words(text)))
+
 
 class LearnTool(BaseTool):
     name: str = "learn"
     description: str = (
         "Store a conclusion you verified, citing the knowledge_ids (from `research`/`know`) or a "
         "URL it rests on. Its confidence can never exceed the confidence of the cited sources; "
-        "uncited conclusions are refused."
+        "uncited conclusions are refused, and so is a cited row whose text does not support the claim."
     )
     parameters: dict = {
         "type": "object",
@@ -337,7 +359,15 @@ class LearnTool(BaseTool):
         missing = [i for i, k in zip(ids, cited) if k is None]
         if missing:
             return ToolResult(error=f"learn refused: unknown knowledge_id(s) {missing}")
+        strength = {i: support(claim, k) for i, k in zip(ids, cited)}
+        unsupported = [i for i, s in strength.items() if s == 0]
+        if unsupported:  # the rows exist but say nothing about the claim: nothing is stored
+            return ToolResult(error=f"learn refused: knowledge_id {', '.join(map(str, unsupported))} "
+                                    f"{'does' if len(unsupported) == 1 else 'do'} not support the claim: cite the rows whose text does")
+        weak = [i for i, s in strength.items() if s < SUPPORT_WORDS]
         cap = max([k["confidence"] for k in cited if k] + ([0.4] if urls else []))
+        if weak:
+            cap = round(cap / 2, 2)
         want = cap if confidence is None else min(float(confidence), cap)
         from syrax import consolidate
 
@@ -354,11 +384,15 @@ class LearnTool(BaseTool):
                 claim=claim, kind="conclusion", sources=ids + urls, source_url=urls[0] if urls else None,
                 tags=list(tags or []) + sorted(set(keywords(claim)))[:6], confidence=want,
                 task_id=self.task_id_provider() if self.task_id_provider else None,
-                basis=f"conclusion resting on {len(ids)} stored source(s) and {len(urls)} url(s); capped at {cap:.2f}",
+                basis=f"conclusion resting on {len(ids)} stored source(s) and {len(urls)} url(s); capped at {cap:.2f}"
+                      + (f"; weak support from knowledge_id {', '.join(map(str, weak))} (under {SUPPORT_WORDS} shared content words), cap halved" if weak else ""),
             )
         except JournalError as e:
             return ToolResult(error=f"learn refused: {e}")
         out = f"Learned id={row['id']} with confidence {row['confidence']:.2f} (cap {cap:.2f})."
+        if weak:
+            out += (f" Weak support: knowledge_id {', '.join(map(str, weak))} shares under {SUPPORT_WORDS} content words with the claim, "
+                    "so the cap was halved; cite rows whose text states it for full weight.")
         if conflicts:
             await asyncio.to_thread(self.journal.record_sync, "knowledge.contradiction", {
                 "knowledge_id": row["id"], "claim": claim[:300], "conflicts_with": [k["id"] for k in conflicts],

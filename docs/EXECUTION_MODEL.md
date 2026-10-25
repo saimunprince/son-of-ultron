@@ -238,7 +238,11 @@ evidence (`test_verify.py`).
 - Long-term facts (`remember` / `recall` / `forget`) are knowledge rows of kind
   `human` (confidence 1.0, basis "human said"); a legacy `memory.json` is imported
   once and then left untouched; forgetting deletes the row and journals
-  `knowledge.forgotten`.
+  `knowledge.forgotten`. Only text grounded in the human's words for the task is
+  stored at 1.0; what the model inferred becomes an observation at 0.5 (basis "SYRAX
+  inferred from the conversation"). `forget` matches whole words of three or more
+  characters and refuses to delete more than five rows unless the human said
+  "forget everything about X".
 - Conversation history for the prompt comes from `tasks` (kind conversation,
   SUCCESS/PARTIAL); `history.jsonl` is no longer written and is read only as a
   fallback when the journal has no conversations yet.

@@ -375,9 +375,20 @@ class SyraxAgent(Manus):
         if emit is not None and hasattr(instance.llm, "listeners"):
             instance.llm.listeners.add(emit)
         instance.available_tools.add_tool(instance.ask_tool)
+        for name in ("remember", "forget"):  # memory truth: the tools know what the human said this task
+            tool = instance.available_tools.get_tool(name)
+            if isinstance(tool, (RememberTool, ForgetTool)):
+                tool.said_provider = instance.human_words
         await instance.initialize_mcp_servers()
         instance._initialized = True
         return instance
+
+    def human_words(self) -> str:
+        """What the human said this task: the request and their ask_human answers. Autonomous work has none
+        (the brief is SYRAX's own), so whatever it remembers is an observation."""
+        if self.task_kind == "autonomous":
+            return ""
+        return " ".join([self.task_goal or ""] + [str(a or "") for _, a in self.consents])
 
     async def _send(self, event: dict) -> None:
         if self.emit is not None:

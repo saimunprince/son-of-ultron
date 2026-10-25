@@ -17,7 +17,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from pydantic import Field
 
@@ -65,11 +65,70 @@ def _words(text: str) -> set:
     return {w for w in re.findall(r"[\w']+", text.lower()) if len(w) > 2}
 
 
+def _overlap(a: set, b: set) -> float:
+    """Jaccard overlap of two word sets, 0..1 (the dedupe threshold is 0.8)."""
+    return len(a & b) / max(1, len(a | b))
+
+
 def _subject(text: str) -> Optional[tuple]:
     m = re.match(r"(.+?)\s+(?:is|are|was|were)\s+", text, re.I)
     if not m:
         return None
     return tuple(sorted(_words(m.group(1)))) or None
+
+
+# Memory truth (2026-10-25 audit): `remember` is called by the model, so its text may be the model's own inference
+# dressed as the human's words. The tool knows what the human said this task (said_provider, wired by the agent);
+# only text grounded in those words is stored as a fact, anything else becomes an observation at half the weight.
+GROUNDING = 0.6  # share of the fact's content words that must appear in the human's words
+_STOP = {"the", "and", "that", "this", "with", "for", "from", "are", "was", "were", "has", "have", "had", "not", "but",
+         "they", "them", "their", "you", "your", "his", "her", "its", "about", "into", "also", "very", "than", "then"}
+_EXPLICIT = re.compile(r"\b(remember|memori[sz]e|note that|keep in mind|don'?t forget|do not forget)\b", re.I)
+INFERRED_BASIS = "SYRAX inferred from the conversation (remember tool): the human never said this"
+OBSERVED_BASIS = "SYRAX observed (remember tool, type observation): an inference, not the human's words"
+# `forget` by words: the needle must be a whole word or phrase of at least FORGET_MIN_CHARS (test_memory.test_tools
+# forgets "tea", so three letters is the floor), and more than FORGET_MAX_UNNAMED rows go only when the human named them.
+FORGET_MIN_CHARS = 3
+FORGET_MAX_UNNAMED = 5
+_SWEEP = re.compile(r"\b(everything|all)\b", re.I)
+_NARROWED = re.compile(r"\b(everything|all)\s+(about|on|regarding|concerning)\b", re.I)
+
+
+class ForgetRefused(ValueError):
+    """`forget` turned the call down; str(e) says why (needle too short, or too many rows for words the human never said)."""
+
+
+def _normal(text: str) -> str:
+    return " ".join(re.findall(r"[\w']+", str(text or "").lower()))
+
+
+def content_words(text: str) -> set:
+    return _words(text) - _STOP
+
+
+def grounded(text: str, said: str) -> bool:
+    """True when `text` is in the human's own words: a normalized substring of what they said, or at least GROUNDING of
+    its content words appear there."""
+    t, s = _normal(text), _normal(said)
+    if not t or not s:
+        return False
+    if t in s:
+        return True
+    mine = content_words(text)
+    return bool(mine) and len(mine & _words(said)) / len(mine) >= GROUNDING
+
+
+def names(needle: str, said: str) -> bool:
+    """True when the human asked for the sweep `forget` was called with: "forget everything about Vim" names the
+    rows matching "Vim"; "forget everything" (not narrowed by "about ...") names the whole memory. "forget vim"
+    alone names one memory, not six."""
+    said, raw = str(said or ""), str(needle or "").strip().lower()
+    if not raw or not _SWEEP.search(said):
+        return False
+    if raw in {"everything", "all", "*"}:
+        return not _NARROWED.search(said)
+    q, qw = _normal(raw), _words(raw)
+    return bool(q) and (q in _normal(said) or bool(qw and qw <= _words(said)))
 
 
 def _atomic_write(path: Path, data: str) -> None:
@@ -127,36 +186,45 @@ class MemoryStore:
         except Exception:
             return [{"id": f.get("id", "?"), "text": f["text"], "created": f.get("created")} for f in self._file_facts()]
 
-    def remember(self, text: str, kind: Optional[str] = None) -> str:
+    def remember(self, text: str, kind: Optional[str] = None, said: Optional[str] = None) -> str:
+        """Store `text`. `said` is what the human said this task (None: unknown, the caller vouches for the text):
+        a fact, preference or rule that is not grounded in it is stored as an observation (confidence 0.5, basis
+        INFERRED_BASIS), never as the human's own word; "remember that ..." from the human keeps it a fact."""
         text = " ".join(str(text or "").split())[:400]
         if not text:
             return "Nothing to remember."
         if _SECRET.search(text):
             return "Refused: that looks like a secret (password/key/token). Secrets are never stored."
         kind = kind if kind in TYPES else infer_type(text)
+        inferred = False
+        if said is not None and kind != "observation" and not (_EXPLICIT.search(said) or grounded(text, said)):
+            kind, inferred = "observation", True
+        new = _words(text)
+        tags = ["memory", f"type:{kind}"] + sorted(new)[:6]
+        if kind == "observation":  # SYRAX's own inference: half the weight of the human's word, and labelled so
+            conf, basis = 0.5, (INFERRED_BASIS if inferred else OBSERVED_BASIS)
+        else:
+            conf, basis = 1.0, "human said (remember tool)"
         with self._lock:
             j = self._journal()
             self._migrate()
-            new = _words(text)
             for f in self.facts():
                 old = _words(f["text"])
                 subj_new = _subject(text)
                 subj_old = _subject(f["text"])
-                if subj_new is not None and subj_new == subj_old and text != f["text"]:
-                    if f.get("type") != "observation" and kind == "observation":
-                        return f"Kept what the human said: {f['text']} (an observation never overwrites it)"
-                    j.update_knowledge_claim_sync(int(f["id"]), text)
-                    return f"Updated memory: {f['text']} -> {text}"
-                if old and new and len(old & new) / max(1, len(old | new)) > 0.8:
-                    if f.get("type") != "observation" and kind == "observation":
-                        return f"Kept what the human said: {f['text']} (an observation never overwrites it)"
-                    j.update_knowledge_claim_sync(int(f["id"]), text)
-                    return f"Updated memory: {text}"
-            if kind == "observation":  # SYRAX's own inference: half the weight of the human's word, and labelled so
-                j.add_knowledge_sync(text, "human", tags=["memory", "type:observation"] + sorted(new)[:6], confidence=0.5,
-                                     basis="SYRAX observed (remember tool, type observation): an inference, not the human's words")
-            else:
-                j.add_knowledge_sync(text, "human", tags=["memory", f"type:{kind}"] + sorted(new)[:6], basis="human said (remember tool)")
+                same_subject = subj_new is not None and subj_new == subj_old and text != f["text"]
+                if not same_subject and not (old and new and _overlap(old, new) > 0.8):
+                    continue
+                if f.get("type") != "observation" and kind == "observation":
+                    return f"Kept what the human said: {f['text']} (an observation never overwrites it)"
+                # the new row takes the new type and confidence: a human fact over an observation is a fact at 1.0
+                j.update_knowledge_claim_sync(int(f["id"]), text, confidence=conf, tags=tags, basis=basis)
+                was = f" (was an observation, now a {kind} at {conf:.1f})" if f.get("type") == "observation" and kind != "observation" else ""
+                return (f"Updated memory: {f['text']} -> {text}{was}" if same_subject else f"Updated memory: {text}{was}")
+            j.add_knowledge_sync(text, "human", tags=tags, confidence=conf, basis=basis)
+        if inferred:
+            return (f"Stored as an observation, not a fact: the human never said this, SYRAX inferred it from the "
+                    f"conversation (confidence 0.5). {text}")
         return f"Remembered ({kind}): {text}"
 
     def recall(self, query: str = "", limit: int = 15) -> List[dict]:
@@ -167,17 +235,30 @@ class MemoryStore:
         scored = [(len(q & _words(f["text"])), i, f) for i, f in enumerate(facts)]
         return [f for s, _, f in sorted(scored, key=lambda x: (-x[0], -x[1])) if s > 0][:limit]
 
-    def forget(self, query: str) -> List[str]:
+    def forget(self, query: str, said: Optional[str] = None) -> List[str]:
+        """Delete the memories `query` names (a fact id, 'everything', or words matched as whole words). Raises
+        ForgetRefused for a needle under FORGET_MIN_CHARS, and when more than FORGET_MAX_UNNAMED rows would go unless
+        the human's words (`said`; None = unknown, the caller vouches) name them."""
         q = str(query or "").strip().lower()
+        if not q:
+            return []
+        everything = q in {"everything", "all", "*"}
+        if not everything and not q.isdigit() and len(q) < FORGET_MIN_CHARS:
+            raise ForgetRefused(f"Refused: {query!r} is too short a needle ({FORGET_MIN_CHARS} characters at least): "
+                                "it would match too much. Name the memory, or use its id from `recall`.")
         with self._lock:
             facts = self.facts()
-            if q in {"everything", "all", "*"}:
+            if everything:
                 hits = facts
             else:
                 qw = _words(q)
-                hits = [f for f in facts if f["id"] == q or (qw and qw <= _words(f["text"])) or (q and q in f["text"].lower())]
+                whole = re.compile(r"(?<![\w'])" + re.escape(q) + r"(?![\w'])")
+                hits = [f for f in facts if f["id"] == q or (qw and qw <= _words(f["text"])) or bool(whole.search(f["text"].lower()))]
             if not hits:
                 return []
+            if len(hits) > FORGET_MAX_UNNAMED and said is not None and not names(q, said):
+                raise ForgetRefused(f"Refused: {len(hits)} memories match {query!r}, more than {FORGET_MAX_UNNAMED}. Forget them one "
+                                    f"at a time, or only when the human says 'forget everything about {query}'.")
             gone = self._journal().forget_knowledge_sync([int(f["id"]) for f in hits if str(f["id"]).isdigit()])
             return [g["claim"] for g in gone]
 
@@ -254,7 +335,8 @@ class MemoryStore:
             "MEMORY RULES: When the human shares a lasting fact about themselves (name, preferences, "
             "projects, people, routines, how they want you to behave), call `remember` with one short "
             "sentence. Something you noticed but they never said is an `observation` (type observation): "
-            "it is kept apart and never overrides their words. Use `recall` to search older facts, "
+            "it is kept apart and never overrides their words; `remember` keeps only what the human actually "
+            "said as a fact and files the rest as observations itself. Use `recall` to search older facts, "
             "`forget` when asked. Never store passwords, keys, tokens or other secrets."
         )
         return "\n\n".join(parts)
@@ -284,9 +366,12 @@ class RememberTool(BaseTool):
         "required": ["fact"],
     }
     store: Optional[MemoryStore] = Field(default=None, exclude=True)
+    # what the human said this task (the agent wires it); None = unknown, and the text is taken at its word
+    said_provider: Optional[Callable[[], Optional[str]]] = Field(default=None, exclude=True)
 
     async def execute(self, fact: str, type: Optional[str] = None) -> str:  # noqa: A002 - the tool's parameter name
-        return (self.store or get_memory()).remember(fact, type)
+        said = self.said_provider() if self.said_provider else None
+        return (self.store or get_memory()).remember(fact, type, said=said)
 
 
 class RecallTool(BaseTool):
@@ -313,7 +398,14 @@ class ForgetTool(BaseTool):
         "required": ["query"],
     }
     store: Optional[MemoryStore] = Field(default=None, exclude=True)
+    said_provider: Optional[Callable[[], Optional[str]]] = Field(default=None, exclude=True)
 
     async def execute(self, query: str) -> str:
-        removed = (self.store or get_memory()).forget(query)
-        return ("Forgot:\n" + "\n".join(f"- {t}" for t in removed)) if removed else "Nothing matched."
+        said = self.said_provider() if self.said_provider else None
+        try:
+            removed = (self.store or get_memory()).forget(query, said=said)
+        except ForgetRefused as e:
+            return str(e)
+        if not removed:
+            return "Nothing matched."
+        return f"Forgot {len(removed)} {'memory' if len(removed) == 1 else 'memories'} matching {query!r}:\n" + "\n".join(f"- {t}" for t in removed)

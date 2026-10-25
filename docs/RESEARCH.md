@@ -37,13 +37,26 @@ says so.
 
 A caller may lower a confidence, never raise it above the policy.
 
+Memory rows (`remember`, kind `human`) carry a type tag: fact / preference / rule are the
+human's own words at 1.00, observation is SYRAX's inference at 0.50. Since 2026-10-25 the
+tool grounds the text in what the human said this task (a normalized substring, or 60% of
+its content words): text the model invented is stored as an observation with basis "SYRAX
+inferred from the conversation", never as a fact, and the reply says so. An overwrite
+journals `previous` (old text, type, confidence) in `knowledge.updated`, and the row takes
+the new type and confidence (a human fact over an observation is a fact at 1.00).
+
 ## Tools
 
 - `research {question, max_sources}` — the flow above; emits `research.started` / `research.completed`.
 - `know {query}` — keyword-ranked search over stored knowledge; bumps `uses` / `last_used`.
 - `learn {claim, sources, confidence?, tags?}` — stores a `conclusion` that must cite
   knowledge_ids or URLs; unknown ids and uncited claims are refused; confidence is
-  capped by the cited evidence.
+  capped by the cited evidence. A cited row must also support the claim (memory truth,
+  2026-10-25): share three content words (lower-cased, no stopwords, 4+ letters) or a
+  number/year with it. A row that shares nothing is refused ("knowledge_id N does not
+  support the claim: cite the rows whose text does") and nothing is stored; a row that
+  shares only a word or two is weak support: stored at half the cap, labelled in the
+  basis and in the reply.
 
 The tool guide tells the model: check `know`, then `research`; never present an
 unresearched guess as fact.

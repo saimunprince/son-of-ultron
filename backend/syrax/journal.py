@@ -457,6 +457,15 @@ def confidence_for(kind: str, agreeing_sources: int = 1) -> float:
         return {1: 0.4, 2: 0.6}.get(max(1, agreeing_sources), 0.75)
     return CONFIDENCE_CEILING.get(kind, 0.4)
 
+
+def _memory_type(tags) -> str:
+    """The memory type a `type:<t>` tag names (memory.TYPES: fact, preference, rule, observation); untagged rows are facts."""
+    for t in tags or []:
+        if str(t).startswith("type:"):
+            return str(t)[5:]
+    return "fact"
+
+
 OBJECTIVE_STATUSES = ("OPEN", "ACTIVE", "DONE", "BLOCKED", "DROPPED")
 OBJECTIVE_TRANSITIONS: Dict[str, frozenset] = {
     "OPEN": frozenset({"ACTIVE", "BLOCKED", "DROPPED", "DONE"}),
@@ -1220,14 +1229,25 @@ class Journal:
             ).fetchall()
         return [self._knowledge_dict(r) for r in reversed(rows)]
 
-    def update_knowledge_claim_sync(self, knowledge_id: int, claim: str, task_id: Optional[str] = None) -> Optional[dict]:
+    def update_knowledge_claim_sync(self, knowledge_id: int, claim: str, task_id: Optional[str] = None,
+                                    confidence: Optional[float] = None, tags: Optional[List[str]] = None,
+                                    basis: Optional[str] = None) -> Optional[dict]:
+        """Overwrite a row's claim and, when given, its confidence (capped by the kind's policy), tags and basis.
+        The `knowledge.updated` event keeps `previous` (the old text, memory type and confidence), so an overwrite
+        can be audited (memory truth, 2026-10-25)."""
         ts = _now()
         with self._txn() as cur:
-            row = cur.execute("SELECT kind FROM knowledge WHERE id=?", (knowledge_id,)).fetchone()
+            row = cur.execute("SELECT * FROM knowledge WHERE id=?", (knowledge_id,)).fetchone()
             if row is None:
                 return None
-            cur.execute("UPDATE knowledge SET claim=?, last_used=? WHERE id=?", (claim[:2000], ts, knowledge_id))
-            self._insert_event(cur, ts, task_id, "knowledge.updated", {"knowledge_id": knowledge_id, "kind": row["kind"], "claim": claim[:160]})
+            old = self._knowledge_dict(row)
+            new_tags = old["tags"] if tags is None else sorted({t.lower() for t in tags if t})
+            conf = old["confidence"] if confidence is None else max(0.0, min(float(confidence), confidence_for(old["kind"])))
+            cur.execute("UPDATE knowledge SET claim=?, confidence=?, tags=?, basis=?, last_used=? WHERE id=?",
+                        (claim[:2000], conf, _dumps(new_tags), basis or old["basis"], ts, knowledge_id))
+            self._insert_event(cur, ts, task_id, "knowledge.updated", {
+                "knowledge_id": knowledge_id, "kind": old["kind"], "claim": claim[:160], "type": _memory_type(new_tags), "confidence": conf,
+                "previous": {"claim": old["claim"][:160], "type": _memory_type(old["tags"]), "confidence": old["confidence"]}})
         return self.knowledge(knowledge_id)
 
     def forget_knowledge_sync(self, ids: List[int], reason: str = "human asked", task_id: Optional[str] = None) -> List[dict]:
