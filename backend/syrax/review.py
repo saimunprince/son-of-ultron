@@ -10,6 +10,13 @@ instead of its behaviour.
 The reviewer answers four yes/no questions; the verdict is computed from the
 answers, never taken from the model. Asked "approve?", a free model talked
 itself into approving a diff that removed a check (live test, 2026-10-01).
+
+A review that could not happen is not an approval. When no other brain is
+enabled, or every one of them errored or answered unreadably, the verdict says
+so explicitly (`available: False`, `brains_tried`), and the release holds the
+change instead of committing it (audit 2026-10-25: with one brain enabled the
+review was skipped and the change landed unreviewed). The reviewer reads new
+files whole, as /dev/null diffs, not their names alone.
 """
 
 from __future__ import annotations
@@ -18,7 +25,8 @@ import json
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
-MAX_DIFF = 12000
+MAX_DIFF = 24000  # 12000 until 2026-10-25: a module change plus its whole new test file did not fit
+TRUNCATED = "… {n} more lines not shown: reject if you cannot judge it"
 HARD = ("weakens_checks", "clear_bug", "secret")
 SYSTEM = (
     "You review a change that an autonomous AI (SYRAX) made to its own source code before it is committed. "
@@ -64,15 +72,53 @@ def reviewers(router: Any, authors: Iterable[str]) -> List[str]:
     return [p for p in router.store.order if router.store.enabled(p) and p not in taken]
 
 
+def new_file_diff(path: str, text: str) -> str:
+    """A new file as git shows it: a /dev/null diff with every line added."""
+    lines = text.splitlines()
+    return (f"diff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{len(lines)} @@\n"
+            + "".join("+" + ln + "\n" for ln in lines))
+
+
+def diff_for_review(info: Dict[str, Any]) -> str:
+    """What the reviewer reads: the tracked changes, then each new file whole (until 2026-10-25 new files
+    were listed by name only, so a new test was never judged), cut at MAX_DIFF on a line boundary with
+    the cut named, so a reviewer that cannot see the rest knows to reject."""
+    body = info.get("diff") or ""
+    contents = info.get("new_files") or {}
+    unseen = []
+    for path in info.get("untracked") or []:
+        text = contents.get(path)
+        if text is None:
+            unseen.append(path)
+            continue
+        if body and not body.endswith("\n"):
+            body += "\n"
+        body += new_file_diff(path, text)
+    if unseen:
+        body += "\n\nNew files (content not provided): " + ", ".join(unseen)
+    if len(body) <= MAX_DIFF:
+        return body
+    kept = body[:MAX_DIFF]
+    kept = kept[: kept.rfind("\n") + 1] or kept
+    more = len(body[len(kept):].splitlines())
+    return kept + "\n" + TRUNCATED.format(n=more) + "\n"
+
+
+def unavailable(reason: str, brains_tried: List[str]) -> Dict[str, Any]:
+    """The verdict of a review that could not happen. Not an approval, not a rejection: the release
+    holds the change and says so."""
+    return {"available": False, "approve": False, "problems": ["no_review"], "reasons": [reason], "reviewer": None,
+            "brains_tried": list(brains_tried)}
+
+
 async def review(router: Any, info: Dict[str, Any], summary: str, authors: Iterable[str]) -> Dict[str, Any]:
-    """{approve, problems, answers, reasons, notes, reviewer} — or {skipped}
-    when no other brain exists. An unreadable review counts as a rejection."""
+    """{approve, problems, answers, reasons, notes, reviewer} from the first other brain that gave a
+    readable review; otherwise `unavailable(...)` (available False) when no other brain is enabled or
+    none of them answered readably. Only a readable verdict can approve."""
     candidates = reviewers(router, authors)
     if not candidates:
-        return {"skipped": "no brain other than the author is enabled"}
-    body = (info.get("diff") or "")[:MAX_DIFF]
-    if info.get("untracked"):
-        body += "\n\nNew files: " + ", ".join(info["untracked"])
+        return unavailable("no brain other than the author is enabled", [])
+    body = diff_for_review(info)
     messages = [
         {"role": "system", "content": SYSTEM},
         {"role": "user", "content": f"Summary: {summary}\n\nFiles: {info.get('stat') or ''}\n\nDiff:\n{body}"},
@@ -97,4 +143,4 @@ async def review(router: Any, info: Dict[str, Any], summary: str, authors: Itera
         if verdict is not None:
             return {**verdict, "reviewer": pid, **({"unavailable": errors} if errors else {})}
         errors.append(f"{pid}: unreadable review")
-    return {"approve": False, "problems": ["no_review"], "reasons": [f"no readable review ({'; '.join(errors)[:600]})"], "reviewer": None}
+    return unavailable(f"no readable review ({'; '.join(errors)[:600]})", candidates)

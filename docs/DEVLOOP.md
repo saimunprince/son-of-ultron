@@ -16,15 +16,22 @@ release {summary}
             (kept for study even when the release succeeds); code.changed {files, stat}
   gate      verify.run_gates (py_compile, pytest, tsc, eslint, node test, isolated
             next build, diff_scan) → verification.completed (journaled with evidence)
-  GREEN     git add <files>; git commit "syrax: <summary>" with
+  GREEN     own work (autonomous/eval task): a different brain reviews the diff,
+            new files whole (review.py) → review.completed; rejected → rollback,
+            REVIEW_REJECTED; no brain could review it → review.unavailable, rollback,
+            REVIEW_UNAVAILABLE (held, nothing committed, the objective stays open)
+            git add <files>; git commit "syrax: <summary>" with
             "Verified-By: syrax.verify #<id>"; commit.created
             push only when SYRAX_AUTOPUSH=1 → push.started / push.completed / push.failed
   BLOCKED   git checkout -- <tracked>; delete new files; rollback.created with the
             failing gates' evidence; the tool output tells the model to change approach
 ```
 
-Scope (`SCOPE`): `backend/syrax/`, `backend/skills/`, `backend/requirements-syrax.txt`,
-`frontend/components/`, `frontend/lib/`, `frontend/app/`, `docs/`, `README.md`.
+Scope (`SCOPE`): `backend/syrax/`, `backend/skills/`, `frontend/components/`,
+`frontend/lib/`, `frontend/app/`, `docs/`, `README.md`.
+`backend/requirements-syrax.txt` (`DEPENDENCIES`) is out of scope since the 2026-10-25
+audit: a release touching it is refused with "dependencies are the owner's decision:
+propose, do not change" (radar proposes upgrades; the human installs them).
 Forbidden anywhere: `.env`, `config/config.toml`, `config/brains.json`,
 `journal.db`, `.git/`, `node_modules/`, `.venv/`, `.next/`.
 
@@ -46,6 +53,29 @@ Learned from the first live self-modification run: the model's edit broke a
 string literal, the gate correctly rolled it back twice, the task hit its step
 limit with the broken file still on disk, and the rollback had restored every
 modified file in the tree, including an operator's unrelated work.
+
+## Cross-brain review (own work)
+
+After a GREEN gate, an autonomous or eval release is read by a brain that did
+not write it (`review.py`, reviewer set by `core._cross_review`). Three rules
+closed by the 2026-10-25 audit:
+
+- A review that could not happen is not an approval. When no other brain is
+  enabled, or every one of them errored or answered unreadably, `review.review`
+  returns `available: False` with `brains_tried`, and the release is HELD:
+  outcome `REVIEW_UNAVAILABLE`, the edits rolled back exactly like a rejection
+  (snapshot kept, `rollback.created`), `review.unavailable {reason, brains_tried}`
+  journaled, nothing committed; the report tells the brain the objective stays
+  open. Before, one enabled brain meant the review was skipped and the change
+  landed unreviewed. A conversation's release (the human is its reviewer) and
+  the human's explicit opt-out `SYRAX_REVIEW=0` commit as before.
+- The reviewer reads new files whole, as `/dev/null` diffs (`inspect` hands their
+  content over as `new_files`), not their names alone; the diff is capped at
+  `review.MAX_DIFF` (24,000 chars, a module change plus its new test) and, when
+  cut, says "… N more lines not shown: reject if you cannot judge it".
+- `backend/syrax/selfedit.py` (it chooses which tests the preflight runs) and
+  `backend/syrax/conftest.py` (the environment the pytest gate runs in) are in
+  `JUDGES`: only a human commit changes them.
 
 ## Truthfulness
 

@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 from syrax.journal import Journal
 
-DECISIONS = ("COMMITTED", "ROLLED_BACK", "REVIEW_REJECTED", "REFUSED", "COMMIT_FAILED")
+DECISIONS = ("COMMITTED", "ROLLED_BACK", "REVIEW_REJECTED", "REVIEW_UNAVAILABLE", "REFUSED", "COMMIT_FAILED")
 MIDPOINT = 50.0  # pass rate where a variant is neither favoured nor penalised
 SLOPE = 10.0  # pass-rate points per unit of the sigmoid
 MAX_ROWS = 80

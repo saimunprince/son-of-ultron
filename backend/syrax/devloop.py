@@ -8,7 +8,12 @@
         point; record code.changed
       → gate: verify.run_gates (the same gate a human release uses);
         record verification.completed
-      → GREEN  → git add <changed files>, git commit (message carries the
+      → GREEN  → own work (autonomous/eval): a different brain reviews the
+                 diff, new files whole (review.py); rejected → rollback,
+                 REVIEW_REJECTED; no brain could review it → rollback,
+                 REVIEW_UNAVAILABLE, nothing committed, review.unavailable
+                 journaled (a human's conversation is its own reviewer)
+               → git add <changed files>, git commit (message carries the
                  verification id), record commit.created; push only when
                  SYRAX_AUTOPUSH=1 (default off: the human pushes)
       → BLOCKED → git checkout -- <files>, delete the new files, record
@@ -40,7 +45,9 @@ from syrax.verify import Gate, Verification, default_gates, run_gates, scan_diff
 
 REPO_ROOT = BACKEND_ROOT.parent
 # What SYRAX may change on its own. Everything else needs a human commit.
-SCOPE = ("backend/syrax/", "backend/skills/", "backend/requirements-syrax.txt", "frontend/components/", "frontend/lib/", "frontend/app/", "docs/", "README.md")
+SCOPE = ("backend/syrax/", "backend/skills/", "frontend/components/", "frontend/lib/", "frontend/app/", "docs/", "README.md")
+# Dependency manifests: radar proposes upgrades, the human decides (in SCOPE until the 2026-10-25 audit)
+DEPENDENCIES = ("backend/requirements-syrax.txt",)
 FORBIDDEN = (".env", "config/config.toml", "config/brains.json", "journal.db", ".git/", "node_modules/", ".venv/", ".next/")
 SNAPSHOT_DIR = BACKEND_ROOT / "config" / "rollback"
 WORKTREES_DIR = REPO_ROOT / ".syrax" / "worktrees"  # one per autonomous task (M1, isolated evolution)
@@ -127,7 +134,7 @@ def assertless_tests(root: Path, files: Dict[str, str]) -> List[str]:
     """New tests in the change that assert nothing (an existing test may not change at all: judge_problems).
     Live 2026-10-15 (objective 232, attempt 3): with its own new test failing, SYRAX replaced the asserts with
     `pass` "to allow the release"; a test that asserts nothing proves nothing, and the review reads only
-    removed lines and is skipped when no other brain answers."""
+    removed lines (and until 2026-10-25 was skipped when no other brain answered; it holds the change now)."""
     out = []
     for path in sorted(files):
         if not re.search(r"(^|/)test_[^/]*\.py$", path) or not (root / path).is_file():
@@ -183,6 +190,8 @@ JUDGES = (
     "backend/syrax/catalog.py", "backend/syrax/prebuilt.py",
     # and what shows the human what SYRAX is doing
     "backend/syrax/phases.py",
+    # and what chooses which tests the release preflight runs, and the environment the pytest gate runs in
+    "backend/syrax/selfedit.py", "backend/syrax/conftest.py",
 )
 
 
@@ -261,6 +270,8 @@ def scope_problems(files: Dict[str, str]) -> List[str]:
     for path in files:
         if any(f in path for f in FORBIDDEN):
             problems.append(f"{path}: forbidden (secrets, runtime state or vendored code)")
+        elif path in DEPENDENCIES:
+            problems.append(f"{path}: dependencies are the owner's decision: propose, do not change")
         elif not any(path.startswith(s) or path == s.rstrip("/") for s in SCOPE):
             problems.append(f"{path}: outside the self-modification scope {SCOPE}")
     return problems
@@ -279,8 +290,9 @@ class DevLoop:
         self.live_baseline: Dict[str, str] = {}
         # per task: what each failed gate run failed on (gate names, failing tests)
         self.failures: Dict[Optional[str], List[tuple]] = {}
-        # async (info, summary, author_brains) -> {approve, reasons, reviewer} | {skipped};
-        # set by the core: a different brain must approve an autonomous change
+        # async (info, summary, author_brains) -> {approve, reasons, reviewer} | {available: False, ...} | {skipped};
+        # set by the core: a different brain must approve an autonomous change. available False (no brain
+        # could review) holds the change; skipped is the human's explicit opt-out (SYRAX_REVIEW=0) and commits.
         self.reviewer: Optional[Callable[..., Any]] = None
         self.gates = gates or (lambda: default_gates(self.root))
         self.task_id_provider = task_id_provider or (lambda: None)
@@ -419,6 +431,7 @@ class DevLoop:
             raise ValueError("refused: " + "; ".join(problems))
         diff = _git(["diff", "HEAD", "--", *[p for p, st in files.items() if st != "??"]], self.root).stdout if any(st != "??" for st in files.values()) else ""
         untracked_text = ""
+        new_files: Dict[str, str] = {}  # the reviewer reads new files whole (review.diff_for_review)
         for path, st in files.items():
             if st == "??":
                 p = self.root / path
@@ -426,6 +439,7 @@ class DevLoop:
                     body = p.read_text(encoding="utf-8", errors="replace")
                 except (OSError, UnicodeDecodeError):
                     continue
+                new_files[path] = body
                 untracked_text += f"+++ b/{path}\n" + "\n".join("+" + ln for ln in body.splitlines()) + "\n"
         findings = scan_diff_text(diff + untracked_text)
         if findings:
@@ -441,7 +455,7 @@ class DevLoop:
             raise ValueError("refused: python does not compile — fix it before the gate: " + "; ".join(broken))
         stat = _git(["diff", "HEAD", "--stat", "--", *files], self.root).stdout.strip()
         head = _git(["rev-parse", "HEAD"], self.root).stdout.strip()
-        return {"files": files, "diff": diff, "untracked": [p for p, s in files.items() if s == "??"], "stat": stat, "head": head}
+        return {"files": files, "diff": diff, "untracked": [p for p, s in files.items() if s == "??"], "new_files": new_files, "stat": stat, "head": head}
 
     def _preflight(self, files: Dict[str, str]) -> None:
         """Own work only: the tests that cover the change run before the full gate. Live 2026-10-15 (objective
@@ -542,7 +556,7 @@ class DevLoop:
         return report
 
     DECISION_VERDICT = {"COMMITTED": "CANDIDATE_BETTER", "ROLLED_BACK": "BASELINE_BETTER", "REVIEW_REJECTED": "BASELINE_BETTER",
-                        "REFUSED": "BASELINE_BETTER", "COMMIT_FAILED": "INCONCLUSIVE"}
+                        "REFUSED": "BASELINE_BETTER", "COMMIT_FAILED": "INCONCLUSIVE", "REVIEW_UNAVAILABLE": "INCONCLUSIVE"}
 
     def _active_objective_id(self, task: Optional[dict]) -> Optional[int]:
         """The objective an autonomous task works on: the cycle marks exactly one ACTIVE before it starts the task."""
@@ -584,6 +598,7 @@ class DevLoop:
                 "COMMITTED": f"committed {str(report.get('commit') or '')[:12]} after gate #{report.get('verification_id')} GREEN",
                 "ROLLED_BACK": f"rolled back: gate #{report.get('verification_id')} {report.get('verification')}",
                 "REVIEW_REJECTED": "rolled back: a second brain rejected the change",
+                "REVIEW_UNAVAILABLE": "held: gate GREEN but no second brain could review the change; not committed",
                 "REFUSED": f"refused before the gate: {str(report.get('error') or '')[:200]}",
                 "COMMIT_FAILED": f"gate GREEN but the commit failed: {str(report.get('error') or '')[:200]}",
             }.get(decision, decision)
@@ -667,8 +682,19 @@ class DevLoop:
             if impact["components"]:
                 told += f"\nComponents touched: {', '.join(impact['components'])}"
             verdict = await self.reviewer(info, told, authors)
-            await self.journal.record("review.completed", {"authors": authors, **verdict}, task_id=task_id)
             report["review"] = verdict
+            if verdict.get("available") is False:
+                # Audit 2026-10-25: with one brain enabled the review was skipped and the change landed unreviewed.
+                # A review that could not happen approves nothing: the change is held exactly like a rejection.
+                reason = "; ".join(verdict.get("reasons") or []) or "no second brain could review the change"
+                tried = list(verdict.get("brains_tried") or [])
+                await self.journal.record("review.unavailable", {"reason": reason, "brains_tried": tried, "authors": authors}, task_id=task_id)
+                rb = await asyncio.to_thread(self.rollback, info)
+                await self.journal.record("rollback.created", {"reason": "no second brain could review the change", "review_reason": reason,
+                                                               "brains_tried": tried, **rb, "snapshot": str(snap)}, task_id=task_id)
+                report.update({"outcome": "REVIEW_UNAVAILABLE", "rollback": rb, "snapshot": str(snap)})
+                return report
+            await self.journal.record("review.completed", {"authors": authors, **verdict}, task_id=task_id)
             if not verdict.get("skipped") and not verdict.get("approve"):
                 rb = await asyncio.to_thread(self.rollback, info)
                 await self.journal.record("rollback.created", {"reason": "review rejected the change", "reasons": verdict.get("reasons"), **rb, "snapshot": str(snap)}, task_id=task_id)
@@ -713,6 +739,15 @@ def render(report: Dict[str, Any]) -> str:
         else:
             lines.append(f"\nRolled back: a second brain ({rv.get('reviewer')}) rejected the change ({', '.join(rv.get('problems') or [])}): "
                          f"{why}. Fix what it names, or change approach. Snapshot: {report['snapshot']}.")
+    elif report["outcome"] == "REVIEW_UNAVAILABLE":
+        rv, rb = report.get("review") or {}, report["rollback"]
+        why = "; ".join(rv.get("reasons") or []) or "no reason given"
+        tried = ", ".join(rv.get("brains_tried") or []) or "none"
+        lines.append(f"\nNo second brain could review this change ({why}; brains tried: {tried}), so it was not committed: the edits "
+                     f"were rolled back (restored {len(rb['restored'])} file(s), removed {len(rb['removed'])} new file(s); tree clean={rb['clean']}). "
+                     f"The gate passed and nothing is known to be wrong with it, but an unreviewed change never lands. The objective stays open; "
+                     f"do not release again in this task (the same hold repeats without a reviewer): say in your final answer that the change "
+                     f"waits for a second brain. Snapshot of the attempt: {report['snapshot']}.")
     elif report["outcome"] == "COMMITTED":
         lines.append(f"\nCommitted {report['commit'][:12]}. {report['push']['output'] if report['push']['ok'] is None else ('Pushed to ' + report['push']['branch'] if report['push']['ok'] else 'PUSH FAILED: ' + report['push']['output'])}")
     else:
