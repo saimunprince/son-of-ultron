@@ -93,7 +93,9 @@ closes the loop on a landed fix) and a slice of 10 cases that rotates daily over
 Nine of the 61 cases are deep (2026-10-22): several steps of the work a human asks for (fix two bugs, build a
 CLI, collate TODOs, join two CSVs, rename an API), judged by running the result: hidden acceptance tests, the
 CLI called as a human would, data with a trap for the shortcut. The 52 single-step cases had reached 90-100 %
-and gave the hunts nothing to work on.
+and gave the hunts nothing to work on. A second tier of six (2026-10-25, `deep2_*`, 600 s each) followed when run #64
+passed the nine 9/9: a refactor across modules, a dirty three-file join, a flaky test, a CLI with an error path, a
+log report and a module from a prose spec, each with a trap for the obvious shortcut (67 cases in all).
 
 The cycle yields to the human (2026-10-25): it reports BUSY while a human request waits in the queue
 (`core.queued()`), so a queued request always runs before SYRAX's own next objective.

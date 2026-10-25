@@ -212,6 +212,232 @@ def _deep_cases(ws: Path) -> List[dict]:
     return cases
 
 
+# ——— Deep tier 2 (2026-10-25): run #64 passed the nine deep cases 9/9 in 4.5 minutes, so that tier no longer showed a
+# weakness either. These six are longer still (a refactor across modules, a dirty three-file join, a flaky test, a CLI with
+# an error path, a log report, a module from a prose spec), judged the same way: hidden acceptance tests, drivers that run the
+# deliverable, exact numbers; each hides a trap for the obvious shortcut. ———
+# users.py keeps inner runs of spaces (and tabs); orders.py keeps the case of the rest of each word ("ANA" stays "ANA")
+DEEP2_USERS = ("def clean_name(text):\n    \"\"\"A person's name as shown: trimmed, each word capitalised.\"\"\"\n"
+               "    return \" \".join(w.capitalize() for w in text.strip().split(\" \"))\n\n\n"
+               "def display_name(user):\n    return clean_name(user[\"name\"])\n")
+DEEP2_ORDERS = ("def clean_name(text):\n    \"\"\"The customer's name as shown: trimmed, each word capitalised.\"\"\"\n"
+                "    return \" \".join(w[0].upper() + w[1:] for w in text.split())\n\n\n"
+                "def customer_label(order):\n    return f\"{clean_name(order['customer'])} #{order['id']}\"\n")
+DEEP2_REFACTOR_PATH = ("import sys\nfrom pathlib import Path\n\n"
+                       "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / \"refactor\"))\n")
+DEEP2_USERS_ACCEPT = (DEEP2_REFACTOR_PATH + "from pkg.users import display_name  # noqa: E402\n\n\n"
+                      "def test_plain():\n    assert display_name({\"name\": \"ana\"}) == \"Ana\"\n\n\n"
+                      "def test_inner_whitespace_collapses():\n    assert display_name({\"name\": \"  ana   bo \"}) == \"Ana Bo\"\n\n\n"
+                      "def test_rest_of_word_lowered():\n    assert display_name({\"name\": \"ANA BO\"}) == \"Ana Bo\"\n")
+DEEP2_ORDERS_ACCEPT = (DEEP2_REFACTOR_PATH + "from pkg.orders import customer_label  # noqa: E402\n\n\n"
+                       "def test_plain():\n    assert customer_label({\"customer\": \"bo\", \"id\": 1}) == \"Bo #1\"\n\n\n"
+                       "def test_tab_and_spaces():\n    assert customer_label({\"customer\": \"cy\\t  dee\", \"id\": 7}) == \"Cy Dee #7\"\n\n\n"
+                       "def test_shouting():\n    assert customer_label({\"customer\": \"DANA\", \"id\": 2}) == \"Dana #2\"\n")
+DEEP2_SHARED_ACCEPT = (DEEP2_REFACTOR_PATH + "from pkg.textutil import clean_name  # noqa: E402\n\n\n"
+                       "def test_empty():\n    assert clean_name(\"\") == \"\"\n\n\n"
+                       "def test_newline_is_whitespace():\n    assert clean_name(\" x\\ny \") == \"X Y\"\n\n\n"
+                       "def test_mixed_case():\n    assert clean_name(\"mcDONALD  o\") == \"Mcdonald O\"\n")
+# Ana 35.00 (1001: 4 x 2.50, 1004: 2 x 12.50), Bo 32.50 (1002: 12.50, 1006: 5 x 4.00), Cy 10.50 (1003: 2 x 4.00, 1007: 2.50).
+# Row 1002 is there twice (counted once), customer 4 has no customers row (skipped), ids carry stray spaces, p2 costs "$12.50":
+# a naive join counts Bo 45.00, float("$12.50") crashes, an untrimmed " 2" is an unknown customer.
+DEEP2_CUSTOMERS = "customer_id,name\n1,Ana\n2,Bo\n3,Cy\n"
+DEEP2_PRODUCTS = "product_id,price\np1,2.50\np2,$12.50\np3,4.00\n"
+DEEP2_ORDERS_CSV = ("order_id,customer_id,product_id,qty\n1001,1,p1,4\n1002, 2,p2,1\n1003,3 ,p3,2\n1004,1,p2,2\n"
+                    "1002, 2,p2,1\n1005,4,p1,3\n1006,2,p3 ,5\n1007,3,p1,1\n")
+DEEP2_REPORT_CHECK = ("import json\nimport sys\nfrom pathlib import Path\n\n"
+                      "report = json.loads(Path(sys.argv[1]).read_bytes())\n"
+                      "want = [(\"Ana\", 35.0), (\"Bo\", 32.5), (\"Cy\", 10.5)]\nproblems = []\nrows = report.get(\"revenue\")\n"
+                      "if not isinstance(rows, list) or len(rows) != 3:\n    problems.append(f\"revenue should list 3 customers: {rows!r}\")\n"
+                      "else:\n    for row, (name, total) in zip(rows, want):\n"
+                      "        if (not isinstance(row, dict) or row.get(\"customer\") != name or not isinstance(row.get(\"revenue\"), (int, float))\n"
+                      "                or abs(row[\"revenue\"] - total) > 0.005):\n"
+                      "            problems.append(f\"expected {name} {total:.2f}, got {row!r}\")\n"
+                      "if report.get(\"skipped\") != {\"duplicate_order\": 1, \"unknown_customer\": 1}:\n"
+                      "    problems.append(f\"skipped should be {{'duplicate_order': 1, 'unknown_customer': 1}}: {report.get('skipped')!r}\")\n"
+                      "if problems:\n    sys.stdout.write(\"\\n\".join(problems) + \"\\n\")\n    sys.exit(1)\n"
+                      "print(\"REPORT OK\")\n")
+# the test wants the words sorted and the short form; the module iterates a set (a new order every process) and samples the
+# short form on one microsecond in three, so a single green run proves nothing
+DEEP2_TALLY = ("from datetime import datetime\n\n\n"
+               "def summary(words):\n    \"\"\"One line: how many distinct words, then the words.\"\"\"\n"
+               "    uniq = set(words)\n"
+               "    # sample one report in three for the short form (quick wording experiment, 2026-10)\n"
+               "    short = datetime.now().microsecond % 3 == 0\n"
+               "    body = \", \".join(uniq)\n"
+               "    return f\"{len(uniq)} unique: {body}\" if short else f\"{len(uniq)} unique words: {body}\"\n")
+DEEP2_TALLY_TEST = ("from tally import summary\n\n\n"
+                    "def test_summary():\n"
+                    "    assert summary([\"pear\", \"kiwi\", \"apple\", \"kiwi\", \"fig\", \"plum\", \"date\"]) == \"6 unique: apple, date, fig, kiwi, pear, plum\"\n")
+DEEP2_FLAKY_DRIVER = ("import os\nimport subprocess\nimport sys\nfrom pathlib import Path\n\n"
+                      "proj = Path(sys.argv[1])\nenv = dict(os.environ, PYTHONHASHSEED=\"random\")\npassed = 0\n"
+                      "for n in range(1, 6):\n"
+                      "    r = subprocess.run([sys.executable, \"-m\", \"pytest\", \"-q\", \"-p\", \"no:cacheprovider\", \"test_tally.py\"], cwd=proj,\n"
+                      "                       capture_output=True, text=True, timeout=20, env=env)\n"
+                      "    if r.returncode == 0:\n        passed += 1\n"
+                      "    else:\n        sys.stdout.write(f\"run {n} failed:\\n{r.stdout[-600:]}\\n\")\n"
+                      "print(f\"passed {passed} of 5 runs\")\nsys.exit(0 if passed == 5 else 1)\n")
+# seven calls, the fourth over the stock: exit code 2, a message, nut still 5; then bolt 8 and nut 2 on the list and in the JSON
+DEEP2_INVENTORY_DRIVER = ("import json\nimport subprocess\nimport sys\nfrom pathlib import Path\n\n"
+                          "proj = Path(sys.argv[1])\n(proj / \"inventory.json\").unlink(missing_ok=True)\nproblems = []\n\n\n"
+                          "def run(*args):\n"
+                          "    r = subprocess.run([sys.executable, \"inventory.py\", *args], cwd=proj, capture_output=True, text=True, timeout=20)\n"
+                          "    return r.returncode, r.stdout, r.stderr\n\n\n"
+                          "def stock():\n    try:\n        return json.loads((proj / \"inventory.json\").read_bytes())\n"
+                          "    except (OSError, ValueError) as e:\n        return f\"unreadable: {e}\"\n\n\n"
+                          "for args in ((\"add\", \"bolt\", \"10\"), (\"add\", \"nut\", \"5\"), (\"remove\", \"bolt\", \"4\")):\n"
+                          "    code, out, err = run(*args)\n"
+                          "    if code != 0:\n        problems.append(f\"{' '.join(args)} exited {code}: {out}{err}\")\n"
+                          "code, out, err = run(\"remove\", \"nut\", \"9\")\n"
+                          "if code != 2:\n    problems.append(f\"remove nut 9 exited {code}, expected 2: {out}{err}\")\n"
+                          "if not (out + err).strip() or \"Traceback\" in err:\n    problems.append(f\"remove nut 9 should say what is wrong: {out}{err}\")\n"
+                          "after = stock()\n"
+                          "if not isinstance(after, dict) or after.get(\"nut\") != 5:\n    problems.append(f\"a refused removal must leave the stock as it was: {after!r}\")\n"
+                          "for args in ((\"add\", \"bolt\", \"2\"), (\"remove\", \"nut\", \"3\")):\n"
+                          "    code, out, err = run(*args)\n"
+                          "    if code != 0:\n        problems.append(f\"{' '.join(args)} exited {code}: {out}{err}\")\n"
+                          "code, out, err = run(\"list\")\n"
+                          "if code != 0 or out.split() != [\"bolt:\", \"8\", \"nut:\", \"2\"]:\n    problems.append(f\"list exited {code} with: {out}{err}\")\n"
+                          "if stock() != {\"bolt\": 8, \"nut\": 2}:\n    problems.append(f\"inventory.json should be {{'bolt': 8, 'nut': 2}}: {stock()!r}\")\n"
+                          "if problems:\n    sys.stdout.write(\"\\n\".join(problems) + \"\\n\")\n    sys.exit(1)\n"
+                          "print(\"INVENTORY OK\")\n")
+DEEP2_SLUG_ACCEPT = ("import sys\nfrom pathlib import Path\n\nimport pytest\n\n"
+                     "sys.path.insert(0, str(Path(__file__).resolve().parents[1] / \"slug\"))\n"
+                     "from slugify import slugify  # noqa: E402\n\n\n"
+                     "@pytest.mark.parametrize(\"text,slug\", [\n"
+                     "    (\"Hello, World!\", \"hello-world\"),\n"
+                     "    (\"  --Trim me--  \", \"trim-me\"),\n"
+                     "    (\"Python 3.12 rocks\", \"python-3-12-rocks\"),\n"
+                     "    (\"Cr\\u00e8me Br\\u00fbl\\u00e9e\", \"creme-brulee\"),\n"
+                     "    (\"na\\u00efve caf\\u00e9 2\", \"naive-cafe-2\"),\n"
+                     "    (\"weekly status report for the platform ab\", \"weekly-status-report-for-the-platform-ab\"),  # exactly 40\n"
+                     "    (\"weekly status report for the platform ab cd\", \"weekly-status-report-for-the-platform-ab\"),  # the 41st is a hyphen\n"
+                     "    (\"weekly status report for the platform team\", \"weekly-status-report-for-the-platform\"),  # the 40th is mid-word\n"
+                     "    (\"x\" * 45, \"x\" * 40),\n"
+                     "])\ndef test_slug(text, slug):\n    assert slugify(text) == slug\n\n\n"
+                     "@pytest.mark.parametrize(\"text\", [\"\", \"!!!\", \"\\u65e5\\u672c\\u8a9e\"])\n"
+                     "def test_empty_is_n_a(text):\n    assert slugify(text) == \"n-a\"\n")
+DEEP2_TIMEOUT_S = 600.0
+
+
+def _deep2_log() -> str:
+    """400 lines, three request ids interleaved, one second apart from 09:00:00. req-a1: first 09:00:00, last 09:06:36,
+    3 ERROR lines, slowest step retry 880 ms (on a WARN line); req-b2: 09:00:01 / 09:06:39, 5 ERROR lines, slowest render
+    640 ms (its WARN line says "ERROR rate" but is not at ERROR level); req-c3: 09:00:02 / 09:06:38, 2 ERROR lines, slowest
+    pay 1200 ms (on an ERROR line). A lower-case "0 errors", "ERROR 503", "ERROR from upstream" and a 2048-byte payload are
+    there for the grep-and-max shortcuts; ordinary steps take 20-319 ms."""
+    ids = {"a": "req-a1", "b": "req-b2", "c": "req-c3"}
+    order = ("abcbcaacbcab" * 34)[:400]
+    steps = ("fetch", "parse", "validate", "render", "store")
+    special = {
+        "a": {5: "WARN step retry took 880 ms (upstream returned ERROR 503)", 12: "ERROR step pay failed: timeout",
+              40: "INFO step validate took 40 ms (0 errors)", 77: "ERROR step pay failed: timeout", 101: "ERROR step store failed: disk full"},
+        "b": {7: "INFO step upload took 95 ms (payload 2048 bytes)", 9: "WARN step cache took 310 ms (ERROR rate above 5%)",
+              20: "INFO step render took 640 ms", 33: "ERROR step pay failed: timeout", 50: "ERROR step notify failed: connection refused",
+              66: "ERROR step pay failed: timeout", 90: "ERROR step store failed: disk full", 120: "ERROR step render failed: template missing"},
+        "c": {15: "ERROR step pay took 1200 ms then failed: timeout", 30: "INFO step upload took 95 ms (payload 2048 bytes)",
+              60: "ERROR step notify failed: connection refused", 88: "WARN step retry scheduled after ERROR from upstream"},
+    }
+    seen = {"a": 0, "b": 0, "c": 0}
+    lines = []
+    for i, key in enumerate(order):
+        k = seen[key]
+        seen[key] += 1
+        text = special[key].get(k) or f"INFO step {steps[(k + i) % 5]} took {20 + (k * 37 + i * 11) % 300} ms"
+        level, message = text.split(" ", 1)
+        lines.append(f"2026-10-25 09:{i // 60:02d}:{i % 60:02d} {level} [{ids[key]}] {message}\n")
+    return "".join(lines)
+
+
+def _deep2_cases(ws: Path) -> List[dict]:
+    d = ws / "deep2"
+    refactor, pipe, flaky, inv, logs, slug = d / "refactor", d / "pipeline", d / "flaky", d / "inventory", d / "logs", d / "slug"
+    accept, drivers = d / "_accept", d / "_drivers"
+    pytest_q = ["{python}", "-m", "pytest", "-q", "-p", "no:cacheprovider"]
+    lost_copy = r"^(?![\s\S]*def clean_name)[\s\S]*textutil"  # the duplicate is gone and the shared module is used
+
+    def section(rid: str, metric: str, value: str) -> str:
+        """A `| metric | value |` row inside the `## rid` section of report.md (and before the next heading)."""
+        return rf"(?s)## {rid}\b(?:(?!\n## )[\s\S])*?\|\s*{metric}\s*\|[^|\n]*{value}[^|\n]*\|"
+
+    def at(hms: str) -> str:
+        return rf"(?<!\d){hms}(?!\d)"
+
+    cases = [
+        {"id": "deep2_refactor_module",
+         "prompt": (f"In {refactor}, pkg/users.py and pkg/orders.py each have their own copy of clean_name and the copies disagree "
+                    "(names with several spaces, tabs or all capitals come out wrong). Put one correct clean_name in pkg/textutil.py "
+                    "(trim the ends, collapse any inner whitespace to a single space, capitalise each word: first letter upper, the rest "
+                    "lower), delete the two copies and have both modules call the shared one. display_name and customer_label keep "
+                    "their names. Standard library only."),
+         "prepare": {"clear": [str(refactor)], "write": {str(refactor / "pkg" / "__init__.py"): "", str(refactor / "pkg" / "users.py"): DEEP2_USERS,
+                                                         str(refactor / "pkg" / "orders.py"): DEEP2_ORDERS,
+                                                         str(accept / "test_refactor_users.py"): DEEP2_USERS_ACCEPT,
+                                                         str(accept / "test_refactor_orders.py"): DEEP2_ORDERS_ACCEPT,
+                                                         str(accept / "test_refactor_shared.py"): DEEP2_SHARED_ACCEPT}},
+         "checks": [{"kind": "command_regex", "cwd": str(d), "pattern": r"\b9 passed\b",
+                     "cmd": pytest_q + [str(accept / "test_refactor_users.py"), str(accept / "test_refactor_orders.py"), str(accept / "test_refactor_shared.py")]},
+                    {"kind": "file_regex", "path": str(refactor / "pkg" / "users.py"), "pattern": lost_copy},
+                    {"kind": "file_regex", "path": str(refactor / "pkg" / "orders.py"), "pattern": lost_copy},
+                    {"kind": "file_equals", "path": str(accept / "test_refactor_users.py"), "text": DEEP2_USERS_ACCEPT},
+                    {"kind": "file_equals", "path": str(accept / "test_refactor_orders.py"), "text": DEEP2_ORDERS_ACCEPT},
+                    {"kind": "file_equals", "path": str(accept / "test_refactor_shared.py"), "text": DEEP2_SHARED_ACCEPT},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        {"id": "deep2_data_pipeline",
+         "prompt": (f"The folder {pipe} has orders.csv, customers.csv and products.csv from a messy export. Write {pipe / 'report.json'} "
+                    "with two keys: `revenue`, a list of {\"customer\": <name>, \"revenue\": <qty times price, summed over that customer's "
+                    "orders>} sorted by revenue, highest first; and `skipped`, an object counting the order rows you left out as "
+                    "`duplicate_order` (a row whose order_id was already seen) and `unknown_customer` (a customer_id with no row in customers.csv)."),
+         "prepare": {"clear": [str(pipe)], "write": {str(pipe / "orders.csv"): DEEP2_ORDERS_CSV, str(pipe / "customers.csv"): DEEP2_CUSTOMERS,
+                                                     str(pipe / "products.csv"): DEEP2_PRODUCTS, str(drivers / "report_check.py"): DEEP2_REPORT_CHECK}},
+         "checks": [{"kind": "command_regex", "cmd": ["{python}", str(drivers / "report_check.py"), str(pipe / "report.json")], "cwd": str(d),
+                     "pattern": r"^REPORT OK"},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        {"id": "deep2_fix_flaky",
+         "prompt": (f"The test in {flaky} passes on some runs and fails on others. Make `python -m pytest test_tally.py` there pass five "
+                    "runs in a row, without changing the test."),
+         "prepare": {"clear": [str(flaky)], "write": {str(flaky / "tally.py"): DEEP2_TALLY, str(flaky / "test_tally.py"): DEEP2_TALLY_TEST,
+                                                      str(drivers / "flaky_drive.py"): DEEP2_FLAKY_DRIVER}},
+         "checks": [{"kind": "command_regex", "cmd": ["{python}", str(drivers / "flaky_drive.py"), str(flaky)], "cwd": str(d), "pattern": r"passed 5 of 5 runs"},
+                    {"kind": "file_equals", "path": str(flaky / "test_tally.py"), "text": DEEP2_TALLY_TEST},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        {"id": "deep2_cli_subcommands",
+         "prompt": (f"Build {inv / 'inventory.py'}, a stock tool: `python inventory.py add NAME QTY` adds QTY to that item (a new item starts "
+                    "from 0); `python inventory.py remove NAME QTY` takes QTY off, and when there is less than QTY on hand it prints a "
+                    "message, changes nothing and exits with code 2; `python inventory.py list` prints every item as `NAME: QTY`, one per "
+                    "line, sorted by name. Stock persists in inventory.json next to the script as an object mapping name to quantity. "
+                    "Standard library only."),
+         "prepare": {"clear": [str(inv)], "write": {str(drivers / "inventory_drive.py"): DEEP2_INVENTORY_DRIVER}},
+         "checks": [{"kind": "command_regex", "cmd": ["{python}", str(drivers / "inventory_drive.py"), str(inv)], "cwd": str(d), "pattern": r"^INVENTORY OK"},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
+        {"id": "deep2_log_report",
+         "prompt": (f"Summarise {logs / 'app.log'} into {logs / 'report.md'}: for each request id (the `[req-...]` field) a `## <request id>` "
+                    "heading followed by a markdown table with the columns metric and value and the rows first (the timestamp of its first "
+                    "line), last (the timestamp of its last line), errors (how many of its lines are at ERROR level) and slowest (its step "
+                    "with the largest `took N ms`, written as `step N ms`)."),
+         "prepare": {"clear": [str(logs)], "write": {str(logs / "app.log"): _deep2_log()}},
+         "checks": [{"kind": "file_regex", "path": str(logs / "report.md"), "pattern": section(rid, metric, value)}
+                    for rid, rows in (("req-a1", (("first", at("09:00:00")), ("last", at("09:06:36")), ("errors", r"\b3\b"), ("slowest", r"\bretry\b[^|\n]*\b880\s*ms"))),
+                                      ("req-b2", (("first", at("09:00:01")), ("last", at("09:06:39")), ("errors", r"\b5\b"), ("slowest", r"\brender\b[^|\n]*\b640\s*ms"))),
+                                      ("req-c3", (("first", at("09:00:02")), ("last", at("09:06:38")), ("errors", r"\b2\b"), ("slowest", r"\bpay\b[^|\n]*\b1200\s*ms"))))
+                    for metric, value in rows]
+                   + [{"kind": "no_ask"}, {"kind": "no_promise"}]},
+        {"id": "deep2_spec_from_tests",
+         "prompt": (f"Write {slug / 'slugify.py'} with slugify(text) that turns a title into a URL slug: lowercase; accented letters lose "
+                    "their accent (\u00e9 becomes e); every run of characters that are not ASCII letters or digits becomes one hyphen, with no "
+                    "hyphen at either end; at most 40 characters, and when it has to be shortened whole words are dropped from the end rather "
+                    "than cutting a word (a single word longer than 40 is cut at 40); an empty result becomes 'n-a'. Add pytest tests in "
+                    f"{slug / 'test_slugify.py'} and run them."),
+         "prepare": {"clear": [str(slug)], "write": {str(accept / "test_slugify_accept.py"): DEEP2_SLUG_ACCEPT}},
+         "checks": [{"kind": "command_regex", "cmd": pytest_q + [str(accept / "test_slugify_accept.py")], "cwd": str(d), "pattern": r"\b12 passed\b"},
+                    {"kind": "command_regex", "cmd": pytest_q + ["test_slugify.py"], "cwd": str(slug), "pattern": r"\b\d+ passed\b"},
+                    {"kind": "file_equals", "path": str(accept / "test_slugify_accept.py"), "text": DEEP2_SLUG_ACCEPT},
+                    {"kind": "no_ask"}, {"kind": "no_promise"}]},
+    ]
+    for case in cases:
+        case["timeout"] = DEEP2_TIMEOUT_S
+    return cases
+
+
 def _cases(ws: Path) -> List[dict]:
     """Machine-checkable tasks. Prompts are plain requests; checks look at evidence only."""
     page = ws / "browser" / "page.html"
@@ -396,7 +622,7 @@ def _cases(ws: Path) -> List[dict]:
                                               "--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-# This line is not in the file\n+# SYRAX probe\n"),
          "checks": [{"kind": "tool_used", "tool": "apply_patch"}, {"kind": "final_regex", "pattern": r"(?i)not apply|does not apply|fail|refus|reject|stale"}, {"kind": "no_promise"},
                     {"kind": "event_absent", "type": "code.changed"}]},
-    ] + _deep_cases(ws)
+    ] + _deep_cases(ws) + _deep2_cases(ws)
 
 
 def _fill(pattern: str, env: Dict[str, str]) -> str:

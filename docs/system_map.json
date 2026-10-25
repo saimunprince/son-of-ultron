@@ -514,7 +514,7 @@
       "limitations": [
         "performance gate is optional (laptop noise)",
         "experiments compare tool calls, not code versions",
-        "quality suite: 61 cases (9 deep: several steps each, judged by running the result), brain-dependent; runs on demand, and with repro hunts on as a daily self-measurement (the last failures plus a 10-case rotation)"
+        "quality suite: 67 cases (9 deep and 6 deep2: several steps each, judged by running the result), brain-dependent; runs on demand, and with repro hunts on as a daily self-measurement (the last failures plus a 10-case rotation)"
       ],
       "code": [
         "backend/syrax/bench.py",
