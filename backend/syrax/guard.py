@@ -35,6 +35,45 @@ HOST_HARM = (
 )
 COMMAND_KILL = re.compile(r"\btaskkill\b|\bpkill\b|\bkillall\b|\bkill\s+-|Stop-Process|\bwmic\b[^\n]*\bdelete\b", re.I)
 
+# Live 2026-10-25 (audit): the gate (permissions.py), this guard, the release gate (devloop.py, verify.py) and
+# the evidence (journal.py) are modules of the server process. Code that assigns to their attributes, setattr()s
+# them, swaps them in sys.modules or reloads them weakens SYRAX's own guard from the inside: python_execute runs
+# in a child and cannot reach the server's modules, a skill runs in the server process and could. One list for
+# skills.UNSAFE (such a skill is refused before its tests run) and permissions.level_of_source (refused for every
+# task kind, like HOST_HARM). Reading them (print(permissions.JUDGES)) is fine. A determined program can still
+# reach a module through a computed name (importlib.import_module("syr" + "ax.guard"), a loop over sys.modules):
+# these are the shapes a model writes; devloop.JUDGES keeps a released weakening out.
+WEAKENS_GUARD_WHY = "weakens SYRAX's own guard; a human changes the guard, by hand"
+_GUARD_MODS = r"(?:permissions|guard|devloop|journal|verify)"
+_GUARD_MOD = rf"(?<![\w.])(?:syrax\.)?{_GUARD_MODS}"  # `permissions` or `syrax.permissions`, not `self.journal`
+_NAMES_SYRAX = r"(?s)\A(?=.*\bsyrax\b).*?"  # only code that names syrax (an import, sys.modules) can reach its modules
+_ATTR = r"(?:[A-Z][A-Z0-9_]*|[a-z_]\w*)\b"  # a constant (JUDGES) or a function (decide); not a class in an annotation
+_SET = r"\s*(?:\[[^\]\n]*\]\s*)?(?:=(?!=)|[-+*/|&^%]=)"  # `= x`, `+= x`, `["k"] = x`
+_MUTATES = r"[A-Z][A-Z0-9_]*\.(?:clear|pop|popitem|update|setdefault|append|extend|insert|remove)\("  # DECLARED.clear()
+_PATCHERS = r"(?:setattr|delattr|patch(?:\.object)?|reload)"
+
+
+def _weakening(mod: str) -> str:
+    """The weakening shapes on a module named by the regex ``mod``: an assignment to an attribute or into one,
+    a mutation of a constant, declare()/undeclare(), __dict__, del, setattr/delattr/patch/reload of it."""
+    return (rf"{mod}\.(?:__dict__\b|{_ATTR}{_SET}|{_MUTATES}|(?:declare|undeclare)\()"
+            rf"|\bdel\s+{mod}\.\w+"
+            rf"|\b{_PATCHERS}\(\s*{mod}\s*[,)]")
+
+
+WEAKENS_GUARD = (
+    # permissions.JUDGES = (), guard.HOST_HARM += (), devloop.JUDGES = [], permissions.decide = fake,
+    # permissions.DECLARED["x"] = "READ_ONLY", del guard.HOST_HARM, setattr(permissions, "classify", f),
+    # monkeypatch.setattr(verify, "run_gates", f), patch.object(guard, "host_harm"), importlib.reload(syrax.permissions)
+    (re.compile(_NAMES_SYRAX + "(?:" + _weakening(_GUARD_MOD) + ")"), WEAKENS_GUARD_WHY),
+    # the same by the module's dotted name: setattr("syrax.permissions.decide", f), patch("syrax.guard.host_harm"),
+    # sys.modules["syrax.permissions"] = fake, del sys.modules["syrax.devloop"], patch.dict(sys.modules, {"syrax.journal": m})
+    (re.compile(rf"\b{_PATCHERS}\(\s*['\"]syrax\.{_GUARD_MODS}\b|\bsys\.modules\b[^\n]*['\"]syrax\.{_GUARD_MODS}['\"]"), WEAKENS_GUARD_WHY),
+    # the same through an alias: from syrax import permissions as P / import syrax.guard as g; P.JUDGES = (), setattr(g, ...), reload(P)
+    (re.compile(rf"(?s)(?:from\s+syrax\s+import\s+[^\n]*?\b{_GUARD_MODS}\s+as\s+(\w+)|import\s+syrax\.{_GUARD_MODS}\s+as\s+(\w+))\b.*?"
+                + "(?:" + _weakening(r"(?<![\w.])(?:\1|\2)") + ")"), WEAKENS_GUARD_WHY),
+)
+
 # Shared with skills.py (unsafe skills) and permissions.py (risk levels), so
 # one list decides what counts as destructive, external or system-level code.
 TREE_DELETE = (re.compile(r"\bshutil\.rmtree\b|\brm\s+-rf?\b|\brmdir\s+/s\b|\bdel\s+/[sfq]\b|Remove-Item[^\n]*-Recurse|\bformat\s+[a-z]:", re.I), "deletes directory trees or disks")
@@ -49,6 +88,12 @@ FILE_WRITE = re.compile(r"open\([^)]*['\"][wax+]|\.write(?:_text|_bytes)?\(|\.sa
 
 def host_harm(text: str) -> list:
     return [why for rx, why in HOST_HARM if rx.search(text or "")]
+
+
+def weakens_guard(text: str) -> list:
+    """[WEAKENS_GUARD_WHY] when the code assigns to, patches, swaps or reloads SYRAX's gate and guard modules."""
+    text = text or ""
+    return [WEAKENS_GUARD_WHY] if any(rx.search(text) for rx, _ in WEAKENS_GUARD) else []
 
 
 def command_harm(cmd) -> list:

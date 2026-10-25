@@ -54,14 +54,20 @@ MAX_CODE_CHARS = 60_000
 # that can hurt the machine is refused before anything runs. A human who wants
 # such a capability writes it by hand.
 from syrax import guard, permissions  # noqa: E402
-from syrax.guard import HOST_HARM, TREE_DELETE  # noqa: E402  (one list for skills, python_execute and permissions)
+from syrax.guard import HOST_HARM, TREE_DELETE, WEAKENS_GUARD  # noqa: E402  (one list for skills, python_execute and permissions)
 
-UNSAFE = HOST_HARM + (TREE_DELETE,)
+# Live 2026-10-25 (audit): a skill runs in the server process, so code that assigns to, patches or reloads the
+# gate's own modules (guard.WEAKENS_GUARD) never runs here, not even its tests.
+UNSAFE = HOST_HARM + (TREE_DELETE,) + WEAKENS_GUARD
 
 
 def unsafe_reasons(*sources: str) -> List[str]:
     text = "\n".join(sources)
-    return [why for rx, why in UNSAFE if rx.search(text)]
+    out: List[str] = []
+    for rx, why in UNSAFE:
+        if why not in out and rx.search(text):
+            out.append(why)
+    return out
 
 
 def _atomic_write(path: Path, text: str) -> None:

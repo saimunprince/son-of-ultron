@@ -15,6 +15,7 @@ is the general rule, applied once, at the agent's single tool choke point
   EXTERNAL_WRITE   sends, posts, pays                        authorize     by words refuse
   DESTRUCTIVE      deletes, discards history                 authorize     by words refuse
   harm             kills processes / power / system config   refuse        refuse   refuse
+                   or weakens SYRAX's own guard (guard.WEAKENS_GUARD)
 
 "authorize": the human's own words are the confirmation. If the request
 named the action and every target the call touches, it runs. Otherwise SYRAX
@@ -153,7 +154,7 @@ def undeclare(name: str) -> None:
 def level_of_source(text: str) -> Tuple[str, str, List[str]]:
     """(level, reason, harm) for a piece of code, worst rung first."""
     text = text or ""
-    harm = guard.host_harm(text)
+    harm = guard.host_harm(text) + guard.weakens_guard(text)  # the guard's own modules count as the host (audit 2026-10-25)
     if harm:
         return DESTRUCTIVE, "; ".join(harm), harm
     for rx, why in guard.DESTRUCTIVE_PATTERNS:
@@ -179,6 +180,72 @@ def path_literals(code: str) -> List[str]:
         if looks and not s.startswith(("http://", "https://")) and s not in out:
             out.append(s)
     return out
+
+
+# Live 2026-10-25 (audit): path_literals() sees only a literal that looks like a path, so a computed path reached
+# the tool with no protected target: Path(__file__).parent / "quality.py", os.path.join(root, "backend", "syrax",
+# "guard.py"), f"{d}/journal.db", "qual" + "ity.py". The basenames of the protected files are known, so any
+# literal that ends in one is read as that file. A determined program can still compute a path at runtime
+# ("".join(parts), a name read from a file): this gate is the first of three walls; the runtime guard
+# (guard.py, a child cannot write the journal, the keys or the live tree) and the release gate
+# (devloop.judge_problems) are the other two.
+_JOINED = re.compile(r"""["']\s*(?:\+\s*)?["']""")  # `"qual" + "ity.py"` and `"qual" "ity.py"`, read as one literal
+_PROTECTED_RX: Dict[Tuple[str, ...], "re.Pattern[str]"] = {}
+
+
+def protected_basenames() -> Dict[str, str]:
+    """{basename: repository path} of every protected file: the judges (devloop.JUDGES), the key and
+    evidence files (PROTECTED_DATA) and the owner's files (OWNER_DATA)."""
+    from syrax.devloop import JUDGES  # devloop does not import permissions
+
+    return {p.rsplit("/", 1)[-1].lower(): p for p in (*JUDGES, *PROTECTED_DATA, *OWNER_DATA)}
+
+
+def _protected_rx(names: Dict[str, str]) -> "re.Pattern[str]":
+    key = tuple(sorted(names))
+    rx = _PROTECTED_RX.get(key)
+    if rx is None:
+        alts = "|".join(re.escape(n) for n in sorted(names, key=len, reverse=True))
+        rx = _PROTECTED_RX[key] = re.compile(rf"""["']([^'"\n]*[/\\])?({alts})["']""", re.I)
+    return rx
+
+
+def _protected_place(literal: str, names: Dict[str, str]) -> Optional[str]:
+    """The repository path a literal ending in a protected basename stands for; None when it names another place."""
+    known = names[literal.replace("\\", "/").rsplit("/", 1)[-1].lower()]
+    if "/" not in literal and "\\" not in literal:
+        return known  # a bare basename: the piece a join or a Path chain ends with
+    rel = repo_relative(os.path.normpath(os.path.expanduser(literal)).replace("\\", "/"))
+    if rel is None:
+        return None  # an absolute path outside the repository (C:/tmp/quality.py)
+    rel = rel.lower()
+    if rel == known:
+        return known
+    head = rel.split("/", 1)[0]
+    if (REPO_ROOT / head).is_dir():
+        return None  # a definite other place in the repository (backend/workspace/tools.py)
+    if (BACKEND_ROOT / head).is_dir():
+        return known if f"backend/{rel}" == known else None  # relative to backend/ (syrax/quality.py, config/brains.json)
+    return known  # a prefix the gate cannot place ({d}/, ../, root/): the protected file is what it may be
+
+
+def protected_literals(code: str) -> List[str]:
+    """Repository paths of the protected files that code names by basename (see the note above _JOINED)."""
+    names = protected_basenames()
+    text = code or ""
+    out: List[str] = []
+    for source in (text, _JOINED.sub("", text)):
+        for m in _protected_rx(names).finditer(source):
+            rel = _protected_place((m.group(1) or "") + m.group(2), names)
+            if rel and rel not in out:
+                out.append(rel)
+    return out
+
+
+def code_targets(code: str) -> List[str]:
+    """What a piece of code may touch: its path-looking literals, then the protected files it names by basename."""
+    out = path_literals(code)
+    return out + [t for t in protected_literals(code) if t not in out]
 
 
 def scope_of(path: Path) -> str:
@@ -226,11 +293,13 @@ def classify(name: str, args: Any) -> Decision:
     if name == "python_execute":
         code = str(a.get("code") or "")
         level, reason, harm = level_of_source(code)
-        return Decision(name, level, reason, path_literals(code), harm)
+        return Decision(name, level, reason, code_targets(code), harm)
     if name == "skill_create":
         src = f"{a.get('code') or ''}\n{a.get('test_code') or ''}"
         level, reason, harm = level_of_source(src)
-        return Decision(name, highest(WRITE, level), reason if rank(level) > rank(WRITE) else "creates a skill", [str(a.get("name") or "")], harm)
+        # a skill whose source writes (its own level, before the WRITE floor) and names a protected file is held to it
+        targets = [str(a.get("name") or "")] + (protected_literals(src) if rank(level) > rank(READ_ONLY) else [])
+        return Decision(name, highest(WRITE, level), reason if rank(level) > rank(WRITE) else "creates a skill", targets, harm)
     if name == "desktop":
         action = str(a.get("action") or "")
         target = str(a.get("target") or "")
@@ -339,7 +408,10 @@ def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[st
     kind = kind if kind in KINDS else "conversation"
     grants = grants or {}
     if decision.harm:
-        return Verdict("refuse", None, f"the code {'; '.join(decision.harm)}; SYRAX must not harm the host")
+        why = f"the code {'; '.join(decision.harm)}"
+        if any(h != guard.WEAKENS_GUARD_WHY for h in decision.harm):
+            why += "; SYRAX must not harm the host"
+        return Verdict("refuse", None, why)
     level = decision.level
     if level != READ_ONLY and (held := data_targets(decision.targets, PROTECTED_DATA)):
         # Live 2026-10-25 (audit): the keys and the evidence are nobody's to write through a tool, whatever the task

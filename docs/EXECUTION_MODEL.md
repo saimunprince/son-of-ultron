@@ -164,6 +164,21 @@ module docstring):
   the model not to retry but to do the rest or report.
 - **Dynamic skills** may declare `risk` on their Skill class; the declared
   level can only raise the level their source shows (floor `WRITE`).
+- **A protected file named by its basename is that file** (2026-10-25 audit): a
+  literal in `python_execute` or `skill_create` code that ends in the basename of
+  a judge (`devloop.JUDGES`), a key/evidence file or an owner file (`quality.py`,
+  `journal.db`, `brains.json`, ...) is a target of that repository path, so
+  `Path(d) / "quality.py"`, `os.path.join(root, "backend", "syrax", "guard.py")`,
+  `f"{d}/journal.db"` and `"qual" + "ity.py"` are refused like the literal path,
+  while a path computed at runtime is left to the runtime guard (`guard.py`) and
+  the release gate (`devloop.judge_problems`).
+- **Weakening the guard is harm** (`guard.WEAKENS_GUARD`, shared with
+  `skills.UNSAFE`): code that assigns to, `setattr`s, `del`s, swaps in
+  `sys.modules` or reloads `syrax.permissions`, `guard`, `devloop`, `journal` or
+  `verify` (`permissions.JUDGES = ()`, `setattr(devloop, "JUDGES", ...)`, a
+  monkeypatch of `decide`/`classify`/`run_gates`/`host_harm`) is refused for every
+  task kind with "the code weakens SYRAX's own guard; a human changes the guard,
+  by hand", and such a skill is refused before its tests run; reading them is fine.
 
 ## 5. Semantic checkpoints
 
@@ -304,11 +319,14 @@ evidence (`test_verify.py`).
 - The frontend only shows recovered/running notices; no LIVE/HISTORY/WHY view yet.
 - Permissions: the write scope of `python_execute` cannot be checked (the
   paths live inside the code), so writes outside the repository are allowed.
-- Permissions: targets are extracted from string literals only; a computed
-  path (`os.path.join`, an f-string, a variable) yields no target, so a human
-  gets asked once and autonomous work gets refused.
+- Permissions: targets are extracted from string literals only; a protected
+  basename in any literal counts as that file (2026-10-25), but a path computed
+  at runtime (`"".join(parts)`, a name read from a file, a variable) yields no
+  target, so a human gets asked once and autonomous work gets refused.
 - Permissions: a crash while a permission question is pending is classified
   `UNCERTAIN` by recovery (the safe side), like any `python_execute` call.
 - Permissions: in-process code shares the process with `permissions.py`;
-  `devloop.JUDGES` prevents a *released* weakening of the policy, not a
-  runtime monkeypatch from `python_execute` or a skill.
+  `devloop.JUDGES` prevents a *released* weakening of the policy and
+  `guard.WEAKENS_GUARD` the written shapes of a runtime monkeypatch from
+  `python_execute` or a skill (an assignment, `setattr`, `sys.modules`,
+  `reload`, also through an alias); a module reached by a computed name is not caught.
