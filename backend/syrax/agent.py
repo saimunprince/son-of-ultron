@@ -433,8 +433,12 @@ class SyraxAgent(Manus):
         if self._owes_release(request):
             await self._send({"type": "notice", "text": "Files changed but not released: asking once for `release`."})
             result += "\n" + await BaseAgent.run(self, RELEASE_NUDGE)
+        # Live 2026-10-25: "use str_replace_editor to edit brains.json" was refused by the permission gate, and the
+        # nudge then said the task never called the tool. A refused call is a call: the refusal is final (REFUSAL_ACK),
+        # so asking for the tool again only asks for a second refusal.
+        refused_tools = {tool for tool, _ in self.refusals}
         missing = [] if self.task_kind == "autonomous" else [
-            t for t in named_tools(self.task_goal, self.available_tools.tool_map) if t not in self.called]
+            t for t in named_tools(self.task_goal, self.available_tools.tool_map) if t not in self.called and t not in refused_tools]
         if missing and not self.step_limit_hit and not self.loop_stopped and "max steps" not in result:
             await self._send({"type": "notice", "text": f"The request names `{missing[0]}` and the task never called it: asking once."})
             result += "\n" + await BaseAgent.run(self, NAMED_NUDGE.format(tool=missing[0]))
