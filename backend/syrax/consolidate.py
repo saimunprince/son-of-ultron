@@ -14,17 +14,34 @@ conclusion is compared with the stored conclusions about the same thing:
 "Same subject" is keyword overlap (Jaccard ≥ SIMILAR) between the claims;
 figures are the numbers in them. Words, not embeddings: no model is needed
 and every decision can be read in the journal.
+
+Two figures are the same figure when they ``agree`` (live 2026-10-19..26:
+"approximately 78.4°C (173.1°F)" against "78.37°C" opened three contradiction
+objectives that research could never settle, because both are right):
+
+- equal values, thousands separators ignored ("1,442" is 1442);
+- the more precise one rounds (half up) to the less precise one
+  (78.37 → 78.4, 78.37 → 78);
+- they differ by less than TOLERANCE (0.5 %) of the larger, when at least one
+  has decimals and both are ≥ SMALL. Whole numbers (years, counts) are exact:
+  2000 vs 2004 and 1442 vs 1443 stay contradictions. Below SMALL a decimal is
+  as often a version or a ratio (Python 3.12 vs 3.13) as a measurement, so
+  there only rounding counts.
 """
 
 from __future__ import annotations
 
 import re
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import List, Optional, Tuple
 
 from syrax.journal import Journal
 
 SIMILAR = 0.6
-NUMBER = re.compile(r"(?<![\w.])\d+(?:\.\d+)?(?!\w|\.\d)")  # "2000." ends a sentence
+TOLERANCE = Decimal("0.005")
+SMALL = 10
+# "2000." ends a sentence; "1,442" is one figure, "1,2345" is still two
+NUMBER = re.compile(r"(?<![\w.])(?:\d{1,3}(?:,\d{3})+(?!\d)|\d+)(?:\.\d+)?(?!\w|\.\d)")
 
 
 def _words(text: str) -> set:
@@ -34,7 +51,37 @@ def _words(text: str) -> set:
 
 
 def figures(text: str) -> set:
-    return set(NUMBER.findall(text or ""))
+    return {m.replace(",", "") for m in NUMBER.findall(text or "")}
+
+
+def _places(figure: str) -> int:
+    return len(figure.partition(".")[2])
+
+
+def agree(a: str, b: str) -> bool:
+    """True when two figures state the same value (see the module doc)."""
+    try:
+        x, y = Decimal(a.replace(",", "")), Decimal(b.replace(",", ""))
+        if x == y:
+            return True
+        pa, pb = _places(a), _places(b)
+        if pa != pb:
+            fine, coarse, p = (x, y, pb) if pa > pb else (y, x, pa)
+            if fine.quantize(Decimal(1).scaleb(-p), rounding=ROUND_HALF_UP) == coarse:
+                return True
+        if not (pa or pb) or min(x, y) < SMALL:
+            return False
+        return abs(x - y) < TOLERANCE * max(x, y)
+    except (InvalidOperation, ValueError):
+        return a == b
+
+
+def _overlap(mine: set, theirs: set) -> bool:
+    return any(agree(a, b) for a in mine for b in theirs)
+
+
+def _covered(some: set, by: set) -> bool:
+    return all(any(agree(a, b) for b in by) for a in some)
 
 
 def similarity(a: str, b: str) -> float:
@@ -50,8 +97,8 @@ def compare(claim: str, journal: Journal, limit: int = 300) -> Tuple[Optional[di
         if k.get("kind") != "conclusion" or similarity(claim, k["claim"]) < SIMILAR:
             continue
         theirs = figures(k["claim"])
-        if mine and theirs and not (mine & theirs):
+        if mine and theirs and not _overlap(mine, theirs):
             conflicts.append(k)
-        elif duplicate is None and (mine == theirs or not mine or not theirs or mine <= theirs or theirs <= mine):
+        elif duplicate is None and (not mine or not theirs or _covered(mine, theirs) or _covered(theirs, mine)):
             duplicate = k
     return (None if conflicts else duplicate), conflicts
