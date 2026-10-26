@@ -228,6 +228,20 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### A claimed send, open or click is held to the tools that ran (2026-10-26)
+
+- 0c103de: the agent now remembers which classes of tool succeeded in a task
+  (write, send, desktop, browser, code). An answer that says a message was
+  sent, an app opened, the volume set or a page clicked, when no tool of that
+  class ran, is sent back once with the class named and, if the claim stays,
+  gets "(Not done: no <class> tool ran in this task.)"; negations and
+  reading idioms ("opened the file", "did not send") are left alone. A pytest
+  summary printed by python_execute now sets the task's test state, so
+  "tests pass" after such a failing run is caught like after apply_patch.
+  The audit's remaining class, a claim of the SAME kind as a write that did
+  happen (fix_import, run #65: the greeting rewritten, not the import fixed),
+  stays uncatchable by words. 90 tests.
+
 ### A resumed task starts properly; a demanded word is given as asked (2026-10-26)
 
 - 8db691a: a resumed conversation now gets what a new task gets (`Core._prepare`,
