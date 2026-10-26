@@ -285,6 +285,13 @@ window", pressed Enter and answered "Message sent"; Prince: "dont lie with me".
   The guide: before alt+f4, ctrl+w or delete, focus the window by its title
   and check where the keys went. `window close` stays unavailable (a contract
   test pins "nothing destructive"). 5 tests, 3 red before.
+- 91ac367: "not web i have alredy installed whatsapp application" (10-25) was
+  answered "WhatsApp is not installed as a desktop application": the app list
+  held only Start Menu shortcut files, and WhatsApp is a Microsoft Store app.
+  The Windows list now adds the Start apps that are not a shortcut file
+  (Get-StartApps, read every 10 min), launched through shell:AppsFolder;
+  "whatsapp" tries its alias "whatsapp web", then the words as said. Read-
+  only on this machine: 106 apps, "whatsapp" is the Store app. 7 tests.
 
 ### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
