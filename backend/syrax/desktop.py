@@ -810,7 +810,13 @@ class DesktopControl(BaseTool):
 
         if not str(target or "").strip():
             raise ValueError("find_text and click_text need the words to look for in target, e.g. Save.")
-        return await asyncio.to_thread(sight.find, str(target).strip(), wininput.backend().screen())
+        spot, seen = await asyncio.to_thread(sight.find, str(target).strip(), wininput.backend().screen())
+        if spot is None and seen:  # a tie: each candidate names its window, so the brain can tell them apart
+            try:
+                seen = await asyncio.to_thread(sight.in_windows, seen)
+            except Exception:
+                pass
+        return spot, seen
 
     async def _do_find_text(self, target: str = "", **_) -> ToolResult:
         """Where a control or some words are on the screen (sight.py); nothing is clicked."""

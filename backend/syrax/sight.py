@@ -11,8 +11,8 @@ Two ways to look, both built into Windows, so there is no new dependency
 Only the primary screen is searched, because wininput clicks there. Places are
 scaled to the click's own coordinates, so display scaling cannot shift them.
 SYRAX's own window is skipped as the foreground. When two places match equally
-well nothing is clicked: the candidates come back, so the brain can choose and
-use click x,y.
+well nothing is clicked: the candidates come back, each naming the window it
+lies in (and which one is in front), so the brain can choose and use click x,y.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -42,9 +42,10 @@ class Spot:
     label: str
     how: str
     score: int
+    window: str = ""  # the window it lies in; named only for a tie (in_windows)
 
     def say(self) -> str:
-        return f"{self.x},{self.y} {self.label} ({self.how})"
+        return f"{self.x},{self.y} {self.label} ({self.how})" + (f" in {self.window}" if self.window else "")
 
 
 def norm(s: str) -> str:
@@ -123,6 +124,42 @@ def choose(spots: List[Spot]) -> Tuple[Optional[Spot], List[Spot]]:
         if all(abs(s.x - d.x) > 8 or abs(s.y - d.y) > 8 for d in distinct):
             distinct.append(s)
     return (distinct[0] if len(distinct) == 1 else None), ranked[:6]
+
+
+def window_words(w: Optional[dict]) -> str:
+    """How a candidate's window is named: 'window "WhatsApp" (WhatsApp.exe, in front)'; '' when unknown.
+    A title that looks private is masked exactly as presence.redact masks it."""
+    from syrax.presence import redact
+
+    if not w:
+        return ""
+    title = " ".join(str(w.get("title") or "").split())
+    process = " ".join(str(w.get("process") or "").split())[:60]
+    if not title and not process:
+        return ""
+    shown = redact(title) if title else ""
+    head = (f'window "{shown}"' if shown == title[:80] else f"window {shown}") if title else "a window"
+    notes = [n for n in (process, "in front" if w.get("front") else "") if n]
+    return head + (f" ({', '.join(notes)})" if notes else "")
+
+
+def in_windows(spots: List[Spot], reader: Optional[Callable[[int, int], Optional[dict]]] = None) -> List[Spot]:
+    """A tie's candidates, each naming the window it lies in and marking the one in front.
+
+    Live 2026-10-25: "send message to bro bhi" found "bro bhi" in two places equally well; the
+    candidates were bare x,y and the brain clicked the first one blindly. This only adds words:
+    nothing is clicked or focused, and a window that cannot be read leaves its candidate as it was.
+    """
+    if reader is None:
+        from syrax.winctl import window_at as reader
+    out = []
+    for s in spots:
+        try:
+            words = window_words(reader(s.x, s.y))
+        except Exception:
+            words = ""
+        out.append(replace(s, window=words))
+    return out
 
 
 def look(mode: str, text: str, hwnd: int = 0) -> dict:

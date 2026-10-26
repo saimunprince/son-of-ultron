@@ -69,6 +69,54 @@ def foreground() -> Optional[dict]:
     return {"title": buf.value, "process": process, "pid": int(pid.value)}
 
 
+GA_ROOT = 2
+_typed = None
+
+
+def _user32_typed():
+    """user32 with handle-sized types for window_at; its own WinDLL, so the shared windll keeps its defaults."""
+    global _typed
+    if _typed is None:
+        _user32()  # not Windows: OSError
+        u = ctypes.WinDLL("user32")
+        u.WindowFromPoint.argtypes = [wintypes.POINT]
+        u.WindowFromPoint.restype = wintypes.HWND
+        u.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        u.GetAncestor.restype = wintypes.HWND
+        u.GetForegroundWindow.argtypes = []
+        u.GetForegroundWindow.restype = wintypes.HWND
+        u.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+        u.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+        u.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+        _typed = u
+    return _typed
+
+
+def window_at(x: int, y: int) -> Optional[dict]:
+    """The top-level window at a point of the screen (the clicker's coordinates): its title, the program
+    that owns it (read as foreground() reads it) and whether it is the window in front; None when there
+    is none. It only reads: nothing is focused, moved or clicked."""
+    u = _user32_typed()
+    root = u.GetAncestor(u.WindowFromPoint(wintypes.POINT(int(x), int(y))), GA_ROOT)
+    if not root:
+        return None
+    front = u.GetForegroundWindow()
+    front = u.GetAncestor(front, GA_ROOT) if front else None
+    n = u.GetWindowTextLengthW(root)
+    buf = ctypes.create_unicode_buffer(n + 1)
+    u.GetWindowTextW(root, buf, n + 1)
+    pid = wintypes.DWORD()
+    u.GetWindowThreadProcessId(root, ctypes.byref(pid))
+    process = ""
+    try:
+        import psutil
+
+        process = psutil.Process(pid.value).name()
+    except Exception:
+        pass
+    return {"title": buf.value, "process": process, "front": bool(front) and front == root}
+
+
 def find(title_part: str, wins: Optional[List[Tuple[int, str]]] = None) -> Optional[Tuple[int, str]]:
     """The first window (top of z-order) whose title contains ``title_part``."""
     q = " ".join(title_part.lower().split())
