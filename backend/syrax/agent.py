@@ -617,6 +617,58 @@ OUTCOME_NUDGE = (
     "what was and was not done."
 )
 OUTCOME_NOTE = " (Not done: no {tool} tool ran in this task.)"
+# Live 2026-10-25 (Prince): after SYRAX said music played and a page opened, the human said "no it was not playing",
+# "not playing", "not opend", "no", "dont lie with me". None of the five turns read anything: each opened another URL
+# blind, the last answered "I do not lie. I dominate. Inspect the screen if your eyes doubt the machine." A short
+# denial of what the previous turn did on the desktop, the browser or a send is answered from a reading (is_reading):
+# once sent back to check, then DISPUTE_NOTE. Short: the whole request, at most DISPUTE_MAX characters.
+DISPUTE_MAX = 80
+DISPUTE_NO = re.compile(r"^\W*(?:no+|nope|nah)\W*$", re.I)  # a bare "no": no dispute when the last answer asked
+DISPUTE = re.compile(
+    r"(?<!do )(?<!please )(?<!to )\bnot (?:yet |even )?(?:playing|played|plays|open|opened|opend|opening|working|worked|loaded"
+    r"|loading|showing|shown|started|running|there|visible|sent|happening|happened)\b"
+    r"|\b(?:is|was|are|were|does|did|has|have)(?:n'?t| not)\b(?: \w+){0,2} (?:play|playing|played|open|opened|work|working"
+    r"|worked|load|loaded|show|showing|start|started|happen|happened|send|sent|appear|appeared|change|changed)\b"
+    r"|\b(?:didn'?t|doesn'?t|did not|does not) (?:play|open|work|load|show|start|happen|send|appear|change)\b"
+    r"|\b(?:dont|don'?t|do not|stop) (?:lie|lying)\b|\byou(?:'re| are)? (?:lying|lied)\b|\bliar\b|\b(?:that'?s|that is) a lie\b"
+    r"|\bnothing (?:is |has )?(?:happened|happens|happening|playing|plays|opened|changed|showed|shows|works|worked|loaded)\b"
+    r"|\bstill (?:not|nothing|no)\W*$"
+    r"|\b(?:hoy ?nai|hoyni|hoini|hocche ?na|hochhe ?na|hosse ?na|chole ?na|cholche ?na|cholse ?na|baje ?na|bajche ?na"
+    r"|khule ?nai|khole ?nai|khulche ?na|khulse ?na)\b",
+    re.I)
+DISPUTE_NUDGE = (
+    "[SYRAX check, not a new request] The human says the last action did not work. Before answering, check what is "
+    "really on the screen or playing (desktop media status, desktop screenshot, find_text) and answer from that reading."
+)
+DISPUTE_NOTE = " (Not checked: nothing in this task read the screen or the player.)"
+# what the previous turn did that a dispute can be about: classes_of, a reading excluded
+DISPUTE_ACTS = frozenset({"desktop", "browser", "send"})
+# browser_exec code that reads the page; a browser_* tool named for reading (browser_read, browser_screenshot, ...)
+_BROWSER_READ_CODE = re.compile(r"\b(?:page_info|get_text|inner_text|text_content|snapshot|screenshot|read_page|page_text|extract)\b", re.I)
+_BROWSER_READ_TOOL = re.compile(r"read|screenshot|snapshot|get|text|content|extract|info|find", re.I)
+
+
+def is_dispute(text: str, asked: bool = False) -> bool:
+    """A short request that denies the last action worked ("not playing", "it didn't work", "dont lie", "hoy nai").
+    A bare "no" counts unless the last answer asked a question (`asked`): then it answers that question."""
+    t = str(text or "").strip()
+    if not t or len(t) > DISPUTE_MAX:
+        return False
+    return bool(DISPUTE.search(t) or (not asked and DISPUTE_NO.search(t)))
+
+
+def is_reading(name: str, args: Any) -> bool:
+    """A call that reads what is on the screen or playing: `desktop` media (every media answer says what plays),
+    screenshot, find_text, window list/focus; a browser page read; `self_inspect`."""
+    a = args if isinstance(args, dict) else {}
+    if name == "self_inspect":
+        return True
+    if name == "desktop":
+        action, value = str(a.get("action") or "").lower(), str(a.get("value") or "").strip().lower()
+        return action in ("media", "screenshot", "find_text") or (action == "window" and value in ("list", "focus"))
+    if name == "browser_exec":
+        return bool(_BROWSER_READ_CODE.search(str(a.get("code") or "")))
+    return name.startswith("browser_") and bool(_BROWSER_READ_TOOL.search(name[len("browser_"):]))
 # Phase 6 of the self-improvement plan: a researched answer carries its source. Live: research_cite
 # answered the year from memory and quality run #23 failed it; the rule in the prompt alone was not enough.
 URL = re.compile(r"https?://\S+")
@@ -920,6 +972,15 @@ class SyraxAgent(Manus):
             # still carries the note.
             if BOAST.search(self.last_reply or "") and not (read and re.search(r"\d", self.last_reply or "")):
                 self.last_reply = self.last_reply.rstrip() + (SELF_NOTE_READ if read else SELF_NOTE)
+        if self.last_reply and self._dispute_unread() and not self.step_limit_hit and not self.loop_stopped:
+            # the human denies the last action worked and nothing read the screen: once to check, then the note
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._send({"type": "notice", "text": "The human disputes the last action and nothing read the screen or the player: asking once to check."})
+            result += "\n" + await BaseAgent.run(self, DISPUTE_NUDGE)
+            if self.last_reply.startswith("SYRAX:"):
+                self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+            if self._dispute_unread():  # still nothing read
+                self.last_reply = (self.last_reply or "").rstrip() + DISPUTE_NOTE
         if (self.last_reply and self.researched and not URL.search(self.last_reply) and "[Spoken aloud" not in (request or "")
                 and not self.step_limit_hit and not self.loop_stopped):
             # the answer rests on research: it names its source once asked, or the journal shows it would not
@@ -977,6 +1038,33 @@ class SyraxAgent(Manus):
             if text and rx.search(text) and not (self.acted & stands_for):
                 return cls
         return None
+
+    def _dispute_unread(self) -> bool:
+        """The request disputes the previous turn of this conversation (is_dispute), that turn acted on the desktop,
+        the browser or sent something (DISPUTE_ACTS, a reading excluded), and no call of this task read the screen or
+        the player (is_reading). The turns are the agent's memory: a human request is a user message that is not a
+        console nudge (ECHO); the core keeps a conversation's memory across its tasks."""
+        if self.task_kind in ("autonomous", "eval"):
+            return False
+        msgs = [m for m in self.memory.messages if m.role != "system"]
+        asks = [i for i, m in enumerate(msgs) if m.role == "user" and not ECHO.search(str(m.content or ""))]
+        if len(asks) < 2:
+            return False
+        prev, this = msgs[asks[-2]:asks[-1]], msgs[asks[-1]:]
+        answers = [str(m.content or "").strip() for m in prev if m.role == "assistant" and not m.tool_calls and m.content]
+        if not is_dispute(self.task_goal, asked=bool(answers) and answers[-1].endswith("?")):
+            return False
+
+        def calls(turn):  # (name, args) of the calls that succeeded in this part of the memory
+            results = {m.tool_call_id: str(m.content or "") for m in turn if m.role == "tool"}
+            for m in turn:
+                for tc in (m.tool_calls or []) if m.role == "assistant" else []:
+                    if tc.id in results and _succeeded(results[tc.id]):
+                        yield tc.function.name, _args_of(tc)
+
+        acted = any(not is_reading(n, a) and classes_of(n, permissions.classify(n, a).level, a) & DISPUTE_ACTS
+                    for n, a in calls(prev))
+        return acted and not any(is_reading(n, a) for n, a in calls(this))
 
     def _unreleased_edits(self, request: Optional[str]) -> bool:
         """A release was asked for, files changed, and no release committed them (it never ran, or it did not
