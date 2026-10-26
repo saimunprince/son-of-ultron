@@ -228,6 +228,30 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### A resumed task starts properly; a demanded word is given as asked (2026-10-26)
+
+- 8db691a: a resumed conversation now gets what a new task gets (`Core._prepare`,
+  shared with `_begin`): the brain routed for the work, the "understand" phase
+  recorded, the agent's kind and the human's words, a fresh step budget (a
+  release objective's 30 steps no longer leak into it). SYRAX's own work is
+  never resumed: RESUME on an autonomous attempt or a quality case answers
+  with the reason and dismisses it as the boot policy would (its ACTIVE
+  objective back to OPEN; an UNCERTAIN attempt still needs force and a note
+  first). `/token` trusts the `Origin` header alone (exact match; the old
+  prefix match accepted localhost:30000) or, with no Origin, a Referer from
+  the core's own origin; never another page's Referer. 11 tests.
+- cef5f79: a request that states an exact short form ("reply with the single
+  word: ready", "number only", "one decimal", "at most 40 characters") is held
+  to it once the run is over: an answer that misses it is asked for once with
+  a wrap-up that names the form and never mentions observations; still
+  missed, a word the human demanded verbatim is given as asked, otherwise the
+  shorter answer stands. Cause (runs #48, #54, #58, #65, restraint): the brain
+  called a tool for a one-word instruction, then answered the step check
+  ("I have no record of a previous request") instead of the human. The
+  brain's tool call is left in the journal, not hidden. 37 tests. Measured
+  before, isolated: restraint 5/5, read_code 3/3, unit_convert 3/3 (the
+  failure shows inside full runs, 4 of 8); after is measured the same way.
+
 ### The matrix knows yesterday; the audit knows its own fate (2026-10-26)
 
 - 43b8587, d7921bf: `docs/CAPABILITY_MATRIX.md` gains nine rows for what landed on
