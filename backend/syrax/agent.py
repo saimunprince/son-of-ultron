@@ -333,6 +333,21 @@ def _succeeded(result: str) -> bool:
 # Also a tool call written as text where no tools were offered (the wrap-up after the step limit): live
 # 2026-10-15 (objective 224, attempt 6) the final answer was '<tool_call> <function=python_execute> ...'.
 ECHO = re.compile(r"\[SYRAX (?:step )?check, not a new request\]|^\s*the user says:\s*[\"\u201c]?\[SYRAX|<tool_call>|<function=[\w.-]+>", re.I)
+# A note in the console's style that the brain wrote itself, not the console's words. Live 2026-10-26 (quality
+# run #85, deep_log_triage): the answer was right ("E204 9"), and the brain added "[SYRAX step check: Request fully
+# satisfied. Terminating.]" on its own line; ECHO did not match it (not the nudge's words), so the human got it and
+# the 60-character answer was 65. Such a note stands on its own line or at either end of the answer and is never
+# for the human. The nudge's own marker ("not a new request") is left for ECHO, which asks again.
+_NOTE = r"\[SYRAX\b(?![^\]\n]*not a new request)[^\[\]\n]{0,300}\]"
+CONSOLE_NOTE = re.compile(rf"(?m)^[ \t]*{_NOTE}[ \t]*(?:\n|\Z)|[ \t]*{_NOTE}[ \t]*\Z|\A[ \t]*{_NOTE}[ \t]*")
+
+
+def without_console_notes(text: str) -> str:
+    """`text` without the console-style notes the brain wrote into it (CONSOLE_NOTE), trimmed; unchanged otherwise."""
+    if not text or "[SYRAX" not in text:
+        return text
+    cleaned = CONSOLE_NOTE.sub("", text).strip()
+    return cleaned if cleaned != text.strip() else text
 
 PROMISE = re.compile(
     r"\b(i will now|i'll now|let me now|i am going to|i'm going to|the request is (fully )?(satisfied|complete)|"
@@ -738,6 +753,7 @@ class SyraxAgent(Manus):
             )
         if self.last_reply.startswith("SYRAX:"):
             self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+        await self._drop_console_notes()  # an answer that was only such a note is no answer: asked for below
         # Live 2026-10-22 (quality run #58, build_cli): step 2 said "Now I will create the `main.py` file" beside its
         # tool call, the last steps ran tools without a word, and that sentence became the final answer. Words
         # written beside an action are what was about to happen, never the answer: ask once for the answer.
@@ -798,12 +814,22 @@ class SyraxAgent(Manus):
             # live 2026-10-14 (objective 224, attempt 3): thirty steps of edits, no `release`, and the final said
             # "implemented ... and verified"; the edits were rolled back when the task ended. Say so in the answer.
             self.last_reply = (self.last_reply or "").rstrip() + NOT_RELEASED_NOTE
+        await self._drop_console_notes()  # a rewrite asked for above may carry one too
+        if not self.last_reply and any(m.role == "tool" for m in self.memory.messages):
+            self.last_reply = ECHO_FALLBACK  # nothing but the note was left, and no ask is left to make
         masked = mask_credentials(self.last_reply, self.task_goal)
         if masked != self.last_reply:
             await self._send({"type": "notice", "text": "The answer quoted a credential the request did not ask for: masked."})
             self.last_reply = masked
         self.task_goal, self.task_kind = "", "conversation"  # the core sets them again for the next task
         return self.last_reply or "Done."
+
+    async def _drop_console_notes(self) -> None:
+        """Remove the console-style notes the brain wrote into its answer (CONSOLE_NOTE), saying so on the record."""
+        cleaned = without_console_notes(self.last_reply or "")
+        if cleaned != (self.last_reply or ""):
+            await self._send({"type": "notice", "text": "The answer carried a note in the console's style: removed."})
+            self.last_reply = cleaned
 
     def _claims_change(self, text: str) -> bool:
         return bool(CLAIM.search(text) or WORLD_CLAIM.search(text)
