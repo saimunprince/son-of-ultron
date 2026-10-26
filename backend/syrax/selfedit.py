@@ -211,13 +211,35 @@ def repo_relative(f: str, root: Path) -> Optional[str]:
     return None
 
 
-def context_hint(diff: str, root: Path, around: int = 6) -> str:
+def _hunk_old_side(rows: List[str], j: int) -> List[str]:
+    """The ' ' and '-' lines of the hunk whose @@ header is rows[j]; an empty row is a blank context line."""
+    old = []
+    for k in range(j + 1, len(rows)):
+        row = rows[k]
+        if row.startswith("@@") or row.startswith("diff --git ") or (
+                row.startswith("--- ") and k + 1 < len(rows) and rows[k + 1].startswith("+++ ")):
+            break
+        if row == "" or row[0] in " -":
+            old.append(row[1:])
+    return old
+
+
+def context_hint(diff: str, root: Path, around: int = 6, tail: int = 8) -> str:
     """Live 2026-10-14 (quality run #34, self_patch_docs): the brain's hunk named line 159 of a
     217-line file with context that is not there, twice. When a patch does not apply, show what the
-    file really holds around each hunk, numbered, so the next diff is made from the file, not memory."""
+    file really holds around each hunk, numbered, so the next diff is made from the file, not memory.
+
+    Live 2026-10-26 (journal, 30 days: 149 "does not apply cleanly" refusals; self_patch_docs failed 4 of 8 runs):
+    asked to add a line at the end of a doc, the brain invented its content ("# Execution Plan / Initial setup.") in
+    a hunk at line 1 and was shown only the head. When a hunk's context and '-' lines are nowhere in the file, its
+    line number is a guess: the file's last lines are shown too (once per file), so an append is diffed from them."""
     out = []
+    tailed = set()
     current = old = None
-    for line in diff.split("\n"):
+    rows = diff.split("\n")
+    if rows and rows[-1] == "":
+        rows.pop()
+    for j, line in enumerate(rows):
         if line.startswith("--- "):
             old = line[4:].split("\t")[0].strip()
             continue
@@ -253,6 +275,15 @@ def context_hint(diff: str, root: Path, around: int = 6) -> str:
             out.append(f"{current}: this hunk is ALREADY APPLIED (the file already holds: {done}). Nothing to patch; "
                        "if that was the change, the task is done.")
         out.append(f"{current} has {len(lines)} lines; around line {start}:\n{snippet}")
+        side = _hunk_old_side(rows, j)
+        if not done and current not in tailed and not (side and locate_block(lines, side)[0]):
+            tailed.add(current)
+            t_lo = max(hi + 1, len(lines) - tail + 1)  # the snippet above may already reach the end
+            if t_lo <= len(lines):
+                ends = "\n".join(f"{i:>5}: {lines[i - 1]}" for i in range(t_lo, len(lines) + 1))
+                out.append(f"... {current} ends at line {len(lines)} (this hunk's context and '-' lines are nowhere in "
+                           f"the file, so line {start} is only its @@ header's guess; to add at the end, diff against "
+                           f"these last lines):\n{ends}")
     return "\n".join(out)[:3000]
 
 
