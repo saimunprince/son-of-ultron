@@ -13,9 +13,10 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 WINDOWS = sys.platform == "win32"
 MACOS = sys.platform == "darwin"
@@ -40,7 +41,8 @@ def meminfo() -> Dict[str, Optional[int]]:
 def loadavg() -> Optional[List[float]]:
     """1/5/15-minute load averages where the OS keeps them; on Windows a
     single CPU-usage sample scaled to core count, repeated three times so the
-    shape is the same for every reader."""
+    shape is the same for every reader (the sample is the average since the
+    previous reading; see _win_cpu_percent)."""
     if not WINDOWS:
         try:
             return [round(x, 2) for x in os.getloadavg()]
@@ -232,22 +234,45 @@ def _win_battery() -> Optional[dict]:
         return None
 
 
+def _win_system_times() -> Tuple[int, int]:
+    """(idle, kernel + user) in 100-ns ticks since boot; kernel time already
+    includes idle time, so busy = 1 - idle / total over any interval."""
+    idle, kern, user = _FILETIME(), _FILETIME(), _FILETIME()
+    if not ctypes.windll.kernel32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kern), ctypes.byref(user)):
+        raise OSError("GetSystemTimes failed")
+    return _ft(idle), _ft(kern) + _ft(user)
+
+
+# The previous GetSystemTimes reading as (monotonic seconds, idle, total).
+# A reading at least _CPU_MIN_GAP_S old is a ready-made window: the next call
+# computes CPU % from the delta since it and never sleeps. Only the first call,
+# or a call within _CPU_MIN_GAP_S of the previous reading (a window too short
+# to mean anything at the ~15.6 ms tick), sleeps sample_s for a fresh window.
+_CPU_MIN_GAP_S = 0.1
+_cpu_lock = threading.Lock()
+_cpu_last: Optional[Tuple[float, int, int]] = None
+
+
 def _win_cpu_percent(sample_s: float = 0.15) -> Optional[float]:
+    """CPU busy percent (0-100) averaged since the previous reading; live
+    readers (the 60 s alert loop, hellos) keep that window under a minute."""
+    global _cpu_last
     try:
-        k32 = ctypes.windll.kernel32
-
-        def times():
-            idle, kern, user = _FILETIME(), _FILETIME(), _FILETIME()
-            if not k32.GetSystemTimes(ctypes.byref(idle), ctypes.byref(kern), ctypes.byref(user)):
-                raise OSError("GetSystemTimes failed")
-            return _ft(idle), _ft(kern) + _ft(user)
-
-        i0, t0 = times()
-        time.sleep(sample_s)
-        i1, t1 = times()
+        with _cpu_lock:
+            prev = _cpu_last
+        if prev is None or time.monotonic() - prev[0] < _CPU_MIN_GAP_S:
+            i0, t0 = _win_system_times()
+            time.sleep(sample_s)
+        else:
+            _, i0, t0 = prev
+        i1, t1 = _win_system_times()
+        now = time.monotonic()
+        with _cpu_lock:
+            if _cpu_last is None or now >= _cpu_last[0]:
+                _cpu_last = (now, i1, t1)
         total = t1 - t0
         if total <= 0:
             return 0.0
-        return round(100.0 * (1 - (i1 - i0) / total), 1)
+        return round(min(100.0, max(0.0, 100.0 * (1 - (i1 - i0) / total))), 1)
     except Exception:
         return None
