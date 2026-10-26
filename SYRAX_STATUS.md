@@ -292,6 +292,11 @@ window", pressed Enter and answered "Message sent"; Prince: "dont lie with me".
   (Get-StartApps, read every 10 min), launched through shell:AppsFolder;
   "whatsapp" tries its alias "whatsapp web", then the words as said. Read-
   only on this machine: 106 apps, "whatsapp" is the Store app. 7 tests.
+- Live check, 15:01 on b1c2ad1: "Is the WhatsApp desktop app installed?" was
+  answered right (5319275A.WhatsAppDesktop), but in six steps: file searches,
+  python, Get-AppxPackage. 7eca64c: the desktop description now says that
+  whether an app is installed is `list_apps` with its name, Store apps
+  included, never a file search. 1 test.
 
 ### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
