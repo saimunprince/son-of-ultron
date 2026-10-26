@@ -40,7 +40,7 @@ durably, then fanned out) iff replay or recovery needs it:
 | `brain` failover / answered | `brain.failover` / `brain.answered` |
 | `permission` authorized (agent, through `emit`) | `permission.authorized` — payload `tool`, `level`, `task_kind`, `reason`, `targets`, `authorized_by` (`goal` or `human`), `answer?`, `harm?` |
 | `permission` refused (agent, through `emit`) | `permission.refused` — same payload, `authorized_by` null |
-| `intent` recorded / done / refused (agent, through `emit`) | `intent.recorded` / `intent.done` / `intent.refused` — the intent ledger (`intent.py`): payload `tool`, `args_hash` (sha256 of the canonical JSON of the arguments, 16 hex), `summary` (the tool and its most telling argument, 120 chars), `step`; `done` carries `ok`, `refused` carries `first_step` |
+| `intent` recorded / done / refused / uncertain (agent, through `emit`) | `intent.recorded` / `intent.done` / `intent.refused` / `intent.uncertain` — the intent ledger (`intent.py`): payload `tool`, `args_hash` (sha256 of the canonical JSON of the arguments, 16 hex), `summary` (the tool and its most telling argument, 120 chars), `step`; `done` carries `ok`, `refused` carries `first_step`, `uncertain` carries `why` (`timed out` / `connection lost`) |
 | written by the core / journal | `task.started`, `task.queued`, `task.completed`, `task.failed`, `task.cancelled`, `task.blocked`, `task.interrupted`, `task.unknown`, `checkpoint.created`, `recovery.started`, `recovery.verified`, `recovery.resumed`, `recovery.completed`, `verification.completed`, `stage.started` |
 
 Direct (never stored): `state`, `hello`, `brains`, `brain_models`, `brain_test`,
@@ -224,7 +224,11 @@ Before an `EXTERNAL_WRITE` call runs (`agent.py _execute_guarded`, after the per
 journals `intent.recorded {tool, args_hash, summary, step}`, and after it `intent.done {tool, args_hash, ok}`;
 `args_hash` is the idempotency key (sha256 of the canonical JSON of the arguments, 16 hex). Only `EXTERNAL_WRITE`
 calls are keyed, so the event sequence of an ordinary task is unchanged. A recorded entry the task never saw done
-(a crash, a cancel, an exception inside the call) means the send may already have gone out: the same arguments
+(a crash, a cancel, an exception inside the call) means the send may already have gone out. So does a call that
+failed because it was abandoned or cut off while it ran (the MCP tool timeout, `python_execute`'s "Execution
+timeout", a reset or dropped connection: `intent.uncertain`): it is journaled `intent.uncertain {tool, args_hash,
+summary, step, why}` instead of `intent.done` and stays open (`test_intent_timeout.py`, 2026-10-26; a refused
+connection or a bad argument did not go out and is done with `ok: false`). While an entry is open, the same arguments
 again in that task are refused before anyone is asked (`intent.refused`, a final refusal like the gate's: "the same
 <tool> action may already have gone out (step N): check what happened first; do not repeat it blindly"); a
 finished one is caught by the repeat guard as before. Recovery classifies such an operation `EXTERNAL_UNCERTAIN`
