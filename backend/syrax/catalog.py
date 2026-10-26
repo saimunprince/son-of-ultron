@@ -168,9 +168,11 @@ CATALOG: List[Feature] = [
     Feature("browser", "Browser automation", "Web", HAVE, "Opens sites, clicks, fills forms, reads pages.", "browser-use MCP (browser_exec, browser_screenshot)", seen_in="Mark-LV"),
     Feature("weather", "Weather", "Web", HAVE, "Current weather and forecast for any place.", "prebuilt skill weather (Open-Meteo, no key)",
             risk="EXTERNAL_READ", seen_in="all (theirs only opened a search)"),
-    Feature("youtube_open", "Play on YouTube", "Web", TODO, "'Play lo-fi music on YouTube.'",
-            "a skill that opens the YouTube results page for the words in the default browser", risk="SYSTEM",
-            check=skill("youtube_open"), auto=True, seen_in="Mark-LV"),
+    # live 2026-10-25: the TODO asked for "a skill that opens the YouTube results page", SYRAX built exactly that
+    # (youtube_open), and "play some random music" played nothing; the prebuilt skill opens the first video itself
+    Feature("youtube_open", "Play on YouTube", "Web", HAVE, "'Play lo-fi music on YouTube.'",
+            "prebuilt skill youtube_play (the first video of a YouTube search, opened on its watch page; desktop media "
+            "status says whether it plays)", risk="SYSTEM", seen_in="Mark-LV"),
     Feature("youtube_summary", "Summarise a YouTube video", "Web", HAVE, "Summary of a video from its transcript.",
             "prebuilt skill youtube_transcript (youtube-transcript-api 1.2.4, approved 2026-10-12); the brain summarises the text",
             risk="EXTERNAL_READ", seen_in="Mark-LV"),
