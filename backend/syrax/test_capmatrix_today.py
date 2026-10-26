@@ -156,3 +156,21 @@ def test_the_new_rows_render_in_the_matrix(tmp_path):
     for key in ("desktop_truth", "youtube_play", "store_apps"):
         assert f"| {by_id[key]['label']} |" in text and by_id[key]["status"] == cm.UNVERIFIED
     assert "live:presence_events" in by_id["presence"]["runtime_test"] and "live:media_reads" in by_id["desktop_truth"]["runtime_test"]
+
+
+def test_store_app_evidence_must_come_after_the_store_app_code(tmp_path):
+    """Live 2026-10-26: the three launch_app/list_apps successes in the window were from 10-25, before the Store-app
+    code (91ac367): the row read GREEN on evidence the new code never produced."""
+    from syrax.journal import Journal
+
+    j = Journal(tmp_path / "old.db")
+    t = j.start_task_sync("open telegram")
+    before = cm.STORE_APPS_SINCE - 3600
+    with j._txn() as cur:  # an event journaled before the code existed
+        cur.execute("INSERT INTO events(ts, task_id, type, payload, seq) VALUES (?,?,?,?,?)",
+                    (before, t, "tool.started", '{"id": "c1", "name": "desktop", "args": {"action": "launch_app", "target": "Telegram"}}', 1))
+        cur.execute("INSERT INTO events(ts, task_id, type, payload, seq) VALUES (?,?,?,?,?)",
+                    (before, t, "tool.completed", '{"id": "c1", "name": "desktop", "ok": true, "output": "Launched Telegram."}', 2))
+    j.close()
+    jr = cm.read_journal(tmp_path / "old.db", cm.STORE_APPS_SINCE + 86400)
+    assert jr["counts"]["apps_used"] == 0

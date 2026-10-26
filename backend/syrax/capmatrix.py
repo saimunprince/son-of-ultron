@@ -40,6 +40,9 @@ from syrax.journal import BACKEND_ROOT, DEFAULT_FILE, misuse
 
 REPO_ROOT = BACKEND_ROOT.parent
 WINDOW_DAYS = 7
+# Evidence must come after the code it proves: Store apps are listed and launched since 91ac367 (2026-10-26 14:23:13
+# +0600); the launch_app/list_apps successes before it (Telegram, notepad on 10-25) were the old shortcut-only code.
+STORE_APPS_SINCE = 1793002993.0
 MAX_FAIL = 0.25
 CURRENT, PARTIAL, PLANNED, MISSING = "CURRENT", "PARTIAL", "PLANNED", "MISSING"
 GREEN, YELLOW, RED, BLOCKED, UNVERIFIED = "GREEN", "YELLOW", "RED", "BLOCKED", "UNVERIFIED"
@@ -293,7 +296,7 @@ def read_journal(path: Path, now: Optional[float] = None) -> Dict[str, Any]:
             "apps_used": c.execute("SELECT COUNT(*) FROM events WHERE type='tool.completed' AND json_extract(payload,'$.name')='desktop' AND ts>? AND id IN "
                                    "(SELECT e2.id FROM events e2 JOIN events e1 ON e1.task_id=e2.task_id AND json_extract(e1.payload,'$.id')=json_extract(e2.payload,'$.id') "
                                    "WHERE e1.type='tool.started' AND json_extract(e1.payload,'$.args.action') IN ('launch_app','list_apps'))",
-                                   (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+                                   (max(now - WINDOW_DAYS * 86400, STORE_APPS_SINCE),)).fetchone()[0],
             # Work Presence: the target window observed after a desktop or browser call (core: presence.window) and the
             # visibility levels the human set (presence.changed)
             "presence_window": c.execute("SELECT COUNT(*) FROM events WHERE type='presence.window' AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
