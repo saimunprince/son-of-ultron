@@ -228,6 +228,21 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### The matrix knows yesterday; the audit knows its own fate (2026-10-26)
+
+- 43b8587, d7921bf: `docs/CAPABILITY_MATRIX.md` gains nine rows for what landed on
+  2026-10-25 (queue, backups, intent ledger, credential masking, memory
+  inspection/export/correction, deadlines and tool timeouts, boot policy, skill
+  lifecycle, self-editing by content), each mapped to its tests; the daily probe
+  (`syrax.probe`) now also asks the running SYRAX for the queue, asks for a memory
+  export (and deletes the file it asked for) and verifies the newest backup
+  snapshot (under 48 h), so those three rows turn GREEN at the next publish; the
+  others stay UNVERIFIED until runtime evidence exists, and the notes say so.
+  Live against 092c056: queue PASS, memory_export PASS, backups PASS (22 h old).
+  `intent.py` and `redact.py` join the system map (69/69 modules covered).
+- e05a21a: `docs/AUDIT_2026-10-25.md` ends with the day's status, every finding
+  and backlog item mapped to its commit, its proof and DONE / PARTIAL / OPEN.
+
 ### Skills with a past, sends that never repeat, nothing raw in the record (2026-10-25)
 
 - 9203845: an intent ledger for external side effects. Before a call at
