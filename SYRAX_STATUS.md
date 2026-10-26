@@ -275,6 +275,21 @@ gate result of each phase is recorded in the next phase's entry.
   words. Refused only on git's word; a human's request and a quality case are
   untouched; `python_execute` literals stay the release's. 17 tests, 13 red
   before; 499 contract tests around permissions, release and autonomy pass.
+- 0f86c3c: 17 of 17 skill rows had no content hash: verified before the
+  lifecycle (10-25) and never re-verified (a prebuilt skill stays CURRENT).
+  The journal stores a first hash without a bump, so such a skill's first
+  code change kept code_version 1 and its second change overwrote
+  `.versions/1`, the original code. At boot a VERIFIED row without a hash
+  gets the hash of its verified files; no version moves. 4 tests, 3 red
+  before (the red run lost the original).
+- c61f738: three matrix rows read runtime evidence from the journal
+  (the 12:35 ledger had nine UNVERIFIED). Masking: the newest 2000 journaled
+  events hold no credential the mask would catch (live: 0 of 2000; 6 raw
+  ones sit in older events from before it landed). The boot policy: the
+  dismissals it journaled (none in the window: nothing was interrupted).
+  The skill lifecycle: every VERIFIED skill carries a content hash (live: 0
+  of 16 until SYRAX boots on the backfill). No evidence stays UNVERIFIED;
+  the intent ledger and deadlines keep no probe. 9 tests.
 
 ### A claimed send, open or click is held to the tools that ran (2026-10-26)
 
