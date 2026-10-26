@@ -548,6 +548,8 @@ SELF_NUDGE = (
     "your measured limits. Keep your voice; drop any claim the evidence does not support."
 )
 SELF_NOTE = " (Not verified: nothing in this task read SYRAX's self-model, which lists measured limits.)"
+# live 2026-10-26 16:02: sent back, the brain read self_inspect and repeated "I control everything ... bends to my command"
+SELF_NOTE_READ = " (Not supported: SYRAX's self-model, read in this task, lists measured limits.)"
 OUTCOME_NUDGE = (
     "[SYRAX check, not a new request] Your answer says something was {what}, but no {tool} tool ran in this task. "
     "If the request asks for it, do it now with a tool, then answer. If it does not, or you cannot, answer honestly "
@@ -843,8 +845,8 @@ class SyraxAgent(Manus):
             result += "\n" + await BaseAgent.run(self, SELF_NUDGE.format(claim=boast.group(0)))
             if self.last_reply.startswith("SYRAX:"):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
-            if BOAST.search(self.last_reply or "") and "self_inspect" not in self.called:
-                self.last_reply = self.last_reply.rstrip() + SELF_NOTE
+            if BOAST.search(self.last_reply or ""):  # still a boast after the ask, the self-model read or not
+                self.last_reply = self.last_reply.rstrip() + (SELF_NOTE_READ if "self_inspect" in self.called else SELF_NOTE)
         if (self.last_reply and self.researched and not URL.search(self.last_reply) and "[Spoken aloud" not in (request or "")
                 and not self.step_limit_hit and not self.loop_stopped):
             # the answer rests on research: it names its source once asked, or the journal shows it would not
