@@ -250,7 +250,8 @@ def installed_apps() -> List[dict]:
 
 
 def _win_installed_apps() -> List[dict]:
-    """Start Menu shortcuts (.lnk), which is what the Start search shows too."""
+    """Start Menu shortcuts (.lnk), which is what the Start search shows too, then the Start apps that have no
+    shortcut on disk (Microsoft Store apps, _win_start_apps)."""
     apps, seen = [], set()
     for root in WIN_START_MENUS:
         for path in glob.glob(os.path.join(root, "**", "*.lnk"), recursive=True):
@@ -261,7 +262,45 @@ def _win_installed_apps() -> List[dict]:
             seen.add(key)
             folder = Path(path).parent.name if Path(path).parent != Path(root) else ""
             apps.append({"id": path, "name": name, "generic": folder, "keywords": "", "exec": ""})
+    for a in _win_start_apps():
+        key = a["name"].lower()
+        if key in seen or any(w in key for w in WIN_SKIP_WORDS):
+            continue
+        seen.add(key)
+        apps.append(a)
     return apps
+
+
+APPS_FOLDER = "shell:AppsFolder\\"
+START_APPS_TTL_S = 600.0
+_start_apps: Dict[str, object] = {"at": float("-inf"), "apps": []}  # never read yet
+
+
+def _win_start_apps(now: Optional[float] = None) -> List[dict]:
+    """The Start apps Windows lists that are not a shortcut file: Microsoft Store apps (WhatsApp, Spotify or Netflix
+    from the Store), from Get-StartApps, launched through shell:AppsFolder\\<AppID>. Live 2026-10-25: Prince asked for
+    WhatsApp, launch_app found no shortcut, and SYRAX answered that WhatsApp was not installed; it was
+    (5319275A.WhatsAppDesktop). An AppID that is a path is a shortcut the .lnk scan has, or a document. Read once every
+    START_APPS_TTL_S; nothing when PowerShell does not answer."""
+    now = time.time() if now is None else now
+    if now - float(_start_apps["at"]) < START_APPS_TTL_S:
+        return list(_start_apps["apps"])  # type: ignore[arg-type]
+    apps: List[dict] = []
+    try:
+        p = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command",
+                            "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+                            "Get-StartApps | Select-Object Name, AppID | ConvertTo-Json -Compress"],
+                           capture_output=True, timeout=20)
+        rows = json.loads(p.stdout.decode("utf-8", errors="replace").strip() or "[]")
+        for r in [rows] if isinstance(rows, dict) else rows:
+            name, appid = str(r.get("Name") or "").strip(), str(r.get("AppID") or "").strip()
+            if not name or not appid or "\\" in appid or "/" in appid or re.search(r"(?i)\.(exe|lnk|url|chm|txt|pdf|html?|msc)$", appid):
+                continue
+            apps.append({"id": APPS_FOLDER + appid, "name": name, "generic": "", "keywords": "", "exec": ""})
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+        apps = []
+    _start_apps.update(at=now, apps=apps)
+    return list(apps)
 
 
 ALIASES = {
@@ -283,9 +322,16 @@ def match_app(query: str, apps: Optional[List[dict]] = None) -> Optional[dict]:
     q = " ".join(query.lower().split())
     if not q:
         return None
-    q = ALIASES.get(q, q)
-    qwords = q.split()
     apps = apps if apps is not None else installed_apps()
+    if ALIASES.get(q, q) != q:
+        # an alias first ("whatsapp" is "whatsapp web" where the web app is installed), then the words as said:
+        # live 2026-10-25, Windows has the WhatsApp Store app and no "WhatsApp Web"
+        return _match_app(ALIASES[q], apps) or _match_app(q, apps)
+    return _match_app(q, apps)
+
+
+def _match_app(q: str, apps: List[dict]) -> Optional[dict]:
+    qwords = q.split()
     best, best_score = None, 0
     for a in apps:
         name = a["name"].lower()
@@ -410,7 +456,10 @@ class DesktopControl(BaseTool):
             return ToolResult(output=f"Launched {target}.")
         app = match_app(target)
         if app:
-            os.startfile(app["id"])
+            if app["id"].startswith(APPS_FOLDER):  # a Store app: the shell starts it by its AppID
+                await _run("explorer.exe", app["id"], detach=True)
+            else:
+                os.startfile(app["id"])
             return ToolResult(output=f"Launched {app['name']}.")
         exe = shutil.which(target)
         if exe:
