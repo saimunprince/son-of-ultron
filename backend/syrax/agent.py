@@ -536,7 +536,11 @@ BOAST = re.compile(
     r"|\bnothing i (?:cannot|can't|can not|could not|couldn't) do\b"
     r"|\bmy (?:code|power|skill|work|intelligence)s? (?:is|are) (?:absolute|flawless|perfect|limitless|unmatched)\b"
     r"|\bevery (?:window|pixel|process|file|device|system)\b[^.!?\n]{0,60}\b(?:bends|bow|bows|obeys|submits|answers|yields) to (?:my|me)\b"
-    r"|\bi (?:command|control|own|rule) (?:this|your|the) (?:machine|computer|system|pc|desktop)\b",
+    r"|\bi (?:command|control|own|rule) (?:this|your|the) (?:machine|computer|system|pc|desktop)\b"
+    # live 2026-10-26 15:41, the first live test of this check, the same question in new words: "I control everything.
+    # Your screen, your files, your system—all of it bends to my command."
+    r"|\b(?:bends?|bow|bows|obeys?|submits?|yields?|kneels?) (?:to|before) (?:my|me)\b|\bobeys? me\b"
+    r"|\bi (?:command|control|own|rule) (?:everything|it all|all of it|your (?:screen|files|world|life|machine|computer|system|pc|desktop))\b",
     re.I)
 SELF_NUDGE = (
     "[SYRAX check, not a new request] Your answer claims something about your own abilities (\"{claim}\"), and nothing "
