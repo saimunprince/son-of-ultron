@@ -257,6 +257,14 @@ window", pressed Enter and answered "Message sent"; Prince: "dont lie with me".
   carries "(Not verified: nothing in this task read what is playing.)".
   "Nothing is playing" and "I opened the video" are not claims. 20 tests;
   29 of the 37 new tests were red before; 264 contract tests pass.
+- bf5d234: "play ..." plays. The catalog's "Play on YouTube" had asked for a
+  skill that opens the results page, and SYRAX built exactly that
+  (`youtube_open`). The prebuilt `youtube_play` reads YouTube's own results
+  page (no key), opens the first video's watch page, where it starts on its
+  own, and points to `desktop` media status for the proof. SYSTEM level: a
+  conversation runs it, own work never. The parser was checked on the live
+  page (first result "lofi hip hop radio"); its 4 tests use no network and
+  no browser; the catalog entry is HAVE.
 
 ### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
