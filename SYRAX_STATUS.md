@@ -263,6 +263,14 @@ parallel agents in their own worktrees, reviewed and gated together.
   self_patch_docs case invented the file's head). 6 tests, 5 red before.
 - 17d1a54: a reworded known limitation counts as already researched (311 was
   268 with one character changed; 310 reworded 303). 16 tests, 14 red before.
+- e894cb0, ddd9477: faster from a profiling pass (the gate's pytest took
+  840-1540 s; at 1543 s it once hit the ceiling). The Windows CPU sampler
+  reuses its previous reading instead of sleeping 150 ms on every call
+  (every WebSocket hello waited on it; now 0.1 ms after the first call).
+  The python_execute worker starts from a stdlib-only module
+  (_pyexec_child.py, now a judge file: it installs the guard first) and no
+  longer imports app or pydantic: 0.23 s instead of 1.0 s per call in the
+  tests; the live server's saving is not measured yet. 12 tests.
 
 ### A tie names its windows; the matrix counts only evidence its code produced (2026-10-26)
 
