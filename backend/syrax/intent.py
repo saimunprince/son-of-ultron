@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 HASH_HEX = 16
@@ -26,6 +27,23 @@ HELD = ("Error: refused: the same {name} action may already have gone out (step 
         "first; do not repeat it blindly. This is final: do not retry it; do the rest or report.")
 RESUME_NOTE = ("An external action may already have happened: {summary}. Never repeat it; verify with a read-only "
                "check and report.")
+
+
+# A failed result that does not say the action did not happen: the call was abandoned or cut off while it ran
+# (agent.py TOOL_TIMED_OUT, python_execute's "Execution timeout", a dropped connection). The request may have
+# reached the other side before that, so the intent is uncertain, not done. A refused connection, a bad argument
+# or a server's own error answer is a send that did not go out: done, and a retry is the model's choice.
+UNCERTAIN = re.compile(r"(?i)did not answer within|execution timeout|\btimed?[ -]?out(?:error)?\b|read ?timeout|"
+                       r"connection ?(?:was )?(?:reset|aborted)|remote ?(?:end closed|disconnected)|server ?disconnected|"
+                       r"incomplete ?read")
+
+
+def uncertain(output: Any) -> Optional[str]:
+    """Why a failed EXTERNAL_WRITE call may still have gone out ("timed out", "connection lost"), else None."""
+    m = UNCERTAIN.search(str(output or ""))
+    if not m:
+        return None
+    return "connection lost" if re.search(r"(?i)connection|remote|disconnected|incomplete", m.group(0)) else "timed out"
 
 
 def args_hash(args: Any) -> str:

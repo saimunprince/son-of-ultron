@@ -71,7 +71,7 @@ def _journal_type(event: dict) -> Optional[str]:
         return f"permission.{event['event']}"
     if t == "claim" and event.get("event") in ("rejected", "uncited"):
         return f"claim.{event['event']}"
-    if t == "intent" and event.get("event") in ("recorded", "done", "refused"):
+    if t == "intent" and event.get("event") in ("recorded", "done", "refused", "uncertain"):
         return f"intent.{event['event']}"  # the intent ledger (intent.py): recovery reads recorded-without-done
     if t in ("think", "ask", "final"):
         return t

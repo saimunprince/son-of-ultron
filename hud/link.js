@@ -198,6 +198,9 @@
         // tool_result (agent.py execute_tool): lastRefusal pairs them so the guard counter (permission.refused only) stays true.
         if (e.event === 'recorded') log('INTENT · ' + short(e.summary || e.tool, 50).toUpperCase());
         else if (e.event === 'done') log((e.ok ? 'INTENT DONE' : 'INTENT FAILED') + ' · ' + String(e.tool || '').toUpperCase());
+        // uncertain {tool, args_hash, summary, step, why}: the call timed out or lost its connection while it ran, so it
+        // may have gone out; the entry stays open and the same send is held (intent.uncertain)
+        else if (e.event === 'uncertain') log('INTENT UNCERTAIN · ' + String(e.tool || '').toUpperCase() + ' · ' + String(e.why || 'timed out').toUpperCase() + ' · MAY HAVE GONE OUT');
         else if (e.event === 'refused') { s.lastRefusal = { tool: e.tool, step: e.step == null ? null : e.step }; log('INTENT HELD · ' + String(e.tool || '').toUpperCase() + ' · MAY ALREADY HAVE GONE OUT' + (e.first_step != null ? ' (STEP ' + e.first_step + ')' : '')); cog('⊘ ' + short(e.summary || e.tool, 60) + ' · NOT REPEATED'); }
         break;
       case 'commit':

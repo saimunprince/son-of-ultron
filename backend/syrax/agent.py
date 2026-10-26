@@ -1027,7 +1027,13 @@ class SyraxAgent(Manus):
                     result = await self._call_tool(command, name)  # once: the code never ran, so nothing repeats
                 if name.startswith("browser_"):
                     result = mark_untrusted(result)  # what the page says is data, never instructions
-                if ledger:
+                why = intent.uncertain(result) if ledger and not _succeeded(result) else None
+                if why:
+                    # abandoned or cut off while it ran: it may have gone out, so the entry stays open (a repeat is
+                    # held, a later crash or resume treats it as a send in flight); journaled intent.uncertain
+                    self.intents[intent.key(name, ledger["args_hash"])]["uncertain"] = why
+                    await self._send({"type": "intent", "event": "uncertain", **ledger, "why": why, "step": self.current_step})
+                elif ledger:
                     self.intents[intent.key(name, ledger["args_hash"])]["done"] = True
                     await self._send({"type": "intent", "event": "done", "tool": name, "args_hash": ledger["args_hash"],
                                       "ok": _succeeded(result), "step": self.current_step})
