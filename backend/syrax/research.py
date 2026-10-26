@@ -183,9 +183,19 @@ class Researcher:
             src.terms = set(keywords(" ".join(src.excerpts) or src.snippet))
         agree = agreement(sources)
         tags = sorted(set(keywords(question)))[:8]
-        stored = 0
+        stored = reinforced = 0
         for src in sources:
             if not src.excerpts:
+                continue
+            excerpt = "\n…\n".join(src.excerpts)
+            # the same page excerpt is reinforced, not stored again (live 2026-10-26: one excerpt stored 24 times)
+            known = await asyncio.to_thread(self.journal.web_knowledge_like, src.url, excerpt)
+            if known is not None:
+                await self.journal.record("knowledge.reinforced", {
+                    "knowledge_id": known["id"], "kind": "web", "claim": known["claim"][:300], "tags": known.get("tags") or [],
+                    "question": question, "source_url": src.url, "agreeing_sources": agree.get(src.url, 1)}, task_id=task_id)
+                src.knowledge_id = known["id"]
+                reinforced += 1
                 continue
             row = await asyncio.to_thread(
                 self.journal.add_knowledge_sync,
@@ -193,7 +203,7 @@ class Researcher:
                 kind="web",
                 source_url=src.url,
                 source_title=src.title[:200],
-                excerpt="\n…\n".join(src.excerpts),
+                excerpt=excerpt,
                 tags=tags,
                 question=question,
                 task_id=task_id,
@@ -209,13 +219,15 @@ class Researcher:
                 for s in sources
             ],
             "stored": stored,
+            "reinforced": reinforced,
             "fetched": fetched,
             "search_failures": failures,
             "ms": int((time.time() - started) * 1000),
         }
         await self.journal.record(
             "research.completed",
-            {"question": question, "sources": len(sources), "fetched": fetched, "stored": stored, "failures": failures, "ms": report["ms"]},
+            {"question": question, "sources": len(sources), "fetched": fetched, "stored": stored, "reinforced": reinforced,
+             "failures": failures, "ms": report["ms"]},
             task_id=task_id,
         )
         return report
@@ -232,7 +244,10 @@ def render_report(report: dict) -> str:
         lines.append(f"\n[{i}] knowledge_id={s['knowledge_id']} · {s['title'] or 'untitled'} · {s['url']} · {'page fetched' if s['fetched'] else 'snippet only'} · agreeing sources: {s['agreeing']}")
         for ex in s["excerpts"]:
             lines.append(f"    \"{ex}\"")
-    lines.append(f"\nStored {report['stored']} knowledge entries with provenance ({report['ms']} ms).")
+    again = report.get("reinforced") or 0
+    lines.append(f"\nStored {report['stored']} knowledge entries with provenance"
+                 + (f"; {again} already known (same page and excerpt), reinforced under the same knowledge_id" if again else "")
+                 + f" ({report['ms']} ms).")
     lines.append("These are excerpts, not conclusions. Compare them, note disagreement, and cite knowledge_ids. "
                  "If you reach a verified conclusion, store it with `learn` citing those ids.")
     return "\n".join(lines)

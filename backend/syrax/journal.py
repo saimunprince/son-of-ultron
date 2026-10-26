@@ -1309,6 +1309,20 @@ class Journal:
             row = self._db.execute("SELECT * FROM knowledge WHERE id=?", (knowledge_id,)).fetchone()
         return self._knowledge_dict(row) if row else None
 
+    def web_knowledge_like(self, source_url: str, excerpt: Optional[str]) -> Optional[dict]:
+        """The oldest stored web row with this source_url and this excerpt (compared as add_knowledge_sync stores it),
+        or None. Read only: `research` reinforces that row instead of storing the same page excerpt again
+        (live 2026-10-26: one SQLite-history excerpt was stored 24 times)."""
+        stored = (excerpt or "")[:2000] or None
+        if not source_url or stored is None:
+            return None
+        with self._lock:
+            row = self._db.execute(
+                "SELECT * FROM knowledge WHERE kind='web' AND source_url=? AND excerpt=? ORDER BY id ASC LIMIT 1",
+                (source_url, stored),
+            ).fetchone()
+        return self._knowledge_dict(row) if row else None
+
     def knowledge_recent(self, limit: int = 50, since: Optional[float] = None, tag: Optional[str] = None) -> List[dict]:
         limit = max(1, min(int(limit), 500))
         sql, params = "SELECT * FROM knowledge", []
