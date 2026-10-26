@@ -158,22 +158,31 @@ def media_report(data: dict) -> str:
     return "; ".join(parts) + "."
 
 
-def in_front() -> str:
-    """" In front now: 'Title' (Program.exe)." after a hands action, so the answer can say where the keys and clicks
-    landed. Live 2026-10-25: "Typed 5 characters into the focused window.", Enter, and the answer "Message sent to
-    bro bhi on Telegram." A title that looks private is not written down (presence.redact); "" when unreadable."""
+def front_window() -> Optional[str]:
+    """"'Title' (Program.exe)" of the window in front; "" when nothing is; None when it cannot be read (or off Windows).
+    A title that looks private is not written down (presence.redact)."""
     if not WINDOWS:
-        return ""
+        return None
     try:
         from syrax import presence, winctl
 
         w = winctl.foreground()
     except Exception:
-        return ""
+        return None
     if not w:
-        return " Nothing is in front now."
+        return ""
     title = presence.redact(str(w.get("title") or "")) or "an untitled window"
-    return f" In front now: '{title}' ({w.get('process') or 'unknown program'})."
+    return f"'{title}' ({w.get('process') or 'unknown program'})"
+
+
+def in_front() -> str:
+    """" In front now: 'Title' (Program.exe)." after a hands action, so the answer can say where the keys and clicks
+    landed. Live 2026-10-25: "Typed 5 characters into the focused window.", Enter, and the answer "Message sent to
+    bro bhi on Telegram." "" when unreadable."""
+    w = front_window()
+    if w is None:
+        return ""
+    return f" In front now: {w}." if w else " Nothing is in front now."
 
 
 def _press_keys(*names: str, times: int = 1) -> None:
@@ -716,22 +725,30 @@ class DesktopControl(BaseTool):
         except (ValueError, RuntimeError, wininput.Stopped) as e:
             return ToolResult(error=str(e))
 
-    async def _with_front(self, done: ToolResult) -> ToolResult:
-        """A hands action's result with the window in front after it (in_front), read a moment later."""
+    async def _with_front(self, done: ToolResult, before: Optional[str] = None) -> ToolResult:
+        """A hands action's result with the window in front after it (in_front), read a moment later. Given the
+        window that was in front `before` keys went out, and it is not the one in front now, the answer names it:
+        the keys went there. Live 2026-10-25: "close the notepadd application" minimized Notepad, then pressed
+        alt+f4 at whatever came to the front, and answered that Notepad was closed."""
         if done.error:
             return done
         await asyncio.sleep(0.15)
-        return ToolResult(output=f"{done.output}{await asyncio.to_thread(in_front)}")
+        now = await asyncio.to_thread(front_window)
+        went = f" The keys went to {before}." if before and now is not None and before != now else ""
+        tail = "" if now is None else (f" In front now: {now}." if now else " Nothing is in front now.")  # as in_front
+        return ToolResult(output=f"{done.output}{went}{tail}")
 
     async def _do_type_text(self, value: str, **_) -> ToolResult:
         from syrax import wininput
 
-        return await self._with_front(await self._hands(wininput.type_text, value))
+        before = await asyncio.to_thread(front_window)
+        return await self._with_front(await self._hands(wininput.type_text, value), before)
 
     async def _do_hotkey(self, value: str, **_) -> ToolResult:
         from syrax import wininput
 
-        return await self._with_front(await self._hands(wininput.hotkey, value))
+        before = await asyncio.to_thread(front_window)
+        return await self._with_front(await self._hands(wininput.hotkey, value), before)
 
     async def _do_click(self, target: str, value: str = "", **_) -> ToolResult:
         from syrax import wininput

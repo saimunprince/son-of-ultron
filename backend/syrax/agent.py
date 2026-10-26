@@ -254,6 +254,9 @@ TOOLS_GUIDE = (
     # live 2026-10-25: a search page and the play/pause key were answered with "Music summoned." and "Media is playing."
     "To play music or a video, use `youtube_play` when you have it (it opens the first video of a search; "
     "`youtube_open` only shows results), and say something plays only after `desktop` media status reads Playing. "
+    # live 2026-10-25: Notepad was minimized, then alt+f4 went to whatever came to the front
+    "Keys go to the window in front: before a key that closes or deletes (alt+f4, ctrl+w, delete), bring the window "
+    "to the front with `desktop` window focus and its title, and check where the keys went before you say what closed. "
 )
 from syrax import guard, intent, permissions
 from syrax.prompt import SYRAX_PERSONA
