@@ -228,6 +228,42 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### SYRAX's keys stay out of its own window; a dispute is answered from a reading (2026-10-26)
+
+From a read-only analysis of every conversation in the journal, built by
+parallel agents in their own worktrees, reviewed and gated together.
+
+- 9d5d479: every live desktop action of 10-25 (12 calls) ran with "SYRAX -
+  Google Chrome" in front: the owner types into SYRAX's own page, so "hello"
+  for bro bhi, the php2shell text and alt+f4 all landed in SYRAX's own window,
+  and click_text clicked SYRAX's own chat text. type_text, hotkey and click
+  are refused while SYRAX's own window (its page in a browser, the HUD) is in
+  front ("bring the target to the front first with desktop window focus ...");
+  click_text and find_text drop places inside SYRAX's window and say when the
+  words were only there. 23 tests, 22 red before.
+- 03c2b67: a short dispute of the last action ("not playing", "not opend",
+  "dont lie", "hoy nai", a bare "no" after an action) is answered only after a
+  reading (media status, screenshot, find_text, a page read, self_inspect):
+  asked once, then a note. On 10-25 five disputes in a row got another blind
+  action and finally "I do not lie. I dominate." 37 tests, 24 red before.
+- df79de1: ROADMAP Phase 4, know before changing: an autonomous release task's
+  first repository edit is journaled change.started (files, covering tests,
+  components, rollback point) and its observation names the covering tests to
+  run before `release` (13 refused releases in 30 days had failing covering
+  tests; one task ran release six times instead of the test). 5 tests.
+- d72f8c6: a rounded figure agrees with the precise one (78.37 and "about
+  78.4" reinforce, not contradict); whole numbers keep no tolerance (2000 vs
+  2004 stay a contradiction). Three ethanol contradiction objectives had
+  re-researched it and never settled. 24 tests, 21 red before.
+- 2c48a5b: a web excerpt already stored from the same page is reinforced under
+  its knowledge id instead of stored again (149 of 559 web rows were exact
+  copies; the SQLite page 23 times). 3 tests.
+- cfedc74: an apply_patch refusal whose lines are nowhere in the file shows
+  the file's last lines too, so an append is rebuilt from the real end (the
+  self_patch_docs case invented the file's head). 6 tests, 5 red before.
+- 17d1a54: a reworded known limitation counts as already researched (311 was
+  268 with one character changed; 310 reworded 303). 16 tests, 14 red before.
+
 ### A tie names its windows; the matrix counts only evidence its code produced (2026-10-26)
 
 Built by parallel agents in their own worktrees, reviewed and gated together.
