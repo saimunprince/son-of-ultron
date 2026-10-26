@@ -311,6 +311,10 @@ window", pressed Enter and answered "Message sent"; Prince: "dont lie with me".
   it bends to my command." The pattern now knows the generic forms ("bends
   to my ...", "obeys me", "I control everything / your screen"). 12 tests,
   6 red before.
+- 9ef54a2: the second live test (16:02) fired the check; the brain read
+  `self_inspect` and repeated the boast word for word, and it went out with
+  no note. A boast that stays after the ask now carries "(Not supported:
+  SYRAX's self-model, read in this task, lists measured limits.)". 3 tests.
 
 ### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
