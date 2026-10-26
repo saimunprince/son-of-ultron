@@ -493,11 +493,27 @@ BROWSER_CLAIM = re.compile(
     rf"|(?<!no )(?<!not )\bform {_NOUN_SAYS}(?:submitted|filled in|filled out|sent)\b"
     rf"|(?<!no )(?<!not )\b(?:page|web ?page|site|website|url|link|tab|browser)s? {_NOUN_SAYS}(?:opened|loaded|visited|open)\b",
     re.I)
+# Live 2026-10-25 (Prince): "Music summoned.", "Media is playing.", "Stream forced.", "The stream plays now." after a
+# YouTube search page, the play/pause key and two opened URLs; four times the human said nothing played. A desktop
+# call stood for the claim, so DESKTOP_CLAIM let it through. Something said to be playing rests on a reading that
+# says so: `desktop` media status ("Playing: '<title>' in <app>", desktop.media_report), which every media action
+# also returns. "nothing is playing" and "is not playing" are not claims.
+PLAYING_CLAIM = re.compile(
+    r"(?<!nothing )(?<!nothing that )(?<!no song )(?<!no music )\b(?:is|are|'s) (?:now )?playing\b"
+    r"|\bnow playing\b|\bplays now\b|\b(?:is|are) (?:now )?streaming\b"
+    r"|\b(?:music|song|track|stream|playback|video|playlist|audio)s? (?:is |has |have )?(?:started|summoned|initiated|resumed|forced)\b"
+    r"|\b(?:started|resumed|initiated) (?:the |your )?(?:music|song|track|stream|playback|video|playlist|audio)\b",
+    re.I)
+# a media reading that says something plays: desktop media on Windows ("Playing: '...' in Chrome"), macOS
+# ("playing: Artist - Name") or Linux (playerctl's bare "Playing")
+PLAYING_READ = re.compile(r"(?im)(?:^|[\s:;.(])playing: |^\s*playing\s*$")
+PLAYING_NOTE = " (Not verified: nothing in this task read what is playing.)"
 # class -> (pattern, the tool classes that stand for it, what the answer says happened, the tool class named to the human)
 OUTCOME_CLAIMS = {
     "send": (SEND_CLAIM, frozenset({"send"}), "sent, posted, paid or ordered", "sending"),
     "desktop": (DESKTOP_CLAIM, frozenset({"desktop"}), "played, set or opened on this computer", "desktop"),
     "browser": (BROWSER_CLAIM, frozenset({"browser", "desktop"}), "opened or operated on a page or app", "browser or desktop"),
+    "playing": (PLAYING_CLAIM, frozenset({"playing"}), "playing", "`desktop` media status"),
 }
 OUTCOME_NUDGE = (
     "[SYRAX check, not a new request] Your answer says something was {what}, but no {tool} tool ran in this task. "
@@ -784,7 +800,7 @@ class SyraxAgent(Manus):
             if self.last_reply.startswith("SYRAX:"):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
             if self._outcome_claimed(self.last_reply) == claimed:  # still claimed, and still no such tool
-                self.last_reply = self.last_reply.rstrip() + OUTCOME_NOTE.format(tool=tool)
+                self.last_reply = self.last_reply.rstrip() + (PLAYING_NOTE if claimed == "playing" else OUTCOME_NOTE.format(tool=tool))
         if (self.last_reply and self.researched and not URL.search(self.last_reply) and "[Spoken aloud" not in (request or "")
                 and not self.step_limit_hit and not self.loop_stopped):
             # the answer rests on research: it names its source once asked, or the journal shows it would not
@@ -1048,6 +1064,10 @@ class SyraxAgent(Manus):
                     self.changed = True
                 if _succeeded(result):
                     self.acted |= classes_of(name, decision.level, _args_of(command))  # OUTCOME_CLAIMS
+                    if (name == "desktop" and PLAYING_READ.search(_body(result))) or not _level_known(name):
+                        # a media reading that says something plays; or a tool nothing declared (an MCP player may
+                        # have played, and a claim after it is never called false, as for send and desktop)
+                        self.acted.add("playing")
                 if _succeeded(result) and name == "research":
                     self.researched = True
                 self.tests = state_of_tests(name, result) or self.tests
