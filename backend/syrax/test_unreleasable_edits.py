@@ -2,9 +2,10 @@
 13 autonomous tasks edited a file a release can never accept (backend/app/tool/str_replace_editor.py, outside the
 self-modification scope; backend/syrax/test_brains.py, an existing test) with str_replace_editor, 192 steps in all,
 up to 30 in one, and learned it only when `release` refused. The release's own rules (devloop.edit_problems: an
-existing test is the contract, a file outside the scope that git would carry) now refuse such an autonomous edit
-before it happens, in the tree it happens in (a task's worktree or the repository). Refused only on git's word; a
-human's request (conversation) and a quality case (which never releases) are untouched."""
+existing test is the contract, a file outside the scope), for a file tracked at HEAD, now refuse such an
+autonomous edit before it happens, in the tree it happens in (a task's worktree or the repository). A new file is
+left to the release. Refused only on git's word; a human's request (conversation) and a quality case (which never
+releases) are untouched."""
 
 import subprocess
 from pathlib import Path
@@ -18,6 +19,7 @@ FILES = {
     "backend/syrax/test_old.py": "def test_old():\n    assert True\n",
     "backend/syrax/mod.py": "X = 1\n",
     "backend/app/tool/tool.py": "Y = 2\n",
+    "backend/requirements-syrax.txt": "fastapi\n",
     "docs/notes.md": "# notes\n",
     ".gitignore": "backend/workspace/*\n",
 }
@@ -49,7 +51,6 @@ def edit_decision(path, tool="str_replace_editor"):
 @pytest.mark.parametrize("rel, expect", [
     ("backend/syrax/test_old.py", "existing tests are the contract"),
     ("backend/app/tool/tool.py", "outside the self-modification scope"),
-    ("backend/app/tool/new_tool.py", "outside the self-modification scope"),  # new and not ignored: git would carry it
     ("backend/requirements-syrax.txt", "dependencies are the owner's decision"),
 ])
 def test_what_a_release_would_refuse_is_known_before_the_edit(wt, rel, expect):
@@ -62,6 +63,8 @@ def test_what_a_release_would_refuse_is_known_before_the_edit(wt, rel, expect):
     "backend/syrax/test_new_case.py",  # a new test is welcome
     "docs/notes.md",
     "backend/workspace/scratch.txt",   # ignored: scratch work never reaches a release
+    "backend/app/tool/new_tool.py",    # new, outside the scope: left to the release (scratch a task may delete)
+    "x",                               # test_test_claims' scripted patch of a new file
 ])
 def test_what_a_release_accepts_is_left_alone(wt, rel):
     assert devloop.edit_problems(rel, wt) == []

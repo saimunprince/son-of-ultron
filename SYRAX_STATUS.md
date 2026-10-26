@@ -269,12 +269,15 @@ gate result of each phase is recorded in the next phase's entry.
   backend/syrax/test_brains.py) with str_replace_editor, 192 steps in all and
   up to 30 in one, and learned only at `release` that none of it could land.
   `devloop.edit_problems` holds the release's own rules for one path (an
-  existing test tracked at HEAD; out of scope and tracked, or new and not
-  ignored), judged in the task's worktree; `permissions` refuses such an
-  autonomous `str_replace_editor` / `apply_patch` edit with the release's
-  words. Refused only on git's word; a human's request and a quality case are
-  untouched; `python_execute` literals stay the release's. 17 tests, 13 red
-  before; 499 contract tests around permissions, release and autonomy pass.
+  existing test, a file outside the scope; both tracked at HEAD: a new file
+  is left to the release), judged in the task's worktree; `permissions`
+  refuses such an autonomous `str_replace_editor` / `apply_patch` edit with
+  the release's words. Refused only on git's word; a human's request and a
+  quality case are untouched; `python_execute` literals stay the release's.
+  The first full gate failed it: test_test_claims scripts an autonomous patch
+  of a new file `x`, which the rule refused as out of scope; every wasted
+  task had edited a tracked file, so new files are now the release's again.
+  18 tests.
 - 0f86c3c: 17 of 17 skill rows had no content hash: verified before the
   lifecycle (10-25) and never re-verified (a prebuilt skill stays CURRENT).
   The journal stores a first hash without a bump, so such a skill's first

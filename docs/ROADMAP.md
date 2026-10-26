@@ -125,7 +125,7 @@ release → update self-model. Evidence-driven engineering, not random rewriting
 
 - PARTIAL: `release` = gate → commit or rollback (`devloop.py`); push stays with the human unless `SYRAX_AUTOPUSH=1`.
 - PARTIAL: the change plan is recorded at release time, not before editing. An autonomous `release` is refused without `why` / `risk` / `tests` (`devloop.PLAN_FIELDS`), and `release.planned` journals that plan with the system-map components the diff touches and the tests that cover them (`devloop.impact_of`, from `docs/system_map.json`). Still missing: a plan before the first edit, and a target benchmark.
-- DONE (2026-10-26): know before changing, the release's half. What a release would refuse about a file (an existing test is the contract; a file outside the scope that git would carry) is refused at the first autonomous `str_replace_editor` / `apply_patch` edit, judged in the task's worktree (`devloop.edit_problems`, `permissions.unreleasable`): 13 tasks had spent 192 steps on such edits before `release` said no. The plan before the first edit and the target benchmark are still open.
+- DONE (2026-10-26): know before changing, the release's half. What a release would refuse about a file (an existing test is the contract; a file outside the scope; both tracked at HEAD) is refused at the first autonomous `str_replace_editor` / `apply_patch` edit, judged in the task's worktree (`devloop.edit_problems`, `permissions.unreleasable`): 13 tasks had spent 192 steps on such edits before `release` said no. The plan before the first edit and the target benchmark are still open.
 
 ## Phase 5 — Long-term memory / experience
 

@@ -214,22 +214,21 @@ def judge_problems(files: Dict[str, str]) -> List[str]:
 
 def edit_problems(path: str, root: Path) -> List[str]:
     """What a release would refuse about changing `path` (a repository path) in `root` (the task's worktree or the
-    repository), known before the edit: an existing test (tracked at HEAD) is the contract, and a file outside the
-    scope that git would carry (tracked, or new and not ignored) can never be released. Phase 4, "know before
-    changing": live 2026-10-03..10-19, 13 autonomous tasks edited such a file with str_replace_editor (192 steps in
-    all, up to 30 in one) and learned only at `release` that none of it could land. Refused only on git's word: a
-    path git does not answer for (no repository, an error) is left to the release."""
+    repository), known before the edit, for a file tracked at HEAD: an existing test is the contract, and a file
+    outside the scope can never be released. Phase 4, "know before changing": live 2026-10-03..10-19, 13 autonomous
+    tasks edited such a file with str_replace_editor (192 steps in all, up to 30 in one) and learned only at
+    `release` that none of it could land; every one of them was a tracked file. A new file is left to the release
+    (it may be scratch work the task deletes; the first gate run of this rule refused a scripted task's new `x`).
+    Refused only on git's word: a path git does not answer for (no repository, an error) is left to the release."""
     name = path.rsplit("/", 1)[-1]
     try:
-        tracked = _git(["ls-files", "--error-unmatch", "--", path], root, timeout=15).returncode == 0
-        if (name.startswith("test_") or name.endswith(".test.ts")) and tracked:
-            return [f"{path}: existing tests are the contract; add a new test instead of changing this one"]
-        scope = scope_problems({path: "M"})
-        if scope and (tracked or _git(["check-ignore", "-q", "--", path], root, timeout=15).returncode == 1):
-            return scope
+        if _git(["ls-files", "--error-unmatch", "--", path], root, timeout=15).returncode != 0:
+            return []
     except (OSError, subprocess.SubprocessError):
         return []
-    return []
+    if name.startswith("test_") or name.endswith(".test.ts"):
+        return [f"{path}: existing tests are the contract; add a new test instead of changing this one"]
+    return scope_problems({path: "M"})
 
 
 _PATH_TOKEN = re.compile(r"[\w./-]+\.\w+")
