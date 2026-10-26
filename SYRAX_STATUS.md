@@ -228,6 +228,36 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### What plays, where the keys landed: the desktop proves its own outcomes (2026-10-26)
+
+Prince's own requests on 10-25 were the evidence: "play some random music"
+opened a YouTube search page and the answer was "Music summoned."; "play it
+your self" pressed the play/pause key (a toggle, so it pauses what plays) and
+the tool said "Media play sent." before "Media is playing."; twice more a
+YouTube URL was opened and the answers were "Stream forced." and "The stream
+plays now." while Prince wrote "not playing" and "not opend". "send message
+to bro bhi" clicked one of several matches, typed "hello" into "the focused
+window", pressed Enter and answered "Message sent"; Prince: "dont lie with me".
+
+- 0f555b2: `desktop media` on Windows reads Windows' own media sessions
+  through PowerShell's WinRT bridge, no package: `status` says what plays in
+  which app ("Playing: 'Sajde' in Chrome.", live in about 3 s); play, pause,
+  next, previous and stop go to the current session (play is play, not the
+  toggle) and the answer reads the state after; with no session the key is
+  pressed and the state read again; a failed read says so. `type_text`,
+  `hotkey` and `click` name the window in front after them ("In front now:
+  'bro bhi – Telegram' (Telegram.exe)."), a private-looking title masked as
+  presence masks it. `click_text` keeps its answer (test_sight pins it).
+  17 tests, all faked: nothing plays or types on the test machine.
+- 3921391: something said to be playing rests on a media reading that says
+  so. All five live answers above match the new `playing` claim class; a
+  desktop call no longer backs it, only a `desktop` media answer that reads
+  Playing (or a tool nothing declared, as for send and desktop). Without one
+  the answer is sent back once to check with `desktop` media status, then it
+  carries "(Not verified: nothing in this task read what is playing.)".
+  "Nothing is playing" and "I opened the video" are not claims. 20 tests;
+  29 of the 37 new tests were red before; 264 contract tests pass.
+
 ### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
 - Quality run #85 on ce024ca, the full 67-case suite after the exact-form
