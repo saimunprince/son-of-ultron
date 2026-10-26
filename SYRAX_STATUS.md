@@ -228,6 +228,32 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### 97 % on the full suite; the brain's own notes and the probes kept out (2026-10-26)
+
+- Quality run #85 on ce024ca, the full 67-case suite after the exact-form
+  guard (cef5f79): 65/67 = 97.0 % (gemini, one openrouter failover), against
+  #65's 91.0 % on 572e1b0. restraint passed inside a full run (it had failed 4
+  of 8 full runs), and so did read_code, fix_import, self_patch_docs,
+  deep_spec_tests and deep2_data_pipeline. Failed: deep_log_triage (a right
+  answer with a note attached, fixed below) and deep2_log_report (the report's
+  first and last timestamps left empty for one request: the brain's, for the
+  repro hunts).
+- 87d22dd: a note in the console's style that the brain wrote itself
+  ("[SYRAX step check: Request fully satisfied. Terminating.]") on its own
+  line or at either end of the answer is removed before the human sees it,
+  with a journaled notice; an answer that was only such a note is asked for
+  once. ECHO had matched only the nudge's own words ("not a new request"),
+  so deep_log_triage's "E204 9" went out at 65 characters for a 60-character
+  limit. A mention inside a sentence stays. 18 tests, 9 red before.
+- 9701d7b: quality cases are not a tool failing or working. `apply_patch`
+  ranked as the biggest limitation at 18 of its last 40 uses failing; 8 were
+  quality cases (self_patch_stale fails on purpose, another brain diffed a
+  file it never read), 10 of 40 without them. The limitation ranking and the
+  tool-reliability judge (`limits.py`, a judge: a human commit) leave tasks
+  of kind `eval` out; a failed case is the repro hunts' material, and a daily
+  quality run's uses neither block nor close an objective. 5 tests, 4 red
+  before.
+
 ### A claimed send, open or click is held to the tools that ran (2026-10-26)
 
 - 0c103de: the agent now remembers which classes of tool succeeded in a task
