@@ -383,6 +383,67 @@ RELEASE_NUDGE = (
     "call `release` now with the summary and the plan (why, risk, tests). If it is not done, finish it first. "
     "If something blocks you, say what in one sentence."
 )
+# Phase 4, "know before changing". Journal 2026-09-26..10-26: 13 autonomous releases across 5 tasks were refused with
+# "the tests that cover your change fail, so the gate would roll it back"; one task called `release` 6 times in 10
+# minutes (~95 s of preflight each) instead of running the failing test itself. The first repository edit of a task
+# that must release is journaled change.started (files, covering tests, components, rollback point) and its
+# observation names the covering tests once, so they run before `release`, not inside it.
+CHANGE_NOTE = (" This change is covered by: {tests}. Run them with python_execute (python -m pytest {tests_args} -q, "
+               "from {backend}) before `release`; release runs them too and refuses when they fail.")
+
+
+def repo_files(name: str, args: Any) -> List[str]:
+    """The repository paths (relative to the task's tree, selfedit.work_root) a successful str_replace_editor edit or
+    apply_patch touched; [] for a file outside the tree or in its runtime parts (workspace, config, .syrax, .git)."""
+    from pathlib import Path
+
+    from syrax import editor
+    from syrax.selfedit import diff_paths, work_root
+
+    a = args if isinstance(args, dict) else {}
+    if name == "apply_patch":
+        found = diff_paths(str(a.get("diff") or ""))
+    elif name == "str_replace_editor" and a.get("command") in EDIT_COMMANDS and str(a.get("path") or "").strip():
+        try:
+            path = editor.resolve_path(str(a.get("path")), str(a.get("command")))[0]
+            target = editor.redirect(Path(os.path.realpath(path)))
+            found = [Path(os.path.relpath(os.path.realpath(target), os.path.realpath(work_root()))).as_posix()]
+        except (OSError, ValueError):  # another drive, an unreadable path
+            return []
+    else:
+        return []
+    return [f for f in found if not f.startswith("..") and not any(
+        f.lower() == n or f.lower().startswith(n + "/") for n in editor.NOT_REDIRECTED)]
+
+
+def change_facts(files: List[str]) -> dict:
+    """What is known before a change goes further (the change.started payload): the files, the tests that cover them
+    (selfedit.covering_tests, what release's preflight runs), the system-map components they belong to, and the
+    task tree's HEAD, the point a rollback returns to. Blocking (file reads, git): run it off the event loop."""
+    import subprocess
+
+    from syrax.devloop import impact_of
+    from syrax.selfedit import covering_tests, work_root
+
+    root = work_root()
+    try:
+        tests = covering_tests(root, files)
+    except Exception as e:  # knowing less never stops the change
+        logger.warning(f"covering tests of {files} unknown: {e}")
+        tests = []
+    try:
+        components = impact_of({f: "M" for f in files}, root).get("components", [])
+    except Exception:
+        components = []
+    try:
+        r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(root), capture_output=True, text=True, timeout=15)
+        head = r.stdout.strip() if r.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        head = None
+    return {"files": files, "covering_tests": tests, "components": components, "rollback_point": head or None,
+            "backend": str(root / "backend")}
+
+
 LOOP_STOPPED = (
     "Stopped: I called {name} with the same arguments {n} times in a row without making progress. "
     "What I did before that is in the journal; the task is not finished."
@@ -687,6 +748,8 @@ class SyraxAgent(Manus):
     loop_stopped: bool = False  # the task was ended because it kept repeating one call
     release_called: bool = False  # `release` ran in this task (whatever its outcome)
     release_committed: bool = False  # and one of its runs committed
+    release_brief: bool = False  # an autonomous task whose brief asks for a release (RELEASE_MARK): change.started
+    change_noted: bool = False  # its first repository edit was journaled change.started and named its tests (once)
     changed: bool = False  # a tool that changes the world succeeded this turn
     researched: bool = False  # `research` succeeded this task: the answer owes a source URL
     called: set = Field(default_factory=set)  # tools this task called (refusals excluded): NAMED_NUDGE
@@ -757,6 +820,10 @@ class SyraxAgent(Manus):
         self.loop_stopped = False
         self.release_called = False
         self.release_committed = False
+        from syrax.autonomy import RELEASE_MARK
+
+        self.release_brief = self.task_kind == "autonomous" and RELEASE_MARK in (request or "")
+        self.change_noted = False
         self.changed = False
         self.researched = False
         self.called = set()
@@ -1123,9 +1190,33 @@ class SyraxAgent(Manus):
                 if _succeeded(result) and name == "research":
                     self.researched = True
                 self.tests = state_of_tests(name, result) or self.tests
+                if (self.release_brief and not self.change_noted and name in ("str_replace_editor", "apply_patch")
+                        and _succeeded(result) and changes_something(name, _args_of(command))):
+                    result += await self._change_started(name, _args_of(command))
                 if name == "ask_human":  # a yes to a question that names a target authorizes it (permissions.named_in)
                     self.consents.append((str(_args_of(command).get("inquire", "")), _OBSERVED.sub("", result, count=1).strip()))
         return result
+
+    async def _change_started(self, name: str, args: Any) -> str:
+        """The first repository edit of a task that must release: journaled change.started (change_facts), and the
+        note CHANGE_NOTE for its observation when tests cover it. An edit outside the repository is not that edit;
+        knowing less never fails the call, it only leaves the note out."""
+        files = repo_files(name, args)
+        if not files:
+            return ""
+        self.change_noted = True
+        try:
+            facts = await asyncio.to_thread(change_facts, files)
+        except Exception as e:
+            logger.warning(f"change.started not known for {files}: {e}")
+            return ""
+        backend = facts.pop("backend")
+        await self._send({"type": "change", "event": "started", "tool": name, **facts, "step": self.current_step})
+        tests = facts["covering_tests"]
+        if not tests:
+            return ""
+        rel = [t[len("backend/"):] if t.startswith("backend/") else t for t in tests]
+        return CHANGE_NOTE.format(tests=", ".join(rel), tests_args=" ".join(rel), backend=backend)
 
     def is_mcp_tool(self, name: str) -> bool:
         """A tool an MCP server provides (browser_* or an MCPClientTool proxy): it has no timeout of its own."""

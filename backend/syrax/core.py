@@ -73,6 +73,8 @@ def _journal_type(event: dict) -> Optional[str]:
         return f"claim.{event['event']}"
     if t == "intent" and event.get("event") in ("recorded", "done", "refused", "uncertain"):
         return f"intent.{event['event']}"  # the intent ledger (intent.py): recovery reads recorded-without-done
+    if t == "change" and event.get("event") == "started":
+        return "change.started"  # Phase 4: a release task's first repository edit, its covering tests and rollback point
     if t in ("think", "ask", "final"):
         return t
     return None
