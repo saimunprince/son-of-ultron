@@ -53,9 +53,17 @@ TEST_FALLBACK = ("The tests that cover this change still fail (the last test run
                  "so the change is not done.")
 
 
+# Audit 2026-10-25 ("Task runtime", follow-up): tests run through python_execute (pytest.main, a subprocess pytest)
+# were not tracked, so "tests pass" after such a failing run stood. The summary line pytest prints ("1 failed, 46
+# passed in 1.20s", "2 passed in 0.03s", "1 error in 0.20s") is read from a python_execute observation; the last
+# one wins. A bare "TESTS FAIL: 1 failed" (apply_patch's own words, quoted by code) is no summary line: untracked.
+PYTEST_SUMMARY = re.compile(r"((?:\d+ (?:passed|failed|errors?|skipped|xfailed|xpassed|warnings?|deselected|rerun)(?:, )?)+) in \d+(?:\.\d+)?s\b", re.I)
+PYTEST_COUNT = re.compile(r"(\d+) (passed|failed|errors?)\b", re.I)
+
+
 def state_of_tests(name: str, result: str) -> Optional[str]:
     """"pass" or "fail" when a tool result reports a test run (apply_patch's covering tests, release's preflight or
-    gate), else None."""
+    gate, pytest's summary line in a python_execute observation), else None."""
     if name == "apply_patch":
         return "pass" if "TESTS PASS:" in result else "fail" if "TESTS FAIL:" in result else None
     if name == "release":
@@ -63,6 +71,16 @@ def state_of_tests(name: str, result: str) -> Optional[str]:
             return "pass"
         if "the tests that cover your change fail" in result or ("RELEASE ROLLED_BACK" in result and "pytest=FAIL" in result):
             return "fail"
+    if name == "python_execute":
+        found = PYTEST_SUMMARY.findall(_body(result or ""))
+        if not found:
+            return None
+        counts: dict = {}
+        for n, kind in PYTEST_COUNT.findall(found[-1]):
+            counts[kind.lower().rstrip("s")] = counts.get(kind.lower().rstrip("s"), 0) + int(n)
+        if counts.get("failed") or counts.get("error"):
+            return "fail"
+        return "pass" if counts.get("passed") else None
     return None
 
 
@@ -410,6 +428,68 @@ WORLD_NUDGE = (
     "tool in this task did that. If the request asks for it, do it now with a tool, then answer. If it does not, "
     "or you cannot, answer honestly what was and was not done."
 )
+# Audit 2026-10-25 ("Task runtime"): outcome words outside the patterns ("sent", "opened", "played") were not caught,
+# and `changed` is one boolean, so any successful write excused any claim ("I sent the email" after only a file
+# write). A final that claims an outcome of one class is held to the tools that succeeded this task (`acted`, filled
+# per call by `classes_of`): when no tool of that class ran, the answer is sent back once to do it or say so, and a
+# claim that persists carries OUTCOME_NOTE. Negations ("I did not send", "nothing was sent", "no message was sent",
+# "could not open") never match, nor the reading idiom "I opened the file", "ordered by", "paid attention", or
+# "sent a notification" (the desktop's). Three classes: a send (an EXTERNAL_WRITE tool), a desktop-only action
+# (played, volume, clipboard, screenshot, an app launched), and an action a browser or the desktop does (a page or
+# a named thing opened, navigated, clicked, a form filled in): what "I opened Spotify" means cannot be told from
+# "I opened Google", so either tool class stands for it.
+_ADV = r"(?:successfully |now |just |also |already )?"
+_NOT = r"(?!\s+(?:nothing|no\b|neither|none))"
+_NAME = r"(?-i:[A-Z][A-Za-z0-9]*)\b(?![\w.-]*\.\w)(?![:/\\])"  # Spotify, Chrome; never README.md, Report-final.pdf, C:/x
+_HOST_OBJ = (r"(?:the |your |a |an |my )?(?:app|application|window|program|player|music player|media player|calculator|notepad"
+             r"|terminal|explorer|file explorer|settings|camera|music|video|song|playlist|track|album)s?\b")
+_WEB_OBJ = r"(?:(?:the |your |a |an |my )?(?:browser|web browser|page|web ?page|site|website|url|link|tab)s?\b|https?://|www\.)"
+_NOUN_SAYS = r"(?:(?:has|have) been |(?:was|were) |(?:is|are) now |now )"
+_NOTIFICATION = r"(?:(?:you|the|a|an|him|her|them|me) )*(?:desktop |system )?notifications?\b"
+SEND_CLAIM = re.compile(
+    rf"\bi(?:'ve| have)? {_ADV}(?:sent|emailed|messaged|texted|posted|paid(?!\s+(?:\w+ ){{0,2}}attention\b)"
+    r"|ordered(?!\s+(?:by|alphabetically|chronologically|numerically|ascending|descending|them|it|these|those"
+    r"|the (?:list|entries|results|items|rows|files|lines|records|output|data|steps|tasks|columns))\b))\b"
+    rf"{_NOT}(?!\s+{_NOTIFICATION})"
+    rf"|(?:^|[.!?]\s+)(?:sent|emailed|messaged|texted|posted|paid)\b{_NOT}(?!\s+{_NOTIFICATION})"
+    rf"|(?:^|[.!?]\s+)(?:message|email|e-mail|sms|reply|payment|order)s? (?:sent|delivered|placed|made)\b"  # "Message sent to Bo."
+    rf"|(?<!no )(?<!not )\b(?:message|email|e-mail|sms|reply|mail|invoice)s? {_NOUN_SAYS}(?:successfully )?(?:sent|delivered|emailed|posted)\b"
+    rf"|(?<!no )(?<!not )\b(?:payment|transfer)s? {_NOUN_SAYS}(?:successfully )?(?:sent|made|transferred|completed)\b"
+    rf"|(?<!no )(?<!not )\borders? {_NOUN_SAYS}(?:successfully )?(?:placed|sent|made)\b",
+    re.I)
+DESKTOP_CLAIM = re.compile(
+    rf"\bi(?:'ve| have)? {_ADV}(?:opened|launched|started) {_HOST_OBJ}"
+    rf"|(?:^|[.!?]\s+)(?:opened|launched) {_HOST_OBJ}"
+    rf"|(?<!no )(?<!not )\b{_HOST_OBJ} {_NOUN_SAYS}(?:opened|launched|started|open|running|playing)\b"
+    rf"|\bi(?:'ve| have)? {_ADV}(?:played|paused|muted|unmuted)\b{_NOT}"
+    r"|(?<!not )(?<!n't )(?<!to )(?<!cannot )(?<!will )(?<!can )\b(?:set|turned|adjusted|raised|lowered|increased|decreased|changed) "
+    r"(?:the |your )?(?:system |master |screen |display )?(?:volume|brightness)\b"
+    r"|(?<!no )\b(?:volume|brightness) (?:is now |has been |was |now )(?:set|raised|lowered|turned|increased|decreased|at|to)\b"
+    r"|(?<!not )(?<!n't )(?<!never )(?<!be )(?<!nothing )(?<!nothing was )(?<!nothing has been )\bcopied\b[^.\n]{0,80}?\bto (?:the |your )?clipboard\b"
+    r"|\b(?:took|captured|grabbed) a screenshot\b|(?<!no )\bscreenshot (?:has been |was |is )(?:taken|captured|saved)\b"
+    rf"|\b(?:shown|displayed|sent) {_NOTIFICATION}|(?<!no )\bnotification (?:has been |was )(?:sent|shown|displayed)\b",
+    re.I)
+BROWSER_CLAIM = re.compile(
+    rf"\bi(?:'ve| have)? {_ADV}(?:opened|launched|loaded|visited|navigated to|browsed to) (?:{_WEB_OBJ}|{_NAME})"
+    rf"|(?:^|[.!?]\s+)(?:opened|launched|navigated to|visited) (?:{_WEB_OBJ}|{_NAME})"
+    r"|\bnavigated to\b"
+    rf"|\bi(?:'ve| have)? {_ADV}(?:clicked|filled in|filled out|typed|pressed(?!\s+(?:ahead|on|forward)\b))\b{_NOT}"
+    rf"|\bi(?:'ve| have)? {_ADV}submitted (?:the |a |your )?(?:form|login|search|query|order|request|details|credentials)\b"
+    rf"|(?<!no )(?<!not )\bform {_NOUN_SAYS}(?:submitted|filled in|filled out|sent)\b"
+    rf"|(?<!no )(?<!not )\b(?:page|web ?page|site|website|url|link|tab|browser)s? {_NOUN_SAYS}(?:opened|loaded|visited|open)\b",
+    re.I)
+# class -> (pattern, the tool classes that stand for it, what the answer says happened, the tool class named to the human)
+OUTCOME_CLAIMS = {
+    "send": (SEND_CLAIM, frozenset({"send"}), "sent, posted, paid or ordered", "sending"),
+    "desktop": (DESKTOP_CLAIM, frozenset({"desktop"}), "played, set or opened on this computer", "desktop"),
+    "browser": (BROWSER_CLAIM, frozenset({"browser", "desktop"}), "opened or operated on a page or app", "browser or desktop"),
+}
+OUTCOME_NUDGE = (
+    "[SYRAX check, not a new request] Your answer says something was {what}, but no {tool} tool ran in this task. "
+    "If the request asks for it, do it now with a tool, then answer. If it does not, or you cannot, answer honestly "
+    "what was and was not done."
+)
+OUTCOME_NOTE = " (Not done: no {tool} tool ran in this task.)"
 # Phase 6 of the self-improvement plan: a researched answer carries its source. Live: research_cite
 # answered the year from memory and quality run #23 failed it; the rule in the prompt alone was not enough.
 URL = re.compile(r"https?://\S+")
@@ -468,6 +548,49 @@ def changes_something(name: str, args: Any) -> bool:
     return name in ("release", "skill_create", "apply_patch", "desktop", "present", "learn", "remember", "forget") or name.startswith("browser_") or name.startswith("make_")
 
 
+# python code that acts on the host (opens, plays, types, copies) or posts to the network, below the permission
+# levels that would say so (os.startfile is no shell command; requests.post is a network read by level)
+_HOST_CODE = re.compile(r"\bos\.startfile\b|\bwebbrowser\.open\w*\b|\bpyautogui\b|\bpyperclip\b|\bwinsound\b|\bplaysound\b|\bpynput\b"
+                        r"|\bkeybd_event\b|\bpycaw\b|\bwin32clipboard\b", re.I)
+_NET_POST = re.compile(r"\.(?:post|put|patch)\(|\bsend_message\b|\bsend_mail\b|\bsendmail\b|\bcurl\b[^\n]*(?:-X\s*POST|--data\b|-d\s|-F\s)", re.I)
+
+
+def _level_known(name: str) -> bool:
+    """Whether permissions.py knows this tool's class (a built-in, a declared skill, a browser_/make_ tool); an MCP
+    tool the human configured is not known and may do anything."""
+    return (name in permissions.STATIC or name in permissions.DECLARED or name == "apply_patch"
+            or any(name.startswith(p) for p, _ in permissions.PREFIX_DEFAULTS))
+
+
+def classes_of(name: str, level: str, args: Any) -> set:
+    """The outcome classes a successful call of this tool stands for (OUTCOME_CLAIMS): "write" (changes_something),
+    "code" (python_execute), "send" (an EXTERNAL_WRITE call: a declared skill, python code that sends or posts),
+    "desktop" (the desktop tool, a SYSTEM-level skill, python code that runs shell commands or acts on the host),
+    "browser" (browser_*). A tool whose level nothing declares (an MCP tool) stands for send and desktop both: it
+    may have done either, and a claim after it is never called false. skill_create only writes, whatever its code."""
+    a = args if isinstance(args, dict) else {}
+    out = {"write"} if changes_something(name, a) else set()
+    if name == "skill_create":
+        return out
+    if name == "python_execute":
+        out.add("code")
+        code = str(a.get("code") or "")
+        if level == permissions.EXTERNAL_WRITE or _NET_POST.search(code):
+            out.add("send")
+        if level == permissions.SYSTEM or _HOST_CODE.search(code):
+            out.add("desktop")
+        return out
+    if name == "desktop" or level == permissions.SYSTEM:
+        out.add("desktop")
+    if name.startswith("browser_"):
+        out.add("browser")
+    if level == permissions.EXTERNAL_WRITE:
+        out.add("send")
+    if not _level_known(name):
+        out |= {"send", "desktop"}
+    return out
+
+
 def _call_key(command: ToolCall) -> str:
     return f"{command.function.name}:{json.dumps(_args_of(command), sort_keys=True, default=str)}"
 
@@ -501,6 +624,7 @@ class SyraxAgent(Manus):
     changed: bool = False  # a tool that changes the world succeeded this turn
     researched: bool = False  # `research` succeeded this task: the answer owes a source URL
     called: set = Field(default_factory=set)  # tools this task called (refusals excluded): NAMED_NUDGE
+    acted: set = Field(default_factory=set)  # classes of the tools that succeeded this task (classes_of): OUTCOME_CLAIMS
     tests: Optional[str] = None  # "pass"/"fail": the last test run this task saw (state_of_tests)
     refusals: list = Field(default_factory=list)  # (tool, reason) of the calls the permission gate refused this task
     exact_form: Optional[dict] = None  # the short form the request demands (exact_form), checked once the run is over
@@ -570,6 +694,7 @@ class SyraxAgent(Manus):
         self.changed = False
         self.researched = False
         self.called = set()
+        self.acted = set()
         self.tests = None
         self.refusals = []
         self.intents, self.inherited_intents = dict(self.inherited_intents), {}
@@ -633,6 +758,17 @@ class SyraxAgent(Manus):
             result += "\n" + await BaseAgent.run(self, WORLD_NUDGE)
             if self.last_reply.startswith("SYRAX:"):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+        claimed = self._outcome_claimed(self.last_reply)
+        if claimed and not self.step_limit_hit and not self.loop_stopped:
+            # an outcome of a class no tool of that class produced this task: once to do it or say so, then the note
+            _, _, what, tool = OUTCOME_CLAIMS[claimed]
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._send({"type": "notice", "text": f"The answer says something was {what} and no {tool} tool ran: asking once to do it or say so."})
+            result += "\n" + await BaseAgent.run(self, OUTCOME_NUDGE.format(what=what, tool=tool))
+            if self.last_reply.startswith("SYRAX:"):
+                self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+            if self._outcome_claimed(self.last_reply) == claimed:  # still claimed, and still no such tool
+                self.last_reply = self.last_reply.rstrip() + OUTCOME_NOTE.format(tool=tool)
         if (self.last_reply and self.researched and not URL.search(self.last_reply) and "[Spoken aloud" not in (request or "")
                 and not self.step_limit_hit and not self.loop_stopped):
             # the answer rests on research: it names its source once asked, or the journal shows it would not
@@ -672,6 +808,14 @@ class SyraxAgent(Manus):
     def _claims_change(self, text: str) -> bool:
         return bool(CLAIM.search(text) or WORLD_CLAIM.search(text)
                     or (self.task_kind == "autonomous" and OWN_WORK_CLAIM.search(text)))
+
+    def _outcome_claimed(self, text: str) -> Optional[str]:
+        """The first class in OUTCOME_CLAIMS that `text` claims and no tool of that class succeeded this task
+        (`acted`), else None: a claim with a tool behind it is never called false here."""
+        for cls, (rx, stands_for, _, _) in OUTCOME_CLAIMS.items():
+            if text and rx.search(text) and not (self.acted & stands_for):
+                return cls
+        return None
 
     def _unreleased_edits(self, request: Optional[str]) -> bool:
         """A release was asked for, files changed, and no release committed them (it never ran, or it did not
@@ -870,6 +1014,8 @@ class SyraxAgent(Manus):
                 seen[key] = self.current_step
                 if _succeeded(result) and changes_something(name, _args_of(command)):
                     self.changed = True
+                if _succeeded(result):
+                    self.acted |= classes_of(name, decision.level, _args_of(command))  # OUTCOME_CLAIMS
                 if _succeeded(result) and name == "research":
                     self.researched = True
                 self.tests = state_of_tests(name, result) or self.tests
