@@ -125,10 +125,15 @@
       "code": [
         "backend/syrax/core.py",
         "backend/syrax/phases.py (task phase model, recomputed from events)",
-        "backend/syrax/stallwatch.py (event-loop watchdog, stack dumps)"
+        "backend/syrax/stallwatch.py (event-loop watchdog, stack dumps)",
+        "backend/syrax/intent.py (intent ledger: intent.recorded before an EXTERNAL_WRITE call, intent.done after; the same send held while the first never finished; EXTERNAL_UNCERTAIN at recovery)"
       ],
       "tests": [
-        "backend/syrax/test_bridge.py (journal + core section)"
+        "backend/syrax/test_bridge.py (journal + core section)",
+        "backend/syrax/test_intent_ledger.py (recorded before / done after, the repeat held, recovery and resume carry the summary)",
+        "backend/syrax/test_task_queue.py (a request made while busy is queued, listed, removable, survives a restart)",
+        "backend/syrax/test_task_deadline.py, test_error_class.py (a deadline per task kind, error_class on task.failed/cancelled)",
+        "backend/syrax/test_boot_policy.py (what a restart cut is dismissed or kept for the human)"
       ],
       "failure_modes": [
         "LLM error \u2192 task.failed + error event",
@@ -168,11 +173,13 @@
       ],
       "code": [
         "backend/syrax/journal.py",
-        "backend/syrax/backup.py (daily verified snapshot of journal.db, brains.json, memory.json, config.toml; human-run restore)"
+        "backend/syrax/backup.py (daily verified snapshot of journal.db, brains.json, memory.json, config.toml; human-run restore)",
+        "backend/syrax/redact.py (the credential mask: every log line and the journal's copies of goal, think, tool args, tool output and checkpoint context are masked at write time)"
       ],
       "tests": [
         "backend/syrax/test_journal.py (SIGKILL crash matrix, transition table, recovery, resume, fan-out)",
-        "backend/syrax/test_backup.py (snapshot/verify/prune/due, a flipped byte is caught, restore reproduces rows and refuses while running)"
+        "backend/syrax/test_backup.py (snapshot/verify/prune/due, a flipped byte is caught, restore reproduces rows and refuses while running)",
+        "backend/syrax/test_redact.py, test_redact_leftovers.py (log lines, tracebacks, tool output, goal, tool args and checkpoint context masked; the agent keeps the key)"
       ],
       "failure_modes": [
         "JournalError on invalid transition/unknown task/terminal task \u2192 rolled back",

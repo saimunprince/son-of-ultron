@@ -169,14 +169,14 @@ CAPABILITIES: List[Capability] = [
                     "the guard's reason and the waiting question"),
     Capability("queue", "Task queue (a request made while busy waits its turn)", CURRENT,
                "backend/syrax/core.py (submit queue=True, queued, _start_next, requeue_after_boot), server.py (queue, queue_cancel)",
-               tests=["syrax.test_task_queue::*"],
+               tests=["syrax.test_task_queue::*"], live=["queue"],
                note="M1; the human's request is journaled PENDING (task.queued), answered 'Queued (position n)' with REMOVE, starts when the running "
-                    "task ends; survives a restart while under an hour old; SYRAX's own work never queues; live probe pending (hello.queue over /ws)"),
+                    "task ends; survives a restart while under an hour old; SYRAX's own work never queues; the probe reads hello.queue and asks for the queue over /ws"),
     Capability("backups", "Backups with verified restore", CURRENT, "backend/syrax/backup.py (snapshot, verify, restore), autonomy.py (idle cycle)",
-               tests=["syrax.test_backup::*"],
+               tests=["syrax.test_backup::*"], live=["backups"],
                note="M3; journal.db through SQLite's online backup API with brains.json, memory.json, config.toml into backend/config/backups/<stamp>/ "
                     "(manifest: sha256, row counts, integrity_check), seven kept; restore only by a human while SYRAX is stopped; no agent tool; "
-                    "live probe pending (the newest snapshot verifies and is younger than 48 h)"),
+                    "the probe verifies the newest snapshot against its manifest and wants it younger than 48 h"),
     Capability("intent", "Intent ledger (external actions never repeated blindly)", CURRENT,
                "backend/syrax/intent.py, agent.py (EXTERNAL_WRITE calls), core.py, journal.py (recovery)",
                tests=["syrax.test_intent_ledger::*"],
@@ -189,9 +189,9 @@ CAPABILITIES: List[Capability] = [
                     "at write time; the agent's own context keeps the key; the final answer too when the human asked for it"),
     Capability("memory_export", "Memory inspection, export and correction", CURRENT,
                "backend/syrax/memory.py (facts provenance, correct, export), server.py (memories, memory_correct, memory_export)",
-               tests=["syrax.test_memory_export::*", "syrax.test_memory_correct::*"],
+               tests=["syrax.test_memory_export::*", "syrax.test_memory_correct::*"], live=["memory_export"],
                note="each fact carries type, confidence, basis, last use and use count; memory_correct rewrites a fact in place (previous text journaled); "
-                    "memory_export writes a credential-masked JSON to backend/config/exports; live probe pending (memory_export over /ws, the file deleted after)"),
+                    "memory_export writes a credential-masked JSON to backend/config/exports; the probe asks for one over /ws and deletes the file it got"),
     Capability("deadlines", "Task deadlines and tool timeouts", CURRENT,
                "backend/syrax/core.py (TASK_DEADLINE_S, _deadline_passed, error_class), agent.py (MCP_TOOL_TIMEOUT_S)",
                tests=["syrax.test_task_deadline::*", "syrax.test_mcp_timeout::*", "syrax.test_error_class::*"],
@@ -375,6 +375,31 @@ def live_checks(evidence: Optional[dict], gate: Optional[dict], journal: Dict[st
     out["process"] = ("pass", f"pid {proc.get('pid')} alive") if proc.get("pid_alive") else (("fail", "pid not alive") if proc else (None, ""))
     tools = (ws.get("hello") or {}).get("tools") or []
     out["ws_hello"] = ("pass", f"hello with {len(tools)} tools") if tools else (("fail", ws.get("error", "no hello")) if ws else (None, ""))
+    # the queue over the socket: hello.queue is a list and {"type": "queue"} answered with items (probe.queue_shape)
+    q = ws.get("queue") or {}
+    if q:
+        out["queue"] = ("pass", f"hello.queue is a list, queue answered with {q.get('items')} item(s)") if q.get("hello_list") and q.get("answered") else \
+            ("fail", q.get("error") or ("hello.queue is no list" if not q.get("hello_list") else "queue did not answer with items"))
+    else:
+        out["queue"] = (None, "")
+    # memory_export over the socket: memory_exported named a file that existed; the probe deleted it
+    me = ws.get("memory_export") or {}
+    if me:
+        out["memory_export"] = ("pass", f"memory_exported {me.get('count')} fact(s) to a file that existed" + ("" if me.get("deleted") else " (not deleted: " + str(me.get("error")) + ")")) \
+            if me.get("existed") else ("fail", me.get("error") or f"memory_exported named {me.get('path')!r}, which does not exist")
+    else:
+        out["memory_export"] = (None, "")
+    # backups on the same machine: the newest snapshot verifies against its manifest and is younger than probe.BACKUP_MAX_AGE_H
+    bk = ev.get("backups")
+    if bk:
+        if bk.get("error"):
+            out["backups"] = ("fail", f"backups: {bk['error']}")
+        elif bk.get("ok") and bk.get("fresh"):
+            out["backups"] = ("pass", f"newest snapshot {Path(str(bk.get('dir'))).name} verifies, {bk.get('age_h')} h old, {bk.get('snapshots')} kept")
+        else:
+            out["backups"] = ("fail", f"newest snapshot {Path(str(bk.get('dir'))).name}: " + ("; ".join(bk.get("problems") or []) or f"{bk.get('age_h')} h old, older than the daily snapshot allows"))
+    else:
+        out["backups"] = (None, "no snapshot folder" if bk == {} else "")
     tts = voice.get("tts") or {}
     if tts:
         out["tts"] = ("pass", f"{tts.get('bytes')} B in {tts.get('ms')} ms") if tts.get("status") == 200 and (tts.get("bytes") or 0) > 0 else \
