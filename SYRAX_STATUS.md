@@ -238,14 +238,14 @@ gate result of each phase is recorded in the next phase's entry.
   answer with a note attached, fixed below) and deep2_log_report (the report's
   first and last timestamps left empty for one request: the brain's, for the
   repro hunts).
-- 87d22dd: a note in the console's style that the brain wrote itself
+- b5d3286: a note in the console's style that the brain wrote itself
   ("[SYRAX step check: Request fully satisfied. Terminating.]") on its own
   line or at either end of the answer is removed before the human sees it,
   with a journaled notice; an answer that was only such a note is asked for
   once. ECHO had matched only the nudge's own words ("not a new request"),
   so deep_log_triage's "E204 9" went out at 65 characters for a 60-character
   limit. A mention inside a sentence stays. 18 tests, 9 red before.
-- 9701d7b: quality cases are not a tool failing or working. `apply_patch`
+- 2ffe737: quality cases are not a tool failing or working. `apply_patch`
   ranked as the biggest limitation at 18 of its last 40 uses failing; 8 were
   quality cases (self_patch_stale fails on purpose, another brain diffed a
   file it never read), 10 of 40 without them. The limitation ranking and the
@@ -253,7 +253,7 @@ gate result of each phase is recorded in the next phase's entry.
   of kind `eval` out; a failed case is the repro hunts' material, and a daily
   quality run's uses neither block nor close an objective. 5 tests, 4 red
   before.
-- 72fb021: a send that timed out is not a send that failed. An EXTERNAL_WRITE
+- 534c6ab: a send that timed out is not a send that failed. An EXTERNAL_WRITE
   call abandoned at the MCP timeout, a `python_execute` timeout or a dropped
   connection was journaled `intent.done {ok: false}` and left the ledger,
   so the model could send the same message again although the first may
@@ -262,7 +262,7 @@ gate result of each phase is recorded in the next phase's entry.
   as a send in flight; the HUD logs INTENT UNCERTAIN. A refused connection
   or a bad argument did not go out: done, as before. 17 tests (16 + HUD),
   10 red before; in the red run the timed-out message went out twice.
-- 0aa99d5: an autonomous edit a release would refuse is refused before the
+- b0bee74: an autonomous edit a release would refuse is refused before the
   edit (ROADMAP Phase 4, "know before changing"). 13 autonomous tasks
   (10-03..10-19) edited an existing test or a file outside the
   self-modification scope (backend/app/tool/str_replace_editor.py,
@@ -278,7 +278,7 @@ gate result of each phase is recorded in the next phase's entry.
 
 ### A claimed send, open or click is held to the tools that ran (2026-10-26)
 
-- 0c103de: the agent now remembers which classes of tool succeeded in a task
+- d274a76: the agent now remembers which classes of tool succeeded in a task
   (write, send, desktop, browser, code). An answer that says a message was
   sent, an app opened, the volume set or a page clicked, when no tool of that
   class ran, is sent back once with the class named and, if the claim stays,
