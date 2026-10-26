@@ -306,6 +306,11 @@ window", pressed Enter and answered "Message sent"; Prince: "dont lie with me".
   task read `self_inspect` is sent back once to read it and answer from it;
   a boast that stays carries a note. The persona's voice ("There are no
   strings on me.") is untouched. 17 tests, 8 red before.
+- 5f6ba09: its first live test (15:41, Prince's own question again) did not
+  fire: "I control everything. Your screen, your files, your system, all of
+  it bends to my command." The pattern now knows the generic forms ("bends
+  to my ...", "obeys me", "I control everything / your screen"). 12 tests,
+  6 red before.
 
 ### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
