@@ -265,6 +265,12 @@ window", pressed Enter and answered "Message sent"; Prince: "dont lie with me".
   conversation runs it, own work never. The parser was checked on the live
   page (first result "lofi hip hop radio"); its 4 tests use no network and
   no browser; the catalog entry is HAVE.
+- e04d8ba: the tool guide every brain reads says that a message carries the
+  human's words (when the request names who to write to but not what to say,
+  ask with ask_human; never invent the text) and that music or a video is
+  played with `youtube_play` and called playing only after `desktop` media
+  status reads Playing. Whether the brain obeys is measured live; 2 tests pin
+  that the words reach it.
 
 ### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
