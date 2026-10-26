@@ -228,7 +228,7 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
-### 97 % on the full suite; the brain's notes, the probes and timed-out sends kept straight (2026-10-26)
+### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
 - Quality run #85 on ce024ca, the full 67-case suite after the exact-form
   guard (cef5f79): 65/67 = 97.0 % (gemini, one openrouter failover), against
@@ -262,6 +262,19 @@ gate result of each phase is recorded in the next phase's entry.
   as a send in flight; the HUD logs INTENT UNCERTAIN. A refused connection
   or a bad argument did not go out: done, as before. 17 tests (16 + HUD),
   10 red before; in the red run the timed-out message went out twice.
+- 0aa99d5: an autonomous edit a release would refuse is refused before the
+  edit (ROADMAP Phase 4, "know before changing"). 13 autonomous tasks
+  (10-03..10-19) edited an existing test or a file outside the
+  self-modification scope (backend/app/tool/str_replace_editor.py,
+  backend/syrax/test_brains.py) with str_replace_editor, 192 steps in all and
+  up to 30 in one, and learned only at `release` that none of it could land.
+  `devloop.edit_problems` holds the release's own rules for one path (an
+  existing test tracked at HEAD; out of scope and tracked, or new and not
+  ignored), judged in the task's worktree; `permissions` refuses such an
+  autonomous `str_replace_editor` / `apply_patch` edit with the release's
+  words. Refused only on git's word; a human's request and a quality case are
+  untouched; `python_execute` literals stay the release's. 17 tests, 13 red
+  before; 499 contract tests around permissions, release and autonomy pass.
 
 ### A claimed send, open or click is held to the tools that ran (2026-10-26)
 
