@@ -129,6 +129,8 @@ foreach ($x in $mgr.GetSessions()) {
 """
 MEDIA_COMMANDS = {"play": "play", "pause": "pause", "toggle": "toggle", "next": "next", "previous": "previous", "prev": "previous",
                   "stop": "stop"}
+# live 2026-10-26: asked what plays, the brain called media "get" first, the word volume and dark_mode take
+MEDIA_READS = ("status", "", "get", "state", "now", "current", "info", "what")
 MEDIA_KEYS = {"play": "play_pause", "pause": "play_pause", "toggle": "play_pause", "next": "next", "previous": "prev", "prev": "prev",
               "stop": "stop"}
 
@@ -512,7 +514,9 @@ class DesktopControl(BaseTool):
     async def _do_media(self, value: str, **_) -> ToolResult:
         if WINDOWS:
             v = value.lower()
-            if v not in ("status", "") and v not in MEDIA_COMMANDS:
+            if v in MEDIA_READS:
+                v = "status"
+            if v != "status" and v not in MEDIA_COMMANDS:
                 return ToolResult(error="media value must be play, pause, toggle, next, previous, stop or status.")
             cmd = MEDIA_COMMANDS.get(v)
             try:
