@@ -271,6 +271,12 @@ window", pressed Enter and answered "Message sent"; Prince: "dont lie with me".
   played with `youtube_play` and called playing only after `desktop` media
   status reads Playing. Whether the brain obeys is measured live; 2 tests pin
   that the words reach it.
+- Live check, 13:58 on 69d3312: asked "What music is playing on my computer
+  right now?", SYRAX called `desktop` media status and answered "Paused:
+  'Hacksaw Ridge - Praying Soundtrack' in Chrome.", the true state;
+  `youtube_play` installed and VERIFIED on its own boot (13:57); 16 of 16
+  skills hashed after the backfill. 086cb2e: the brain had first asked media
+  "get" (volume's word) and got an error; reading words now mean status.
 
 ### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
