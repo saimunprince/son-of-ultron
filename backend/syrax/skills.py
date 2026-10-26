@@ -304,6 +304,15 @@ class SkillFactory:
         self.collection = collection
         n = 0
         for row in self.journal.skills(status="VERIFIED"):
+            if not row.get("content_hash"):
+                # Verified before skills carried a hash (the lifecycle, 2026-10-25) and never re-verified since (a
+                # prebuilt skill stays CURRENT): live 2026-10-26, 17 of 17 rows had none. Without one, the first code
+                # change kept code_version 1 and a second one overwrote .versions/1, the original code. The files on
+                # disk are the verified ones: their hash is stored, no version moves.
+                try:
+                    self.journal.backfill_skill_hash_sync(row["name"], content_hash(self.root / row["name"]))
+                except Exception:
+                    pass  # the next verification stores it; a missing hash never stops a skill from loading
             try:
                 src = self.root / row["name"] / "skill.py"
                 unsafe = unsafe_reasons(src.read_text(encoding="utf-8", errors="replace")) if src.is_file() else []

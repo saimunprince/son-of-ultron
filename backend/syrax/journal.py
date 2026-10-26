@@ -1561,6 +1561,17 @@ class Journal:
                                {"skill": name, "status": status, "note": note, "content_hash": row["content_hash"], "code_version": row["code_version"]})
         return self.skill(name)
 
+    def backfill_skill_hash_sync(self, name: str, content_hash: Optional[str]) -> bool:
+        """Store `content_hash` for a skill row that has none (verified before skills carried one, 2026-10-25, and
+        not re-verified since), touching neither `version` nor `code_version`: the code on disk is the code that was
+        verified, and from here its next change is counted. True when a hash was stored."""
+        if not content_hash:
+            return False
+        with self._txn() as cur:
+            n = cur.execute("UPDATE skills SET content_hash=? WHERE name=? AND (content_hash IS NULL OR content_hash='')",
+                            (content_hash, name)).rowcount
+        return bool(n)
+
     def skill(self, name: str) -> Optional[dict]:
         with self._lock:
             row = self._db.execute("SELECT * FROM skills WHERE name=?", (name,)).fetchone()
