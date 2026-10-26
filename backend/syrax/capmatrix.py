@@ -162,8 +162,9 @@ CAPABILITIES: List[Capability] = [
                note="primary screen only; a tie clicks nothing and lists the candidates"),
     Capability("presence", "Visible Work Presence (visibility, hide/show, timeline)", PARTIAL,
                "backend/syrax/presence.py, server.py (presence, hello), hud/ (link.js, main.js: visible / minimal / hidden)",
-               tests=["syrax.test_presence::*", "syrax.test_hud::*"],
-               note="Level 1-2 on the HUD (task, phase, tool, target window, log from the journal) and the three levels by text "
+               tests=["syrax.test_presence::*", "syrax.test_hud::*"], live=["presence_events"],
+               note="evidence: presence.window (the target window after a desktop or browser call) and presence.changed events in the window; "
+                    "Level 1-2 on the HUD (task, phase, tool, target window, log from the journal) and the three levels by text "
                     "or voice; the target window is observed only right after a desktop or browser call, private titles never recorded; "
                     "Level 3 (live workspace) is the owner's decision; hud/*.test.js (node --test, not pytest) pin the queue rows, "
                     "the guard's reason and the waiting question"),
@@ -206,6 +207,22 @@ CAPABILITIES: List[Capability] = [
                tests=["syrax.test_skill_lifecycle::*"], live=["skill_hashes"],
                note="evidence: every VERIFIED skill carries a content hash (skills verified before the lifecycle get theirs at boot); code_version follows the content hash; the last five versions are kept under .versions/ and the human can ROLLBACK (re-verified); "
                     "DISABLED sticks across restarts and prebuilt installs; a duplicate of a verified skill is refused naming the one to extend"),
+    Capability("desktop_truth", "Desktop truth (media sessions, window in front)", CURRENT,
+               "backend/syrax/desktop.py (media_report, MEDIA_PS, in_front/front_window, _with_front)",
+               tests=["syrax.test_media_truth::*", "syrax.test_media_reads::*", "syrax.test_keys_target::*"], live=["media_reads"],
+               note="evidence: desktop results that read Windows' media sessions (Playing: / Paused: / No media session is open) in the window; "
+                    "media status reads every session, play/pause act on the current one; typing, keys and clicks name the window in front "
+                    "after them, and the window the keys went to when the front changed"),
+    Capability("youtube_play", "Play on YouTube (prebuilt youtube_play)", CURRENT, "backend/prebuilt/youtube_play/skill.py",
+               tools=["youtube_play"],
+               tests=["syrax.test_feature_catalog::test_shipped_skills_are_installed_verified_and_registered", "syrax.test_guide_words::*"],
+               live=["youtube_play_used"],
+               note="the first video of a YouTube search opened on its watch page; its own test_skill.py runs through the skill factory "
+                    "(test_feature_catalog installs every prebuilt skill VERIFIED); whether it plays is read with desktop media status"),
+    Capability("store_apps", "Windows Store apps (list and launch)", CURRENT, "backend/syrax/desktop.py (_win_start_apps, APPS_FOLDER)",
+               tests=["syrax.test_store_apps::*"], live=["apps_used"],
+               note="Get-StartApps beside the .lnk scan, launched through shell:AppsFolder\\<AppID>; evidence: successful desktop "
+                    "launch_app / list_apps calls in the window (Store and shortcut apps share that path)"),
 ]
 
 
@@ -265,6 +282,22 @@ def read_journal(path: Path, now: Optional[float] = None) -> Dict[str, Any]:
             "desktop_screenshot": c.execute("SELECT COUNT(*) FROM events WHERE type='tool.completed' AND json_extract(payload,'$.name')='desktop' AND id IN "
                                             "(SELECT e2.id FROM events e2 JOIN events e1 ON e1.task_id=e2.task_id AND json_extract(e1.payload,'$.id')=json_extract(e2.payload,'$.id') "
                                             "WHERE e1.type='tool.started' AND json_extract(e1.payload,'$.args.action')='screenshot')").fetchone()[0],
+            # desktop truth: a desktop result that read Windows' media sessions (desktop.media_report), matched by case
+            # (instr, not LIKE): live 2026-10-26 "Paused: 'Hacksaw Ridge - Praying Soundtrack' in Chrome."
+            "media_reads": c.execute("SELECT COUNT(*) FROM events WHERE type='tool.completed' AND json_extract(payload,'$.name')='desktop' AND ts>? AND "
+                                     "(instr(json_extract(payload,'$.output'),'Playing: ')>0 OR instr(json_extract(payload,'$.output'),'Paused: ')>0 "
+                                     "OR instr(json_extract(payload,'$.output'),'No media session is open')>0)",
+                                     (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            "youtube_play_used": c.execute("SELECT COUNT(*) FROM events WHERE type='tool.completed' AND json_extract(payload,'$.name')='youtube_play' "
+                                           "AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            "apps_used": c.execute("SELECT COUNT(*) FROM events WHERE type='tool.completed' AND json_extract(payload,'$.name')='desktop' AND ts>? AND id IN "
+                                   "(SELECT e2.id FROM events e2 JOIN events e1 ON e1.task_id=e2.task_id AND json_extract(e1.payload,'$.id')=json_extract(e2.payload,'$.id') "
+                                   "WHERE e1.type='tool.started' AND json_extract(e1.payload,'$.args.action') IN ('launch_app','list_apps'))",
+                                   (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            # Work Presence: the target window observed after a desktop or browser call (core: presence.window) and the
+            # visibility levels the human set (presence.changed)
+            "presence_window": c.execute("SELECT COUNT(*) FROM events WHERE type='presence.window' AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            "presence_changed": c.execute("SELECT COUNT(*) FROM events WHERE type='presence.changed' AND ts>?", (now - WINDOW_DAYS * 86400,)).fetchone()[0],
         }
         out["journal_wal"] = c.execute("PRAGMA journal_mode").fetchone()[0]
         out["phases"] = phase_evidence(c, now)
@@ -458,14 +491,18 @@ def live_checks(evidence: Optional[dict], gate: Optional[dict], journal: Dict[st
                        ("recoveries", "recoveries"), ("cycles", "cycles"), ("brains_answered", "providers answered"), ("desktop_screenshot", "desktop screenshots"),
                        ("isolated_commits", "own commits landed from a worktree"), ("ledger_published", "self-published ledgers"),
                        ("codebench_runs", "code benchmark runs"), ("live_sessions", "live talk sessions"),
-                       ("sight_used", "click_text/find_text uses")):
+                       ("sight_used", "click_text/find_text uses"), ("media_reads", "desktop results that read the media sessions"),
+                       ("youtube_play_used", "youtube_play successes"), ("apps_used", "launch_app/list_apps successes")):
         n = counts.get(key, 0)
         windowed = ("tasks_recent", "cycles", "brains_answered", "isolated_commits", "ledger_published", "codebench_runs",
-                    "live_sessions", "sight_used")
+                    "live_sessions", "sight_used", "media_reads", "youtube_play_used", "apps_used")
         out[key] = ("pass", f"{n} {label}" + (f" in {WINDOW_DAYS} d" if key in windowed else "")) if n else (None, f"0 {label}")
     pa, pr = counts.get("permission_authorized", 0), counts.get("permission_refused", 0)
     # the gate is proven at runtime only when it has both let a named action through and refused one
     out["permissions"] = ("pass" if pa and pr else None, f"{pa} authorized / {pr} refused decisions in {WINDOW_DAYS} d")
+    pw, pc = counts.get("presence_window", 0), counts.get("presence_changed", 0)
+    out["presence_events"] = ("pass" if pw or pc else None,
+                              f"{pw} target windows observed, {pc} visibility changes journaled in {WINDOW_DAYS} d")
     out["journal_wal"] = ("pass", f"journal_mode={journal.get('journal_wal')}") if journal.get("journal_wal") == "wal" else ("fail", f"journal_mode={journal.get('journal_wal')}")
     ph = journal.get("phases") or {}
     out["phases"] = (("pass" if ph.get("verified") else None),
