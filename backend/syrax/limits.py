@@ -24,7 +24,7 @@ from __future__ import annotations
 import datetime
 import math
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from syrax.journal import ALL_OBJECTIVES, Journal
 
@@ -64,16 +64,38 @@ def refused(payload: dict) -> bool:
     return payload.get("name") == "release" and "Error: release refused:" in str(payload.get("output") or "")
 
 
+def probe_tasks(journal: Journal) -> Callable[[Optional[str]], bool]:
+    """A test for "was this use a quality case": tasks of kind `eval` are left out of a tool's reliability.
+    Some fail the tool on purpose (self_patch_stale applies a stale diff and must report it), and a case the
+    brain fails is a quality failure that the repro hunts take. Live 2026-10-26: `apply_patch` ranked first
+    with 18 of its last 40 uses failing, 8 of them quality cases (the stale probe, a diff of a file the brain
+    never read); without them 10 of 40. Task kinds are looked up once per task."""
+    kinds: Dict[str, Optional[str]] = {}
+
+    def is_probe(task_id: Optional[str]) -> bool:
+        if not task_id:
+            return False
+        if task_id not in kinds:
+            row = journal.task(task_id)
+            kinds[task_id] = row.get("kind") if row else None
+        return kinds[task_id] == "eval"
+
+    return is_probe
+
+
 def recent_tool_stats(journal: Journal, per_tool: int = RECENT_USES) -> Dict[str, dict]:
     """successes/failures over each tool's latest ``per_tool`` outcomes.
     Live: str_replace_editor was 5 % in the last 4 h after its fix but still
     ranked first on its all-time 20 %."""
     outcomes: Dict[str, List[bool]] = {}
+    is_probe = probe_tasks(journal)
     for e in reversed(journal.recent_events(5000)):
         if e["type"] not in ("tool.completed", "tool.failed"):
             continue
         if refused(e["payload"]):
             continue  # a call a guard refused never ran as the tool; it is not the tool failing
+        if is_probe(e.get("task_id")):
+            continue  # a quality case measures the brain, not the tool
         name = e["payload"].get("name")
         lst = outcomes.setdefault(name, [])
         if len(lst) < per_tool:
@@ -257,10 +279,13 @@ def judge_tool_reliability(journal: Journal, objective: dict) -> tuple:
     since = objective["created"] - 1
     born = next((e["id"] for e in journal.events_of_type("objective.created", since=since, limit=5000)
                  if e["payload"].get("objective_id") == objective.get("id")), None)
+    is_probe = probe_tasks(journal)
     for kind in ("tool.completed", "tool.failed"):
         for e in journal.events_of_type(kind, since=since, limit=5000):
             if (born is not None and e["id"] <= born) or e["payload"].get("name") != tool or refused(e["payload"]):
                 continue  # before the objective, another tool, or a call a guard refused (not the tool failing)
+            if is_probe(e.get("task_id")):
+                continue  # a quality case's use is neither a new failure nor a new success of the fix
             if kind == "tool.completed":
                 ok += 1
             else:
