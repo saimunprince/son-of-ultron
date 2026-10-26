@@ -228,6 +228,28 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### A tie names its windows; the matrix counts only evidence its code produced (2026-10-26)
+
+Built by parallel agents in their own worktrees, reviewed and gated together.
+
+- ede5fbb: when click_text or find_text finds several places equally well,
+  each candidate names the window it lies in and marks the one in front
+  ("1877,159 text \"bro bhi\" (OCR) in window \"WhatsApp\" (WhatsApp.exe, in
+  front)"), a private-looking title masked as presence masks it. On 10-25
+  "send message to bro bhi" got bare coordinates and the brain clicked the
+  first one blindly. Only words are added: nothing is clicked or focused, and
+  a window that cannot be read leaves the old text. 5 tests, 5 red before.
+- 764118f: capability matrix rows for today: Desktop truth (probe: desktop
+  answers that read the media sessions), Play on YouTube (probe: youtube_play
+  successes; none yet, so it stays UNVERIFIED), Windows Store apps (probe:
+  launch_app and list_apps successes), and Visible Work Presence reads its own
+  presence events. 9e7748b: the Store-apps probe first counted three
+  successes from 10-25, made by the old shortcut-only code; evidence now has
+  to come after the code it proves (91ac367). 12 tests.
+- 164c5ca: README, EXECUTION_MODEL, AUTONOMY, DEVLOOP, SKILLS and
+  ARCHITECTURE describe today's changes, each statement checked against the
+  code.
+
 ### What plays, where the keys landed: the desktop proves its own outcomes (2026-10-26)
 
 Prince's own requests on 10-25 were the evidence: "play some random music"
