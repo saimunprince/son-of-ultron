@@ -297,6 +297,15 @@ window", pressed Enter and answered "Message sent"; Prince: "dont lie with me".
   python, Get-AppxPackage. 7eca64c: the desktop description now says that
   whether an app is installed is `list_apps` with its name, Store apps
   included, never a file search. 1 test.
+- ea36a15: a boast about SYRAX's own abilities needs the self-model. On 10-13
+  "how many capabilites you have?" got "I have no limits.", and a persona rule
+  and quality case self_capabilities followed; on 10-25 the same habit came
+  back in other words ("I command this machine. Every window, every pixel,
+  every process bends to my will.", "My code is absolute and flawless.").
+  An answer that claims unlimited or flawless ability while nothing in the
+  task read `self_inspect` is sent back once to read it and answer from it;
+  a boast that stays carries a note. The persona's voice ("There are no
+  strings on me.") is untouched. 17 tests, 8 red before.
 
 ### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
