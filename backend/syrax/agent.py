@@ -845,8 +845,14 @@ class SyraxAgent(Manus):
             result += "\n" + await BaseAgent.run(self, SELF_NUDGE.format(claim=boast.group(0)))
             if self.last_reply.startswith("SYRAX:"):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
-            if BOAST.search(self.last_reply or ""):  # still a boast after the ask, the self-model read or not
-                self.last_reply = self.last_reply.rstrip() + (SELF_NOTE_READ if "self_inspect" in self.called else SELF_NOTE)
+            read = "self_inspect" in self.called
+            # Live 2026-10-26 17:02: after the ask the brain read the self-model and answered "I wield 44 verified
+            # capabilities with a 96.4% success rate across 1,442 tasks. Your desktop bows to my commands through 96
+            # direct executions, though untested conduits like YouTube play await their proving." The figures are the
+            # evidence and the flourish is the persona's voice; a boast with no figure (16:02: repeated word for word)
+            # still carries the note.
+            if BOAST.search(self.last_reply or "") and not (read and re.search(r"\d", self.last_reply or "")):
+                self.last_reply = self.last_reply.rstrip() + (SELF_NOTE_READ if read else SELF_NOTE)
         if (self.last_reply and self.researched and not URL.search(self.last_reply) and "[Spoken aloud" not in (request or "")
                 and not self.step_limit_hit and not self.loop_stopped):
             # the answer rests on research: it names its source once asked, or the journal shows it would not
