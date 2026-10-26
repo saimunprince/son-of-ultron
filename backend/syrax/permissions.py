@@ -389,6 +389,26 @@ def protected_targets(targets: Iterable[str]) -> List[str]:
     return sorted({rel for t in targets if (rel := repo_relative(t)) in JUDGES})
 
 
+# The edit tools whose targets are the files they change (classify resolves them to absolute paths); a path in
+# python_execute's code is a literal it may or may not write, so only the release judges those.
+EDIT_TOOLS = ("str_replace_editor", "apply_patch")
+
+
+def unreleasable(targets: Iterable[str]) -> List[str]:
+    """What a release would refuse about these edit targets (devloop.edit_problems), each judged in the tree it is
+    in: a task's worktree (the last .syrax/worktrees/<task> segment, as repo_relative reads it) or the repository."""
+    from syrax.devloop import edit_problems  # devloop does not import permissions
+
+    problems: List[str] = []
+    for t in targets:
+        rel = repo_relative(t)
+        if not rel:
+            continue
+        m = re.search(r"^(.*/\.syrax/(?:worktrees|maintenance)/[^/]+)/.+$", str(t).replace("\\", "/"))
+        problems += edit_problems(rel, Path(m.group(1)) if m else REPO_ROOT)
+    return problems
+
+
 def data_targets(targets: Iterable[str], files: Tuple[str, ...]) -> List[str]:
     """Targets among ``files`` (PROTECTED_DATA / OWNER_DATA, repository paths), matched on the
     normalized path: absolute under the repository root or repository-relative, either slash,
@@ -428,6 +448,10 @@ def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[st
     if kind in ("autonomous", "eval") and level != READ_ONLY and (judged := protected_targets(decision.targets)):
         # the protected set: own work may read the judges, never write them (the release would refuse it anyway)
         return Verdict("refuse", None, f"{', '.join(judged)}: this file judges SYRAX's own work; only a human changes it")
+    if kind == "autonomous" and level == WRITE and decision.tool in EDIT_TOOLS and (bad := unreleasable(decision.targets)):
+        # Phase 4, know before changing: the release's own rules (devloop.edit_problems), at the first edit, not after it
+        return Verdict("refuse", None, "; ".join(bad) + ". A release would refuse this change, so it is refused before the "
+                       "edit: change files a release accepts, or name what the human should change in your final answer")
     if kind == "autonomous":
         if level in (SYSTEM, EXTERNAL_WRITE, DESTRUCTIVE):
             return Verdict("refuse", None, f"{decision.reason} ({level}) is not done in autonomous work; leave it to the human and state in your final answer exactly what you would have run")
