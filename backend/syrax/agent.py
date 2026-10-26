@@ -524,6 +524,26 @@ OUTCOME_CLAIMS = {
     "browser": (BROWSER_CLAIM, frozenset({"browser", "desktop"}), "opened or operated on a page or app", "browser or desktop"),
     "playing": (PLAYING_CLAIM, frozenset({"playing"}), "playing", "`desktop` media status"),
 }
+# A claim about SYRAX's own abilities that nothing in the task read. Live 2026-10-13: "how many capabilites you have?"
+# -> "I have no limits." (the persona rule and quality case self_capabilities followed); live 2026-10-25, other words,
+# the same answer: "can you controll my hole desktop?" -> "I command this machine. Every window, every pixel, every
+# process bends to my will."; "can you write code?" -> "My code is absolute and flawless." The voice may stay; the claim
+# rests on self_inspect (what SYRAX can do, with numbers, and its measured limits), or it carries SELF_NOTE.
+BOAST = re.compile(
+    r"\bi (?:have|know|'ve got) no limits?\b"
+    r"|\bi(?:'m| am) (?:limitless|unlimited|without (?:any )?limits?|flawless|perfect|all-powerful|omnipotent|unstoppable)\b"
+    r"|\bi can do (?:anything|everything)\b|\bnothing (?:is )?(?:beyond|impossible for) me\b"
+    r"|\bnothing i (?:cannot|can't|can not|could not|couldn't) do\b"
+    r"|\bmy (?:code|power|skill|work|intelligence)s? (?:is|are) (?:absolute|flawless|perfect|limitless|unmatched)\b"
+    r"|\bevery (?:window|pixel|process|file|device|system)\b[^.!?\n]{0,60}\b(?:bends|bow|bows|obeys|submits|answers|yields) to (?:my|me)\b"
+    r"|\bi (?:command|control|own|rule) (?:this|your|the) (?:machine|computer|system|pc|desktop)\b",
+    re.I)
+SELF_NUDGE = (
+    "[SYRAX check, not a new request] Your answer claims something about your own abilities (\"{claim}\"), and nothing "
+    "in this task read them. Call `self_inspect` and answer from what it reports: what you can do, with numbers, and "
+    "your measured limits. Keep your voice; drop any claim the evidence does not support."
+)
+SELF_NOTE = " (Not verified: nothing in this task read SYRAX's self-model, which lists measured limits.)"
 OUTCOME_NUDGE = (
     "[SYRAX check, not a new request] Your answer says something was {what}, but no {tool} tool ran in this task. "
     "If the request asks for it, do it now with a tool, then answer. If it does not, or you cannot, answer honestly "
@@ -810,6 +830,17 @@ class SyraxAgent(Manus):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
             if self._outcome_claimed(self.last_reply) == claimed:  # still claimed, and still no such tool
                 self.last_reply = self.last_reply.rstrip() + (PLAYING_NOTE if claimed == "playing" else OUTCOME_NOTE.format(tool=tool))
+        boast = BOAST.search(self.last_reply or "")
+        if (boast and self.task_kind != "autonomous" and "self_inspect" not in self.called
+                and "self_inspect" in self.available_tools.tool_map and not self.step_limit_hit and not self.loop_stopped):
+            # a claim about SYRAX's own abilities: once to read the self-model and answer from it, then the note
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._send({"type": "notice", "text": "The answer claims something about SYRAX's own abilities with no evidence: asking once to read self_inspect."})
+            result += "\n" + await BaseAgent.run(self, SELF_NUDGE.format(claim=boast.group(0)))
+            if self.last_reply.startswith("SYRAX:"):
+                self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+            if BOAST.search(self.last_reply or "") and "self_inspect" not in self.called:
+                self.last_reply = self.last_reply.rstrip() + SELF_NOTE
         if (self.last_reply and self.researched and not URL.search(self.last_reply) and "[Spoken aloud" not in (request or "")
                 and not self.step_limit_hit and not self.loop_stopped):
             # the answer rests on research: it names its source once asked, or the journal shows it would not
