@@ -65,12 +65,11 @@ class WebAskHuman(BaseTool):
 
 
 import multiprocessing  # noqa: E402
-import sys  # noqa: E402
 import time  # noqa: E402
-from io import StringIO  # noqa: E402
 from typing import Dict  # noqa: E402
 
 from app.tool.python_execute import PythonExecute  # noqa: E402
+from syrax._pyexec_child import PRELOADED, _PrintedOutput, _utf8_by_default, guarded_run, run_code  # noqa: E402,F401
 
 
 START_TIMEOUT_S = 30.0  # starting a worker normally takes well under a second
@@ -83,54 +82,6 @@ def _poll(conn, timeout: float = 0.0) -> bool:
         return conn.poll(timeout)
     except (EOFError, OSError):
         return True
-
-
-def _utf8_by_default(builtins_dict: dict) -> None:
-    """In the python_execute child, text files are UTF-8 unless the code names an encoding. On Windows the
-    default is the ANSI code page (cp1252): live 2026-10-15 a report written with open() held "78.37 \u00b0C" as
-    one cp1252 byte and broke the quality checker, and reads of the repository's UTF-8 files failed with
-    "'charmap' codec can't decode byte". open() and pathlib's read_text/write_text/open both follow this."""
-    import io
-
-    guarded_open = builtins_dict["open"]
-
-    def open_utf8(file, mode="r", buffering=-1, encoding=None, *args, **kwargs):
-        if encoding is None and "b" not in mode:
-            encoding = "utf-8"
-        return guarded_open(file, mode, buffering, encoding, *args, **kwargs)
-
-    builtins_dict["open"] = open_utf8
-    io.text_encoding = lambda encoding, stacklevel=2: "utf-8" if encoding is None else encoding
-
-
-class _PrintedOutput(StringIO):
-    """The code's stdout: kept for the result and written through, line by line, to a file the parent can read when
-    it has to stop a code that runs past its timeout. Live 2026-10-19 (quality run #51, self_map_protected): two calls
-    that walked the whole repository, .venv included, were stopped at 60 s with nothing but "Execution timeout after
-    60 seconds"; what they had printed was lost."""
-
-    def __init__(self, path: Optional[str] = None):
-        super().__init__()
-        try:
-            self._file = open(path, "a", encoding="utf-8", errors="replace", buffering=1) if path else None
-        except OSError:
-            self._file = None
-
-    def write(self, s: str) -> int:
-        if self._file is not None:
-            try:
-                self._file.write(s)
-            except Exception:
-                self._file = None
-        return super().write(s)
-
-    def close_file(self) -> None:
-        if self._file is not None:
-            try:
-                self._file.close()
-            except Exception:
-                pass
-            self._file = None
 
 
 def _printed_before(path: str, limit: int = 2000) -> str:
@@ -161,13 +112,6 @@ def _kill_quietly(proc) -> None:
         pass
 
 
-# Live 2026-10-11 (objective 117): six python_execute failures in a week were
-# "name 'os' is not defined": a brain imported os in one call and used it in the
-# next, as if the calls shared a session. Each call is a fresh process; these are
-# imported in it already, and the tool says so.
-PRELOADED = ("os", "sys", "json", "re", "math", "time", "datetime", "shutil", "subprocess", "glob", "pathlib")
-
-
 class AsyncPythonExecute(PythonExecute):
     """python_execute that does not freeze the event loop.
 
@@ -195,59 +139,12 @@ class AsyncPythonExecute(PythonExecute):
     }
 
     def _guarded_run(self, code: str, conn, safe_globals: dict, paths: list, out_path: Optional[str] = None) -> None:
-        """Runs in the child: guard the journal and keys, for this process and
-        every Python it starts, run the code, and send the result back. The
-        result is sent even when the code calls sys.exit or the guard fails."""
-        result = {"observation": "", "success": False}
-        try:
-            from syrax import guard
-
-            guard.child_env(paths)
-            guard.install(paths)
-            import builtins
-
-            safe_globals["__builtins__"] = builtins.__dict__.copy()  # the copy made before the guard holds the unguarded open
-            _utf8_by_default(safe_globals["__builtins__"])
-            import importlib
-
-            for name in PRELOADED:  # the same (guarded) modules the code would get by importing them
-                safe_globals.setdefault(name, importlib.import_module(name))
-            safe_globals.setdefault("Path", safe_globals["pathlib"].Path)
-            self._run_code(code, result, safe_globals, out_path)
-        except Exception as e:  # the guard itself failed; the code never ran
-            result["observation"] = f"{type(e).__name__}: {e}"
-        finally:
-            try:
-                conn.send(result)
-            except Exception:
-                pass
-            conn.close()
+        """The worker's entry, kept for callers; the worker itself runs syrax._pyexec_child.guarded_run, which
+        imports only the standard library and the guard (this module would load app.tool and pydantic in it)."""
+        guarded_run(code, conn, safe_globals, paths, out_path)
 
     def _run_code(self, code: str, result_dict: dict, safe_globals: dict, out_path: Optional[str] = None) -> None:
-        """Upstream's, with the exception's type in the observation ("name 'os' is not defined" alone does not say
-        it was a NameError) after what the code printed before it raised, and the output kept when the code calls
-        sys.exit (it still did not finish)."""
-        original_stdout = sys.stdout
-        output_buffer = _PrintedOutput(out_path)
-        try:
-            sys.stdout = output_buffer
-            exec(code, safe_globals, safe_globals)
-            result_dict["observation"] = output_buffer.getvalue()
-            result_dict["success"] = True
-        except Exception as e:
-            printed = output_buffer.getvalue()
-            if printed and not printed.endswith("\n"):
-                printed += "\n"
-            result_dict["observation"] = printed + f"{type(e).__name__}: {e}"
-            result_dict["success"] = False
-        except SystemExit as e:
-            # Live 2026-10-14 (objective 232): three runs of `pytest.main([...])` ended with `sys.exit(code)` and answered
-            # an empty observation; the whole pytest report was lost. It is kept now; the call still did not finish.
-            result_dict["observation"] = output_buffer.getvalue() + f"\n(the code called sys.exit({e.code!r}); it did not finish)"
-            result_dict["success"] = False
-        finally:
-            sys.stdout = original_stdout
-            output_buffer.close_file()
+        run_code(code, result_dict, safe_globals, out_path)
 
     async def execute(self, code: str, timeout: int = 60) -> Dict:
         """One worker process and a pipe; nothing here blocks the event loop.
@@ -276,7 +173,7 @@ class AsyncPythonExecute(PythonExecute):
 
     async def _execute(self, code: str, timeout: int, safe_globals: dict, paths: list, out_path: str) -> Dict:
         recv, send = multiprocessing.Pipe(duplex=False)
-        proc = multiprocessing.Process(target=self._guarded_run, args=(code, send, safe_globals, paths, out_path), daemon=True)
+        proc = multiprocessing.Process(target=guarded_run, args=(code, send, safe_globals, paths, out_path), daemon=True)
         starter = asyncio.ensure_future(asyncio.to_thread(proc.start))
         try:
             done, _ = await asyncio.wait({starter}, timeout=START_TIMEOUT_S)
