@@ -18,6 +18,7 @@ import asyncio
 import base64
 import configparser
 import glob
+import json
 import os
 import re
 import shutil
@@ -97,6 +98,80 @@ async def _run(*args: str, timeout: float = 15, stdin: Optional[bytes] = None, d
 async def _powershell(script: str, timeout: float = 15, extra_env: Optional[Dict[str, str]] = None) -> tuple:
     prelude = "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; "
     return await _run("powershell", "-NoProfile", "-NonInteractive", "-Command", prelude + script, timeout=timeout, extra_env=extra_env)
+
+
+# Windows' own media sessions (Global System Media Transport Controls): which app plays what and whether it plays,
+# read and driven through PowerShell's WinRT bridge, no package. Live 2026-10-25: "play some random music" opened a
+# YouTube search page, "play it your self" pressed the play/pause key (a toggle: it pauses what plays) and said
+# "Media play sent.", and the answers said "Media is playing" four times while the human said it was not.
+# $env:SYRAX_MEDIA_CMD: "" reads only; play | pause | toggle | next | previous | stop act on the current session first.
+MEDIA_PS = r"""
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+$asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
+function Await($op, [Type]$t) { $task = $asTask.MakeGenericMethod($t).Invoke($null, @($op)); $task.Wait(5000) | Out-Null; $task.Result }
+[Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media.Control, ContentType = WindowsRuntime] | Out-Null
+$mgr = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
+$cmd = $env:SYRAX_MEDIA_CMD
+$cur = $mgr.GetCurrentSession()
+$done = $null
+if ($cur -and $cmd) {
+  $op = switch ($cmd) { 'play' { $cur.TryPlayAsync() } 'pause' { $cur.TryPauseAsync() } 'toggle' { $cur.TryTogglePlayPauseAsync() } 'next' { $cur.TrySkipNextAsync() } 'previous' { $cur.TrySkipPreviousAsync() } 'stop' { $cur.TryStopAsync() } }
+  $done = Await $op ([bool])
+  Start-Sleep -Milliseconds 900
+}
+$out = @()
+foreach ($x in $mgr.GetSessions()) {
+  $p = Await ($x.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
+  $out += [pscustomobject]@{ app = $x.SourceAppUserModelId; status = "$($x.GetPlaybackInfo().PlaybackStatus)"; title = $p.Title }
+}
+[pscustomobject]@{ current = $(if ($cur) { $cur.SourceAppUserModelId } else { $null }); done = $done; sessions = $out } | ConvertTo-Json -Depth 4 -Compress
+"""
+MEDIA_COMMANDS = {"play": "play", "pause": "pause", "toggle": "toggle", "next": "next", "previous": "previous", "prev": "previous",
+                  "stop": "stop"}
+MEDIA_KEYS = {"play": "play_pause", "pause": "play_pause", "toggle": "play_pause", "next": "next", "previous": "prev", "prev": "prev",
+              "stop": "stop"}
+
+
+def media_app(app_id: object) -> str:
+    """A session's app as a person names it: "Chrome", "Spotify", "Microsoft.ZuneMusic" (the package, not its id)."""
+    name = str(app_id or "").split("!")[0]
+    name = re.sub(r"_[a-z0-9]{13}$", "", name)  # a store package's publisher hash
+    name = re.sub(r"(?i)\.exe$", "", name)
+    return name[:40] or "an app"
+
+
+def media_report(data: dict) -> str:
+    """Every media session Windows knows, as the tool's answer: "Playing: 'Sajde' in Chrome." (a title that looks
+    private is not written down, presence.redact); "Playing: " opens a session that plays (agent.py PLAYING_READ)."""
+    from syrax import presence
+
+    sessions = [x for x in (data.get("sessions") or []) if isinstance(x, dict)]
+    if not sessions:
+        return "No media session is open: nothing is playing or paused in any app."
+    parts = []
+    for x in sessions:
+        title = presence.redact(str(x.get("title") or "")) or "an untitled item"
+        parts.append(f"{str(x.get('status') or 'Unknown')}: '{title}' in {media_app(x.get('app'))}")
+    return "; ".join(parts) + "."
+
+
+def in_front() -> str:
+    """" In front now: 'Title' (Program.exe)." after a hands action, so the answer can say where the keys and clicks
+    landed. Live 2026-10-25: "Typed 5 characters into the focused window.", Enter, and the answer "Message sent to
+    bro bhi on Telegram." A title that looks private is not written down (presence.redact); "" when unreadable."""
+    if not WINDOWS:
+        return ""
+    try:
+        from syrax import presence, winctl
+
+        w = winctl.foreground()
+    except Exception:
+        return ""
+    if not w:
+        return " Nothing is in front now."
+    title = presence.redact(str(w.get("title") or "")) or "an untitled window"
+    return f" In front now: '{title}' ({w.get('process') or 'unknown program'})."
 
 
 def _press_keys(*names: str, times: int = 1) -> None:
@@ -260,7 +335,7 @@ class DesktopControl(BaseTool):
                 ],
             },
             "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name. find_files: name pattern. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin."},
-            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: play, pause, toggle, next, previous, status. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get."},
+            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop; each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
         "required": ["action"],
@@ -425,16 +500,42 @@ class DesktopControl(BaseTool):
         except Exception:
             return None
 
+    async def _media_sessions(self, cmd: Optional[str] = None) -> dict:
+        """{current, done, sessions: [{app, status, title}]} from Windows (MEDIA_PS); `cmd` acts on the current session
+        first. RuntimeError when PowerShell gives no answer (an old Windows, a policy, a timeout)."""
+        code, out, err = await _powershell(MEDIA_PS, timeout=25, extra_env={"SYRAX_MEDIA_CMD": cmd or ""})
+        line = next((ln for ln in reversed((out or "").splitlines()) if ln.strip().startswith("{")), "")
+        if code != 0 or not line:
+            raise RuntimeError(((err or out or "").strip().splitlines() or [f"exit {code}"])[-1][:200])
+        return json.loads(line)
+
     async def _do_media(self, value: str, **_) -> ToolResult:
         if WINDOWS:
-            key = {"play": "play_pause", "pause": "play_pause", "toggle": "play_pause", "next": "next",
-                   "previous": "prev", "prev": "prev", "stop": "stop"}.get(value.lower())
-            if value.lower() in ("status", ""):
-                return ToolResult(output="Media status is not readable on Windows; play, pause, toggle, next and previous work.")
-            if not key:
-                return ToolResult(error="media value must be play, pause, toggle, next, previous or status.")
-            _press_keys(key)
-            return ToolResult(output=f"Media {value.lower()} sent.")
+            v = value.lower()
+            if v not in ("status", "") and v not in MEDIA_COMMANDS:
+                return ToolResult(error="media value must be play, pause, toggle, next, previous, stop or status.")
+            cmd = MEDIA_COMMANDS.get(v)
+            try:
+                data = await self._media_sessions(cmd)
+            except (RuntimeError, ValueError, OSError) as e:
+                if cmd is None:
+                    return ToolResult(error=f"The playback state could not be read: {e}")
+                _press_keys(MEDIA_KEYS[v])
+                return ToolResult(output=f"Pressed the {MEDIA_KEYS[v].replace('_', '/')} key; whether anything plays could not be read ({e}).")
+            if cmd is None:
+                return ToolResult(output=media_report(data))
+            if not data.get("current"):
+                # no session to take the command: the media key is all there is (it may start the last player)
+                _press_keys(MEDIA_KEYS[v])
+                await asyncio.sleep(1.0)
+                try:
+                    after = media_report(await self._media_sessions(None))
+                except (RuntimeError, ValueError, OSError) as e:
+                    after = f"could not be read ({e})"
+                return ToolResult(output=f"No media session was open to take {v}, so the {MEDIA_KEYS[v].replace('_', '/')} key was pressed. Now: {after}")
+            app = media_app(data["current"])
+            took = "taken by" if data.get("done") else "refused by"
+            return ToolResult(output=f"{v.capitalize()} {took} {app}. Now: {media_report(data)}")
         if MACOS:  # the Music app; other players do not expose a scriptable transport
             cmd = {"play": "play", "pause": "pause", "toggle": "playpause", "next": "next track",
                    "previous": "previous track", "prev": "previous track", "status": None, "": None}
@@ -611,20 +712,27 @@ class DesktopControl(BaseTool):
         except (ValueError, RuntimeError, wininput.Stopped) as e:
             return ToolResult(error=str(e))
 
+    async def _with_front(self, done: ToolResult) -> ToolResult:
+        """A hands action's result with the window in front after it (in_front), read a moment later."""
+        if done.error:
+            return done
+        await asyncio.sleep(0.15)
+        return ToolResult(output=f"{done.output}{await asyncio.to_thread(in_front)}")
+
     async def _do_type_text(self, value: str, **_) -> ToolResult:
         from syrax import wininput
 
-        return await self._hands(wininput.type_text, value)
+        return await self._with_front(await self._hands(wininput.type_text, value))
 
     async def _do_hotkey(self, value: str, **_) -> ToolResult:
         from syrax import wininput
 
-        return await self._hands(wininput.hotkey, value)
+        return await self._with_front(await self._hands(wininput.hotkey, value))
 
     async def _do_click(self, target: str, value: str = "", **_) -> ToolResult:
         from syrax import wininput
 
-        return await self._hands(wininput.click, target, value or "left")
+        return await self._with_front(await self._hands(wininput.click, target, value or "left"))
 
     async def _sight(self, target: str):
         from syrax import sight, wininput
