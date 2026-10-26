@@ -111,6 +111,13 @@ QUEUE_STALE_S = float(os.getenv("SYRAX_QUEUE_STALE_S", "3600"))
 # objective asks. See Core.settle_interrupted and docs/EXECUTION_MODEL.md section 7.
 SETTLE_CONVERSATION_S = float(os.getenv("SYRAX_SETTLE_CONVERSATION_S", "3600"))
 SETTLE_UNCERTAIN_S = float(os.getenv("SYRAX_SETTLE_UNCERTAIN_S", str(7 * 86400)))
+# Audit follow-up 2026-10-26: the UI offered RESUME on SYRAX's own interrupted work as on a human's, and Core.resume
+# continued it with the previous process's budget and no fresh brief. Own work is never resumed: the resume answers
+# with the note (the UI shows it) and dismisses the task the way the boot policy does (Core._dismiss_own_work).
+OWN_WORK_NOT_RESUMED = {
+    "autonomous": "an autonomous attempt is not resumed; it is dismissed and the objective makes a fresh attempt",
+    "eval": "a quality case is run again by the suite, never resumed",
+}
 
 
 def _is_release(goal: str) -> bool:
@@ -480,16 +487,7 @@ class Core:
             except Exception as e:
                 logger.warning(f"could not isolate task {task_id}: {e}")
                 await self.journal.record("isolation.failed", {"error": str(e)[:300]}, task_id=task_id)
-        await self._route(said or goal, task_id, release=kind == "autonomous" and _is_release(goal))
-        self.current = Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind, phase="understand")
-        await self._record_phase({"phase": "understand", "from": None})
-        if self.agent is not None:  # permissions: the kind and the human's own words (not the brief)
-            self.agent.task_kind = kind
-            self.agent.task_goal = said or goal
-            # a budget is per task: a release objective's 30 steps never leak into the next task
-            fields = getattr(type(self.agent), "model_fields", {})
-            if "max_steps" in fields:
-                self.agent.max_steps = max_steps or fields["max_steps"].default
+        await self._prepare(Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind), said, max_steps)
         if kind in ("eval", "autonomous") and self.agent is not None:
             # Self-contained work: earlier tasks' messages only cost tokens and
             # confuse the model (a quality case once answered "clarify the task"
@@ -507,6 +505,24 @@ class Core:
             self._human_context = None
         self._launch(goal, said)
         return task_id
+
+    async def _prepare(self, running: Running, said: Optional[str], max_steps: Optional[int] = None) -> None:
+        """What a task gets right before its coroutine starts, new or resumed (``_begin`` and ``resume`` both come
+        through here; audit follow-up 2026-10-26: a resumed task skipped all of it, so the previous task's budget, a
+        release objective's 30 steps, leaked into it, no brain was routed for it and the UI saw no phase): the brain
+        routed for the work, ``current`` set in the "understand" phase and the UI told, and the agent's kind, the
+        human's own words (not the brief) and a fresh step budget, the agent's default unless the caller sets one."""
+        await self._route(said or running.goal, running.task_id, release=running.kind == "autonomous" and _is_release(running.goal))
+        running.phase = "understand"
+        self.current = running
+        await self._record_phase({"phase": "understand", "from": None})
+        if self.agent is not None:  # permissions: the kind and the human's own words (not the brief)
+            self.agent.task_kind = running.kind
+            self.agent.task_goal = said or running.goal
+            # a budget is per task: a release objective's 30 steps never leak into the next task
+            fields = getattr(type(self.agent), "model_fields", {})
+            if "max_steps" in fields:
+                self.agent.max_steps = max_steps or fields["max_steps"].default
 
     def _launch(self, request: str, said: Optional[str]) -> None:
         """Start ``current``'s coroutine and arm its deadline (``_begin`` and ``resume`` both come through here)."""
@@ -737,14 +753,20 @@ class Core:
         self._human_context = None
 
     async def resume(self, task_id: str, session_id: Optional[str], force: bool = False, note: str = "") -> Optional[str]:
-        """Continue an INTERRUPTED task from its last checkpoint. Returns an
-        error string, or None when the resume started.
+        """Continue an INTERRUPTED conversation from its last checkpoint. Returns an
+        error string (also the note a dismissal answers with), or None when the resume started.
 
         Live 2026-10-25 (audit): a task whose last operation recovery could not
         verify (UNCERTAIN: a write, code, a page) was resumed by one click like any
         other, and the only protection was RESUME_NOTE asking the model to look
         first. Such a task now starts only on the human's explicit word (``force``
-        with a ``note``), journaled as task.resume_forced before the resume."""
+        with a ``note``), journaled as task.resume_forced before the resume.
+
+        Audit follow-up 2026-10-26: SYRAX's own work is never resumed. An autonomous attempt or a quality
+        case (OWN_WORK_NOT_RESUMED) is dismissed as the boot policy would dismiss it, journaled, and the
+        note comes back for the UI; an UNCERTAIN one still needs force and a note first (dismissing it drops
+        the question asked of the human). A conversation gets the preparation a new task gets (``_prepare``)
+        on top of its checkpoint context, the resume note and the intent ledger's open sends."""
         if self.busy:
             return "Already executing. Stop it first."
         try:
@@ -756,12 +778,17 @@ class Core:
         # the intent ledger: sends recorded and never seen to finish (recovery's `intent`, or the journal's open entries)
         open_intents = self.journal.open_intents(task_id)
         external = recovery.get("intent") or (open_intents[-1] if open_intents else None)
+        kind = task.get("kind") or "conversation"
         if recovery.get("state") == "UNCERTAIN":
             if not force:
-                return (f"task {task_id}'s last operation is UNCERTAIN ({_op_summary(op)}): check what happened "
-                        "first, then resume with force and a note"
+                return (f"task {task_id}'s last operation is UNCERTAIN ({_op_summary(op)}): check what happened first, then "
+                        + (f"confirm with force and a note; {OWN_WORK_NOT_RESUMED[kind]}" if kind in OWN_WORK_NOT_RESUMED
+                           else "resume with force and a note")
                         + (f"; an external action may have happened: {external.get('summary')}" if external else ""))
-            await self.journal.record("task.resume_forced", {"note": note, "session_id": session_id}, task_id=task_id)
+            if kind not in OWN_WORK_NOT_RESUMED:  # own work is not resumed, forced or not: nothing to journal as a resume
+                await self.journal.record("task.resume_forced", {"note": note, "session_id": session_id}, task_id=task_id)
+        if kind in OWN_WORK_NOT_RESUMED:
+            return await self._dismiss_own_work(task, session_id, note)
         agent = await self.ensure_agent()
         if cp and cp.get("context"):
             agent.import_context(cp["context"])
@@ -780,30 +807,42 @@ class Core:
             agent.inherited_intents.setdefault(intent.key(external.get("tool"), external["args_hash"]), {**external, "done": False})
         await self.journal.mark_resumed(task_id, session_id)
         await asyncio.to_thread(self.devloop.begin_task)
-        kind = task.get("kind") or "conversation"
-        agent.task_kind = kind
-        agent.task_goal = task["goal"]
-        self.current = Running(
-            task_id=task_id,
-            goal=task["goal"],
-            session_id=session_id,
-            kind=kind,
-            steps=list((cp or {}).get("completed_steps") or []),
-        )
+        steps = list((cp or {}).get("completed_steps") or [])
+        # the agent's memory is the checkpoint's context (above), not the human context kept aside for own work
+        await self._prepare(Running(task_id=task_id, goal=task["goal"], session_id=session_id, kind=kind, steps=steps, tools_run=len(steps)), None)
         request = f"Continue the interrupted task: {task['goal']}"
         self._launch(request, None)  # a resumed task gets its kind's deadline too
         return None
 
+    async def _dismiss_own_work(self, task: dict, session_id: Optional[str], note: str) -> str:
+        """A RESUME on SYRAX's own interrupted work: the task is dismissed the way the boot policy dismisses it
+        (``settle_interrupted``), now, journaled as task.cancelled with the answer as its note (the human's note and
+        session beside it); an autonomous attempt's objective still ACTIVE for it goes back to OPEN, and an UNCERTAIN
+        attempt, which the human confirmed with force, loses its ``uncertain-task`` question too, as a DISMISS would.
+        Returns the answer the UI shows in place of a resume."""
+        kind = task.get("kind") or "conversation"
+        why = OWN_WORK_NOT_RESUMED[kind]
+        payload = {"error": why}
+        if note:
+            payload["note"] = note
+        if session_id:
+            payload["session_id"] = session_id
+        await self.journal.record("task.cancelled", payload, task_id=task["task_id"])
+        if kind == "autonomous":
+            uncertain = (task.get("recovery") or {}).get("state") == "UNCERTAIN"
+            await self._release_objectives_of(task, why, drop_uncertain=uncertain, where="on resume")
+        return why
+
     async def auto_resume(self) -> List[str]:
-        """Boot-time resume of RESUMABLE tasks, only when SYRAX_AUTO_RESUME=1.
-        UNCERTAIN operations are never resumed without a human."""
+        """Boot-time resume of RESUMABLE conversations, only when SYRAX_AUTO_RESUME=1.
+        UNCERTAIN operations are never resumed without a human; SYRAX's own work is never resumed."""
         if os.getenv("SYRAX_AUTO_RESUME", "0") != "1":
             return []
         started: List[str] = []
         for t in self.journal.tasks(limit=50, status="INTERRUPTED"):
             rec = t.get("recovery") or {}
-            if rec.get("state") != "RESUMABLE" or self.busy:
-                continue
+            if rec.get("state") != "RESUMABLE" or self.busy or t.get("kind") in OWN_WORK_NOT_RESUMED:
+                continue  # own work is the boot policy's (settle_interrupted), never resumed
             if await self.resume(t["task_id"], None) is None:
                 started.append(t["task_id"])
         return started
@@ -847,17 +886,18 @@ class Core:
             )
         return {"dismissed": dismissed, "kept": kept}
 
-    async def _release_objectives_of(self, task: dict, note: str, drop_uncertain: bool) -> None:
+    async def _release_objectives_of(self, task: dict, note: str, drop_uncertain: bool, where: str = "at boot") -> None:
         """A dismissed autonomous task leaves no objective pointing at it: one still ACTIVE for this task
         (its last_task_id, or the goal the cycle submitted as the task's goal; the cycle sets last_task_id
         only when the task ends) goes back to OPEN, and with ``drop_uncertain`` the ``uncertain-task:<id>``
-        objective that asked a human is DROPPED."""
+        objective that asked a human is DROPPED. ``where`` names the occasion in the objectives' notes: the
+        boot policy's "at boot", a RESUME's "on resume"."""
         tid = task["task_id"]
         for o in await asyncio.to_thread(self.journal.objectives, 500, ["OPEN", "ACTIVE", "BLOCKED"]):
             if o.get("status") == "ACTIVE" and (o.get("last_task_id") == tid or o.get("goal") == task.get("goal")):
-                await self.journal.update_objective(o["id"], status="OPEN", note=f"task {tid} dismissed at boot: {note}")
+                await self.journal.update_objective(o["id"], status="OPEN", note=f"task {tid} dismissed {where}: {note}")
             elif drop_uncertain and o.get("key") == f"uncertain-task:{tid}":
-                await self.journal.update_objective(o["id"], status="DROPPED", note=f"task {tid} dismissed at boot: {note}")
+                await self.journal.update_objective(o["id"], status="DROPPED", note=f"task {tid} dismissed {where}: {note}")
 
     # ——— snapshot for (re)connecting observers ———
 

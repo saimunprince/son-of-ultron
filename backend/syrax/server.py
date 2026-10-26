@@ -92,7 +92,8 @@ ALLOWED_ORIGINS = {
     if o.strip()
 }
 # A page this server serves (the HUD at /hud) talks to it from the server's own origin.
-ALLOWED_ORIGINS |= {f"http://{h}:{PORT}" for h in ("127.0.0.1", "localhost", HOST)}
+CORE_ORIGINS = {f"http://{h}:{PORT}" for h in ("127.0.0.1", "localhost", HOST)}
+ALLOWED_ORIGINS |= CORE_ORIGINS
 
 # The desktop HUD (hud/): served by SYRAX itself so it runs on the core's origin; only these
 # files, never the folder (node_modules and the Electron shell stay on disk).
@@ -194,10 +195,12 @@ def _ws_allowed(ws: WebSocket) -> tuple:
 
 @app.get("/token")
 async def token_for_page(request: Request):
-    """The token, for a page the core serves (same-origin) so it can present it too; refused otherwise."""
-    origin = request.headers.get("origin") or request.headers.get("referer", "")
-    if not any(origin.startswith(o) for o in ALLOWED_ORIGINS if o):
-        raise HTTPException(status_code=403, detail="only a page SYRAX serves may read the token")
+    """The token, for a page the core serves or expects, so it can present it too. Only the Origin header names a
+    page; a Referer counts only with no Origin and only when it is the core's own origin, never another allowed one
+    (audit 2026-10-25: any local process can write a Referer; auth.page_may_read_token has the rule)."""
+    ok, why = auth.page_may_read_token(request.headers.get("origin"), request.headers.get("referer"), ALLOWED_ORIGINS, CORE_ORIGINS)
+    if not ok:
+        raise HTTPException(status_code=403, detail=why)
     return {"token": auth.token()}
 
 

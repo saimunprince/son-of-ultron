@@ -246,13 +246,26 @@ after a checkpoint — the reopened journal holds exactly the committed rows and
   records `recovery.resumed` (`INTERRUPTED → IN_PROGRESS`, new `boot_id`) and
   runs the agent with "Continue the interrupted task: <goal>"
   (`test_resume_continues_interrupted_task_with_restored_context`).
+- Before that coroutine starts, a resumed conversation gets what a new task gets (`Core._prepare`, shared with
+  `_begin`; audit follow-up 2026-10-26): the brain routed for it (`brain.routed` when a measured brain leads), the
+  `understand` phase told to the UI, the agent's kind and the human's words, and a fresh step budget (the agent's
+  default: the previous task's budget, a release objective's 30 steps, never leaks into it). The agent's memory is
+  the checkpoint's context, not the human context kept aside for SYRAX's own work (`test_resume_fidelity.py`).
+- SYRAX's own work is never resumed. A RESUME on an `autonomous` task answers "an autonomous attempt is not
+  resumed; it is dismissed and the objective makes a fresh attempt", on an `eval` task "a quality case is run
+  again by the suite, never resumed" (`core.OWN_WORK_NOT_RESUMED`; the UI shows the answer as the notice), and
+  the task is dismissed the way the boot policy (7.1) dismisses it: `task.cancelled` with that note (the human's
+  note and session beside it), an objective still `ACTIVE` for the attempt back to `OPEN` ("task <id> dismissed
+  on resume: <note>"), and for an `UNCERTAIN` attempt, which still needs force and a note first, the
+  `uncertain-task:<id>` question DROPPED. No `recovery.resumed`, no `task.resume_forced`: nothing was resumed.
 - A task whose recovery carries an `intent` (or whose journal holds an `intent.recorded` without `intent.done`)
   gets one more sentence in that note, force or not: "An external action may already have happened: <summary>.
   Never repeat it; verify with a read-only check and report." The agent's ledger is seeded with the open entries,
   so the same send is refused even if the model tries it, and the refusal without `force` names the send too
   (`test_a_resumed_task_is_told_about_the_send_and_held_from_repeating_it`).
 - Auto-resume at boot is **off** by default. `SYRAX_AUTO_RESUME=1` resumes only
-  tasks classified `RESUMABLE`; `UNCERTAIN` and `BLOCKED` tasks always wait for a human.
+  conversations classified `RESUMABLE` (SYRAX's own work is left to the boot policy, 7.1); `UNCERTAIN` and
+  `BLOCKED` tasks always wait for a human.
 - `ResumeHook` on `Journal.recover()` is the seam for later autonomous phases.
 - `{"type":"dismiss","task_id","note"}` (or the DISMISS button beside RESUME, on the
   recovered notice and in the WHY view, after a confirm) records `task.cancelled`
