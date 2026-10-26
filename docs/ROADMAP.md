@@ -50,9 +50,9 @@ Self-model → weakness → failure (editor / desktop / …) → research → fi
 | Capabilities VERIFIED from evidence on this machine | DONE | 14 tools used successfully; `release`, `skill_*`, `experiment` await real use |
 | Final replies carry the answer | DONE | own step prompt (no undo loops); wrap-up call when a model terminates silently |
 | Quality benchmark clean | DONE | 20 → 30 → 70 → 80 → 50 → 90 → 90 % (runs 1–8; run 6 came from a stray second core and is not a real baseline) |
-| `str_replace_editor` reliability | TODO | 22 ok / 11 failed so far: relative paths (brief fixed), missing `path`, wrong indentation in `old_str`, `create` on an existing file, bad `view_range` |
-| `research` when explicitly asked | TODO | research_cite answers correctly from `know` but skips `research`; left for SYRAX's own objective loop |
-| Autonomous cycle reliability | PARTIAL | 22 cycles ran, 2 skipped for RAM, no crash; 19 objectives DONE, 3 OPEN |
+| `str_replace_editor` reliability | DONE | measured 2026-10-26: 69 of 813 calls failed in 14 days (8.5 %; 49 of 545 outside quality cases), under the 25 % bar; the most common failure is an `old_str` that does not match the file (35), the brain's text rather than the tool. Fixed on the way: relative paths, `new_str` required, `create` on an existing file |
+| `research` when explicitly asked | DONE | research_cite passed in quality runs #58, #65 and #85 (10-22..10-26); a request that names a tool the task never called is asked for it once (`agent.py` named-tool nudge) |
+| Autonomous cycle reliability | DONE | 1259 cycles since 2026-09-30 with no crash; last 14 days: 233 ran, 211 idle, 118 restarts into new code, 23 skipped for RAM; 257 objectives DONE, 56 DROPPED, 4 BLOCKED |
 
 **Exit criterion:** every non-exempt capability VERIFIED or explained, gate
 GREEN, one quality run ≥ 90 % on the primary brain, 20 autonomous cycles with
