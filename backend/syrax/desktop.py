@@ -375,7 +375,8 @@ class DesktopControl(BaseTool):
         "Control the human's own computer (GNOME/Linux, Windows or macOS). Use this when they want something to happen "
         "on THEIR screen: open a website in their browser, open a file/folder/app, set volume, "
         "play/pause music, take a screenshot, show a notification, read/write the clipboard, find "
-        "files, check battery/CPU/RAM/disk, lock the screen. On Windows also: type text into the focused window "
+        "files, check battery/CPU/RAM/disk, lock the screen. Whether an app is installed: list_apps with its name "
+        "(on Windows Microsoft Store apps such as WhatsApp included), never a file search. On Windows also: type text into the focused window "
         "(type_text), press keys (hotkey, e.g. ctrl+c, alt+tab), click at screen pixels (click) or on what the screen shows by its words (click_text: a button, menu, tab, link or text; find_text only says where it is), switch dark mode "
         "(dark_mode) and turn the display off (display_off); the human stops typing and clicking by moving the "
         "mouse to the top-left corner. To delete the human's own files, use trash: it goes to the Recycle Bin and can be restored. camera takes one photo with the webcam when the human asks to be seen; you see the photo. (Use the browser_* tools only when YOU need to read or operate a web page.)"
@@ -391,7 +392,7 @@ class DesktopControl(BaseTool):
                     "type_text", "hotkey", "click", "click_text", "find_text", "dark_mode", "display_off", "trash", "camera",
                 ],
             },
-            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name. find_files: name pattern. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin."},
+            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name (Store apps included). find_files: name pattern. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin."},
             "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop; each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
