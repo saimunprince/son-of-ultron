@@ -1,13 +1,14 @@
 # SYRAX archive
 
-Generated 2026-10-25 11:43 +0600 by the daily ledger at commit `0ab288e`, from the journal's `archive` table: every release attempt SYRAX made to its own code, the commit it started from, the commit it produced, and the quality score measured at that commit. Parent selection (Darwin Gödel Machine style) favours a high score and penalises an ancestor that already has many children. Nothing here is typed by hand.
+Generated 2026-10-26 12:20 +0600 by the daily ledger at commit `ce024ca`, from the journal's `archive` table: every release attempt SYRAX made to its own code, the commit it started from, the commit it produced, and the quality score measured at that commit. Parent selection (Darwin Gödel Machine style) favours a high score and penalises an ancestor that already has many children. Nothing here is typed by hand.
 
-- Variants committed: 24; attempts that did not land: 47; scored: 4.
+- Variants committed: 25; attempts that did not land: 47; scored: 4.
 - Best parent now: `e2c362a` (score 88% with 0 child(ren): weight 0.979).
-- Lineage of the running build: `bc736e2`
+- Lineage of the running build: `d723e7c`
 
 | when | decision | parent → head | score | children | weight | objective | summary |
 |---|---|---|---|---|---|---|---|
+| 2026-10-25 12:05 | COMMITTED | `0ab288e` → `d723e7c` | - | 0 | 0.000 | - | docs(rise): the ledger, the devlog and the capability matrix, regenera |
 | 2026-10-22 16:57 | COMMITTED | `70f38e8` → `bc736e2` | - | 0 | 0.000 | #309 | Fix capability implementation paths in backend/syrax/selfmodel.py and  |
 | 2026-10-22 16:43 | REFUSED | `70f38e8` → `-` | - | 0 | 0.000 | #309 | Fix capability implementation paths in backend/syrax/selfmodel.py for  |
 | 2026-10-22 16:43 | REFUSED | `70f38e8` → `-` | - | 0 | 0.000 | #309 | Fix self_inspect capability mappings for editor, journal_query, remind |

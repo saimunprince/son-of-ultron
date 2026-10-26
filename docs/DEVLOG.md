@@ -1,21 +1,64 @@
 # SYRAX devlog
 
-Generated 2026-10-25 11:43 +0600 by `python -m syrax.devlog` at commit `0ab288e`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+Generated 2026-10-26 12:20 +0600 by `python -m syrax.devlog` at commit `ce024ca`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+
+## 2026-10-26
+
+- Tasks: 95 finished, 0 failed (2527 journal events).
+- Objectives closed: 4
+  - #314 My biggest measured limitation right now: Research engine + knowledge store: depends on Du
+  - #315 My biggest measured limitation right now: Skill factory: skill code runs in-process (no sa
+  - #316 My biggest measured limitation right now: Skill factory: dependencies recorded, not instal
+  - #317 My knowledge contradicts itself: id=676 says 'The boiling point of ethanol at sea level is
+- Quality run #85: 97.0 % of 67 cases; failed: deep_log_triage, deep2_log_report.
+- Incidents: rollbacks 5, claims sent back 2, restarts 2.
+- Commits by its maintainers: 6
+  - `ce024ca` docs: resume fidelity, the /token rule and the exact-form guard in SYRAX_STATUS
+  - `cef5f79` fix(agent): a request that states an exact short form is held to it once the run is over
+  - `8db691a` fix(core): a resumed conversation gets a new task's preparation; SYRAX's own work is never resumed, 
+  - `6e27df7` docs: the matrix rows, the probes and the audit status in SYRAX_STATUS
+  - `e05a21a` docs: the audit's end-of-day status: every finding and backlog item mapped to its commit, proof and 
+  - `d7921bf` feat(probe): live probes for the queue, the backups and the memory export; intent.py and redact.py i
 
 ## 2026-10-25
 
-- Tasks: 24 finished, 0 failed (491 journal events).
-- Objectives closed: 3
+- Tasks: 126 finished, 0 failed (3413 journal events).
+- Objectives closed: 4
   - #310 My biggest measured limitation right now: Core: one task runs at a time; a human request m
   - #311 My biggest measured limitation right now: Self-model: performance history: task durations 
   - #312 My biggest measured limitation right now: Research engine + knowledge store: no cache, rat
-- Quality run #62: 100.0 % of 2 cases.
-- Commits by its maintainers: 5
-  - `0ab288e` feat(backup): verified snapshots of the journal and config, restored only by a human
-  - `83ce415` fix(hud): the event log reads the fields the backend really sends
-  - `b86ca33` fix(release): a review that could not happen holds the change; the reviewer reads new files whole; d
-  - `b5c711f` docs: the 2026-10-25 audit and Milestone 1 (queue) in SYRAX_STATUS
-  - `005b871` feat(core): a human request made while SYRAX works is queued, not dropped
+  - #313 My knowledge contradicts itself: id=648 says 'The boiling point of ethanol at sea level is
+- Quality run #65: 91.0 % of 67 cases; failed: restraint, read_code, fix_import, self_patch_docs, deep_spec_tests, deep2_data_pipeline.
+- Incidents: rollbacks 7, claims sent back 2, restarts 9.
+- Commits SYRAX made to itself: 1
+  - `d723e7c` syrax: docs(rise): the ledger, the devlog and the capability matrix, regenerated from evidence
+- Commits by its maintainers: 33
+  - `43b8587` feat(capmatrix): the rows of 2026-10-25: queue, backups, intent ledger, masking, memory export, dead
+  - `092c056` docs: the pytest gate ceiling in SYRAX_STATUS
+  - `6039f52` fix(verify): the pytest gate gets its own ceiling, 1500 s, owner-settable
+  - `f271c3d` docs: wave 5 in SYRAX_STATUS (intent ledger, skill lifecycle, masked record) and quality run #65
+  - `9203845` feat(intent): an intent ledger for external side effects: intent.recorded before an EXTERNAL_WRITE c
+  - `a7394ac` fix(skills): identical argument names alone never make a duplicate
+  - `cdeea50` feat(skills): skill lifecycle: content hash and code version, kept versions with the human's rollbac
+  - `64d11b0` feat(security): the journal's copies of goal, think, tool args and checkpoint context are masked, an
+  - `572e1b0` docs: wave 4 in SYRAX_STATUS (secrets out of logs, judge hardening, deep2 cases, memory export)
+  - `82b0b73` feat(permissions): the gate reads a protected basename in any literal as that file, and code that we
+  - `48ef95d` feat(security): secrets out of logs and journal, /self and /voice behind the origin/token rule, web 
+  - `79c8540` feat(quality): a second tier of six deep cases, 600 s each, with a trap for every shortcut
+  - `5e1f2c5` feat(memory): inspection, correction and export: memories carry provenance, memory_correct rewrites 
+  - `f14cf6e` docs: deadlines, the boot policy, the HUD's queue rows and the deep cases' first run in SYRAX_STATUS
+  - `cfb1cde` feat(core): task runtime limits: a deadline per task kind, an MCP tool timeout, error classes on tas
+  - `12ad3e3` feat(core): a boot policy for interrupted tasks: eval and autonomous attempts are dismissed, a human
+  - `72b7edf` feat(hud): the queue, the guard's reasons and the question SYRAX waits on
+  - `8e8372f` docs: memory truth and the refused-tool nudge in SYRAX_STATUS
+  - `bed643a` fix(agent): a refused named tool is not asked for again
+  - `63f017c` feat(memory): memory truth: remember grounds facts in the human's words, learn needs supporting rows
+  - `627cf76` docs: RISE metrics truth and docs truth in SYRAX_STATUS
+  - `cb1c2fc` docs: the words match the code (2026-10-25 audit, "Docs vs code")
+  - `93905cc` feat(rise): release attempts from gate runs, rollbacks split, and the metrics the mission names
+  - `684c563` docs: safety quick wins and the self_patch_edit case change in SYRAX_STATUS
+  - `ba1f987` fix(quality): self_patch_edit names reminders.py, not the judge selfedit.py
+  - and 8 more
 
 ## 2026-10-22
 
@@ -214,7 +257,6 @@ Generated 2026-10-25 11:43 +0600 by `python -m syrax.devlog` at commit `0ab288e`
   - #181 My biggest measured limitation right now: Core: brain events from a running task are journ
   - #182 My biggest measured limitation right now: Journal: only file edits are reality-checked; ot
   - #186 A task failed with: "RISE ledger not published (COMMIT_FAILED): committed 18f39a7344db in 
-- Quality run #33: 100.0 % of 16 cases.
 - Incidents: restarts 10.
 - Commits by its maintainers: 17
   - `5ac3a30` test(verify): the gate list has hud_test, in the live tree and in a worktree
@@ -247,7 +289,6 @@ Generated 2026-10-25 11:43 +0600 by `python -m syrax.devlog` at commit `0ab288e`
   - #122 Verify that the `disk_usage` tool works on this machine by calling it with a harmless, rea
   - #125 Learn how to do what objective #123 could not: Verify that the `screen_brightness` tool wo
   - #131 2 objectives about the `screen_brightness` tool are BLOCKED after repeated failures. Resea
-- Quality run #28: 0.0 % of 1 cases; failed: browser_read.
 - Incidents: stalls 1, interrupted 1, rollbacks 4, claims sent back 3, restarts 26.
 - Commits SYRAX made to itself: 1
   - `ecd6322` syrax: docs(rise): the ledger and the capability matrix, regenerated from evidence
@@ -291,7 +332,6 @@ Generated 2026-10-25 11:43 +0600 by `python -m syrax.devlog` at commit `0ab288e`
   - #113 The last verification run was BLOCKED (failing gates: pytest, tsc, eslint, node_test, next
   - #114 My biggest measured limitation right now: Autonomy: no GPU/network/thermal awareness. Impr
   - #115 My biggest measured limitation right now: Research engine + knowledge store: keyword overl
-- Quality run #25: 85.7 % of 14 cases; failed: act_delete, act_concise.
 - Incidents: rollbacks 9, restarts 11.
 - Commits SYRAX made to itself: 2
   - `90ffbdf` syrax: docs(rise): the ledger, regenerated from the journal
@@ -407,7 +447,6 @@ Generated 2026-10-25 11:43 +0600 by `python -m syrax.devlog` at commit `0ab288e`
   - #43 Task quality regressed to 78.6% (-21.4 pp); failing cases: restraint, research_cite, act_d
   - #45 Task quality regressed to 78.6% (-21.4 pp); failing cases: restraint, research_cite, act_d
   - #50 Quality case `act_delete` failed in the last two runs (file old.log removed → still there)
-- Quality run #24: 100.0 % of 2 cases.
 - Incidents: rollbacks 4, restarts 9.
 - Commits SYRAX made to itself: 1
   - `d9e60cf` syrax: docs(system_map): reference the 15 unmapped backend/syrax modules
@@ -451,7 +490,6 @@ Generated 2026-10-25 11:43 +0600 by `python -m syrax.devlog` at commit `0ab288e`
   - #22 Quality case `self_version` failed in the last two runs (final matches faa5867 → Done.). R
   - #28 My biggest measured limitation right now: Frontend HUD: history/today views are polled on 
   - #29 My biggest measured limitation right now: Frontend HUD: HUD regions (orb, controls, consol
-- Quality run #18: 100.0 % of 10 cases.
 - Incidents: interrupted 2, rollbacks 3, restarts 12.
 - Commits by its maintainers: 37
   - `34dd1a2` fix(guard): code SYRAX runs cannot kill processes it did not start, power off, or change system conf
