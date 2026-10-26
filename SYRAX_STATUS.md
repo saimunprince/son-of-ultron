@@ -228,7 +228,7 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
-### 97 % on the full suite; the brain's own notes and the probes kept out (2026-10-26)
+### 97 % on the full suite; the brain's notes, the probes and timed-out sends kept straight (2026-10-26)
 
 - Quality run #85 on ce024ca, the full 67-case suite after the exact-form
   guard (cef5f79): 65/67 = 97.0 % (gemini, one openrouter failover), against
@@ -253,6 +253,15 @@ gate result of each phase is recorded in the next phase's entry.
   of kind `eval` out; a failed case is the repro hunts' material, and a daily
   quality run's uses neither block nor close an objective. 5 tests, 4 red
   before.
+- 72fb021: a send that timed out is not a send that failed. An EXTERNAL_WRITE
+  call abandoned at the MCP timeout, a `python_execute` timeout or a dropped
+  connection was journaled `intent.done {ok: false}` and left the ledger,
+  so the model could send the same message again although the first may
+  have reached the other side. It is now `intent.uncertain {why}` and the
+  entry stays open: the same send is held, and recovery and resume treat it
+  as a send in flight; the HUD logs INTENT UNCERTAIN. A refused connection
+  or a bad argument did not go out: done, as before. 17 tests (16 + HUD),
+  10 red before; in the red run the timed-out message went out twice.
 
 ### A claimed send, open or click is held to the tools that ran (2026-10-26)
 
