@@ -257,7 +257,7 @@ Each component below uses its exact name from [`system_map.json`](system_map.jso
 
 ### Permissions
 - **Status:** CURRENT (improvement 001, 2026-10-03; [map](SYSTEM_MAP.md#permissions))
-- **Purpose:** Tool permission levels enforced in code at the agent's single tool choke point: a static level per tool (`READ_ONLY < WRITE < EXTERNAL_READ < SYSTEM < EXTERNAL_WRITE < DESTRUCTIVE`, plus a host-harm flag), refined per call for the editor, desktop, `python_execute` and `skill_create`; a policy by task kind — humans may do anything up to SYSTEM, destructive and external-write calls are authorized by the human's own words or asked for once, a quality run never asks, autonomous work is refused destructive, host and external-write calls.
+- **Purpose:** Tool permission levels enforced in code at the agent's single tool choke point: a static level per tool (`READ_ONLY < WRITE < EXTERNAL_READ < SYSTEM < EXTERNAL_WRITE < DESTRUCTIVE`, plus a host-harm flag), refined per call for the editor, desktop, `python_execute` and `skill_create`; a policy by task kind — humans may do anything up to SYSTEM, destructive and external-write calls are authorized by the human's own words or asked for once, a quality run never asks, autonomous work is refused destructive, host and external-write calls. An autonomous edit of a tracked file a release would refuse (an existing test, a file outside the scope) is refused before the edit (`devloop.edit_problems`).
 - **Entry point:** [`permissions.py`](../backend/syrax/permissions.py) `classify` / `decide`; applied by `SyraxAgent._permit` in [`agent.py`](../backend/syrax/agent.py).
 - **Important files:** `permissions.py`, `agent.py` (`_permit`, `task_kind`, `task_goal`, `consents`, `grants`), `guard.py` (the shared destructive / network / shell regexes), `skills.py` (`risk_of`, declared skill levels).
 - **Dependencies:** `syrax.guard`, `syrax.editor` (path resolution for scope), `WebAskHuman` for the one question it may ask.
@@ -328,7 +328,7 @@ Each component below uses its exact name from [`system_map.json`](system_map.jso
 All CURRENT and tested (`test_<name>.py` beside each). Since 2026-10-12 every module in `backend/syrax` is referenced by `system_map.json`; the matrix footer checks it daily.
 
 **Objective engine** (used by Autonomy):
-- [`limits.py`](../backend/syrax/limits.py) ranks SYRAX's limitations from journal counts (impact × confidence) and turns the strongest into an objective with a plan and a check; the ranking is journaled as `limitation.ranked`.
+- [`limits.py`](../backend/syrax/limits.py) ranks SYRAX's limitations from journal counts (impact × confidence) and turns the strongest into an objective with a plan and a check; the ranking is journaled as `limitation.ranked`. Tool uses in quality cases (tasks of kind `eval`) count neither in the ranking nor in the `tool_reliability` judge.
 - [`plan.py`](../backend/syrax/plan.py) objective plans whose steps are proven from journal evidence (`tool_ok`, `released`, `learned`), so a retry resumes at the first unproven step.
 - [`followup.py`](../backend/syrax/followup.py) derives the next objective from why the last one was BLOCKED (a missed cause, or a learning objective then a briefed retry), bounded by `MAX_DEPTH` and idempotent keys.
 - [`review.py`](../backend/syrax/review.py) cross-brain review of an autonomous release: a different brain answers four yes/no questions about the diff and the verdict is computed from the answers.

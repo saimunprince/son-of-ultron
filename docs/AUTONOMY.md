@@ -123,6 +123,20 @@ called the tool" (`test_model_claiming_success_without_evidence_is_not_done`).
 `task_success` (human goals) needs the task to end SUCCESS, which itself needs
 a journaled final. `human` is never auto-completed.
 
+**Quality cases are not tool evidence (2026-10-26).** The limitation ranking
+(`limits.rank`, from `recent_tool_stats`) and the `tool_reliability` judge
+(`limits.judge_tool_reliability`) leave tasks of kind `eval` out
+(`limits.probe_tasks`): some cases fail a tool on purpose (`self_patch_stale`),
+and a failed case is the repro hunts' material, so a quality run's tool uses
+neither rank a tool as a limitation nor block or close an objective.
+
+**Unreleasable edits are refused before the edit (2026-10-26).** An autonomous
+`str_replace_editor` / `apply_patch` edit of a tracked file a release would
+refuse (an existing test, a file outside the self-modification scope) is refused
+at that edit with the release's words (`devloop.edit_problems`, through
+`permissions`), so a task no longer spends its steps on a change that cannot
+land; a new file is left to the release. Details: `EXECUTION_MODEL.md` §4a.
+
 Bounds: one cycle at a time (a second `cycle_now` or loop tick reports BUSY); turning AUTO off does not reopen the objective of a cycle that is still running; one task per cycle; `MAX_ATTEMPTS = 3` then BLOCKED with
 `next_action = "needs a different strategy or a human"`; interval
 `SYRAX_CYCLE_INTERVAL` (default 120 s) after a run, 600 s when idle; blocked

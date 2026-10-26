@@ -116,6 +116,41 @@ a non-empty `final` event exists for the task
 (`test_success_requires_final_event_and_rolls_back`). `PARTIAL` is used when the
 agent hit its step limit.
 
+**Final-answer checks** (`SyraxAgent.run`, `agent.py`). Before the final is
+returned, the answer is held to the task's own record. The outcome and
+self-boast asks below go out at most once, never after a step-limit or loop
+stop, and are journaled `claim.rejected`.
+
+- *Console notes* (2026-10-26): a note in the console's style that the brain
+  wrote itself (`[SYRAX ...]`, `CONSOLE_NOTE`), on its own line or at either end
+  of the answer, is removed with a notice, before the asks and again after
+  them; an answer that was only such a note is asked for once. A mention inside
+  a sentence stays.
+- *Outcome claims* (2026-10-26): `acted` holds the classes of the tools that
+  succeeded this task (`classes_of`: `write`, `code`, `send`, `desktop`,
+  `browser`; `playing` when a `desktop` result reads Playing,
+  `PLAYING_READ`). `OUTCOME_CLAIMS` has four classes: `send` (sent, posted,
+  paid, ordered; needs a `send` tool), `desktop` (played, volume or brightness
+  set, an app opened or launched, clipboard, screenshot, notification; needs
+  `desktop`), `browser` (a page or named thing opened, clicked, typed into, a
+  form filled in or submitted; `browser` or `desktop`) and `playing` ("is
+  playing", "plays now", "music started"; needs that media reading). A claim
+  with no tool of its class is sent back once (`OUTCOME_NUDGE`); if it stays,
+  it carries "(Not done: no <tool> tool ran in this task.)" (`OUTCOME_NOTE`,
+  <tool> = sending, desktop, browser or desktop), for playing "(Not verified:
+  nothing in this task read what is playing.)" (`PLAYING_NOTE`). Negations
+  ("did not send", "nothing is playing") and reading idioms ("opened the
+  file") are not claims. A tool whose level nothing declares (an MCP tool)
+  stands for send, desktop and playing.
+- *Self-boasts* (2026-10-26): an answer that claims unlimited or flawless
+  ability (`BOAST`: "I have no limits", "my code is flawless", "every window
+  bends to my will", "I control everything") in a task that is not autonomous
+  and has not called `self_inspect` is sent back once to read it and answer
+  from it (`SELF_NUDGE`). A boast that stays carries `SELF_NOTE` when the
+  self-model was still not read, and `SELF_NOTE_READ` when it was read but the
+  answer cites no figure; with the self-model read and a figure cited, the
+  flourish is the persona's voice and no note follows.
+
 ## 4a. Tool permissions
 
 Every tool call passes `SyraxAgent._permit` (`backend/syrax/permissions.py`)
@@ -180,6 +215,14 @@ module docstring):
   monkeypatch of `decide`/`classify`/`run_gates`/`host_harm`) is refused for every
   task kind with "the code weakens SYRAX's own guard; a human changes the guard,
   by hand", and such a skill is refused before its tests run; reading them is fine.
+- **An autonomous edit a release would refuse is refused before the edit**
+  (2026-10-26, ROADMAP Phase 4 "know before changing"): in an `autonomous` task a
+  `str_replace_editor` or `apply_patch` edit of a file tracked at HEAD that is an
+  existing test (`test_*`, `*.test.ts`) or lies outside the self-modification
+  scope is refused with the release's own words (`permissions.unreleasable` →
+  `devloop.edit_problems`, judged in the task's worktree), not dozens of steps
+  later at `release`. A new file is left to the release, a path git does not
+  answer for is not refused, and human requests and quality cases are untouched.
 
 ## 5. Semantic checkpoints
 

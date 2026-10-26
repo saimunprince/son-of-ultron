@@ -71,6 +71,11 @@ skill folder's `.py` files (sorted by name, newlines normalized) and
 `code_version` moves only when that hash changes; both are in the registry row,
 `skill.json`, `skill_list`, the WS `skills` reply and every `skill.*` event. A
 re-test of unchanged code therefore keeps `code_version` while `version` grows.
+At boot, `attach()` gives a VERIFIED row with no `content_hash` (verified before
+the hash existed and never re-verified, as a prebuilt skill that stays current)
+the hash of its files on disk (`journal.backfill_skill_hash_sync`); neither
+counter moves, so the skill's next code change is a new `code_version` and the
+original code is kept under `.versions/`.
 
 Kept versions. Before `skill_create` (or a prebuilt reinstall) writes different
 code over a VERIFIED skill, the current files go to

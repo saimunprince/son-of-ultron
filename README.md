@@ -137,14 +137,30 @@ or file manager, volume, play/pause/next, screenshots, notifications,
 clipboard, file search, battery/CPU/RAM/disk, lock screen. Nothing destructive
 (no shutdown, no killing apps, no deleting files).
 
-On Windows, apps come from the Start Menu, volume and media go through the
-keyboard's media keys (exact volume levels need the optional `pycaw` package;
-media *status* is not readable), and notifications are tray balloons. On
-macOS, apps come from /Applications, volume and notifications go through
-osascript, and media control targets the Music app.
+On Windows, apps come from the Start Menu and from the Start apps that are not
+a shortcut file, so Microsoft Store apps (WhatsApp, Spotify) are found and
+launched through `shell:AppsFolder`; whether an app is installed is `list_apps`
+with its name. Volume goes through the keyboard's media keys (exact levels need
+the optional `pycaw` package). Media is read and driven through Windows' own
+media sessions (PowerShell's WinRT bridge, no package): `status` says what
+plays in which app ("Playing: 'Sajde' in Chrome."), and play, pause, next,
+previous and stop go to the current session (play is play, not the toggle)
+and read the state after; with no session the media key is pressed and the
+state read again. `type_text`, `hotkey` and `click` name the window in front
+after them ("In front now: 'notes.md - Notepad' (Notepad.exe)."; a
+private-looking title is masked), and `type_text` and `hotkey` also name the
+window the keys went to when the front changed. Notifications are tray
+balloons. On macOS, apps come from /Applications, volume and notifications go
+through osascript, and media control targets the Music app.
+
+To play music or a video the tool guide points the brain to the prebuilt
+`youtube_play` skill (installed by the service): it opens the first video a
+YouTube search finds on its watch page, where it starts on its own, and the
+answer may call it playing only after `desktop` media status reads Playing.
 
 Try: "open YouTube", "open VS Code", "volume 40", "next song", "what's playing",
-"find my resume", "how much RAM am I using", "lock the screen".
+"play lofi on YouTube", "is WhatsApp installed", "find my resume",
+"how much RAM am I using", "lock the screen".
 
 ## Browser
 
@@ -287,6 +303,12 @@ On start, tasks left running by a dead process are checked against reality
 `RESUMABLE` tasks automatically at boot (never `UNCERTAIN` ones).
 
 A task can only become `SUCCESS` when a non-empty final reply was journaled.
+Before the reply goes out it is held to what the task did: a message said to be
+sent, an app or page said to be opened or clicked, or something said to be
+playing needs a tool of that class that succeeded in the task (for playing, a
+`desktop` media reading that says Playing). Without one the answer is sent back
+once and, if the claim stays, carries a note such as "(Not done: no sending
+tool ran in this task.)".
 Details, schema and limits: `docs/EXECUTION_MODEL.md`. Component map:
 `docs/SYSTEM_MAP.md`. Gap analysis and roadmap: `docs/GAP_ANALYSIS.md`.
 
@@ -432,7 +454,11 @@ uses, failures, confidence, derived status VERIFIED / FAILING / NOT_TESTED),
 runtime resources, and derived weaknesses with evidence pointers. Ask it
 ("what can you do?", "what failed?") and it calls `self_inspect`; press `S`
 for the SELF panel; `GET /self?section=summary` for scripts. Anything that
-cannot be measured is `null`, never invented.
+cannot be measured is `null`, never invented. An answer that boasts about
+SYRAX's own abilities ("I have no limits", "everything bends to my command")
+while nothing in the task read `self_inspect` is sent back once to read it; a
+boast that stays carries a note unless the answer cites the self-model's
+figures.
 
 ## Configuration
 

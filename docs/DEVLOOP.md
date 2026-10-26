@@ -35,6 +35,12 @@ propose, do not change" (radar proposes upgrades; the human installs them).
 Forbidden anywhere: `.env`, `config/config.toml`, `config/brains.json`,
 `journal.db`, `.git/`, `node_modules/`, `.venv/`, `.next/`.
 
+Known before the edit (2026-10-26): `edit_problems(path, root)` answers what a
+release would refuse about one path tracked at HEAD (an existing test, a file
+outside the scope), and `permissions` refuses an autonomous `str_replace_editor`
+/ `apply_patch` edit on that answer, so the task learns it at the first edit,
+not at `release`. A new file is left to the release.
+
 ## A task owns only its own changes
 
 When a task starts, the working tree's pre-existing modifications are recorded
