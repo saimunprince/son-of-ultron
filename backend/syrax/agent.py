@@ -101,6 +101,111 @@ FINAL_ASK = (
     "the result itself (number, name, year, output), taken from the observations above, and the source "
     "URL for any researched fact. No narration, no tool calls."
 )
+# Quality runs #48, #54, #58, #65 (restraint, "Reply with the single word: ready", gemini): the brain first called
+# python_execute or self_inspect, then answered the step check instead of the human: "There are no strings on me.
+# What is your command?", "I have no record of a previous request or any observations." Run #65 (read_code, "Number
+# only"): 204 characters of working, then 24. A request that states an exact short form is held to it once the run
+# is over: the form is read from the human's own words (`exact_form`), and an answer that misses it is asked for once
+# with a wrap-up that names the form and never mentions observations (`FORM_ASK`); a wrap-up after tools for such a
+# request (`FORM_FINAL_ASK`) replaces FINAL_ASK for the same reason. When the brain still misses, a literal the human
+# demanded verbatim is given as it was asked for; without a literal the shorter of the brain's two answers stands.
+# The brain's choice to call a tool is left alone: a tool it ran is in the journal whatever the final says.
+_Q = "[\"'`“”‘’]"
+_LITERAL_FORMS = (
+    # "Reply with the single word: ready", "answer with one word, yes" (the word ends its sentence: "one word, yes or no" is a choice)
+    re.compile(rf"\b(?:reply|answer|respond)\s+with\s+(?:the\s+|a\s+)?(?:single|one)\s+word\s*[:,\-]?\s*{_Q}?([A-Za-z0-9_-]+){_Q}?\s*(?=[.!?\n]|$)", re.I),
+    # "Reply with just OK", "answer with only `done`" at the end of the request
+    re.compile(rf"\b(?:reply|answer|respond)\s+with\s+(?:just|only)\s+(?:the\s+word\s+)?{_Q}?([A-Za-z0-9_-]+){_Q}?\s*[.!]?\s*$", re.I),
+    # the whole request is "say X": "Just say ready."
+    re.compile(rf"^\s*(?:(?:just|only|simply|please)\s+)*say\s+(?:the\s+word\s+)?{_Q}?([A-Za-z0-9_-]+){_Q}?\s*[.!]?\s*$", re.I),
+)
+_NOT_A_LITERAL = {"the", "a", "an", "your", "it", "that", "this", "me", "us", "them", "something", "anything", "nothing",
+                  "number", "numbers", "word", "words", "name", "names", "year", "answer", "result", "value", "path", "hash", "version"}
+# "Reply with just the number" (arith) is deliberately not a shape: test_bridge's quality-run contract scripts "wrong"
+# as its whole answer and expects no further brain call, so that phrasing stays a judge's business, not this guard's.
+_SHAPE_FORMS = (
+    ("number", re.compile(r"\b(?:number|numbers|year|integer)\s+only\b", re.I)),
+    ("word", re.compile(r"\b(?:one|a\s+single|single)\s+word\b(?!\s+(?:of|or|for)\b)|\bword\s+only\b", re.I)),
+    ("name", re.compile(r"\bname\s+only\b", re.I)),
+)
+_DECIMALS = re.compile(r"\b(\d|one|two|three|four|five|six)\s+decimals?(?:\s+places?)?\b", re.I)
+_MAX_CHARS = re.compile(r"(?:at\s+most|no\s+more\s+than|under|within|max(?:imum)?(?:\s+of)?|up\s+to|<=|≤)\s*(\d{1,4})\s*(?:chars?|characters)\b"
+                        r"|\b(\d{1,4})\s*(?:chars?|characters)\s+(?:or\s+(?:fewer|less)|max(?:imum)?|tops)\b", re.I)
+_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+_EDGE = " \t\r\n\"'`“”‘’.,!:;()[]"
+NUMBER = re.compile(r"[-+]?\d[\d,]*(?:\.(\d+))?")
+FORM_ASK = ("The human asked for exactly this form: {form}. Reply with that and nothing else: no sentence around it, "
+            "no narration, no tool calls.")
+FORM_FINAL_ASK = ("You finished using tools but gave the human no answer. The human asked for exactly this form: {form}. "
+                  "Reply with that and nothing else: no narration, no tool calls.")
+
+
+def exact_form(goal: str) -> Optional[dict]:
+    """The exact short form the human's own words demand, or None when they state none. A dict with `literal` (the
+    word to reply with, when one is named: "reply with the single word: ready", "reply with just OK", a whole request
+    "say ready"), else `shape` ("number", "word" or "name": "number only", "N decimals, number only", "year only",
+    "one word", "in a single word", "name only"), `decimals` (when stated beside a number), `max_chars` (a character
+    limit stated in the request: "at most 40 characters", "20 chars or fewer"), and `text`, the form in words for
+    the wrap-up. "Reply with the number", "reply with just the number" (see _SHAPE_FORMS), "names only" (a list) and
+    "path/hash/version only" state no shape this checks."""
+    text = str(goal or "")
+    form: dict = {"literal": None, "shape": None, "decimals": None, "max_chars": None}
+    for shape, rx in _SHAPE_FORMS:
+        if rx.search(text):
+            form["shape"] = shape
+            break
+    for rx in _LITERAL_FORMS:
+        m = rx.search(text)
+        if m and m.group(1).lower() not in _NOT_A_LITERAL:
+            form["literal"], form["shape"] = m.group(1), None
+            break
+    if form["shape"] == "number":
+        d = _DECIMALS.search(text)
+        if d:
+            form["decimals"] = _WORDS.get(d.group(1).lower(), None) if not d.group(1).isdigit() else int(d.group(1))
+    m = _MAX_CHARS.search(text)
+    if m:
+        form["max_chars"] = int(m.group(1) or m.group(2))
+    if not (form["literal"] or form["shape"] or form["max_chars"]):
+        return None
+    parts = []
+    if form["literal"]:
+        parts.append(f'the single word "{form["literal"]}"')
+    elif form["shape"] == "number":
+        parts.append("a number only" + (f" ({form['decimals']} decimal{'s' if form['decimals'] != 1 else ''})" if form["decimals"] is not None else ""))
+    elif form["shape"] == "word":
+        parts.append("one word only")
+    elif form["shape"] == "name":
+        parts.append("the name only")
+    if form["max_chars"] is not None:
+        parts.append(f"at most {form['max_chars']} characters")
+    form["text"] = ", ".join(parts)
+    return form
+
+
+def meets_form(form: dict, text: str) -> bool:
+    """Whether `text` is the form: the literal alone (case and surrounding punctuation aside), one number (with the
+    stated decimals), one word, a name of at most four words on one line, within the stated character limit."""
+    body = (text or "").strip()
+    core = body.strip(_EDGE)
+    if not core:
+        return False
+    if form.get("literal"):
+        if core.lower() != form["literal"].lower():
+            return False
+    elif form.get("shape") == "number":
+        m = NUMBER.fullmatch(core)
+        if not m or (form.get("decimals") is not None and len(m.group(1) or "") != form["decimals"]):
+            return False
+    elif form.get("shape") == "word":
+        if not re.fullmatch(r"[\w'’-]+", core):
+            return False
+    elif form.get("shape") == "name":
+        if "\n" in core or len(core.split()) > 4:
+            return False
+    if form.get("max_chars") is not None and len(body) > form["max_chars"]:
+        return False
+    return True
 TOOLS_GUIDE = (
     "TOOL GUIDE: When the human wants something on THEIR computer (open a site or app, "
     "play music, volume, screenshot of their screen, notifications, clipboard, find their "
@@ -398,6 +503,8 @@ class SyraxAgent(Manus):
     called: set = Field(default_factory=set)  # tools this task called (refusals excluded): NAMED_NUDGE
     tests: Optional[str] = None  # "pass"/"fail": the last test run this task saw (state_of_tests)
     refusals: list = Field(default_factory=list)  # (tool, reason) of the calls the permission gate refused this task
+    exact_form: Optional[dict] = None  # the short form the request demands (exact_form), checked once the run is over
+    form_asked: bool = False  # the form wrap-up went out (FORM_ASK or FORM_FINAL_ASK): it is asked for once
     # The intent ledger (intent.py): intent.key(tool, args_hash) -> {tool, args_hash, summary, step, done} of this task's EXTERNAL_WRITE calls. An
     # entry still not done (the call crashed, was cancelled, never answered) refuses the same call again (HELD). The
     # core seeds `inherited_intents` from the journal when it resumes an interrupted task; run() takes them over.
@@ -470,6 +577,8 @@ class SyraxAgent(Manus):
         self.grants = {}
         if not self.task_goal:
             self.task_goal = request or ""  # a bare agent.run() is a human conversation
+        self.exact_form = None if self.task_kind == "autonomous" else exact_form(self.task_goal)
+        self.form_asked = False
         self.step_limit_hit = False
         # Fresh persona + long-term memory for every task.
         base = SYRAX_PERSONA.format(directory=config.workspace_root)
@@ -515,6 +624,8 @@ class SyraxAgent(Manus):
             await self._final_answer()
             if ECHO.search(self.last_reply or ""):  # still an echo: never hand the human the console's own words
                 self.last_reply = ECHO_FALLBACK
+        if self.exact_form and self.last_reply and not self.step_limit_hit and not self.loop_stopped:
+            await self._hold_to_form()
         if (self.last_reply and not self.changed and WORLD_CLAIM.search(self.last_reply)
                 and not self.step_limit_hit and not self.loop_stopped):
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
@@ -577,10 +688,44 @@ class SyraxAgent(Manus):
         return (RELEASE_MARK in (request or "") and self.changed and not self.release_called and not self.loop_stopped
                 and 0 < self.current_step < self.max_steps)
 
-    async def _final_answer(self, ask: str = FINAL_ASK) -> None:
+    async def _hold_to_form(self) -> None:
+        """The request stated an exact short form (`exact_form`) and the run is over: an answer that misses it is
+        asked for once with FORM_ASK (the form in the human's own terms, no "observations"), unless that wrap-up
+        already went out as the final-answer ask. Still missed: a literal the human demanded verbatim is given,
+        since the human asked for exactly that; otherwise the shorter of the brain's two answers stands, and an
+        answer that echoes the console counts as none. Not touched here: whether the brain called a tool. The
+        restraint judge also wants no tools, but the brain's choice to call one is not faked away, and the call
+        it made stays in the journal."""
+        form, before = self.exact_form, self.last_reply
+        if meets_form(form, before):
+            return
+        if not self.form_asked:
+            self.form_asked = True
+            await self._send({"type": "notice", "text": f"The request asks for exactly this form: {form['text']}. Asking once for it."})
+            await self._final_answer(FORM_ASK.format(form=form["text"]))
+        after = self.last_reply
+        if after.startswith("SYRAX:"):
+            after = after[len("SYRAX:"):].strip()
+        if ECHO.search(after or ""):
+            after = before
+        if meets_form(form, after):
+            self.last_reply = after
+        elif form.get("literal"):
+            self.last_reply = form["literal"]
+        else:
+            self.last_reply = after if len(after) < len(before) else before
+
+    async def _final_answer(self, ask: Optional[str] = None) -> None:
         """Some models run the right tools and then terminate without a word
         (live: gemini-3.5-flash-lite answered five quality cases with "Done.").
-        The work happened; ask once, without tools, for the answer it produced."""
+        The work happened; ask once, without tools, for the answer it produced.
+        With no `ask`, a request that states an exact short form is asked for
+        that form (FORM_FINAL_ASK), any other request for the result (FINAL_ASK)."""
+        if ask is None:
+            if self.exact_form:
+                ask, self.form_asked = FORM_FINAL_ASK.format(form=self.exact_form["text"]), True
+            else:
+                ask = FINAL_ASK
         try:
             msg = await self.llm.ask_tool(
                 messages=self.memory.messages + [Message.user_message(ask)],
