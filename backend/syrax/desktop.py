@@ -158,21 +158,34 @@ def media_report(data: dict) -> str:
     return "; ".join(parts) + "."
 
 
-def front_window() -> Optional[str]:
-    """"'Title' (Program.exe)" of the window in front; "" when nothing is; None when it cannot be read (or off Windows).
-    A title that looks private is not written down (presence.redact)."""
+def front_read() -> tuple:
+    """One read of the window in front: (front_window's words, its title when it is SYRAX's own (winctl.is_own) else "")."""
     if not WINDOWS:
-        return None
+        return None, ""
     try:
         from syrax import presence, winctl
 
         w = winctl.foreground()
     except Exception:
-        return None
+        return None, ""
     if not w:
-        return ""
+        return "", ""
     title = presence.redact(str(w.get("title") or "")) or "an untitled window"
-    return f"'{title}' ({w.get('process') or 'unknown program'})"
+    return f"'{title}' ({w.get('process') or 'unknown program'})", (title if winctl.is_own(w) else "")
+
+
+def front_window() -> Optional[str]:
+    """"'Title' (Program.exe)" of the window in front; "" when nothing is; None when it cannot be read (or off Windows).
+    A title that looks private is not written down (presence.redact)."""
+    return front_read()[0]
+
+
+def own_front_refusal(title: str) -> str:
+    """Keys, text and clicks are refused while SYRAX's own window is in front. Live 2026-10-25 all 12 desktop calls ran
+    with "SYRAX - Google Chrome" in front: "hello" and Enter went into SYRAX's own chat, the php2shell text was typed
+    into it twice, and alt+f4 for Notepad was pressed at SYRAX's own window."""
+    return (f"the window in front is SYRAX's own ({title}): bring the target to the front first with desktop window focus "
+            "<part of its title> or launch_app, then try again")
 
 
 def in_front() -> str:
@@ -791,62 +804,89 @@ class DesktopControl(BaseTool):
     async def _do_type_text(self, value: str, **_) -> ToolResult:
         from syrax import wininput
 
-        before = await asyncio.to_thread(front_window)
+        before, own = await asyncio.to_thread(front_read)
+        if own:
+            return ToolResult(error=own_front_refusal(own))
         return await self._with_front(await self._hands(wininput.type_text, value), before)
 
     async def _do_hotkey(self, value: str, **_) -> ToolResult:
         from syrax import wininput
 
-        before = await asyncio.to_thread(front_window)
+        before, own = await asyncio.to_thread(front_read)
+        if own:
+            return ToolResult(error=own_front_refusal(own))
         return await self._with_front(await self._hands(wininput.hotkey, value), before)
 
     async def _do_click(self, target: str, value: str = "", **_) -> ToolResult:
         from syrax import wininput
 
+        _, own = await asyncio.to_thread(front_read)
+        if own:
+            return ToolResult(error=own_front_refusal(own))
         return await self._with_front(await self._hands(wininput.click, target, value or "left"))
 
     async def _sight(self, target: str):
+        """(the one best place, the places seen, the places dropped because they lie in SYRAX's own window)."""
         from syrax import sight, wininput
 
         if not str(target or "").strip():
             raise ValueError("find_text and click_text need the words to look for in target, e.g. Save.")
         spot, seen = await asyncio.to_thread(sight.find, str(target).strip(), wininput.backend().screen())
+        own = []
         if spot is None and seen:  # a tie: each candidate names its window, so the brain can tell them apart
             try:
                 seen = await asyncio.to_thread(sight.in_windows, seen)
             except Exception:
                 pass
-        return spot, seen
+            own = [s for s in seen if getattr(s, "own", False)]
+            if own:  # SYRAX's own words are never a candidate: choose again among the rest
+                spot, seen = sight.choose([s for s in seen if not getattr(s, "own", False)])
+        return spot, seen, own
+
+    @staticmethod
+    def _only_own(target: str, own) -> str:
+        where = next((s.window for s in own if s.window), "") or "its own interface"
+        return (f'The words "{target}" were found only in SYRAX\'s own window ({where}): that is SYRAX\'s own chat, '
+                "not the target.")
+
+    @staticmethod
+    def _skipped(own) -> str:
+        return f" Skipped {len(own)} place(s) in SYRAX's own window." if own else ""
 
     async def _do_find_text(self, target: str = "", **_) -> ToolResult:
         """Where a control or some words are on the screen (sight.py); nothing is clicked."""
         try:
-            spot, seen = await self._sight(target)
+            spot, seen, own = await self._sight(target)
         except (ValueError, RuntimeError, subprocess.TimeoutExpired) as e:
             return ToolResult(error=f"find_text: {e}")
+        if not seen and own:
+            return ToolResult(output=self._only_own(target, own) + " Nothing else on the primary screen reads it.")
         if not seen:
             return ToolResult(output=f'Nothing on the primary screen reads "{target}" (UI Automation and OCR).')
         head = f"Best: {spot.say()}." if spot else "Several places match equally well."
-        return ToolResult(output=f"{head} Seen: " + "; ".join(s.say() for s in seen))
+        return ToolResult(output=f"{head} Seen: " + "; ".join(s.say() for s in seen) + self._skipped(own))
 
     async def _do_click_text(self, target: str = "", value: str = "", **_) -> ToolResult:
         """Click a control or words seen on the screen: UI Automation first, then OCR (sight.py)."""
         from syrax import wininput
 
         try:
-            spot, seen = await self._sight(target)
+            spot, seen, own = await self._sight(target)
         except (ValueError, RuntimeError, subprocess.TimeoutExpired) as e:
             return ToolResult(error=f"click_text: {e}")
+        if spot is None and not seen and own:
+            return ToolResult(error=self._only_own(target, own) + " Nothing was clicked. Bring the target to the front first "
+                                    "with desktop window focus <part of its title> or launch_app, then try again.")
         if spot is None and not seen:
             return ToolResult(error=f'Nothing on the primary screen reads "{target}" (UI Automation and OCR); nothing was clicked. '
                                     "Take a screenshot to see what is there.")
         if spot is None:
             return ToolResult(error=f'"{target}" matches several places equally well; nothing was clicked. '
-                                    "Choose one and use click with its x,y: " + "; ".join(s.say() for s in seen))
+                                    "Choose one and use click with its x,y: " + "; ".join(s.say() for s in seen) + self._skipped(own))
         done = await self._hands(wininput.click, f"{spot.x},{spot.y}", value or "left")
         if done.error:
             return done
-        return ToolResult(output=f"{done.output} That is {spot.label}, found by {spot.how}.")
+        return ToolResult(output=f"{done.output} That is {spot.label}, found by {spot.how}.{self._skipped(own)}")
 
     async def _do_dark_mode(self, value: str, **_) -> ToolResult:
         from syrax import wininput

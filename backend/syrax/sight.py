@@ -43,6 +43,7 @@ class Spot:
     how: str
     score: int
     window: str = ""  # the window it lies in; named only for a tie (in_windows)
+    own: bool = False  # it lies in SYRAX's own window (winctl.is_own): never clicked
 
     def say(self) -> str:
         return f"{self.x},{self.y} {self.label} ({self.how})" + (f" in {self.window}" if self.window else "")
@@ -150,16 +151,29 @@ def in_windows(spots: List[Spot], reader: Optional[Callable[[int, int], Optional
     candidates were bare x,y and the brain clicked the first one blindly. This only adds words:
     nothing is clicked or focused, and a window that cannot be read leaves its candidate as it was.
     """
+    from syrax.winctl import is_own
+
     if reader is None:
         from syrax.winctl import window_at as reader
     out = []
     for s in spots:
         try:
-            words = window_words(reader(s.x, s.y))
+            w = reader(s.x, s.y)
+            words, own = window_words(w), is_own(w)
         except Exception:
-            words = ""
-        out.append(replace(s, window=words))
+            words, own = "", False
+        out.append(replace(s, window=words, own=s.own or own))
     return out
+
+
+def outside_own(spots: List[Spot], reader: Optional[Callable[[int, int], Optional[dict]]] = None) -> Tuple[List[Spot], List[Spot]]:
+    """(the places outside SYRAX's own windows, as found; the places inside them, named and marked own).
+
+    Live 2026-10-25 "send message to bro bhi" with "SYRAX - Google Chrome" in front: OCR found the words only in
+    SYRAX's own chat ("send message to bro bhi", "desktop bro bhi"), click_text clicked there, typed "hello" into
+    SYRAX's own page and the answer said "Message sent". A window that cannot be read keeps its place."""
+    named = in_windows(spots, reader)
+    return [s for s, n in zip(spots, named) if not n.own], [n for n in named if n.own]
 
 
 def look(mode: str, text: str, hwnd: int = 0) -> dict:
@@ -187,12 +201,29 @@ def foreground() -> int:
 
 
 def find(text: str, screen: Tuple[int, int], looker: Optional[Callable[..., dict]] = None,
-         hwnd: Optional[int] = None) -> Tuple[Optional[Spot], List[Spot]]:
-    """Look with UI Automation, then OCR if no control matches well; `screen` is the clicker's screen size."""
+         hwnd: Optional[int] = None, reader: Optional[Callable[[int, int], Optional[dict]]] = None
+         ) -> Tuple[Optional[Spot], List[Spot]]:
+    """Look with UI Automation, then OCR if no control matches well; `screen` is the clicker's screen size.
+
+    A live look (no looker given), or one given a window reader, drops the places inside SYRAX's own windows
+    (outside_own) before choosing; when every place was there, nothing is chosen and those places come back
+    marked own. A given looker without a reader is a recorded screen: no live window is read for it."""
+    mine = looker is None or reader is not None
     looker = looker or look
+    own: List[Spot] = []
+
+    def outside(found: List[Spot]) -> List[Spot]:
+        if not mine or not found:
+            return found
+        kept, dropped = outside_own(found, reader)
+        own.extend(dropped)
+        return kept
+
     seen = looker("uia", text, foreground() if hwnd is None else hwnd)
-    spots = place(from_uia(text, seen.get("hits") or []), tuple(seen["screen"]), screen)
+    spots = outside(place(from_uia(text, seen.get("hits") or []), tuple(seen["screen"]), screen))
     if not spots or max(s.score for s in spots) < STRONG:
         read = looker("ocr", text, 0)
-        spots += place(from_ocr(text, read.get("hits") or []), tuple(read["screen"]), screen)
+        spots += outside(place(from_ocr(text, read.get("hits") or []), tuple(read["screen"]), screen))
+    if not spots and own:
+        return None, sorted(own, key=lambda s: -s.score)[:6]
     return choose(spots)

@@ -6,6 +6,7 @@ never destroys work."""
 from __future__ import annotations
 
 import ctypes
+import re
 import sys
 from ctypes import wintypes
 from typing import List, Optional, Tuple
@@ -13,6 +14,30 @@ from typing import List, Optional, Tuple
 SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE = 3, 6, 9
 SPI_GETWORKAREA = 48
 ACTIONS = ("list", "focus", "minimize", "maximize", "restore", "left", "right")
+
+# SYRAX's own windows: its web UI (frontend/app/layout.tsx, title "SYRAX") in a browser tab or app window, and the
+# Electron HUD (hud/main.js and hud/hud.html, title "SYRAX", electron.exe). Live 2026-10-25 every desktop action ran
+# with "SYRAX - Google Chrome" in front: the owner types into that page, so SYRAX's keys and clicks landed in it.
+OWN_PROCESSES = ("chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe", "chromium.exe",
+                 "arc.exe", "electron.exe")
+_OWN_TITLE = re.compile(r"^SYRAX(?:\s[-–—]\s.+)?$|\s[-–—]\sSYRAX$")
+_BROWSER_TAIL = re.compile(r"\s[-–—]\s(?:Google Chrome|Microsoft.{0,2}Edge|Mozilla Firefox|Brave|Opera|Vivaldi|Chromium)$")
+
+
+def is_own(w: Optional[dict]) -> bool:
+    """Whether a window (foreground() / window_at()) is SYRAX's own: titled exactly "SYRAX", starting "SYRAX - " or
+    ending " - SYRAX", in a browser or Electron process. When the program cannot be read, the title alone decides:
+    "SYRAX", or "SYRAX - " with a browser's name at the end. Any other program (a "SYRAX" folder in Explorer,
+    "SYRAX_STATUS.md - Visual Studio Code") is not SYRAX's own window."""
+    if not w:
+        return False
+    title = " ".join(str(w.get("title") or "").split())
+    process = str(w.get("process") or "").strip().lower()
+    if not _OWN_TITLE.search(title):
+        return False
+    if process:
+        return process in OWN_PROCESSES
+    return title == "SYRAX" or bool(_BROWSER_TAIL.search(title))
 
 
 def _user32():
