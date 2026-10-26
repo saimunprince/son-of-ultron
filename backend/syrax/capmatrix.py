@@ -184,8 +184,8 @@ CAPABILITIES: List[Capability] = [
                     "a crash inside one is EXTERNAL_UNCERTAIN and a resume carries the summary; no live probe (it would send something real)"),
     Capability("masking", "Credential masking (logs and the record)", CURRENT,
                "backend/syrax/redact.py, core.py (emit), journal.py (start_task, checkpoint), agent.py (mask_credentials)",
-               tests=["syrax.test_redact::*", "syrax.test_redact_leftovers::*", "syrax.test_answer_masks_credentials::*"],
-               note="every log line (a traceback included), journaled think/tool args/tool output, the task goal and the checkpoint context are masked "
+               tests=["syrax.test_redact::*", "syrax.test_redact_leftovers::*", "syrax.test_answer_masks_credentials::*"], live=["masked_record"],
+               note="the probe reads the newest 2000 journaled events for a raw credential; every log line (a traceback included), journaled think/tool args/tool output, the task goal and the checkpoint context are masked "
                     "at write time; the agent's own context keeps the key; the final answer too when the human asked for it"),
     Capability("memory_export", "Memory inspection, export and correction", CURRENT,
                "backend/syrax/memory.py (facts provenance, correct, export), server.py (memories, memory_correct, memory_export)",
@@ -198,13 +198,13 @@ CAPABILITIES: List[Capability] = [
                note="a conversation ends at 30 min, SYRAX's own task at 90 min, an MCP tool call is abandoned after 180 s; task.failed and task.cancelled "
                     "carry an error_class; no live probe (it would need a real timeout)"),
     Capability("boot_policy", "Boot policy for interrupted tasks", CURRENT, "backend/syrax/core.py (settle_interrupted), server.py (boot)",
-               tests=["syrax.test_boot_policy::*"],
-               note="an eval case cut by a restart is dismissed, an autonomous attempt is dismissed and its objective reopened, an UNCERTAIN one waits "
+               tests=["syrax.test_boot_policy::*"], live=["boot_decisions"],
+               note="evidence: the dismissals it journaled in the window (none while nothing was interrupted); an eval case cut by a restart is dismissed, an autonomous attempt is dismissed and its objective reopened, an UNCERTAIN one waits "
                     "7 days for the human, a human's conversation waits an hour (UNCERTAIN: indefinitely); each decision journaled"),
     Capability("skill_lifecycle", "Skill lifecycle (versions, rollback, disable)", CURRENT,
                "backend/syrax/skills.py (content_hash, keep_version, rollback, enable, duplicate_of), journal.py (skills.code_version)",
-               tests=["syrax.test_skill_lifecycle::*"],
-               note="code_version follows the content hash; the last five versions are kept under .versions/ and the human can ROLLBACK (re-verified); "
+               tests=["syrax.test_skill_lifecycle::*"], live=["skill_hashes"],
+               note="evidence: every VERIFIED skill carries a content hash (skills verified before the lifecycle get theirs at boot); code_version follows the content hash; the last five versions are kept under .versions/ and the human can ROLLBACK (re-verified); "
                     "DISABLED sticks across restarts and prebuilt installs; a duplicate of a verified skill is refused naming the one to extend"),
 ]
 
@@ -255,15 +255,39 @@ def read_journal(path: Path, now: Optional[float] = None) -> Dict[str, Any]:
                                     "(SELECT e2.id FROM events e2 JOIN events e1 ON e1.task_id=e2.task_id AND json_extract(e1.payload,'$.id')=json_extract(e2.payload,'$.id') "
                                     "WHERE e1.type='tool.started' AND json_extract(e1.payload,'$.args.action') IN ('click_text','find_text'))",
                                     (now - WINDOW_DAYS * 86400,)).fetchone()[0],
+            # the boot policy (core._settle_decision): an interrupted task it dismissed is journaled task.cancelled with
+            # one of its notes; a human's own dismissal ("dismissed by human: ...") is not counted
+            "boot_decisions": c.execute("SELECT COUNT(*) FROM events WHERE type='task.cancelled' AND ts>? AND (json_extract(payload,'$.error') LIKE "
+                                        "'%cut by a restart%' OR json_extract(payload,'$.error') LIKE '%nobody resumed it; dismissed%' OR "
+                                        "json_extract(payload,'$.error') LIKE '%too old to continue safely%') AND "
+                                        "json_extract(payload,'$.error') NOT LIKE 'dismissed by human%'",
+                                        (now - WINDOW_DAYS * 86400,)).fetchone()[0],
             "desktop_screenshot": c.execute("SELECT COUNT(*) FROM events WHERE type='tool.completed' AND json_extract(payload,'$.name')='desktop' AND id IN "
                                             "(SELECT e2.id FROM events e2 JOIN events e1 ON e1.task_id=e2.task_id AND json_extract(e1.payload,'$.id')=json_extract(e2.payload,'$.id') "
                                             "WHERE e1.type='tool.started' AND json_extract(e1.payload,'$.args.action')='screenshot')").fetchone()[0],
         }
         out["journal_wal"] = c.execute("PRAGMA journal_mode").fetchone()[0]
         out["phases"] = phase_evidence(c, now)
+        out["masked_record"] = masked_record(c)
+        out["skill_hashes"] = {"verified": c.execute("SELECT COUNT(*) FROM skills WHERE status='VERIFIED'").fetchone()[0],
+                               "hashed": c.execute("SELECT COUNT(*) FROM skills WHERE status='VERIFIED' AND content_hash IS NOT NULL "
+                                                   "AND content_hash!=''").fetchone()[0]}
         return out
     finally:
         c.close()
+
+
+MASK_SCAN = 2000  # the newest journaled events the masking probe reads: written by the running code, not by last month's
+
+
+def masked_record(c: sqlite3.Connection, last: int = MASK_SCAN) -> Dict[str, int]:
+    """The record itself as the masking's evidence: how many of the newest `last` journaled events hold a credential
+    redact.CREDENTIAL would have masked. Live 2026-10-26: 0 of 2562 events written since masking landed, 6 of the
+    8366 before it."""
+    from syrax.redact import CREDENTIAL
+
+    rows = c.execute("SELECT payload FROM events ORDER BY id DESC LIMIT ?", (last,)).fetchall()
+    return {"scanned": len(rows), "raw": sum(1 for (p,) in rows if p and CREDENTIAL.search(p))}
 
 
 def phase_evidence(c: sqlite3.Connection, now: float, last: int = 30) -> Dict[str, int]:
@@ -446,6 +470,21 @@ def live_checks(evidence: Optional[dict], gate: Optional[dict], journal: Dict[st
     ph = journal.get("phases") or {}
     out["phases"] = (("pass" if ph.get("verified") else None),
                      f"{ph.get('verified', 0)} of the last {ph.get('tasks', 0)} SUCCESS tasks reached verify (phases from their events)")
+    mr = journal.get("masked_record") or {}
+    if mr.get("scanned"):
+        out["masked_record"] = ("pass", f"0 raw credentials in the newest {mr['scanned']} journaled events") if not mr.get("raw") else \
+            ("fail", f"{mr['raw']} of the newest {mr['scanned']} journaled events hold a raw credential")
+    else:
+        out["masked_record"] = (None, "no journaled events")
+    nb = counts.get("boot_decisions", 0)
+    out["boot_decisions"] = ("pass", f"{nb} interrupted task(s) settled by the boot policy in {WINDOW_DAYS} d") if nb else \
+        (None, f"0 boot decisions in {WINDOW_DAYS} d (nothing was interrupted)")
+    sh = journal.get("skill_hashes") or {}
+    if sh.get("verified"):
+        out["skill_hashes"] = ("pass", f"{sh['hashed']} of {sh['verified']} VERIFIED skills carry a content hash") if sh.get("hashed") == sh["verified"] else \
+            ("fail", f"{sh['verified'] - (sh.get('hashed') or 0)} of {sh['verified']} VERIFIED skills carry no content hash (their code_version cannot follow the code)")
+    else:
+        out["skill_hashes"] = (None, "no VERIFIED skill")
     sk = journal.get("skills_verified") or []
     out["skills_verified"] = ("pass", f"{len(sk)} VERIFIED skills: {', '.join(sk)}") if sk else (None, "no VERIFIED skill")
     return out
