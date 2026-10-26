@@ -277,6 +277,14 @@ window", pressed Enter and answered "Message sent"; Prince: "dont lie with me".
   `youtube_play` installed and VERIFIED on its own boot (13:57); 16 of 16
   skills hashed after the backfill. 086cb2e: the brain had first asked media
   "get" (volume's word) and got an error; reading words now mean status.
+- bf9b45e: "close the notepadd application" (10-25) minimized the Notepad
+  window, then pressed alt+f4 at whatever had come to the front, and answered
+  "Notepad has been closed." `type_text` and `hotkey` now read the window in
+  front before the keys; when the front changed, the answer says "The keys
+  went to 'notes.md - Notepad' (Notepad.exe)." before what is in front now.
+  The guide: before alt+f4, ctrl+w or delete, focus the window by its title
+  and check where the keys went. `window close` stays unavailable (a contract
+  test pins "nothing destructive"). 5 tests, 3 red before.
 
 ### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
