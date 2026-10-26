@@ -227,6 +227,44 @@ def researched_subjects(journal: Journal, now: Optional[float] = None) -> set:
             if o.get("status") == "DONE" and str(o.get("key") or "").startswith("limit:known_limitation:")} - {None}
 
 
+# A reworded subject is still the subject already researched. Live 2026-10: objective 311 repeated 268 (the
+# 80-character keys differ only at character 79; word similarity 1.0) and 310 repeated 303 ("Core: one task at
+# a time; no queue scheduling" became "Core: one task runs at a time; a human request made meanwhile is queued
+# (PENDING"): word similarity 0.31, but 3 of the 5 words of the shorter statement are in the longer one (0.6).
+# Over the 30 distinct live subjects the other matches are 263 (the same performance history, 0.75) and 52~187
+# ("only file edits are reality-checked" reworded after a fix, 0.63 of the shorter statement); different subjects
+# stay below both: similarity at most 0.39, and at most 0.5 of
+# the shorter statement inside the same component (e.g. "GPU is not probed" vs "GPU load ... only on NVIDIA").
+MIN_SHARED_WORDS = 3  # a two-word statement is not "contained" in every subject that names its topic
+
+
+def _component(subject: str) -> tuple:
+    head, sep, rest = subject.partition(": ")
+    return (head.strip().lower(), rest) if sep else ("", subject)
+
+
+def similar_subject(a: str, b: str) -> bool:
+    """True when known-limitation subject a is b reworded: consolidate.similarity >= SIMILAR over the whole
+    subjects, or, within the same component, the shorter statement's words share at least SIMILAR of
+    themselves (and MIN_SHARED_WORDS) with the longer one's."""
+    from syrax.consolidate import SIMILAR, _words, similarity
+
+    if not a or not b:
+        return False
+    if a == b or similarity(a, b) >= SIMILAR:
+        return True
+    (ca, da), (cb, db) = _component(a), _component(b)
+    if ca != cb:
+        return False
+    wa, wb = _words(da), _words(db)
+    shared = len(wa & wb)
+    return shared >= MIN_SHARED_WORDS and shared / min(len(wa), len(wb)) >= SIMILAR
+
+
+def already_researched(subject: str, researched: set) -> bool:
+    return subject in researched or any(similar_subject(subject, r) for r in researched)
+
+
 def choose(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> Optional[dict]:
     """Create an objective for the strongest limitation not yet offered this
     week. Returns the created objective, or None."""
@@ -241,7 +279,7 @@ def choose(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> Opt
     hunting = repro.enabled()
     researched = researched_subjects(journal, now) if hunting else set()
     for lim in ranked:
-        if hunting and (lim["kind"] == "tool_reliability" or (lim["kind"] == "known_limitation" and lim["subject"] in researched)):
+        if hunting and (lim["kind"] == "tool_reliability" or (lim["kind"] == "known_limitation" and already_researched(lim["subject"], researched))):
             continue
         key = f"limit:{lim['kind']}:{lim['subject']}:{week}"
         obj = journal.add_objective_sync(
