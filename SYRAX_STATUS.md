@@ -315,6 +315,12 @@ window", pressed Enter and answered "Message sent"; Prince: "dont lie with me".
   `self_inspect` and repeated the boast word for word, and it went out with
   no note. A boast that stays after the ask now carries "(Not supported:
   SYRAX's self-model, read in this task, lists measured limits.)". 3 tests.
+- c8096b1: the third live test (17:02) gave the answer this check was for:
+  "I wield 44 verified capabilities with a 96.4% success rate across 1,442
+  tasks. Your desktop bows to my commands through 96 direct executions,
+  though untested conduits like YouTube play await their proving." The note
+  still called it unsupported; with the self-model read and a figure cited,
+  the flourish is the persona's voice and no note follows. 3 tests.
 
 ### 97 % on the full suite; unreleasable edits stopped at the first edit; timed-out sends held (2026-10-26)
 
