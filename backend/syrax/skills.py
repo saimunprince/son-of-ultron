@@ -7,6 +7,9 @@
       → registry row in the journal: VERIFIED (registered as a live tool)
         or FAILED (kept on disk with the pytest evidence, never registered)
       → skill.json metadata beside the code
+    A revision of a VERIFIED skill is written and checked under .candidates/ first and replaces the live
+    folder only when it passes; a failed revision leaves the old version live (skill.revision_failed).
+    Imports of packages that are not installed refuse a skill; installing one is the owner's decision.
 
 A skill is a normal OpenManus tool: ``class Skill(BaseTool)`` with name,
 description, parameters and ``async def execute(...)``. Once registered it
@@ -69,6 +72,13 @@ UNSAFE = HOST_HARM + (TREE_DELETE,) + WEAKENS_GUARD
 # enables; a new name that duplicates a VERIFIED skill's purpose (or its arguments and much of its purpose) is refused.
 VERSIONS_DIR = ".versions"
 KEPT_VERSIONS = 5
+# A revision of a VERIFIED skill (audit 2026-10-27: pdf_text went VERIFIED -> FAILED live on 10-15 when a rewrite's
+# tests failed over its own folder) is written to <root>/.candidates/<root name>/<name>/ and goes through the same
+# gate there; only a candidate that passes is copied over the live folder (the replaced code kept first), so a failed
+# revision leaves the live skill registered and VERIFIED. The extra <root name> level lets the candidate's tests import
+# `skills.<name>.skill` from the candidate, not from the live folder.
+CANDIDATES_DIR = ".candidates"
+_CANDIDATE_PKG_INIT = "from pkgutil import extend_path\n\n__path__ = extend_path(__path__, __name__)  # other skills stay importable\n"
 DUPLICATE_OVERLAP = 0.7  # purposes this alike are the same skill, whatever the arguments
 SAME_ARGS_MIN = 2  # identical argument names count only from this many (translate {text} may live beside word_count {text})
 SAME_ARGS_OVERLAP = 0.4  # ... and only with this much of the purpose in common
@@ -127,6 +137,74 @@ def unsafe_reasons(*sources: str) -> List[str]:
         if why not in out and rx.search(text):
             out.append(why)
     return out
+
+
+# Dependencies (audit 2026-10-27): `dependencies` was free text nobody checked ("urllib" and "pytest" were recorded as
+# dependencies) and an import of a package that is not installed was found only when the tests crashed. A skill's
+# imports are read from its source now (never run): a top-level module that is not the standard library, not SYRAX's
+# own packages and not installed refuses the skill before its tests run. Installing a package is the owner's call:
+# nothing here ever pip-installs.
+OWN_PACKAGES = frozenset({"app", "syrax", "skills"})
+_IMPORT_GUARDS = frozenset({"ImportError", "ModuleNotFoundError", "Exception", "BaseException"})
+
+
+def _guards_imports(handler: ast.ExceptHandler) -> bool:
+    """True when an except clause catches a failed import (bare, ImportError, ModuleNotFoundError, Exception)."""
+    t = handler.type
+    if t is None:
+        return True
+    names = t.elts if isinstance(t, ast.Tuple) else [t]
+    return any((isinstance(n, ast.Name) and n.id in _IMPORT_GUARDS) or (isinstance(n, ast.Attribute) and n.attr in _IMPORT_GUARDS) for n in names)
+
+
+def imported_modules(code: str) -> set:
+    """The top-level modules a source imports unconditionally (absolute imports only). An import inside a `try` whose
+    handler catches ImportError is optional by design and not counted. Empty when the code does not parse (the compile
+    stage reports that)."""
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return set()
+    optional: set = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Try) and any(_guards_imports(h) for h in node.handlers):
+            for stmt in node.body:
+                optional.update(id(n) for n in ast.walk(stmt))
+    out: set = set()
+    for node in ast.walk(tree):
+        if id(node) in optional:
+            continue
+        if isinstance(node, ast.Import):
+            out.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
+            out.add(node.module.split(".")[0])
+    return out
+
+
+def missing_dependencies(skill_dir: Path, own: Optional[set] = None) -> List[str]:
+    """Modules the skill's .py files import that are not the standard library, not SYRAX's own packages (`own` adds
+    names, e.g. the skill root's folder name) and not installed (importlib.util.find_spec; nothing is imported)."""
+    allowed = set(OWN_PACKAGES) | set(own or ())
+    stdlib = set(getattr(sys, "stdlib_module_names", ())) | set(sys.builtin_module_names) | {"__future__"}
+    names: set = set()
+    for p in sorted(Path(skill_dir).glob("*.py")):
+        if p.is_file():
+            names |= imported_modules(p.read_text(encoding="utf-8", errors="replace"))
+    out = []
+    for mod in sorted(names - stdlib - allowed):
+        try:
+            found = importlib.util.find_spec(mod) is not None
+        except (ImportError, ValueError):
+            found = False
+        if not found:
+            out.append(mod)
+    return out
+
+
+def dependency_refusal(missing: List[str]) -> str:
+    return "; ".join(f"{m} is not installed" for m in missing) + (
+        "; installing a package is the owner's decision. SYRAX never installs one: use the standard library or what is "
+        "already installed, or ask the owner to install it.")
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -484,28 +562,96 @@ class SkillFactory:
                                  f"extend it (skill_create with that name) instead of a duplicate")
         skill_dir = self.root / name
         task_id = self.task_id_provider()
-        self.keep_version(name, new_hash=hash_sources({"skill.py": code, "test_skill.py": test_code, "__init__.py": ""}))
-        _atomic_write(skill_dir / "skill.py", code)
-        _atomic_write(skill_dir / "test_skill.py", test_code)
-        _atomic_write(skill_dir / "__init__.py", "")
+        files = {"skill.py": code, "test_skill.py": test_code, "__init__.py": ""}
+        existing = self.journal.skill(name)
+        if existing is not None and existing.get("status") == "VERIFIED" and (skill_dir / "skill.py").is_file():
+            return await self._revise(name, purpose, files, existing, dependencies, known_limitations, task_id)
+        self.keep_version(name, new_hash=hash_sources(files))
+        for fname, text in files.items():
+            _atomic_write(skill_dir / fname, text)
         await self.journal.record("skill.created", {"skill": name, "purpose": purpose[:160], "path": str(skill_dir)}, task_id=task_id)
         return await self.verify(name, purpose=purpose, dependencies=dependencies, known_limitations=known_limitations, created_task_id=task_id)
+
+    def candidate_dir(self, name: str) -> Path:
+        return self.root / CANDIDATES_DIR / self.root.name / name
+
+    async def _revise(self, name: str, purpose: str, files: Dict[str, str], live: dict, dependencies: Optional[List[str]],
+                      known_limitations: Optional[List[str]], task_id: Optional[str]) -> dict:
+        """A new revision of a VERIFIED skill: written and checked in candidate_dir, swapped in only when it passes the
+        whole gate (safety, dependencies, tests, load and schema). A failed candidate stays in candidate_dir for
+        inspection; the live skill stays registered and VERIFIED and the journal records skill.revision_failed."""
+        skill_dir, cand = self.root / name, self.candidate_dir(name)
+        new_hash = hash_sources(files)
+        shutil.rmtree(cand, ignore_errors=True)
+        cand.mkdir(parents=True, exist_ok=True)
+        pkg_init = cand.parent / "__init__.py"
+        if not pkg_init.is_file():
+            _atomic_write(pkg_init, _CANDIDATE_PKG_INIT)
+        for fname, text in files.items():
+            _atomic_write(cand / fname, text)
+        await self.journal.record("skill.created", {"skill": name, "purpose": purpose[:160], "path": str(skill_dir), "candidate": str(cand)},
+                                  task_id=task_id)
+        result = await self._gate(cand)
+        if result["status"] == "VERIFIED":
+            try:
+                problems = schema_problems(await asyncio.to_thread(load_skill, cand))
+                if problems:
+                    raise ValueError("a model could not call it: " + "; ".join(problems))
+            except Exception as e:
+                result = {**result, "status": "FAILED", "stage": "load", "evidence": f"tests passed but the skill failed to load: {e}"}
+        if result["status"] == "VERIFIED":
+            self.keep_version(name, new_hash=new_hash)
+            for fname, text in files.items():
+                _atomic_write(skill_dir / fname, text)
+            shutil.rmtree(cand, ignore_errors=True)
+            return await self._commit(name, result, purpose=purpose, dependencies=dependencies,
+                                      known_limitations=known_limitations, created_task_id=task_id)
+        src = (cand / "skill.py").read_text(encoding="utf-8", errors="replace")
+        result = {**result, "risk": permissions.highest(permissions.WRITE, permissions.level_of_source(src)[0])}
+        moved = bool(live.get("content_hash")) and live.get("content_hash") != new_hash
+        row = {
+            **live, "status": "FAILED", "evidence": result, "tests_passed": result.get("passed", 0), "tests_failed": result.get("failed", 0),
+            "version": int(live.get("version") or 0) + 1, "code_version": int(live.get("code_version") or 1) + (1 if moved else 0),
+            "content_hash": new_hash, "revision_failed": True, "candidate": str(cand),
+            "live": {k: live.get(k) for k in ("status", "version", "code_version", "content_hash")},
+        }
+        _atomic_write(cand / "skill.json", json.dumps(row, indent=2, default=str))
+        await self.journal.record("skill.revision_failed", {
+            "skill": name, "stage": result.get("stage"), "evidence": str(result.get("evidence") or "")[-1500:],
+            "tests_passed": row["tests_passed"], "tests_failed": row["tests_failed"], "content_hash": new_hash, "candidate": str(cand),
+            "live_version": live.get("version"), "live_code_version": live.get("code_version"), "live_content_hash": live.get("content_hash"),
+        }, task_id=task_id)
+        return row
+
+    async def _gate(self, skill_dir: Path) -> dict:
+        """Safety, then dependencies, then the tests: the evidence for one folder, never raises."""
+        sources = [(skill_dir / f).read_text(encoding="utf-8", errors="replace") for f in ("skill.py", "test_skill.py") if (skill_dir / f).is_file()]
+        unsafe = unsafe_reasons(*sources)
+        if unsafe:  # never run it, not even its tests
+            return {"status": "FAILED", "passed": 0, "failed": 0, "stage": "safety",
+                    "evidence": "refused before running: the code " + "; ".join(unsafe)
+                                + ". Skills must not harm the host; a human adds such capabilities by hand."}
+        missing = missing_dependencies(skill_dir, own={self.root.name})
+        if missing:  # its tests would only crash on the import; nothing is installed here
+            return {"status": "FAILED", "passed": 0, "failed": 0, "stage": "dependencies", "missing": missing,
+                    "evidence": dependency_refusal(missing)}
+        return await asyncio.to_thread(run_skill_tests, skill_dir)
 
     async def verify(self, name: str, purpose: Optional[str] = None, dependencies: Optional[List[str]] = None,
                      known_limitations: Optional[List[str]] = None, created_task_id: Optional[str] = None) -> dict:
         skill_dir = self.root / name
         if not (skill_dir / "skill.py").is_file():
             raise ValueError(f"no skill named {name!r}")
+        result = await self._gate(skill_dir)
+        return await self._commit(name, result, purpose=purpose, dependencies=dependencies,
+                                  known_limitations=known_limitations, created_task_id=created_task_id)
+
+    async def _commit(self, name: str, result: dict, purpose: Optional[str] = None, dependencies: Optional[List[str]] = None,
+                      known_limitations: Optional[List[str]] = None, created_task_id: Optional[str] = None) -> dict:
+        """Register (VERIFIED) or unregister the live skill folder and write its registry row and skill.json."""
+        skill_dir = self.root / name
         existing = self.journal.skill(name)
         purpose = purpose or (existing or {}).get("purpose") or name
-        sources = [(skill_dir / f).read_text(encoding="utf-8", errors="replace") for f in ("skill.py", "test_skill.py") if (skill_dir / f).is_file()]
-        unsafe = unsafe_reasons(*sources)
-        if unsafe:  # never run it, not even its tests
-            result = {"status": "FAILED", "passed": 0, "failed": 0, "stage": "safety",
-                      "evidence": "refused before running: the code " + "; ".join(unsafe)
-                                  + ". Skills must not harm the host; a human adds such capabilities by hand."}
-        else:
-            result = await asyncio.to_thread(run_skill_tests, skill_dir)
         status = result["status"]
         result = {**result, "risk": self.risk_of(name, None)}  # what the skill's source may do (permissions.py)
         if status == "VERIFIED":
@@ -557,6 +703,13 @@ def _report(row: dict) -> str:
             + (f"; {_code_tag(row)}" if _code_tag(row) else "") + ")")
     if row["status"] == "VERIFIED":
         return head + ". It is registered now; call it by name like any other tool."
+    if row.get("revision_failed"):
+        live = row.get("live") or {}
+        was = f"v{live.get('version')}" + (f", {_code_tag(live)}" if _code_tag(live) else "")
+        return (f"skill `{row['name']}` revision FAILED ({row['tests_passed']} passed, {row['tests_failed']} failed)"
+                f"\nstage: {ev.get('stage')}\n{ev.get('evidence', '')}\n"
+                f"The revision was not installed: the previous version ({was}) is still live, registered and VERIFIED. "
+                "Fix the code or the tests and create it again with the same name.")
     return head + f"\nstage: {ev.get('stage')}\n{ev.get('evidence', '')}\nNot registered. Fix the code or the tests and create it again with the same name."
 
 
@@ -572,8 +725,10 @@ class SkillCreateTool(BaseTool):
         "which can only raise the level its source already shows; "
         "plus pytest tests (test_code) that import it via "
         "`from skills.<name>.skill import Skill`. The skill is registered ONLY if the tests pass; "
-        "otherwise you get the failure output. Re-running with the same name replaces the skill (the verified version "
-        "it replaces is kept for the human's rollback). A new name whose purpose matches an existing skill (or shares its "
+        "otherwise you get the failure output. Import only the standard library or packages already installed: a skill "
+        "that imports a package that is not installed is refused, and installing one is the owner's decision. "
+        "Re-running with the same name replaces the skill only when the new version passes (the verified version "
+        "it replaces is kept for the human's rollback); a revision that fails leaves the old version live.A new name whose purpose matches an existing skill (or shares its "
         "arguments and much of its purpose) is refused: extend that skill under its own name. A name the human disabled "
         "stays refused until they enable it."
     )
