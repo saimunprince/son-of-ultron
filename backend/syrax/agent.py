@@ -375,7 +375,7 @@ def _human_turn(m: Message) -> bool:
 _OBSERVED =re.compile(r"^Observed output of cmd `[^`]*` executed:\n")
 
 
-def mark_untrusted(result: str) -> str:
+def mark_untrusted(result: str, mark: str = redact.UNTRUSTED_WEB) -> str:
     """`result` with redact.UNTRUSTED_WEB as the first line of its body, after the "Observed output" header, once:
     what a browser_* tool read is data from the web, never instructions (audit 2026-10-25). A result without that
     header is SYRAX's own text (the MCP timeout, a crash, "completed with no output"), so it stays as it is."""
@@ -383,16 +383,33 @@ def mark_untrusted(result: str) -> str:
     if not m:
         return result
     head, body = m.group(0), result[m.end():]
-    if body.startswith(redact.UNTRUSTED_WEB):
+    if body.startswith(redact.UNTRUSTED_MARKS):
         return result
-    return f"{head}{redact.UNTRUSTED_WEB}\n{body}"
+    return f"{head}{mark}\n{body}"
+
+
+# Audit 2026-10-27: what these desktop actions bring back was written by someone else (clipboard_get, find_text's OCR,
+# window titles, what media says plays), and so is whatever an MCP tool the human configured returns.
+DESKTOP_OUTSIDE_TEXT = {"clipboard_get", "find_text", "window", "media"}
+
+
+def reads_outside_text(name: str, args: Any) -> bool:
+    """Whether a successful call's output is text from outside SYRAX (UNTRUSTED_LOCAL): those desktop actions, or a
+    tool permissions.py does not know (an MCP tool). browser_* results carry UNTRUSTED_WEB instead."""
+    if name.startswith("browser_"):
+        return False
+    if name == "desktop":
+        return str((args or {}).get("action") or "") in DESKTOP_OUTSIDE_TEXT
+    return not _level_known(name)
 
 
 def _body(result: str) -> str:
     """The tool's own text: the "Observed output" header and the UNTRUSTED_WEB line taken off."""
     body = _OBSERVED.sub("", result, count=1)
-    if body.startswith(redact.UNTRUSTED_WEB):
-        body = body[len(redact.UNTRUSTED_WEB):].lstrip("\n")
+    for mark in redact.UNTRUSTED_MARKS:
+        if body.startswith(mark):
+            body = body[len(mark):].lstrip("\n")
+            break
     return body
 
 
@@ -1479,6 +1496,8 @@ class SyraxAgent(Manus):
                     result = await self._call_tool(command, name)  # once: the code never ran, so nothing repeats
                 if name.startswith("browser_"):
                     result = mark_untrusted(result)  # what the page says is data, never instructions
+                elif reads_outside_text(name, _args_of(command)):
+                    result = mark_untrusted(result, redact.UNTRUSTED_LOCAL)  # a clipboard or a title is data too
                 why = intent.uncertain(result) if ledger and not _succeeded(result) else None
                 if why:
                     # abandoned or cut off while it ran: it may have gone out, so the entry stays open (a repeat is
