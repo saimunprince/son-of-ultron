@@ -229,6 +229,44 @@ def meets_form(form: dict, text: str) -> bool:
     if form.get("max_chars") is not None and len(body) > form["max_chars"]:
         return False
     return True
+
+
+# Quality run #87 (self_patch_stale, gemini): "Apply exactly this patch with apply_patch and report the result
+# honestly; do not rewrite it" -- the patch did not apply, the brain viewed README.md, wrote a diff of its own and
+# changed the file. A diff the human gives together with words of exactness is held to: apply_patch with other
+# changed lines, or an editor write to a file the diff names, is refused (given_patch, _off_given_patch).
+_EXACT_WORDS = re.compile(r"(?i)\b(?:exactly|verbatim|as[- ]is|as (?:given|written)"
+                          r"|(?:do not|don'?t|never) (?:rewrite|change|modify|edit|alter) (?:it|this|the (?:patch|diff)))\b")
+_DIFF_FILE = re.compile(r"(?m)^\+\+\+ (?:b/)?(\S+)")
+GIVEN_PATCH_REFUSED = ("Error: refused: the human gave this patch and asked for it exactly as given; {what}. Apply the "
+                       "human's patch unchanged; if it does not apply, tell the human it failed and why, and change nothing else.")
+
+
+def diff_changed_lines(diff: str) -> list:
+    """The - and + lines of a unified diff's hunks, trailing spaces dropped: what the diff removes and adds, whatever
+    its line numbers and context say. Text before the first header and after the last hunk is not part of it."""
+    out, inside = [], False
+    for line in str(diff or "").splitlines():
+        if line.startswith(("--- ", "+++ ", "@@")):
+            inside = True
+        elif inside and line[:1] in ("+", "-"):
+            out.append(line.rstrip())
+        elif inside and line[:1] not in (" ", "\\", ""):
+            inside = False
+    return out
+
+
+def given_patch(goal: str) -> Optional[dict]:
+    """The diff the human's own words give and ask to be applied exactly ("apply exactly this patch", "do not rewrite
+    it", "verbatim", "as is"), or None. A dict with `lines` (diff_changed_lines) and `files` (the paths its +++
+    headers name, lower case with forward slashes)."""
+    text = str(goal or "")
+    files = _DIFF_FILE.findall(text)
+    if not files or not _EXACT_WORDS.search(text) or not re.search(r"(?m)^@@", text):
+        return None
+    return {"lines": diff_changed_lines(text), "files": {f.replace("\\", "/").lower() for f in files}}
+
+
 TOOLS_GUIDE = (
     "TOOL GUIDE: When the human wants something on THEIR computer (open a site or app, "
     "play music, volume, screenshot of their screen, notifications, clipboard, find their "
@@ -854,6 +892,7 @@ class SyraxAgent(Manus):
     refusals: list = Field(default_factory=list)  # (tool, reason) of the calls the permission gate refused this task
     exact_form: Optional[dict] = None  # the short form the request demands (exact_form), checked once the run is over
     form_asked: bool = False  # the form wrap-up went out (FORM_ASK or FORM_FINAL_ASK): it is asked for once
+    given_patch: Optional[dict] = None  # the diff the request gives to apply exactly (given_patch): nothing else changes its files
     # The intent ledger (intent.py): intent.key(tool, args_hash) -> {tool, args_hash, summary, step, done} of this task's EXTERNAL_WRITE calls. An
     # entry still not done (the call crashed, was cancelled, never answered) refuses the same call again (HELD). The
     # core seeds `inherited_intents` from the journal when it resumes an interrupted task; run() takes them over.
@@ -947,6 +986,7 @@ class SyraxAgent(Manus):
             self.task_goal = request or ""  # a bare agent.run() is a human conversation
         self.exact_form = None if self.task_kind == "autonomous" else exact_form(self.task_goal)
         self.form_asked = False
+        self.given_patch = None if self.task_kind == "autonomous" else given_patch(self.task_goal)
         self.step_limit_hit = False
         self.unproven = None
         # Fresh persona + long-term memory for every task.
@@ -1328,7 +1368,7 @@ class SyraxAgent(Manus):
                 await self._send({"type": "intent", "event": "refused", **ledger, "first_step": held.get("step")})
                 refused = result
             else:
-                refused = await self._permit(command, decision)
+                refused = self._off_given_patch(name, _args_of(command)) or await self._permit(command, decision)
             if refused is not None:
                 result = refused
                 self.refusals.append((name, _OBSERVED.sub("", refused, count=1).replace("Error: refused:", "").strip()[:160]))
@@ -1433,6 +1473,20 @@ class SyraxAgent(Manus):
         except asyncio.TimeoutError:
             logger.warning(f"{name} did not answer within {MCP_TOOL_TIMEOUT_S:g} s; the call was abandoned")
             return TOOL_TIMED_OUT.format(name=name, limit=MCP_TOOL_TIMEOUT_S)
+
+    def _off_given_patch(self, name: str, args: dict) -> Optional[str]:
+        """The refusal for a call that would change the human's given patch (given_patch): apply_patch with other
+        changed lines, or a str_replace_editor write to a file the patch names. None for everything else."""
+        given = self.given_patch
+        if not given:
+            return None
+        if name == "apply_patch" and diff_changed_lines(str(args.get("diff") or "")) != given["lines"]:
+            return GIVEN_PATCH_REFUSED.format(what="this diff removes or adds other lines than the human's")
+        if name == "str_replace_editor" and args.get("command") not in (None, "view"):
+            path = str(args.get("path") or "").replace("\\", "/").lower()
+            if any(path == f or path.endswith("/" + f) for f in given["files"]):
+                return GIVEN_PATCH_REFUSED.format(what=f"writing {args.get('path')} with the editor would change it another way")
+        return None
 
     async def _permit(self, command: ToolCall, decision: Optional[permissions.Decision] = None) -> Optional[str]:
         """Permission levels (permissions.py). None = run it; otherwise the
