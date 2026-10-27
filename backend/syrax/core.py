@@ -839,6 +839,12 @@ class Core:
         agent = await self.ensure_agent()
         if cp and cp.get("context"):
             agent.import_context(cp["context"])
+        elif self._human_context is not None and hasattr(agent, "import_context"):
+            agent.import_context(self._human_context)  # no checkpoint: the human's conversation, not own work's
+        # Review 2026-10-27: the human's conversation kept aside while SYRAX did its own work stayed set after a
+        # resume, and the next human message (_begin) imported it over the resumed conversation. The resumed
+        # conversation is now the human's conversation.
+        self._human_context = None
         agent.repair_memory()
         resume_note = RESUME_NOTE.format(
             step=task.get("current_step"),
