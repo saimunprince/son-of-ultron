@@ -88,12 +88,76 @@ Checked by `backend/syrax/test_backup.py`: manifest counts match, a flipped byte
 is caught, prune keeps 7, due follows the meta key, restore reproduces the rows
 and refuses while running, the idle cycle backs up before maintenance.
 
+## Known-good fallback after a restart (`syrax.py`, `backend/syrax/knowngood.py`)
+
+SYRAX restarts itself into new code (`syrax.py --respawn`, then `--restart`), and
+every start runs the core from the repository at main's HEAD. New code lands on
+main only after a GREEN gate; if the new core still does not come up, the launcher
+brings back the last commit that did. It never resets, checks out or reverts main
+or the repository's working tree.
+
+**Known-good.** When a core started from main answers `/health` and is still
+running `KNOWN_GOOD_SETTLE_S` (120 s) after its first answer, the launcher writes
+that commit to `backend/config/known_good.json` (`{"commit", "at"}`, written to a
+temporary file and renamed; gitignored).
+
+**Fallback** (service starts only: the login service, `--restart`, a self-restart;
+a foreground `python syrax.py` behaves as before). The core from main has not come
+up when it exits before it is known-good, or when it has not answered `/health`
+within `CORE_BOOT_DEADLINE_S` (180 s). If `known_good.json` names a different
+commit K, the launcher:
+
+1. makes or reuses a git worktree of K at `.syrax/known-good`
+   (`git worktree add --force --detach .syrax/known-good K`, or
+   `git -C .syrax/known-good checkout --detach K` when it is at another commit;
+   if that checkout fails it keeps the earlier known-good commit it is at);
+2. stops the failed core;
+3. hard-links `backend/config/config.toml` and `mcp.json` into the worktree (the
+   same files, not copies) and points the rest at the live files through the
+   environment: `SYRAX_JOURNAL_FILE`, `SYRAX_TOKEN_FILE`, `SYRAX_BRAINS_FILE`,
+   `SYRAX_MEMORY_FILE`, `SYRAX_HISTORY_FILE`, `SYRAX_EXPORT_DIR`,
+   `SYRAX_SKILLS_DIR`, `SYRAX_BROWSER_PROFILE`;
+4. records the failed commit X in `known_good.json` (`bad`, `bad_at`, `bad_why`);
+5. runs `python -m syrax.knowngood` from the worktree (K's code, while no core owns
+   the journal), which journals `restart.fallback` `{from: X, to: K, why}` and a
+   reminder due 120 s later;
+6. starts the core from `.syrax/known-good/backend` with the live venv, on the same
+   port. The UI keeps running from the repository.
+
+The fallback core's own reminder loop fires that reminder: a notice the UI shows
+and speaks, and a desktop notification, also when no UI was connected at boot.
+`syrax.log` has a line for each step.
+
+**While on the fallback** the core serves the human but does no work on its own
+code: `SYRAX_AUTONOMY`, `SYRAX_SELF_RESTART`, `SYRAX_ISOLATE`,
+`SYRAX_PUBLISH_RISE`, `SYRAX_CODEBENCH`, `SYRAX_FEATURES` and `SYRAX_AUTOPUSH` are
+0 for it (a release there would commit to the detached worktree). There is no
+loop: the fallback is tried once per launch, a fallback core that fails is not
+followed by another, and a later service start (login) whose HEAD is still the
+known-bad X starts K straight away instead of failing again. A new commit on main
+is tried at the next start; a human `python syrax.py --restart` clears the
+known-bad mark and tries main again whatever it holds (SYRAX's own restart passes
+`--self-restart` and keeps the mark). When main comes up and settles, it becomes
+the known-good commit and the mark goes.
+
+Back to normal after a fallback: fix main, then
+
+    python syrax.py --restart
+
+Checked by `backend/syrax/test_knowngood_launcher.py` (the decisions, the marker
+file, the git commands, a real worktree in a temporary repository, the loop with
+fake processes and clock, who clears the mark) and `test_knowngood.py` (the
+journal event and the notice).
+
 ## What is not covered
 
 - GPU, network bandwidth and temperature are not measured.
 - No disk quota for `backend/workspace/`, `backend/skills/` or rollback snapshots.
 - Maintenance never deletes tasks or knowledge; there is no full-history compaction.
 - Backups stay on the same disk; copying a snapshot folder somewhere else is the owner's job.
+- The known-good fallback swaps only the core: a broken UI or launcher (`syrax.py` itself) in the
+  new commit is not covered, and the fallback core uses its own `backend/workspace` and logs.
+  It needs at least one start that came up after this feature landed (the first known-good).
 - Credential masking happens when the journal writes: the agent's live memory, the
   `user` echo to connected UIs and a `final` the human asked a key for keep the real
   text, and a task resumed from a checkpoint reads `[credential masked]` where a key was.

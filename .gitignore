@@ -37,6 +37,8 @@ backend/config/journal.db
 backend/config/journal.db-wal
 backend/config/journal.db-shm
 backend/config/journal.db.owner
+# the launcher's known-good / known-bad commits (syrax.py, known-good fallback)
+backend/config/known_good.json
 backend/config/rollback/
 # verified snapshots of the journal and config (they hold the API keys)
 backend/config/backups/
