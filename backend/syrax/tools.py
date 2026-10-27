@@ -132,11 +132,52 @@ def _remove_quietly(path: str) -> None:
         pass
 
 
-def _kill_quietly(proc) -> None:
+def _worker_descendants(proc) -> Optional[list]:
+    """psutil handles of everything the worker started (children of children too), taken while it is alive; only
+    when the worker really is this process's child (a fake or a reused pid never names a tree). None without psutil."""
     try:
-        if proc.pid is not None and proc.is_alive():
-            proc.kill()
-            proc.join(1)
+        import psutil
+    except Exception:
+        return None
+    import os
+
+    try:
+        p = psutil.Process(proc.pid)
+        if p.ppid() != os.getpid():
+            return []
+        return p.children(recursive=True)
+    except Exception:
+        return []
+
+
+def _kill_quietly(proc, tree: bool = True) -> None:
+    """Kill the worker and, with `tree`, everything it started. 2026-10-27 review: only the worker was killed on a
+    timeout or an abort, and on Windows its children (a subprocess pytest, a Popen'd server) ran on with nobody
+    waiting for them. The tree is read before the worker dies (after, its children have no parent to be found by);
+    without psutil, Windows' taskkill /T takes the tree."""
+    try:
+        if proc.pid is None or not proc.is_alive():
+            return
+        kids = _worker_descendants(proc) if tree else []
+        if kids is None and sys.platform == "win32" and isinstance(proc, multiprocessing.process.BaseProcess):
+            import subprocess
+
+            try:
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True, timeout=10,
+                               creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            except Exception:
+                pass
+        proc.kill()
+        proc.join(1)
+        for k in kids or []:
+            try:
+                k.kill()
+            except Exception:
+                pass
+        if kids:
+            import psutil
+
+            psutil.wait_procs(kids, timeout=2)
     except Exception:
         pass
 
@@ -242,16 +283,16 @@ class AsyncPythonExecute(PythonExecute):
         # the pipe can report EOF a moment before Windows has reaped the process:
         # still "alive" then is an exit in progress, not a timeout (seen under load)
         if result is None and not eof and proc.is_alive():
-            _kill_quietly(proc)
+            await asyncio.to_thread(_kill_quietly, proc)  # the tree's wait stays off the event loop
             printed = _printed_before(out_path)
             return {
                 "observation": f"Execution timeout after {timeout} seconds"
                                + (f"; it printed this before it was stopped:\n{printed}" if printed.strip() else ""),
                 "success": False,
             }
-        if proc.is_alive():
+        if proc.is_alive():  # it answered: what it started on purpose (a server) outlives it, as after a normal exit
             await asyncio.to_thread(proc.join, 2)
-            _kill_quietly(proc)
+            _kill_quietly(proc, tree=False)
         if result is None:
             return {"observation": f"Error: the python_execute worker exited with code {proc.exitcode} before returning a result", "success": False}
         return dict(result)
