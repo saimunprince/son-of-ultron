@@ -1,3 +1,4 @@
+import os
 import sys
 from datetime import datetime
 
@@ -7,6 +8,11 @@ from app.config import PROJECT_ROOT
 
 
 _print_level = "INFO"
+
+
+def _testing() -> bool:
+    """A pytest process, or a process a test started (PYTEST_CURRENT_TEST is inherited)."""
+    return "pytest" in sys.modules or bool(os.environ.get("PYTEST_CURRENT_TEST"))
 
 
 def define_log_level(print_level="INFO", logfile_level="DEBUG", name: str = None):
@@ -22,7 +28,11 @@ def define_log_level(print_level="INFO", logfile_level="DEBUG", name: str = None
 
     _logger.remove()
     _logger.add(sys.stderr, level=print_level)
-    _logger.add(PROJECT_ROOT / f"logs/{log_name}.log", level=logfile_level)
+    # Not from tests: every pytest process left a logs/<timestamp>.log in the production backend/logs (2,699
+    # files, most of them empty), and fake-brain tracebacks there read like production failures. The server's
+    # file is created on its first line (delay), so a process that logs nothing leaves no empty file.
+    if not _testing():
+        _logger.add(PROJECT_ROOT / f"logs/{log_name}.log", level=logfile_level, delay=True)
     return _logger
 
 
