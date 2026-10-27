@@ -41,6 +41,9 @@ durably, then fanned out) iff replay or recovery needs it:
 | `permission` authorized (agent, through `emit`) | `permission.authorized` — payload `tool`, `level`, `task_kind`, `reason`, `targets`, `authorized_by` (`goal` or `human`), `answer?`, `harm?` |
 | `permission` refused (agent, through `emit`) | `permission.refused` — same payload, `authorized_by` null |
 | `intent` recorded / done / refused / uncertain (agent, through `emit`) | `intent.recorded` / `intent.done` / `intent.refused` / `intent.uncertain` — the intent ledger (`intent.py`): payload `tool`, `args_hash` (sha256 of the canonical JSON of the arguments, 16 hex), `summary` (the tool and its most telling argument, 120 chars), `step`; `done` carries `ok`, `refused` carries `first_step`, `uncertain` carries `why` (`timed out` / `connection lost`) |
+| `claim` rejected (agent, through `emit`) | `claim.rejected` — a final answer sent back by a final-answer check (§4: a change, an outcome of a class no tool produced, a test pass after failing tests, a refusal not said, a boast with the self-model unread, a dispute answered without a reading); payload `text` (the rejected answer, 500 chars), `task_kind` |
+| `claim` uncited (agent, through `emit`) | `claim.uncited` — a researched answer without its source URL, asked once for it; payload `text`, `task_kind` |
+| `change` started (agent, through `emit`) | `change.started` — an autonomous release task's first repository edit: payload `tool`, `files`, `covering_tests`, `components`, `rollback_point`, `step` |
 | written by the core / journal | `task.started`, `task.queued`, `task.completed`, `task.failed`, `task.cancelled`, `task.blocked`, `task.interrupted`, `task.unknown`, `checkpoint.created`, `recovery.started`, `recovery.verified`, `recovery.resumed`, `recovery.completed`, `verification.completed`, `stage.started` |
 
 Direct (never stored): `state`, `hello`, `brains`, `brain_models`, `brain_test`,
