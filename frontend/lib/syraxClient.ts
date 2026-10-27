@@ -680,7 +680,17 @@ export class SyraxClient {
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.clearHeartbeat();
-    this.ws?.close();
+    const ws = this.ws;
     this.ws = null;
+    if (ws) {
+      // A browser fires the old socket's close event later, when the next client may already be online:
+      // detached first, that late event cannot report "offline" over the new link or null its socket.
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onclose = null;
+      ws.onerror = null;
+      ws.close();
+      this.handlers.onLink("offline");
+    }
   }
 }
