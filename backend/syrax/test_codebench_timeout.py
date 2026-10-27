@@ -18,6 +18,8 @@ class SlowCore:
     cancel = core_mod.Core.cancel
     _cancel_now = core_mod.Core._cancel_now
     busy = core_mod.Core.busy
+    _task_running = core_mod.Core._task_running
+    _starting = 0
 
     def __init__(self, j):
         self.journal, self.current, self.agent = j, None, None

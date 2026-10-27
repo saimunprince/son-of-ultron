@@ -31,7 +31,7 @@ function stubBrowser(waitFor: "mic" | "worklet") {
     configurable: true,
     value: { mediaDevices: { getUserMedia: async () => (waitFor === "mic" ? (await mic.promise, stream) : stream) } },
   });
-  (globalThis as any).AudioContext = class {
+  (globalThis as unknown as Record<string, unknown>).AudioContext = class {
     state = "running";
     sampleRate = 48000;
     audioWorklet = { addModule: async () => (waitFor === "worklet" ? worklet.promise : undefined) };
@@ -39,11 +39,11 @@ function stubBrowser(waitFor: "mic" | "worklet") {
     close = async () => void seen.ctxClosed++;
     createMediaStreamSource = () => ({ connect: () => {}, disconnect: () => {} });
   };
-  (globalThis as any).AudioWorkletNode = class {
+  (globalThis as unknown as Record<string, unknown>).AudioWorkletNode = class {
     port = { onmessage: null, close: () => {} };
     disconnect = () => {};
   };
-  (globalThis as any).WebSocket = class {
+  (globalThis as unknown as Record<string, unknown>).WebSocket = class {
     static OPEN = 1;
     readyState = 0;
     constructor() {

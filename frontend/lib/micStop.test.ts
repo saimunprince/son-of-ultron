@@ -15,13 +15,13 @@ function stubBrowser(waitFor: "mic" | "worklet") {
     configurable: true,
     value: { mediaDevices: { getUserMedia: async () => (waitFor === "mic" ? (await pending, stream) : stream) } },
   });
-  (globalThis as any).AudioContext = class {
+  (globalThis as unknown as Record<string, unknown>).AudioContext = class {
     sampleRate = 48000;
     audioWorklet = { addModule: async () => (waitFor === "worklet" ? pending : undefined) };
     close = async () => {};
     createMediaStreamSource = () => ({ connect: () => void seen.connected++, disconnect: () => {} });
   };
-  (globalThis as any).AudioWorkletNode = class {
+  (globalThis as unknown as Record<string, unknown>).AudioWorkletNode = class {
     port = { onmessage: null, close: () => {} };
     disconnect = () => {};
   };
