@@ -390,7 +390,7 @@ def question(decision: Decision) -> str:
 def repo_relative(target: str) -> Optional[str]:
     """A target as a repository path (backend/syrax/x.py), also when it is inside a
     task's worktree, which mirrors the repository; None when it is elsewhere."""
-    p = str(target or "").replace("\\", "/").strip()
+    p = guard.canonical_path(str(target or "").strip()).replace("\\", "/")  # \\?\C:\..., \\localhost\C$\... (review 2026-10-27)
     # the LAST worktree segment: a path inside a worktree of a worktree (SYRAX's own gate runs in
     # .syrax/worktrees/<task>, and so does anything it touches there) maps to the repository path.
     # Live 2026-10-14: with the first segment, three of SYRAX's own releases were rolled back by
@@ -464,6 +464,17 @@ def dir_targets(targets: Iterable[str], dirs: Tuple[str, ...] = PROTECTED_DIRS) 
     return sorted(hits)
 
 
+def network_targets(targets: Iterable[str], admin_only: bool = False) -> List[str]:
+    """Targets that are still network or device paths once guard.canonical_path has turned this machine's own
+    spellings into drive paths: any \\\\host\\share (or only administrative shares, \\\\host\\C$, with ``admin_only``)."""
+    hits = []
+    for t in targets:
+        s = guard.canonical_path(str(t or "").strip())
+        if guard.ADMIN_SHARE.match(s) or (not admin_only and re.match(r"^[\\/]{2}", s)):
+            hits.append(str(t))
+    return hits
+
+
 def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[str, str]] = (), grants: Optional[Dict[str, bool]] = None) -> Verdict:
     kind = kind if kind in KINDS else "conversation"
     grants = grants or {}
@@ -473,6 +484,11 @@ def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[st
             why += "; SYRAX must not harm the host"
         return Verdict("refuse", None, why)
     level = decision.level
+    if level != READ_ONLY and (unc := network_targets(decision.targets, admin_only=kind == "conversation")):
+        # Review 2026-10-27: \\?\, \\.\ and \\localhost\C$\ spellings of the repository passed every check below
+        return Verdict("refuse", None, f"{', '.join(unc[:3])}: a network or device path; "
+                       + ("an administrative share is a whole drive, never a target" if kind == "conversation"
+                          else "SYRAX's own work writes only through plain local paths"))
     if level != READ_ONLY and (held := data_targets(decision.targets, PROTECTED_DATA)):
         # Live 2026-10-25 (audit): the keys and the evidence are nobody's to write through a tool, whatever the task
         return Verdict("refuse", None, f"{', '.join(held)}: this file holds SYRAX's keys/evidence; only a human changes it by hand")

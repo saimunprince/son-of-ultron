@@ -211,6 +211,37 @@ def isolation_rules() -> List[str]:
     return [f"{live}{os.sep}*", f"!{live / 'backend' / 'workspace'}{os.sep}*", f"!{live / '.syrax'}{os.sep}*"]
 
 
+# Review 2026-10-27: \\?\C:\..., \\.\C:\... and \\localhost\C$\... name the same file as C:\..., but resolve() keeps
+# them as written, so the journal, the keys and the judges were writable under those spellings (permissions.decide
+# returned allow for brains.json). Every path is read in its plain form first.
+_DEVICE_PREFIX = re.compile(r"^[\\/]{2}[?.][\\/](?:(UNC)[\\/])?", re.I)
+ADMIN_SHARE = re.compile(r"^[\\/]{2}([^\\/]+)[\\/]([A-Za-z])\$(?=[\\/]|$)")
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1", "[::1]", "0:0:0:0:0:0:0:1"}
+
+
+def _local_hosts() -> set:
+    import socket
+
+    try:
+        name = socket.gethostname().lower()
+    except OSError:
+        name = ""
+    return _LOOPBACK_HOSTS | ({name, name.split(".")[0]} - {""})
+
+
+def canonical_path(raw) -> str:
+    """``raw`` without a Win32 device prefix (\\\\?\\, \\\\.\\, \\\\?\\UNC\\) and with this machine's administrative
+    share (\\\\localhost\\C$\\..., \\\\<hostname>\\C$\\...) as the drive path it names. Anything else is unchanged."""
+    s = str(raw or "")
+    m = _DEVICE_PREFIX.match(s)
+    if m:
+        s = ("\\\\" if m.group(1) else "") + s[m.end():]
+    m = ADMIN_SHARE.match(s)
+    if m and m.group(1).lower() in _local_hosts():
+        s = m.group(2) + ":" + (s[m.end():] or "\\")
+    return s
+
+
 def _norm(p) -> str:
     try:
         s = os.fspath(p)
@@ -220,6 +251,7 @@ def _norm(p) -> str:
         s = s.decode(errors="replace")
     if s.startswith("file:"):
         s = s[5:].split("?", 1)[0]
+    s = canonical_path(s)
     try:
         return os.path.normcase(str(Path(s).resolve()))
     except (OSError, ValueError):
@@ -271,6 +303,12 @@ def install(paths: Iterable[str]) -> None:
         return _norm(p) in guarded or in_sealed(p)
 
     def refuse_write(p) -> Optional[str]:
+        try:
+            share = ADMIN_SHARE.match(canonical_path(os.fspath(p) if not isinstance(p, bytes) else p.decode(errors="replace")))
+        except TypeError:
+            share = None
+        if share:  # another name of a whole drive (this machine by an address, or another one): never SYRAX's to write
+            return f"{p}: an administrative share is a whole drive; SYRAX does not write through it"
         if in_sealed(p):
             return f"{p}: the backups are SYRAX's evidence; only the running core writes a snapshot, only a human restores one"
         if is_protected(p):

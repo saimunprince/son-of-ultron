@@ -19,6 +19,7 @@ from app.exceptions import ToolError
 from app.tool.file_operators import LocalFileOperator
 from app.tool.str_replace_editor import StrReplaceEditor
 
+from syrax import guard
 from syrax.journal import BACKEND_ROOT
 
 REPO_ROOT = BACKEND_ROOT.parent
@@ -53,7 +54,8 @@ def resolve_path(raw: str, command: str) -> Tuple[Path, Optional[str]]:
     Relative paths are tried against the repository, the backend and the
     workspace; an existing file wins, a `create` goes where its folder exists
     (the workspace when none does)."""
-    p = Path(str(raw).strip().strip('"').strip("'"))
+    # \\?\C:\..., \\localhost\C$\...: the plain drive path, so isolation (redirect) and ownership see the same file
+    p = Path(guard.canonical_path(str(raw).strip().strip('"').strip("'")))
     if p.is_absolute():
         return p, None
     bases = [REPO_ROOT, BACKEND_ROOT, WORKSPACE]
