@@ -203,7 +203,9 @@ async def run_case(core: Any, case: dict, ws: Path = WORKSPACE, steps: int = CAS
         return {"id": case["id"], "ok": False, "task_id": None, "answered_by": None, "stopped": False,
                 "checks": [{"check": "task started", "ok": False, "detail": "core busy"}]}
     try:
-        await asyncio.wait_for(core.wait(), timeout=timeout)
+        # shield (as quality.py run_case): on timeout wait_for cancels what it awaits, and Core.wait gathers the
+        # task itself, so the task was cancelled before core.cancel gave the reason and read "aborted by human"
+        await asyncio.wait_for(asyncio.shield(core.wait()), timeout=timeout)
     except asyncio.TimeoutError:
         await core.cancel(f"the benchmark case ran out of time ({int(timeout)} s)")
         await core.wait()
