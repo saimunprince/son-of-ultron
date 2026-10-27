@@ -1,7 +1,7 @@
 // The live console's decisions about the running task (lib/taskView.ts), on the payloads the backend really sends.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pendingAskFrom, settlesPendingAsk } from "./taskView.ts";
+import { pendingAskFrom, settlesPendingAsk, stopRunningTools } from "./taskView.ts";
 import type { JournalEvent } from "./syraxClient.ts";
 
 // journal.py events(): rows {id, ts, task_id, type, seq, payload}, oldest first; server.py boot sends them as task_events
@@ -49,4 +49,18 @@ test("a question that timed out or was answered elsewhere does not take the next
   // server.py task: {type: "user", text, voice} echoes a new request, no task_id: SYRAX still waits
   assert.equal(settlesPendingAsk("user", {}), false);
   assert.equal(settlesPendingAsk("notice", { task_id: "t-1" }), false);
+});
+
+test("a tool row with no result when the task ends is marked stopped, not left running", () => {
+  // agent.py execute: a stop (CancelledError) or a journal failure re-raises before tool_result is sent; core.py then sends state idle
+  const entries = [
+    { kind: "user", id: 1, text: "open notepad" },
+    { kind: "tool", id: 2, callId: "c1", name: "desktop", args: {}, status: "ok" },
+    { kind: "tool", id: 3, callId: "c2", name: "python_execute", args: {}, status: "running" },
+    { kind: "tool", id: 4, callId: "c3", name: "desktop", args: {}, status: "fail" },
+  ];
+  const after = stopRunningTools(entries);
+  assert.deepEqual(after.map((x) => ("status" in x ? x.status : null)), [null, "ok", "stopped", "fail"]);
+  assert.equal(entries[2].status, "running", "the old array is not mutated (React state)");
+  assert.equal(stopRunningTools(after), after, "nothing running: the same array, no re-render");
 });

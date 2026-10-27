@@ -7,6 +7,14 @@ import type { JournalEvent } from "./syraxClient";
 // next step thinks), or the task ended (task.completed / failed / cancelled / ...).
 const SETTLES_ASK = new Set(["answer", "think", "final", "tool.started", "tool.completed", "tool.failed"]);
 
+/** When the task ends (state idle), a tool row still "running" never got its result: a stop or a crash re-raises
+ *  in agent.py before tool_result is sent. Those rows are marked "stopped" so none says RUN forever. Returns the
+ *  same array when nothing changed (no re-render). */
+export function stopRunningTools<T extends { kind: string; status?: string }>(entries: T[]): T[] {
+  if (!entries.some((x) => x.kind === "tool" && x.status === "running")) return entries;
+  return entries.map((x) => (x.kind === "tool" && x.status === "running" ? { ...x, status: "stopped" } : x));
+}
+
 /** Whether an event means the question SYRAX asked no longer waits, so the next thing typed is a new request:
  *  - `state` idle (the task ended) or thinking (agent.py: the next step starts, so the question was answered or
  *    timed out; tools.py returns "did not answer in time" into the tool's result and the agent goes on);

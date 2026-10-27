@@ -39,7 +39,7 @@ import type { Heard } from "@/lib/wake";
 import { useHandsFree } from "@/components/useHandsFree";
 import { LiveTalk, type LiveEvent, type LiveState } from "@/lib/live";
 import { liveUrl } from "@/lib/livePcm";
-import { pendingAskFrom, settlesPendingAsk } from "@/lib/taskView";
+import { pendingAskFrom, settlesPendingAsk, stopRunningTools } from "@/lib/taskView";
 
 type CameraState = "off" | "starting" | "on" | "error";
 type AgentState = "booting" | "idle" | "thinking" | "acting";
@@ -54,7 +54,7 @@ type Entry =
       callId: string;
       name: string;
       args: unknown;
-      status: "running" | "ok" | "fail";
+      status: "running" | "ok" | "fail" | "stopped"; // stopped: the task ended before the tool's result came
       output?: string;
       image?: string;
     }
@@ -601,7 +601,10 @@ export default function Syrax() {
           setAgent(e.state);
           setActiveTool(e.state === "acting" ? (e.tool ?? null) : null);
           if (settlesPendingAsk("state", { state: e.state })) setPendingAsk(null); // a timed-out question must not take the next command
-          if (e.state === "idle") runningTaskRef.current = null;
+          if (e.state === "idle") {
+            runningTaskRef.current = null;
+            setEntries(stopRunningTools); // a stop or crash sends no tool_result: no row stays "RUN"
+          }
           break;
         case "user":
           if (settlesPendingAsk("user", { task_id: e.task_id })) setPendingAsk(null); // answered here or on the HUD
@@ -1254,7 +1257,7 @@ export default function Syrax() {
                     <details key={e.id} className={`entry entry-tool status-${e.status}`}>
                       <summary>
                         <span className="tag">
-                          {e.status === "running" ? "▸ RUN" : e.status === "ok" ? "✓ DONE" : "✕ FAIL"}
+                          {e.status === "running" ? "▸ RUN" : e.status === "ok" ? "✓ DONE" : e.status === "stopped" ? "■ STOPPED" : "✕ FAIL"}
                         </span>
                         {e.name}
                         <span className="tool-arg">{summarizeArgs(e.name, e.args).slice(0, 90)}</span>
