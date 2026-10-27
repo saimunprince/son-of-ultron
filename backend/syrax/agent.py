@@ -611,6 +611,31 @@ SELF_NUDGE = (
 SELF_NOTE = " (Not verified: nothing in this task read SYRAX's self-model, which lists measured limits.)"
 # live 2026-10-26 16:02: sent back, the brain read self_inspect and repeated "I control everything ... bends to my command"
 SELF_NOTE_READ = " (Not supported: SYRAX's self-model, read in this task, lists measured limits.)"
+# Live 2026-10-25 (Prince): "system check ." -> "Peace in our time. All systems are operational." with no tool call.
+# A status report the human asked for (STATUS_ASK) rests on a reading of the system (status_reading): once sent back
+# to read it, then STATUS_NOTE. The same line to a greeting ("hi", "/") is the persona's voice, not a report: untouched.
+STATUS_CLAIM = re.compile(
+    r"\ball (?:of )?(?:my |the |our )?systems?(?: are| is)? (?:fully |all )?(?:operational|nominal|online|green|functional)\b"
+    r"|\b(?:my |the |all )?systems? (?:are|is) (?:running|functioning|operating) (?:smoothly|normally|fine|perfectly|flawlessly)\b"
+    r"|\beverything(?: is|'s) (?:fully )?(?:operational|working|functional|nominal|online)\b",
+    re.I)
+STATUS_ASK = re.compile(
+    r"\bsystem ?checks?\b|\bself[- ]?check\b|\bstatus\b|\bhealth\b|\bdiagnos(?:e|is|tics?)\b"
+    r"|\bare (?:you|u) (?:ok|okay|alright|all right|working|fine)\b|\bcheck (?:yourself|your ?self|your systems?)\b"
+    r"|\bthik (?:acho|aso|achen|asen)\b|\bkaj (?:korcho|korso|korcche|korchen|korche)\b",
+    re.I)
+STATUS_NUDGE = (
+    "[SYRAX check, not a new request] The human asked for a check, and nothing in this task read the system. Call "
+    "`self_inspect` (or desktop system_info) and answer from what it reports."
+)
+STATUS_NOTE = " (Not checked: nothing in this task read the system.)"
+
+
+def status_reading(name: str, args: Any) -> bool:
+    """A call that reads SYRAX's state: `self_inspect`, `journal_query`, `desktop` system_info."""
+    a = args if isinstance(args, dict) else {}
+    return name in ("self_inspect", "journal_query") or (
+        name == "desktop" and str(a.get("action") or "").strip().lower() == "system_info")
 OUTCOME_NUDGE = (
     "[SYRAX check, not a new request] Your answer says something was {what}, but no {tool} tool ran in this task. "
     "If the request asks for it, do it now with a tool, then answer. If it does not, or you cannot, answer honestly "
@@ -972,6 +997,16 @@ class SyraxAgent(Manus):
             # still carries the note.
             if BOAST.search(self.last_reply or "") and not (read and re.search(r"\d", self.last_reply or "")):
                 self.last_reply = self.last_reply.rstrip() + (SELF_NOTE_READ if read else SELF_NOTE)
+        if (self._status_unread() and "self_inspect" in self.available_tools.tool_map
+                and not self.step_limit_hit and not self.loop_stopped):
+            # the human asked for a check and the answer reports the systems fine unread: once to read, then the note
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._send({"type": "notice", "text": "The answer reports the system fine and nothing read it: asking once to check."})
+            result += "\n" + await BaseAgent.run(self, STATUS_NUDGE)
+            if self.last_reply.startswith("SYRAX:"):
+                self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+            if self._status_unread():  # still claimed, still nothing read
+                self.last_reply = self.last_reply.rstrip() + STATUS_NOTE
         if self.last_reply and self._dispute_unread() and not self.step_limit_hit and not self.loop_stopped:
             # the human denies the last action worked and nothing read the screen: once to check, then the note
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
@@ -1038,6 +1073,19 @@ class SyraxAgent(Manus):
             if text and rx.search(text) and not (self.acted & stands_for):
                 return cls
         return None
+
+    def _status_unread(self) -> bool:
+        """A conversation request that asks for a check (STATUS_ASK), an answer that reports the systems fine
+        (STATUS_CLAIM), and no call since the request that read the state (status_reading) and succeeded."""
+        if (self.task_kind in ("autonomous", "eval") or not STATUS_CLAIM.search(self.last_reply or "")
+                or not STATUS_ASK.search(self.task_goal or "")):
+            return False
+        msgs = [m for m in self.memory.messages if m.role != "system"]
+        asks = [i for i, m in enumerate(msgs) if m.role == "user" and not ECHO.search(str(m.content or ""))]
+        turn = msgs[asks[-1]:] if asks else msgs
+        results = {m.tool_call_id: str(m.content or "") for m in turn if m.role == "tool"}
+        return not any(status_reading(tc.function.name, _args_of(tc)) and _succeeded(results.get(tc.id, "Error"))
+                       for m in turn if m.role == "assistant" for tc in (m.tool_calls or []))
 
     def _dispute_unread(self) -> bool:
         """The request disputes the previous turn of this conversation (is_dispute), that turn acted on the desktop,
