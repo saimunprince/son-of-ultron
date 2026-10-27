@@ -1005,7 +1005,9 @@ class Journal:
                 return {"state": "NOT_STARTED", "checks": checks}
             return {"state": "UNCERTAIN", "checks": {**checks, "reason": "target file missing"}}
         try:
-            text = path.read_text(errors="replace")
+            # the editor (file_operators.py) writes UTF-8; the locale here is cp1252 (utf8_mode 0), so a default
+            # read turned an em dash or Bengali in new_str into mojibake: COMPLETED edits looked UNCERTAIN/PARTIAL
+            text = path.read_text(encoding="utf-8", errors="replace")
         except OSError as e:
             return {"state": "UNCERTAIN", "checks": {**checks, "reason": str(e)}}
         if cmd == "create":
