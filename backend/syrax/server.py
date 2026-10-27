@@ -6,7 +6,8 @@ Run from the backend directory:
 Protocol (JSON over ws://HOST:PORT/ws)
   client -> server: task {text, voice?, queue?} (queue: a request made while a task runs waits for it
                     instead of being refused) | queue | queue_cancel {task_id, note?} |
-                    answer {text} | stop | reset | ping |
+                    answer {text} | stop {reason?} (reason "shutdown": the launcher's restart; the queue is held and
+                    `stopped` answers once the task ended) | reset | ping |
                     history {limit?} | task_events {task_id} | resume {task_id, force?, note?} |
                     verifications {limit?} | self_model {section?} |
                     objectives {limit?} | objective_add {goal, reason?, priority?, check?} | briefing {hours?} |
@@ -38,7 +39,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     quality_runs | quality {event} | brief {event: checked|filed|refused, proof?, problems?, objective_id?} |
                     hunt {event: filed|refused, objective_id?, problems?} |
                     reflection {event} | memories {facts} | memory_exported {path, count} |
-                    notice | error | pong | brain | brains | brain_models | brain_test
+                    notice | error | pong | stopped {queue_held} | brain | brains | brain_models | brain_test
 
 Sessions are observers: the task runs in ``syrax.core`` and continues when the
 browser disconnects. Journaled events (think, tool_*, ask, answer, final, brain
@@ -487,13 +488,22 @@ class Session:
         elif kind == "stop":
             # Live 2026-10-03: an autonomous release was "aborted by human" and
             # nothing said who sent the stop. Journal where it came from.
+            reason = str(msg.get("reason") or "")[:200]
+            shutdown = reason == "shutdown"  # the launcher stopping SYRAX for a restart (syrax.py _cancel_running_task)
+            if shutdown:
+                # review 2026-10-27: the task's cleanup started the next queued request just before the kill, and
+                # that request came back INTERRUPTED instead of PENDING; the queue waits for the next process
+                self.core.hold_queue()
             running = self.core.current
             if running is not None and self.core.busy:
                 await self.core.journal.record("task.stop_requested", {
                     "session": self.id, "origin": self.ws.headers.get("origin"),
-                    "client": self.ws.headers.get("user-agent", "")[:120], "reason": str(msg.get("reason") or "")[:200],
+                    "client": self.ws.headers.get("user-agent", "")[:120], "reason": reason,
                 }, task_id=running.task_id)
             await self.core.cancel()
+            if shutdown:  # the launcher kills the process once the task has ended, not before
+                await asyncio.shield(self.core.wait())
+                await self.send({"type": "stopped", "queue_held": self.core.queue_held()})
         elif kind == "reset":
             await self.core.reset()
             await self.send({"type": "notice", "text": "Memory wiped."})

@@ -108,6 +108,11 @@ AGENT_CREATE_TIMEOUT_S = float(os.getenv("SYRAX_AGENT_CREATE_TIMEOUT_S", "240"))
 # request made while a task runs is queued (journaled PENDING) and starts when the running task ends. A
 # queued request survives SYRAX's own restarts; one older than this is cancelled with a note, not run late.
 QUEUE_STALE_S = float(os.getenv("SYRAX_QUEUE_STALE_S", "3600"))
+# Review 2026-10-27: a restart's stop (`syrax.py --stop`/--restart: {"type": "stop", "reason": "shutdown"}) ended the
+# running task, and its cleanup started the next queued request a moment before the process was killed; that request
+# came back INTERRUPTED, not PENDING, so requeue_after_boot never saw it. A shutdown stop holds the queue: no queued
+# request starts for this long (the process is about to die; if it does not, the queue moves on by itself).
+QUEUE_HOLD_S = float(os.getenv("SYRAX_QUEUE_HOLD_S", "120"))
 # Boot policy for INTERRUPTED tasks (live 2026-10-25, audit "Task runtime"): three sat open for 3-11 days
 # until a hand dismissed them. SYRAX restarts itself into new code several times a day, so an interruption
 # is routine. A human's conversation that could resume waits this long for the human; an autonomous
@@ -190,6 +195,7 @@ class Core:
         self.state: dict = {"state": "idle"}  # last direct state event
         self._last_tool_args: dict = {}
         self._queued_requests: dict = {}  # task_id -> (request, said) of queued requests made in this process
+        self._queue_hold_until = 0.0  # time.monotonic() before which no queued request starts (hold_queue)
         self._deadline: Optional[asyncio.TimerHandle] = None  # the running task's deadline watchdog (TASK_DEADLINE_S)
         self.journal.subscribe(self._on_journal_event)
         self.selfmodel = SelfModel(self.journal)
@@ -443,10 +449,17 @@ class Core:
         await self.broadcast({"type": "queue", "items": self.queued()})
         return True
 
+    def hold_queue(self, seconds: float = QUEUE_HOLD_S) -> None:
+        """No queued request starts for ``seconds`` (a shutdown stop; QUEUE_HOLD_S). The rows stay PENDING."""
+        self._queue_hold_until = max(self._queue_hold_until, time.monotonic() + seconds)
+
+    def queue_held(self) -> bool:
+        return time.monotonic() < self._queue_hold_until
+
     async def _start_next(self) -> Optional[str]:
-        """The oldest queued request starts when the core is free. Returns its id, or None."""
+        """The oldest queued request starts when the core is free and the queue is not held. Returns its id, or None."""
         async with self._submit_lock:
-            if self.busy:
+            if self.busy or self.queue_held():
                 return None
             pending = self.queued()
             if not pending:
@@ -981,6 +994,7 @@ class Core:
         }
 
     async def shutdown(self) -> None:
+        self.hold_queue(float("inf"))  # the task cancelled below must not start a queued request on its way out
         await self.autonomy.stop()
         if self._task_running():
             assert self.current is not None and self.current.task is not None

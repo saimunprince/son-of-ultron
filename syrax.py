@@ -271,10 +271,30 @@ def _uptime_s() -> float:
     return 1e9
 
 
+def _ws_token() -> str:
+    """The token a connection without an Origin presents (backend/syrax/auth.py), read from its file; "" if none."""
+    path = Path(os.getenv("SYRAX_TOKEN_FILE", str(BACKEND / "config" / "ws.token")))
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _stop_url() -> str:
+    from urllib.parse import quote
+
+    # probe=1: the launcher is not a human, the daily briefing is not for it; the token: since phase 7 (auth.py) a
+    # connection without an Origin needs it, and this one went without, was refused, and the stop never arrived
+    tok = _ws_token()
+    return f"ws://127.0.0.1:{BACKEND_PORT}/ws?probe=1" + (f"&token={quote(tok)}" if tok else "")
+
+
 def _cancel_running_task() -> None:
     """Ask the core to cancel its task first, so a restart leaves a cleanly
     cancelled task instead of an INTERRUPTED one with an UNCERTAIN operation
-    (each of those waits for a human)."""
+    (each of those waits for a human). The stop says "shutdown": the core holds
+    its queue (a queued request must not start just before the kill, review
+    2026-10-27) and answers `stopped` once the task has ended."""
     try:
         import asyncio
         import json as _json
@@ -282,12 +302,12 @@ def _cancel_running_task() -> None:
         import websockets  # in the backend venv, which runs this launcher
 
         async def go():
-            async with websockets.connect(f"ws://127.0.0.1:{BACKEND_PORT}/ws", max_size=None, open_timeout=5) as ws:
-                await ws.send(_json.dumps({"type": "stop"}))
+            async with websockets.connect(_stop_url(), max_size=None, open_timeout=5) as ws:
+                await ws.send(_json.dumps({"type": "stop", "reason": "shutdown"}))
                 deadline = time.time() + 10
                 while time.time() < deadline:
                     m = _json.loads(await asyncio.wait_for(ws.recv(), max(0.5, deadline - time.time())))
-                    if m.get("type") == "state" and m.get("state") == "idle":
+                    if m.get("type") == "stopped":
                         return
 
         asyncio.run(go())
