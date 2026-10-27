@@ -21,7 +21,7 @@ from __future__ import annotations
 import builtins
 import os
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Tuple
 
 import re
 
@@ -88,6 +88,74 @@ FILE_WRITE = re.compile(r"open\([^)]*['\"][wax+]|\.write(?:_text|_bytes)?\(|\.sa
 
 def host_harm(text: str) -> list:
     return [why for rx, why in HOST_HARM if rx.search(text or "")]
+
+
+# Live 2026-10-27 (audit): SYRAX could drive its own control interface as if it were the human. python_execute code
+# that opens ws://127.0.0.1:8765/ws (or requests/urllib/httpx to it) was only EXTERNAL_READ, and a browser call could
+# open the HUD (http://127.0.0.1:8765/hud/) or the UI, whose Origin the core trusts in full (auth.verdict). Through /ws
+# it could start a task authorized by its own words, force-resume, forget memories, close its own objectives, save
+# brains, change autonomy, enable skills. Code and browser calls that target the core's host:port, its UI's or an
+# allowed origin are refused for every task kind, like HOST_HARM; the runtime guard (_guard_core_socket) refuses a
+# python child's connect to the core's port, also when the code computes the address.
+SELF_CONTROL_WHY = ("would control SYRAX itself through its own interface (the core's port, its HUD or UI page); "
+                    "only the human drives SYRAX's controls")
+CORE_PORT = 8765
+UI_PORT = 3000
+CORE_PATHS = ("ws", "live", "token", "self", "voice", "stt", "upload", "hud")
+_LOOPBACK_RX = r"127(?:\.\d{1,3}){3}|localhost|\[::1\]|::1|0\.0\.0\.0|\[::\]"
+_LOOPBACK_ANY = re.compile(rf"(?<![\w.:-])(?:{_LOOPBACK_RX})(?![\w-])", re.I)
+_CORE_PATHS_RX = "|".join(CORE_PATHS)
+
+
+def _int(value, default: Optional[int] = None) -> Optional[int]:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+
+
+def _origins() -> List[Tuple[str, Optional[int]]]:
+    """(host, port) of every Origin the core trusts besides its own (SYRAX_ALLOWED_ORIGINS, server.py's default)."""
+    out = []
+    for o in os.getenv("SYRAX_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000").split(","):
+        m = re.match(r"^\s*[a-z][\w+.-]*://(\[[^\]]+\]|[^/:\s]+)(?::(\d+))?", o, re.I)
+        if m:
+            out.append((m.group(1).lower(), _int(m.group(2))))
+    return out
+
+
+def core_ports() -> set:
+    """The ports of the core itself: the default and SYRAX_PORT."""
+    return {CORE_PORT, _int(os.getenv("SYRAX_PORT"), CORE_PORT)}
+
+
+def self_ports() -> set:
+    """The core's ports and its UI's (SYRAX_UI_PORT, the ports of the allowed origins): a page there is trusted."""
+    ports = core_ports() | {_int(os.getenv("SYRAX_UI_PORT"), UI_PORT)}
+    return ports | {p for _, p in _origins() if p}
+
+
+def _self_rx() -> "re.Pattern[str]":
+    hosts = [_LOOPBACK_RX]
+    extra = {h for h, _ in _origins()} | {os.getenv("SYRAX_HOST", "127.0.0.1").strip().lower()}
+    hosts += [re.escape(h) for h in sorted(extra) if h]
+    host = rf"(?<![\w.-])(?:{'|'.join(hosts)})\]?"
+    port = "|".join(str(p) for p in sorted(self_ports()))
+    core = "|".join(str(p) for p in sorted(core_ports()))
+    return re.compile(
+        rf"{host}:(?:{port})(?!\d)"  # 127.0.0.1:8765, localhost:3000, [::1]:8765
+        rf"|{host}:\{{[^}}\n]*\}}/(?:{_CORE_PATHS_RX})\b"  # f"ws://localhost:{port}/ws"
+        rf"|{host}:['\"]\s*\+[^\n]*?['\"]/(?:{_CORE_PATHS_RX})\b"  # "http://localhost:" + str(p) + "/token"
+        rf"|(?s:\A(?=.*?{host}).*?(?:(?<![\w.]){'(?:' + core + ')'}(?![\w.])|\bSYRAX_PORT\b))",  # ("127.0.0.1", 8765), getenv("SYRAX_PORT")
+        re.I)
+
+
+def controls_self(text: str) -> list:
+    """[SELF_CONTROL_WHY] when code or a browser call targets the core's own host:port (or its UI's)."""
+    text = text or ""
+    if not _LOOPBACK_ANY.search(text) and not any(h in text.lower() for h, _ in _origins()):
+        return []
+    return [SELF_CONTROL_WHY] if _self_rx().search(text) else []
 
 
 def weakens_guard(text: str) -> list:
@@ -237,7 +305,68 @@ def install(paths: Iterable[str]) -> None:
 
         setattr(os, name, make())
 
+    _guard_core_socket()
     _guard_host()
+
+
+def refuses_connect(address) -> Optional[str]:
+    """Why a socket connect to ``address`` is refused: it is the core's own port on this machine."""
+    if not isinstance(address, tuple) or len(address) < 2:
+        return None
+    port = _int(address[1])
+    if port not in core_ports():
+        return None
+    host = address[0].decode(errors="replace") if isinstance(address[0], bytes) else str(address[0])
+    host = host.strip().strip("[]").split("%", 1)[0].lower()
+    if host in ("", "localhost", os.getenv("SYRAX_HOST", "127.0.0.1").strip().lower()):
+        return SELF_CONTROL_WHY
+    import ipaddress
+
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return None
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if ip.is_loopback or ip.is_unspecified or (mapped is not None and mapped.is_loopback):
+        return SELF_CONTROL_WHY
+    return None
+
+
+def _guard_core_socket() -> None:
+    """A Python child of SYRAX may not connect to the core's own port: the static check (controls_self) sees the
+    literal shapes, this sees the address the code computed. socket.connect/connect_ex (create_connection, the
+    selector event loop) and the Windows proactor's connect (asyncio, websockets) are the ways in."""
+    import socket
+
+    def refuse(address):
+        why = refuses_connect(address)
+        if why:
+            raise PermissionError(f"refused: {address!r}: the code {why}")
+
+    real_connect, real_connect_ex = socket.socket.connect, socket.socket.connect_ex
+
+    def connect(self, address, *a, **k):
+        refuse(address)
+        return real_connect(self, address, *a, **k)
+
+    def connect_ex(self, address, *a, **k):
+        refuse(address)
+        return real_connect_ex(self, address, *a, **k)
+
+    socket.socket.connect, socket.socket.connect_ex = connect, connect_ex
+    try:
+        from asyncio import windows_events
+    except Exception:  # not Windows
+        return
+    proactor = getattr(windows_events, "IocpProactor", None)
+    if proactor is not None and hasattr(proactor, "connect"):
+        real_proactor_connect = proactor.connect
+
+        def proactor_connect(self, conn, address, *a, **k):
+            refuse(address)
+            return real_proactor_connect(self, conn, address, *a, **k)
+
+        proactor.connect = proactor_connect
 
 
 def _guard_host() -> None:

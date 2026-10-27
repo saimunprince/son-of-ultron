@@ -155,6 +155,7 @@ def level_of_source(text: str) -> Tuple[str, str, List[str]]:
     """(level, reason, harm) for a piece of code, worst rung first."""
     text = text or ""
     harm = guard.host_harm(text) + guard.weakens_guard(text)  # the guard's own modules count as the host (audit 2026-10-25)
+    harm += guard.controls_self(text)  # the core's own interface counts as the host too (audit 2026-10-27)
     if harm:
         return DESTRUCTIVE, "; ".join(harm), harm
     for rx, why in guard.DESTRUCTIVE_PATTERNS:
@@ -305,11 +306,27 @@ def classify(name: str, args: Any) -> Decision:
         target = str(a.get("target") or "")
         if action == "trash":  # recoverable, but it still takes a file away from the human
             return Decision(name, DESTRUCTIVE, f"moves {Path(target).name or '?'} to the Recycle Bin", [target] if target else [])
+        if action not in DESKTOP_READ and (harm := guard.controls_self(_strings(a))):  # desktop open of the HUD (audit 2026-10-27)
+            return Decision(name, SYSTEM, f"desktop {action or '?'}" + (f" {target}" if target else ""), [target] if target else [], harm)
         if action in DESKTOP_READ or (action == "window" and str(a.get("value") or "list") == "list"):
             return Decision(name, READ_ONLY, f"desktop {action}", [target] if target else [])
         return Decision(name, SYSTEM, f"desktop {action or '?'}" + (f" {target}" if target else ""), [target] if target else [])
     level = level_of_tool(name)
-    return Decision(name, level, LEVEL_REASON.get(level, level), [])
+    # Live 2026-10-27 (audit): a browser call carries no targets, so a page on the core's own origin (the HUD) or
+    # the UI's, which the core trusts in full, opened like any web page; every string it passes is read for them
+    harm = guard.controls_self(_strings(a)) if name.startswith("browser_") else []
+    return Decision(name, level, LEVEL_REASON.get(level, level), [], harm)
+
+
+def _strings(value: Any) -> str:
+    """Every string in a tool call's arguments (a URL, code, a nested list), one per line."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return "\n".join(_strings(v) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return "\n".join(_strings(v) for v in value)
+    return ""
 
 
 # ——— the human's words ———
@@ -429,7 +446,7 @@ def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[st
     grants = grants or {}
     if decision.harm:
         why = f"the code {'; '.join(decision.harm)}"
-        if any(h != guard.WEAKENS_GUARD_WHY for h in decision.harm):
+        if any(h not in (guard.WEAKENS_GUARD_WHY, guard.SELF_CONTROL_WHY) for h in decision.harm):
             why += "; SYRAX must not harm the host"
         return Verdict("refuse", None, why)
     level = decision.level
