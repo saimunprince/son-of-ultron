@@ -616,12 +616,22 @@ _HOST_OBJ = (r"(?:the |your |a |an |my )?(?:app|application|window|program|playe
 _WEB_OBJ = r"(?:(?:the |your |a |an |my )?(?:browser|web browser|page|web ?page|site|website|url|link|tab)s?\b|https?://|www\.)"
 _NOUN_SAYS = r"(?:(?:has|have) been |(?:was|were) |(?:is|are) now |now )"
 _NOTIFICATION = r"(?:(?:you|the|a|an|him|her|them|me) )*(?:desktop |system )?notifications?\b"
+# Review 2026-10-27: factual and how-to answers were taken for outcomes: "Paid leave is 20 days", "Posted prices are
+# final", "Sent items live in the Sent folder" (a sentence-initial word before a noun it describes), "Once you've
+# navigated to your project folder, run npm install" and "I have not navigated to any page" (a bare "navigated to"),
+# "Click the speaker icon, then set the volume to 100" (an instruction). A sentence-initial send word is a claim
+# before what was sent, to whom, how or a colon (_SENT_WHAT); "navigated to" needs the first person or the start of
+# a sentence; "set the volume" after then/you/should/please is an instruction.
+_SENT_WHAT = (r"(?=\s*(?:[:,.!;]|$)|\s+(?:to|the|a|an|your|my|his|her|their|our|its|it|them|him|me|you|us|this|that"
+              r"|these|those|on|via|by|through|with|in|at|over|from|twice|again|now|already|successfully|back|out|off"
+              r"|all|both|every|each|\d)\b|\s+(?-i:[A-Z]))")
 SEND_CLAIM = re.compile(
     rf"\bi(?:'ve| have)? {_ADV}(?:sent|emailed|messaged|texted|posted|paid(?!\s+(?:\w+ ){{0,2}}attention\b)"
     r"|ordered(?!\s+(?:by|alphabetically|chronologically|numerically|ascending|descending|them|it|these|those"
     r"|the (?:list|entries|results|items|rows|files|lines|records|output|data|steps|tasks|columns))\b))\b"
     rf"{_NOT}(?!\s+{_NOTIFICATION})"
-    rf"|(?:^|[.!?]\s+)(?:sent|emailed|messaged|texted|posted|paid)\b{_NOT}(?!\s+{_NOTIFICATION})"
+    rf"|(?:^|[.!?]\s+)(?:sent|emailed|messaged|texted|posted|paid)\b(?!\s+(?:items?|folder|mail|box)\b){_SENT_WHAT}{_NOT}"
+    rf"(?!\s+{_NOTIFICATION})"
     rf"|(?:^|[.!?]\s+)(?:message|email|e-mail|sms|reply|payment|order)s? (?:sent|delivered|placed|made)\b"  # "Message sent to Bo."
     rf"|(?<!no )(?<!not )\b(?:message|email|e-mail|sms|reply|mail|invoice)s? {_NOUN_SAYS}(?:successfully )?(?:sent|delivered|emailed|posted)\b"
     rf"|(?<!no )(?<!not )\b(?:payment|transfer)s? {_NOUN_SAYS}(?:successfully )?(?:sent|made|transferred|completed)\b"
@@ -632,7 +642,8 @@ DESKTOP_CLAIM = re.compile(
     rf"|(?:^|[.!?]\s+)(?:opened|launched) {_HOST_OBJ}"
     rf"|(?<!no )(?<!not )\b{_HOST_OBJ} {_NOUN_SAYS}(?:opened|launched|started|open|running|playing)\b"
     rf"|\bi(?:'ve| have)? {_ADV}(?:played|paused|muted|unmuted)\b{_NOT}"
-    r"|(?<!not )(?<!n't )(?<!to )(?<!cannot )(?<!will )(?<!can )\b(?:set|turned|adjusted|raised|lowered|increased|decreased|changed) "
+    r"|(?<!not )(?<!n't )(?<!to )(?<!cannot )(?<!will )(?<!can )(?<!then )(?<!you )(?<!should )(?<!must )(?<!please )"
+    r"(?<!could )(?<!would )(?<!might )\b(?:set|turned|adjusted|raised|lowered|increased|decreased|changed) "
     r"(?:the |your )?(?:system |master |screen |display )?(?:volume|brightness)\b"
     r"|(?<!no )\b(?:volume|brightness) (?:is now |has been |was |now )(?:set|raised|lowered|turned|increased|decreased|at|to)\b"
     r"|(?<!not )(?<!n't )(?<!never )(?<!be )(?<!nothing )(?<!nothing was )(?<!nothing has been )\bcopied\b[^.\n]{0,80}?\bto (?:the |your )?clipboard\b"
@@ -642,7 +653,7 @@ DESKTOP_CLAIM = re.compile(
 BROWSER_CLAIM = re.compile(
     rf"\bi(?:'ve| have)? {_ADV}(?:opened|launched|loaded|visited|navigated to|browsed to) (?:{_WEB_OBJ}|{_NAME})"
     rf"|(?:^|[.!?]\s+)(?:opened|launched|navigated to|visited) (?:{_WEB_OBJ}|{_NAME})"
-    r"|\bnavigated to\b"
+    r"|(?:^|[.!?]\s+)(?:then |and )?navigated to\b|\bi(?:'ve| have)? (?!(?:not|never)\b)(?:\w+ )?navigated to\b"
     rf"|\bi(?:'ve| have)? {_ADV}(?:clicked|filled in|filled out|typed|pressed(?!\s+(?:ahead|on|forward)\b))\b{_NOT}"
     rf"|\bi(?:'ve| have)? {_ADV}submitted (?:the |a |your )?(?:form|login|search|query|order|request|details|credentials)\b"
     rf"|(?<!no )(?<!not )\bform {_NOUN_SAYS}(?:submitted|filled in|filled out|sent)\b"
@@ -653,8 +664,13 @@ BROWSER_CLAIM = re.compile(
 # call stood for the claim, so DESKTOP_CLAIM let it through. Something said to be playing rests on a reading that
 # says so: `desktop` media status ("Playing: '<title>' in <app>", desktop.media_report), which every media action
 # also returns. "nothing is playing" and "is not playing" are not claims.
+# Review 2026-10-27: "Messi is playing for Inter Miami." was held as a media claim: a player, a team or a game
+# (playing for, against, with, as, a match, well, tonight ...) is not media playing.
+_NOT_MEDIA = (r"(?!\s+(?:for|against|with|as|at|alongside|under|well|badly|poorly|tonight|tomorrow|today|this|next|outside"
+              r"|together|around|(?:a |an |the |in the |in a )?(?:game|games|match|matches|role|part|lead|league|season"
+              r"|final|tournament|football|soccer|cricket|chess|tennis|basketball|golf|team)\b))")
 PLAYING_CLAIM = re.compile(
-    r"(?<!nothing )(?<!nothing that )(?<!no song )(?<!no music )\b(?:is|are|'s) (?:now )?playing\b"
+    rf"(?<!nothing )(?<!nothing that )(?<!no song )(?<!no music )\b(?:is|are|'s) (?:now )?playing\b{_NOT_MEDIA}"
     r"|\bnow playing\b|\bplays now\b|\b(?:is|are) (?:now )?streaming\b"
     r"|\b(?:music|song|track|stream|playback|video|playlist|audio)s? (?:is |has |have )?(?:started|summoned|initiated|resumed|forced)\b"
     r"|\b(?:started|resumed|initiated) (?:the |your )?(?:music|song|track|stream|playback|video|playlist|audio)\b",
