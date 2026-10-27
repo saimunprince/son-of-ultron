@@ -1,24 +1,66 @@
 # SYRAX devlog
 
-Generated 2026-10-26 12:20 +0600 by `python -m syrax.devlog` at commit `ce024ca`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+Generated 2026-10-27 12:23 +0600 by `python -m syrax.devlog` at commit `976ccc2`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+
+## 2026-10-27
+
+- Tasks: 16 finished, 0 failed (515 journal events).
+- Objectives closed: 3
+  - #318 My biggest measured limitation right now: Skill factory: no automatic skill generation fro
+  - #319 My biggest measured limitation right now: Autonomous development loop: push off by default
+  - #320 My biggest measured limitation right now: Autonomous development loop: the performance gat
+- Quality run #86: 100.0 % of 12 cases.
+- Incidents: restarts 2.
+- Commits by its maintainers: 7
+  - `976ccc2` docs: the journal's git HEAD reader in SYRAX_STATUS
+  - `6ff1b5c` docs: claim.rejected, claim.uncited and change.started in the EXECUTION_MODEL event table
+  - `cefaf97` perf(journal): _git_head reads HEAD from the repository files
+  - `70ec419` docs: the lazy tool package in SYRAX_STATUS
+  - `0477b2d` perf(app.tool): the tool package loads its tools lazily
+  - `dfb3b93` docs: the live python_execute start in SYRAX_STATUS
+  - `727dfd3` perf(python_execute): the worker starts without re-importing the server as its __main__
 
 ## 2026-10-26
 
-- Tasks: 95 finished, 0 failed (2527 journal events).
-- Objectives closed: 4
+- Tasks: 102 finished, 0 failed (2862 journal events).
+- Objectives closed: 6
   - #314 My biggest measured limitation right now: Research engine + knowledge store: depends on Du
   - #315 My biggest measured limitation right now: Skill factory: skill code runs in-process (no sa
   - #316 My biggest measured limitation right now: Skill factory: dependencies recorded, not instal
   - #317 My knowledge contradicts itself: id=676 says 'The boiling point of ethanol at sea level is
+  - #288 My biggest measured limitation right now: `python_execute` failed 6 of its last 40 uses (1
+  - #286 My biggest measured limitation right now: `python_execute` failed 6 of its last 40 uses (1
 - Quality run #85: 97.0 % of 67 cases; failed: deep_log_triage, deep2_log_report.
-- Incidents: rollbacks 5, claims sent back 2, restarts 2.
-- Commits by its maintainers: 6
-  - `ce024ca` docs: resume fidelity, the /token rule and the exact-form guard in SYRAX_STATUS
-  - `cef5f79` fix(agent): a request that states an exact short form is held to it once the run is over
-  - `8db691a` fix(core): a resumed conversation gets a new task's preparation; SYRAX's own work is never resumed, 
-  - `6e27df7` docs: the matrix rows, the probes and the audit status in SYRAX_STATUS
-  - `e05a21a` docs: the audit's end-of-day status: every finding and backlog item mapped to its commit, proof and 
-  - `d7921bf` feat(probe): live probes for the queue, the backups and the memory export; intent.py and redact.py i
+- Incidents: rollbacks 5, claims sent back 4, restarts 17.
+- Commits SYRAX made to itself: 1
+  - `49d7c2d` syrax: docs(rise): the ledger, the devlog and the capability matrix, regenerated from evidence
+- Commits by its maintainers: 61
+  - `cb911e8` docs: the speed fixes in SYRAX_STATUS
+  - `ddd9477` perf(python_execute): the worker starts from a stdlib-only module
+  - `e894cb0` perf(sysinfo): the Windows CPU sampler reuses its previous reading instead of sleeping
+  - `3f6035f` docs: the second evening wave in SYRAX_STATUS
+  - `9d5d479` fix(desktop): never type, press keys or click into SYRAX's own window
+  - `03c2b67` fix(agent): a short dispute of the last desktop or browser action is answered from a reading
+  - `17d1a54` fix(limits): a reworded known limitation counts as already researched
+  - `cfedc74` fix(selfedit): a refused hunk whose lines are nowhere in the file shows the file's tail too
+  - `2c48a5b` fix(research): a web excerpt already stored is reinforced, not stored again
+  - `d72f8c6` fix(consolidate): a rounded figure agrees with the precise one instead of contradicting it
+  - `df79de1` feat(agent): change.started names the covering tests at a release task's first repository edit
+  - `ca97f4e` docs: the evening wave in SYRAX_STATUS
+  - `164c5ca` docs: Windows media sessions, Store apps, the window in front, outcome and self-boast checks, edits 
+  - `9e7748b` fix(capmatrix): the Store-apps row counts only uses after the Store-app code landed
+  - `764118f` feat(capmatrix): today's desktop truth, youtube_play and Store apps rows; presence reads its own eve
+  - `ede5fbb` fix(sight): a tie's candidates name the window they lie in and mark the one in front
+  - `b4b9ff0` docs: boasts with figures in SYRAX_STATUS
+  - `c8096b1` fix(agent): after the ask, a boast with the self-model read and its figures cited is the persona's v
+  - `b705d39` docs: the boast after reading in SYRAX_STATUS
+  - `9ef54a2` fix(agent): a boast that stays after the ask carries a note even when the self-model was read
+  - `69defb9` docs: the wider self-boast check in SYRAX_STATUS
+  - `5f6ba09` fix(agent): the self-boast check knows the persona's generic forms ("bends to my command", "I contro
+  - `a9ae711` docs: self boasts in SYRAX_STATUS
+  - `ea36a15` fix(agent): a boast about SYRAX's own abilities is read against self_inspect before it reaches the h
+  - `7021c89` docs: the list_apps hint in SYRAX_STATUS
+  - and 36 more
 
 ## 2026-10-25
 

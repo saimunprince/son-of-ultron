@@ -1,6 +1,6 @@
 # SYRAX rise ledger
 
-Generated 2026-10-26 12:20 by `python -m syrax.rise` at commit `ce024ca` from the journal (53558 events, 2026-09-30 15:18 to 2026-10-26 12:20). Every number is a read-only query over the journal; nothing here is typed by hand. **Last** is the last 7 days, **previous** the 7 days before, **trend** compares the two in the metric's own better direction. A dash means there is no evidence, which is reported as such.
+Generated 2026-10-27 12:23 by `python -m syrax.rise` at commit `976ccc2` from the journal (54408 events, 2026-09-30 15:18 to 2026-10-27 12:23). Every number is a read-only query over the journal; nothing here is typed by hand. **Last** is the last 7 days, **previous** the 7 days before, **trend** compares the two in the metric's own better direction. A dash means there is no evidence, which is reported as such.
 
 The milestones in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) are judged by these numbers.
 
@@ -8,15 +8,15 @@ The milestones in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) are judged by these num
 
 | Metric | Last | Previous | All time | Better when | Trend |
 |---|---|---|---|---|---|
-| Quality suite pass rate | 97 % (run #85, 67 cases) | 98 % (run #51, 51 cases) | 97 % (run #85, 67 cases) | higher | worse |
-| Machine-checked objectives done | 96.4 % (27/28) | 97.2 % (103/106) | 98.5 % (255/259) | higher | worse |
-| Attempts per objective done | 1 (median of 27) | 1 (median of 103) | 1 (median of 255) | lower | same |
-| Objectives that repeated a failed strategy | 0 % (0/13) | 29.3 % (12/41) | 17.1 % (13/76) | lower | better |
-| Brain calls per verified objective (median) | 4 (median of 27) | 4 (median of 103) | 4 (median of 240, 15 closed without a task) | lower | same |
-| Minutes per verified objective (median) | 0.4 (median of 27) | 0.4 (median of 103) | 0.3 (median of 240, 15 closed without a task) | lower | same |
-| Tool calls that failed | 7.7 % (87/1127) | 15.3 % (397/2603) | 11.9 % (624/5260) | lower | better |
-| Own tasks left unfinished | 2.8 % (1/36) | 13.9 % (28/201) | 9 % (38/423) | lower | better |
-| Quality runs that regressed | 0 % (0/34) | 19.2 % (5/26) | 10.6 % (9/85) | lower | better |
+| Quality suite pass rate | 100 % (run #86, 12 cases) | 96.2 % (run #54, 52 cases) | 100 % (run #86, 12 cases) | higher | better |
+| Machine-checked objectives done | 100 % (19/19) | 98.8 % (84/85) | 99.2 % (260/262) | higher | better |
+| Attempts per objective done | 1 (median of 19) | 1 (median of 84) | 1 (median of 260) | lower | same |
+| Objectives that repeated a failed strategy | 0 % (0/2) | 15 % (6/40) | 17.1 % (13/76) | lower | better |
+| Brain calls per verified objective (median) | 4 (median of 19) | 4 (median of 84) | 4 (median of 245, 15 closed without a task) | lower | same |
+| Minutes per verified objective (median) | 0.3 (median of 19) | 0.5 (median of 84) | 0.3 (median of 245, 15 closed without a task) | lower | better |
+| Tool calls that failed | 8.7 % (70/806) | 14.1 % (375/2657) | 11.8 % (628/5315) | lower | better |
+| Own tasks left unfinished | 0 % (0/20) | 17.2 % (29/169) | 8.9 % (38/427) | lower | better |
+| Quality runs that regressed | 0 % (0/29) | 15.4 % (4/26) | 10.5 % (9/86) | lower | better |
 
 - **Quality suite pass rate**: Latest full quality run (at least 10 cases) in the window: real tasks through the real brains, judged by checks on disk and in the journal.
 - **Machine-checked objectives done**: Objectives closed in the window whose check is evidence (not task_success): DONE out of DONE + BLOCKED.
@@ -32,15 +32,15 @@ The milestones in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) are judged by these num
 
 | Metric | Last | Previous | All time | Better when | Trend |
 |---|---|---|---|---|---|
-| Commits SYRAX made to itself | 6 | 15 | 24 | higher | worse |
-| Commits that only regenerated docs | 2 | 3 | 7 | - | — |
-| Releases that landed | 50 % (8/16) | 23.1 % (18/78) | 26.5 % (31/117) | higher | better |
-| Own edits in the running tree | 0 | 2 | 52 | lower | better |
+| Commits SYRAX made to itself | 2 | 19 | 24 | higher | worse |
+| Commits that only regenerated docs | 3 | 2 | 8 | - | — |
+| Releases that landed | 55.6 % (5/9) | 28 % (21/75) | 27.1 % (32/118) | higher | better |
+| Own edits in the running tree | 0 | 0 | 52 | lower | same |
 | Changes rolled back by the gate or the review | 1 | 8 | 17 | lower | better |
-| Unreleased edits cleaned up after a task | 29 | 72 | 115 | lower | better |
+| Unreleased edits cleaned up after a task | 17 | 80 | 115 | lower | better |
 | Changes a second brain rejected | 1 | 1 | 2 | - | — |
-| Experiments run | 16 | 70 | 104 | higher | worse |
-| Human interventions | 15 | 57 | 93 | lower | better |
+| Experiments run | 9 | 67 | 105 | higher | worse |
+| Human interventions | 5 | 53 | 93 | lower | better |
 
 - **Commits SYRAX made to itself**: commit.created that changed a file outside docs/: code, tests or config that passed the gate and a second brain's review and was committed by SYRAX's release. The daily regeneration of the docs is counted apart.
 - **Commits that only regenerated docs**: commit.created whose files are all under docs/: the daily publish of the ledger, the devlog, the archive and the capability matrix through the same gate and review, with no code changed.
@@ -56,9 +56,9 @@ The milestones in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) are judged by these num
 
 | Metric | Last | Previous | All time | Better when | Trend |
 |---|---|---|---|---|---|
-| Conclusions stored | 114 | 234 | 680 | - | — |
-| Conclusions read back | 18 | 44 | 125 | higher | worse |
-| Conclusions reinforced or contradicted | 14 | 8 | 24 | - | — |
+| Conclusions stored | 86 | 229 | 694 | - | — |
+| Conclusions read back | 10 | 44 | 125 | higher | worse |
+| Conclusions reinforced or contradicted | 7 | 14 | 24 | - | — |
 
 - **Conclusions stored**: knowledge.stored events (verified conclusions with sources).
 - **Conclusions read back**: Stored conclusions whose last use falls in the window: memory that was used, not only kept.
@@ -69,11 +69,11 @@ The milestones in [EXECUTION_PLAN.md](EXECUTION_PLAN.md) are judged by these num
 | Metric | Last | Previous | All time | Better when | Trend |
 |---|---|---|---|---|---|
 | Final answers claiming work not done | 0 | 1 | 21 | lower | better |
-| False claims sent back | 4 | 14 | 20 | - | — |
-| Objectives closed on words | 0 % (0/27) | 0 % (0/103) | 0.8 % (2/257) | lower | same |
-| Gate verdicts GREEN | 100 % (9/9) | 75 % (21/28) | 69.2 % (36/52) | higher | better |
-| Guards that held | 25 | 82 | 125 | - | — |
-| Interrupted tasks resumed or dismissed | 100 % (1/1) | 100 % (3/3) | 100 % (10/10) | higher | same |
+| False claims sent back | 6 | 13 | 22 | - | — |
+| Objectives closed on words | 0 % (0/19) | 0 % (0/84) | 0.8 % (2/262) | lower | same |
+| Gate verdicts GREEN | 100 % (6/6) | 77.4 % (24/31) | 69.8 % (37/53) | higher | better |
+| Guards that held | 17 | 80 | 127 | - | — |
+| Interrupted tasks resumed or dismissed | 100 % (1/1) | 100 % (2/2) | 100 % (10/10) | higher | same |
 
 - **Final answers claiming work not done**: Own tasks whose final answer claims a change (the agent's CLAIM and OWN_WORK_CLAIM patterns) while the task changed, committed and learned nothing.
 - **False claims sent back**: claim.rejected: a final answer claimed work its task did not do and was sent back to be rewritten (journaled since M3).
