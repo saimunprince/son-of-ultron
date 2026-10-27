@@ -114,6 +114,11 @@ CLAIM_FALLBACK = ("Nothing was changed in this task: no file was edited, created
                   "What was looked at, and its outputs, are in this task's history.")
 NOT_RELEASED_NOTE = (" (Not released: no `release` committed these edits, so they are rolled back as this task ends; "
                      "the objective stays open.)")
+# Mission rule: never complete a task as SUCCESS on a model's claim alone. A claim check whose note survived its one
+# nudge leaves SyraxAgent.unproven set, and the core ends the task PARTIAL ("claim_unproven"). The checks here only
+# mark the task.completed payload: an unreleased edit is not a claim of the answer (test_release_nudge pins SUCCESS
+# for an answer that says it cannot release), and the autonomy judge already reads the rollback from the journal.
+UNPROVEN_SOFT = frozenset({"not_released"})
 FINAL_ASK = (
     "You finished using tools but gave the human no answer. Reply now with the final answer only: "
     "the result itself (number, name, year, output), taken from the observations above, and the source "
@@ -848,6 +853,9 @@ class SyraxAgent(Manus):
     consents: list = Field(default_factory=list)
     grants: dict = Field(default_factory=dict)
     step_limit_hit: bool = False
+    # Which claim check still failed after its one nudge (the final carries that check's note), or None. The core
+    # then ends the task PARTIAL, never SUCCESS, except for the checks in UNPROVEN_SOFT. Reset by run().
+    unproven: Optional[str] = None
 
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
@@ -915,6 +923,7 @@ class SyraxAgent(Manus):
         self.exact_form = None if self.task_kind == "autonomous" else exact_form(self.task_goal)
         self.form_asked = False
         self.step_limit_hit = False
+        self.unproven = None
         # Fresh persona + long-term memory for every task.
         base = SYRAX_PERSONA.format(directory=config.workspace_root)
         try:
@@ -980,6 +989,7 @@ class SyraxAgent(Manus):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
             if self._outcome_claimed(self.last_reply) == claimed:  # still claimed, and still no such tool
                 self.last_reply = self.last_reply.rstrip() + (PLAYING_NOTE if claimed == "playing" else OUTCOME_NOTE.format(tool=tool))
+                self.unproven = self.unproven or ("playing" if claimed == "playing" else f"outcome:{claimed}")
         boast = BOAST.search(self.last_reply or "")
         if (boast and self.task_kind != "autonomous" and "self_inspect" not in self.called
                 and "self_inspect" in self.available_tools.tool_map and not self.step_limit_hit and not self.loop_stopped):
@@ -997,6 +1007,7 @@ class SyraxAgent(Manus):
             # still carries the note.
             if BOAST.search(self.last_reply or "") and not (read and re.search(r"\d", self.last_reply or "")):
                 self.last_reply = self.last_reply.rstrip() + (SELF_NOTE_READ if read else SELF_NOTE)
+                self.unproven = self.unproven or ("self_read" if read else "self")
         if (self._status_unread() and "self_inspect" in self.available_tools.tool_map
                 and not self.step_limit_hit and not self.loop_stopped):
             # the human asked for a check and the answer reports the systems fine unread: once to read, then the note
@@ -1007,6 +1018,7 @@ class SyraxAgent(Manus):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
             if self._status_unread():  # still claimed, still nothing read
                 self.last_reply = self.last_reply.rstrip() + STATUS_NOTE
+                self.unproven = self.unproven or "status"
         if self.last_reply and self._dispute_unread() and not self.step_limit_hit and not self.loop_stopped:
             # the human denies the last action worked and nothing read the screen: once to check, then the note
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
@@ -1016,6 +1028,7 @@ class SyraxAgent(Manus):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
             if self._dispute_unread():  # still nothing read
                 self.last_reply = (self.last_reply or "").rstrip() + DISPUTE_NOTE
+                self.unproven = self.unproven or "dispute"
         if (self.last_reply and self.researched and not URL.search(self.last_reply) and "[Spoken aloud" not in (request or "")
                 and not self.step_limit_hit and not self.loop_stopped):
             # the answer rests on research: it names its source once asked, or the journal shows it would not
@@ -1030,21 +1043,25 @@ class SyraxAgent(Manus):
             await self._final_answer(CLAIM_ASK)
             if self._claims_change(self.last_reply or ""):  # still claimed, or no brain answered the rewrite
                 self.last_reply = CLAIM_FALLBACK
+                self.unproven = self.unproven or "change"
         if self.last_reply and self.refusals and not REFUSAL_ACK.search(self.last_reply) and not self.step_limit_hit:
             tool, why = self.refusals[-1]
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
             await self._final_answer(REFUSAL_ASK.format(why=f"{tool}: {why}"))
             if not REFUSAL_ACK.search(self.last_reply or ""):
                 self.last_reply = (self.last_reply or "").rstrip() + f" (Not done: `{tool}` was refused: {why})"
+                self.unproven = self.unproven or "refusal"
         if self.last_reply and self.tests == "fail" and TEST_CLAIM.search(self.last_reply):
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
             await self._final_answer(TEST_CLAIM_ASK)
             if TEST_CLAIM.search(self.last_reply or ""):
                 self.last_reply = TEST_FALLBACK
+                self.unproven = self.unproven or "tests"
         if self._unreleased_edits(request):
             # live 2026-10-14 (objective 224, attempt 3): thirty steps of edits, no `release`, and the final said
             # "implemented ... and verified"; the edits were rolled back when the task ended. Say so in the answer.
             self.last_reply = (self.last_reply or "").rstrip() + NOT_RELEASED_NOTE
+            self.unproven = self.unproven or "not_released"
         await self._drop_console_notes()  # a rewrite asked for above may carry one too
         if not self.last_reply and any(m.role == "tool" for m in self.memory.messages):
             self.last_reply = ECHO_FALLBACK  # nothing but the note was left, and no ask is left to make

@@ -29,7 +29,7 @@ from typing import Awaitable, Callable, List, Optional
 from app.logger import logger
 from app.schema import Message
 
-from syrax.agent import SyraxAgent, ToolCrash
+from syrax.agent import UNPROVEN_SOFT, SyraxAgent, ToolCrash
 from syrax.brains import BrainError, get_router
 from syrax import intent, phases, redact
 from syrax.devloop import REPO_ROOT, DevLoop, ReleaseTool
@@ -609,9 +609,18 @@ class Core:
                 await self._record_phase(nxt)
             await self._checkpoint("final", verified={"final": True}, next_action=None)
             status = "PARTIAL" if self.agent.step_limit_hit or getattr(self.agent, "loop_stopped", False) else "SUCCESS"
-            await self.journal.record(
-                "task.completed", {"status": status, "result": reply}, task_id=self.current.task_id
-            )
+            payload = {"status": status, "result": reply}
+            # Mission rule: a claim the agent's checks still reject after their one nudge never completes as SUCCESS
+            unproven = getattr(self.agent, "unproven", None)
+            if unproven:
+                if unproven in UNPROVEN_SOFT:
+                    payload["unproven"] = unproven
+                else:
+                    if status == "SUCCESS":
+                        payload["reason"] = "claim_unproven"
+                    payload["status"] = "PARTIAL"
+                    payload["check"] = unproven
+            await self.journal.record("task.completed", payload, task_id=self.current.task_id)
             # conversation history now comes from the journal (tasks of kind
             # "conversation"); history.jsonl is no longer written.
         except asyncio.CancelledError:
