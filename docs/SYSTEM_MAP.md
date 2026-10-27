@@ -133,7 +133,7 @@ SYRAX writes its own tools: skill_create takes code + pytest tests, compiles and
 | State | loaded skills map in the factory; registry in the journal |
 | Persistence | skills table + files under backend/skills/ |
 | Capabilities | tests decide registration; failures keep evidence and stay out; re-create replaces code and bumps version; remove unregisters; boot re-registers VERIFIED skills, demotes ones that no longer import; self-model lists skills under structure.skills |
-| Limitations | skill code runs in-process (no sandbox), like every tool; dependencies recorded, not installed; no automatic skill generation from objectives; generated skills are not auto-committed (Phase 8) |
+| Limitations | a skill call runs in a guarded process of its own (a guard rail, not a sandbox; the module is imported once in the server for its schema); dependencies recorded, not installed; no automatic skill generation from objectives; generated skills are not auto-committed (Phase 8) |
 | Code | backend/syrax/skills.py; backend/skills/README.md |
 | Tests | backend/syrax/test_skills.py; backend/syrax/test_bridge.py (skill section) |
 | Failure Modes | compile error → FAILED at stage compile; failing/absent tests → FAILED with pytest tail; loads but wrong Skill.name → FAILED at stage load; test timeout → FAILED |

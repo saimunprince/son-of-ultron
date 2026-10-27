@@ -112,8 +112,11 @@ same name stays allowed; that is how a skill is improved.
 
 ## Limits
 
-- Skill code runs in the server process (no sandbox), like `python_execute`
-  and every other tool. This is the owner's machine by design.
+- A skill call runs in a process of its own under python_execute's guard
+  (the journal, the keys and the backups are read-only; on timeout the call is
+  killed with everything it started; since 2026-10-27). The guard is a guard
+  rail, not a sandbox, and the skill's module is still imported once in the
+  server to read its name and schema.
 - Dependencies are recorded, not installed.
 - No automatic skill generation from objectives yet: the model decides to
   build a skill when the tool guide's condition applies (a capability it lacks
