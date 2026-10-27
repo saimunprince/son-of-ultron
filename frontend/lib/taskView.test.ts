@@ -1,7 +1,7 @@
 // The live console's decisions about the running task (lib/taskView.ts), on the payloads the backend really sends.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { autonomyToggled, intentLine, pendingAskFrom, settlesPendingAsk, stopRunningTools } from "./taskView.ts";
+import { autonomyToggled, endsRunningTask, intentLine, pendingAskFrom, settlesPendingAsk, stopRunningTools } from "./taskView.ts";
 import type { AutonomyStatus, JournalEvent } from "./syraxClient.ts";
 
 // journal.py events(): rows {id, ts, task_id, type, seq, payload}, oldest first; server.py boot sends them as task_events
@@ -97,4 +97,19 @@ test("intent.uncertain tells the human a send may have gone out (agent.py: the c
     text: "INTENT HELD · email · the same action may already have gone out (step 3); not repeated",
   });
   assert.equal(intentLine({ event: "later", tool: "email" }), null);
+});
+
+test("removing a queued request does not end the running task's phase (core.py cancel_queued -> task.cancelled)", () => {
+  // core.py cancel_queued: journal.record("task.cancelled", {"error": "removed from the queue: removed by human"}, task_id=<queued id>)
+  assert.equal(endsRunningTask("cancelled", "8d2e3f4a5b6c", "a1b2c3d4e5f6"), false);
+  // the running task's own end does
+  assert.equal(endsRunningTask("cancelled", "a1b2c3d4e5f6", "a1b2c3d4e5f6"), true);
+  assert.equal(endsRunningTask("completed", "a1b2c3d4e5f6", "a1b2c3d4e5f6"), true);
+  assert.equal(endsRunningTask("failed", "a1b2c3d4e5f6", "a1b2c3d4e5f6"), true);
+  // not an end at all
+  assert.equal(endsRunningTask("started", "a1b2c3d4e5f6", "a1b2c3d4e5f6"), false);
+  assert.equal(endsRunningTask("queued", "8d2e3f4a5b6c", "a1b2c3d4e5f6"), false);
+  // nothing known to run, or no id on the event: as before
+  assert.equal(endsRunningTask("cancelled", "8d2e3f4a5b6c", null), true);
+  assert.equal(endsRunningTask("interrupted", undefined, "a1b2c3d4e5f6"), true);
 });

@@ -39,7 +39,7 @@ import type { Heard } from "@/lib/wake";
 import { useHandsFree } from "@/components/useHandsFree";
 import { LiveTalk, type LiveEvent, type LiveState } from "@/lib/live";
 import { liveUrl } from "@/lib/livePcm";
-import { autonomyToggled, intentLine, pendingAskFrom, settlesPendingAsk, stopRunningTools } from "@/lib/taskView";
+import { autonomyToggled, endsRunningTask, intentLine, pendingAskFrom, settlesPendingAsk, stopRunningTools } from "@/lib/taskView";
 
 type CameraState = "off" | "starting" | "on" | "error";
 type AgentState = "booting" | "idle" | "thinking" | "acting";
@@ -539,7 +539,7 @@ export default function Syrax() {
           break;
         case "task":
           if (e.event === "started" && e.task_id) runningTaskRef.current = e.task_id;
-          if (e.event === "completed" || e.event === "failed" || e.event === "cancelled" || e.event === "interrupted") setPhase(null);
+          if (endsRunningTask(e.event, e.task_id, runningTaskRef.current)) setPhase(null); // not a removed queued request
           if (e.event !== "started" && consoleTabRef.current !== "live") {
             clientRef.current?.send(consoleTabRef.current === "history" ? { type: "history", limit: 50 } : { type: "replay", since: startOfToday() });
           }

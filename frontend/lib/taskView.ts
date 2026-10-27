@@ -22,6 +22,14 @@ export function intentLine(e: {
   return null;
 }
 
+/** Whether a task.* event ends the task the console shows as running. Removing a queued request journals
+ *  task.cancelled for the QUEUED id (core.py cancel_queued) while another task runs: that must not clear the running
+ *  task's phase. With no id on either side the event is taken as the running task's (the old behaviour). */
+export function endsRunningTask(event: string, taskId: string | null | undefined, runningId: string | null): boolean {
+  if (event !== "completed" && event !== "failed" && event !== "cancelled" && event !== "interrupted") return false;
+  return !taskId || !runningId || taskId === runningId;
+}
+
 /** autonomy.py set_enabled journals autonomy.toggled {enabled}; every session gets it as {type: "autonomy", event:
  *  "toggled", enabled}, but only the session that flipped it gets a fresh autonomy_status. The others keep their
  *  status and change only `enabled`, so the AUTONOMY switch shows the truth everywhere. */
