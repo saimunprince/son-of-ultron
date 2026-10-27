@@ -179,14 +179,18 @@ WRITE_FLAGS = ("w", "a", "+", "x")
 
 def protected_paths() -> List[str]:
     """The files code run by SYRAX must not write: the journal and its
-    sidecars, and the brain keys."""
+    sidecars, the brain keys, and the backups folder beside the journal
+    (audit 2026-10-27: a snapshot rewritten with its manifest verified). A
+    folder ends in the path separator: nothing under it is written, and no
+    "!" rule re-opens it."""
     from syrax.journal import DEFAULT_FILE
 
     journal = Path(os.getenv("SYRAX_JOURNAL_FILE", str(DEFAULT_FILE))).resolve()
     keys = {str((journal.parent / "brains.json").resolve())}
     if os.getenv("SYRAX_BRAINS_FILE"):
         keys.add(str(Path(os.environ["SYRAX_BRAINS_FILE"]).resolve()))
-    return [str(journal), f"{journal}-wal", f"{journal}-shm", f"{journal}.owner", *sorted(keys), *isolation_rules()]
+    sealed = f"{(journal.parent / 'backups').resolve()}{os.sep}"
+    return [str(journal), f"{journal}-wal", f"{journal}-shm", f"{journal}.owner", *sorted(keys), sealed, *isolation_rules()]
 
 
 def isolation_rules() -> List[str]:
@@ -223,17 +227,23 @@ def _norm(p) -> str:
 
 
 def _rules(paths: Iterable[str]):
-    """Split the path list into exact files, read-only folders and their re-opened parts."""
+    """Split the path list into exact files, read-only folders and their re-opened parts.
+    A path ending in a separator is a sealed folder: read-only, and never re-opened."""
     files, readonly, allowed = set(), [], []
     for p in paths:
         if not p:
             continue
-        if p.endswith("*"):
+        if p.endswith(("/", "\\")):
+            files.add(_SEALED + os.path.normcase(str(Path(p.rstrip("/\\")).resolve())))
+        elif p.endswith("*"):
             folder = os.path.normcase(str(Path(p.lstrip("!")[:-1]).resolve()))
             (allowed if p.startswith("!") else readonly).append(folder)
         else:
             files.add(os.path.normcase(str(Path(p).resolve())))
     return files, readonly, allowed
+
+
+_SEALED = "sealed:"
 
 
 def _under(path: str, folder: str) -> bool:
@@ -246,15 +256,23 @@ def install(paths: Iterable[str]) -> None:
     if not (guarded or readonly) or getattr(builtins, "_syrax_guard", False):
         return
     builtins._syrax_guard = True
+    sealed = [g[len(_SEALED):] for g in guarded if g.startswith(_SEALED)]
+    guarded = {g for g in guarded if not g.startswith(_SEALED)}
+
+    def in_sealed(p) -> bool:
+        n = _norm(p)
+        return bool(n) and any(_under(n, f) for f in sealed)
 
     def in_readonly_tree(p) -> bool:
         n = _norm(p)
         return bool(n) and any(_under(n, f) for f in readonly) and not any(_under(n, a) for a in allowed)
 
     def is_protected(p) -> bool:
-        return _norm(p) in guarded
+        return _norm(p) in guarded or in_sealed(p)
 
     def refuse_write(p) -> Optional[str]:
+        if in_sealed(p):
+            return f"{p}: the backups are SYRAX's evidence; only the running core writes a snapshot, only a human restores one"
         if is_protected(p):
             return f"{p}: SYRAX's journal and keys are written only by the running core"
         if in_readonly_tree(p):

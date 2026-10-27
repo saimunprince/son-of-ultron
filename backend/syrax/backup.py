@@ -25,7 +25,15 @@ pruned only when it is named like a stamp and holds a manifest, nothing else in 
 
 Restore is a human act: ``python syrax.py --restore backend/config/backups/<stamp>``. It refuses while
 SYRAX runs (pid file, backend port, a live owner of the journal), refuses a snapshot that does not verify,
-moves the current files aside to backups/_replaced-<stamp>/ and copies the snapshot in. No agent tool
+moves the current files aside to backups/_replaced-<stamp>/ and copies the snapshot in.
+
+The manifest is checked against the journal (audit 2026-10-27): verify() compares the files with the
+manifest in the same folder, so a snapshot rewritten together with its manifest would verify. snapshot()
+journals the manifest's sha256 in its ``backup.completed`` event, and restore() reads the current journal
+read-only and refuses a snapshot whose manifest differs from the journaled hash. A snapshot nobody journaled
+a hash for (taken before this rule, or by hand beside a running SYRAX, or the journal is gone) restores as
+before, with a warning. Tools and python_execute cannot write under backups/ (permissions.PROTECTED_DIRS,
+guard.protected_paths). No agent tool
 exposes snapshot or restore and none may be added: an agent that can put an older journal back can erase
 the evidence of its own work. Stdlib only, like the journal.
 """
@@ -171,13 +179,81 @@ def snapshot(journal: Journal, dest_root: Optional[Path | str] = None, config_di
         shutil.rmtree(d, ignore_errors=True)  # a half-written folder must never look like a backup
         _journal_write(journal, "backup.failed", {"error": f"{type(e).__name__}: {e}", "dir": str(d)})
         raise
+    manifest_sha256 = _sha256(d / MANIFEST)
     manifest["dir"] = str(d)
+    manifest["manifest_sha256"] = manifest_sha256
     manifest["journaled"] = _journal_write(
         journal, "backup.completed",
-        {"dir": str(d), "bytes": manifest["bytes"], "files": sorted(files), "integrity": info["integrity"], **{t: info[t] for t in COUNTED}},
+        {"dir": str(d), "bytes": manifest["bytes"], "files": sorted(files), "integrity": info["integrity"], **{t: info[t] for t in COUNTED},
+         "manifest_sha256": manifest_sha256},
         done_at=now,
     )
     return manifest
+
+
+def journaled_manifests(dir: Path | str, config_dir: Optional[Path | str] = None) -> Optional[List[str]]:
+    """The manifest sha256 values the journal in config_dir recorded for this snapshot folder (its
+    ``backup.completed`` events); None when there is no journal to read. Nothing in config_dir is written:
+    the journal is opened immutable, or, when a -wal holds rows a stopped SYRAX did not checkpoint, a copy
+    of the journal and its -wal in a temporary folder is read. Events that name this folder by path win;
+    else the folder's stamp name (a moved snapshot)."""
+    import tempfile
+
+    d = Path(dir)
+    jp = (Path(config_dir) if config_dir else DEFAULT_FILE.parent) / JOURNAL_NAME
+    if not jp.is_file():
+        return None
+    wal = jp.with_name(jp.name + "-wal")
+
+    def read(db: Path, uri: str) -> Optional[list]:
+        try:
+            con = sqlite3.connect(f"file:{db.resolve().as_posix()}?{uri}", uri=True)
+        except sqlite3.Error:
+            return None
+        try:
+            return con.execute("SELECT payload FROM events WHERE type='backup.completed' ORDER BY id").fetchall()
+        except sqlite3.Error:
+            return None
+        finally:
+            con.close()
+
+    rows = None
+    if wal.is_file() and wal.stat().st_size > 0:
+        with tempfile.TemporaryDirectory(prefix="syrax-restore-") as tmp:
+            try:
+                shutil.copy2(jp, Path(tmp) / JOURNAL_NAME)
+                shutil.copy2(wal, Path(tmp) / (JOURNAL_NAME + "-wal"))
+                rows = read(Path(tmp) / JOURNAL_NAME, "mode=ro")
+            except OSError:
+                rows = None
+    if rows is None:
+        rows = read(jp, "mode=ro&immutable=1")
+    if rows is None:
+        return None
+    try:
+        here = os.path.normcase(str(d.resolve()))
+    except OSError:
+        here = os.path.normcase(str(d))
+    by_path: List[str] = []
+    by_name: List[str] = []
+    for (raw,) in rows:
+        try:
+            pl = json.loads(raw) if isinstance(raw, (str, bytes)) else {}
+        except ValueError:
+            continue
+        sha = pl.get("manifest_sha256") if isinstance(pl, dict) else None
+        where = str(pl.get("dir") or "") if isinstance(pl, dict) else ""
+        if not sha or not where:
+            continue
+        try:
+            there = os.path.normcase(str(Path(where).resolve()))
+        except OSError:
+            there = os.path.normcase(where)
+        if there == here:
+            by_path.append(str(sha))
+        elif Path(where).name == d.name:
+            by_name.append(str(sha))
+    return by_path or by_name
 
 
 def verify(dir: Path | str) -> dict:
@@ -277,6 +353,18 @@ def restore(dir: Path | str, config_dir: Optional[Path | str] = None, now: Optio
     v = verify(d)
     if not v["ok"]:
         return {"ok": False, "dir": str(d), "restored": [], "problems": ["the snapshot does not verify; nothing was touched"] + v["problems"]}
+    warnings: List[str] = []
+    known = journaled_manifests(d, config_dir)
+    if known:
+        have = _sha256(d / MANIFEST)
+        if have not in known:
+            return {"ok": False, "dir": str(d), "restored": [], "problems": [
+                f"the snapshot's {MANIFEST} (sha256 {have[:12]}) is not the one the journal recorded when the snapshot was taken "
+                f"({', '.join(k[:12] for k in known)}): the snapshot was changed after it was made; nothing was touched"]}
+    else:
+        warnings.append(f"no manifest hash was journaled for this snapshot ({'no journal to read' if known is None else 'taken before the rule, or by hand beside a running SYRAX'}): "
+                        f"it is checked against its own {MANIFEST} only")
+        log.warning(warnings[-1])
     why = running(config_dir)
     if why:
         return {"ok": False, "dir": str(d), "restored": [], "problems": [f"SYRAX is running ({why}); nothing was touched"]}
@@ -303,7 +391,7 @@ def restore(dir: Path | str, config_dir: Optional[Path | str] = None, now: Optio
     except OSError:
         pass
     return {"ok": True, "dir": str(d), "restored": restored, "replaced": replaced, "replaced_to": str(aside) if replaced else None,
-            "journal": v["journal"]}
+            "journal": v["journal"], "warnings": warnings}
 
 
 # ——— command line (python -m syrax.backup; the launcher's --backup / --restore call this) ———
@@ -355,6 +443,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not r["ok"]:
         print("SYRAX restore: refused: " + "; ".join(r["problems"]))
         return 1
+    for w in r.get("warnings") or []:
+        print(f"warning: {w}")
     info = r["journal"] or {}
     print(f"SYRAX restore: {', '.join(r['restored'])} restored from {r['dir']} ({info.get('tasks')} tasks, {info.get('events')} events, "
           f"{info.get('objectives')} objectives)")

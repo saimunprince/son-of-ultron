@@ -76,6 +76,11 @@ EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 PROTECTED_DATA = ("backend/config/brains.json", "backend/config/brains.tmp", "backend/config/ws.token",
                   "backend/config/journal.db", "backend/config/journal.db-wal", "backend/config/journal.db-shm")
 OWNER_DATA = ("backend/config/config.toml", "backend/config/memory.json", "backend/config/mcp.json")
+# Audit 2026-10-27: the verified snapshots (backup.py) are evidence too: a tool that rewrote a snapshot together
+# with its manifest.json made a forged copy that verify() accepted. Nothing under these folders is written through
+# a tool, whatever the task; SYRAX's own work (autonomous, eval) does not read them either (they hold a copy of the
+# keys and of the whole journal). Only backup.snapshot, run by the core itself, writes there.
+PROTECTED_DIRS = ("backend/config/backups/",)
 
 # Stems, so "removal", "deleting", "wiped" count as naming the action too
 # (live 2026-10-03: SYRAX asked "confirm the removal of the folder X?", the
@@ -441,6 +446,24 @@ def data_targets(targets: Iterable[str], files: Tuple[str, ...]) -> List[str]:
     return sorted(hits)
 
 
+def dir_targets(targets: Iterable[str], dirs: Tuple[str, ...] = PROTECTED_DIRS) -> List[str]:
+    """Targets inside one of ``dirs`` (repository folders ending in "/", PROTECTED_DIRS) or naming the
+    folder itself, normalized like data_targets (audit 2026-10-27: the backups)."""
+    hits = set()
+    for t in targets:
+        s = str(t or "").strip()
+        if not s:
+            continue
+        rel = repo_relative(os.path.normpath(s))
+        if not rel:
+            continue
+        rel = rel.replace("\\", "/").lower()
+        for d in dirs:
+            if rel == d.rstrip("/") or rel.startswith(d):
+                hits.add(rel)
+    return sorted(hits)
+
+
 def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[str, str]] = (), grants: Optional[Dict[str, bool]] = None) -> Verdict:
     kind = kind if kind in KINDS else "conversation"
     grants = grants or {}
@@ -453,6 +476,13 @@ def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[st
     if level != READ_ONLY and (held := data_targets(decision.targets, PROTECTED_DATA)):
         # Live 2026-10-25 (audit): the keys and the evidence are nobody's to write through a tool, whatever the task
         return Verdict("refuse", None, f"{', '.join(held)}: this file holds SYRAX's keys/evidence; only a human changes it by hand")
+    if level != READ_ONLY and (sealed := dir_targets(decision.targets)):
+        # Audit 2026-10-27: a snapshot rewritten together with its manifest verified; the backups are evidence
+        return Verdict("refuse", None, f"{', '.join(sealed)}: the backups hold verified copies of SYRAX's evidence and keys; "
+                       "only backup.snapshot writes there, and only a human restores or removes a snapshot")
+    if kind in ("autonomous", "eval") and (sealed := dir_targets(decision.targets)):
+        return Verdict("refuse", None, f"{', '.join(sealed)}: the backups hold a copy of SYRAX's keys and evidence; "
+                       "SYRAX's own work neither reads nor writes them")
     if kind in ("autonomous", "eval") and level != READ_ONLY and (owned := data_targets(decision.targets, OWNER_DATA)):
         return Verdict("refuse", None, f"{', '.join(owned)}: this file holds the owner's settings; SYRAX's own work never changes it, leave it to the human")
     if kind in ("autonomous", "eval") and decision.tool == "forget":

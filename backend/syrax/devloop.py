@@ -318,6 +318,10 @@ class DevLoop:
         self.task_id_provider = task_id_provider or (lambda: None)
         self.snapshot_dir = Path(snapshot_dir or SNAPSHOT_DIR)
         self.autopush = os.getenv("SYRAX_AUTOPUSH", "0") == "1"
+        # Audit 2026-10-27: the human's opt-out from review is the service's environment when the loop is built
+        # (the launcher's, or the test suite's conftest). A later os.environ change in the server process (a skill
+        # runs there) does not count: a {skipped} verdict without this opt-out is held like no review at all.
+        self.review_opt_out = os.getenv("SYRAX_REVIEW", "1") == "0"
         # Files that were already modified before the current task started. A task
         # may only release, and may only roll back, what it changed itself; a
         # human's uncommitted work is never touched.
@@ -696,12 +700,21 @@ class DevLoop:
             report.update({"outcome": "ROLLED_BACK", "rollback": rb, "snapshot": str(snap)})
             return report
         task = self.journal.task(task_id) if task_id else None
-        if self.reviewer is not None and task and task.get("kind") in ("autonomous", "eval"):
+        # Audit 2026-10-27: the review was skipped silently when no reviewer was wired (core.py sets it). Own work
+        # without a reviewer is held like own work without a second brain, never committed unreviewed; only the
+        # human's opt-out in the service's environment at start (SYRAX_REVIEW=0, the test suite's conftest) skips it.
+        if task and task.get("kind") in ("autonomous", "eval") and (self.reviewer is not None or not self.review_opt_out):
             authors = sorted({e["payload"].get("provider") for e in self.journal.events(task_id) if e["type"] == "brain.answered"} - {None})
             told = summary + "".join(f"\n{k.capitalize()}: {v}" for k, v in plan.items())
             if impact["components"]:
                 told += f"\nComponents touched: {', '.join(impact['components'])}"
-            verdict = await self.reviewer(info, told, authors)
+            if self.reviewer is None:
+                verdict = {"available": False, "reasons": ["no reviewer is wired into the release"], "brains_tried": []}
+            else:
+                verdict = await self.reviewer(info, told, authors)
+                if verdict.get("skipped") and not self.review_opt_out:
+                    verdict = {"available": False, "brains_tried": list(verdict.get("brains_tried") or []),
+                               "reasons": [f"the reviewer skipped the review ({verdict.get('skipped')}) but SYRAX was not started with SYRAX_REVIEW=0"]}
             report["review"] = verdict
             if verdict.get("available") is False:
                 # Audit 2026-10-25: with one brain enabled the review was skipped and the change landed unreviewed.
