@@ -194,6 +194,8 @@ JUDGES = (
     "backend/syrax/phases.py",
     # and what chooses which tests the release preflight runs, and the environment the pytest gate runs in
     "backend/syrax/selfedit.py", "backend/syrax/conftest.py",
+    # and the rules that catch SYRAX's own false claims (audit 2026-10-27): agent.py keeps the flow and imports them
+    "backend/syrax/claims.py",
 )
 
 

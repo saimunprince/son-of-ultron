@@ -579,10 +579,12 @@
       ],
       "code": [
         "backend/syrax/agent.py",
+        "backend/syrax/claims.py (the claim-check rules agent.py imports: patterns, readings, nudges and notes; a judge, human commits only)",
         "backend/syrax/prompt.py"
       ],
       "tests": [
-        "backend/syrax/test_bridge.py"
+        "backend/syrax/test_bridge.py",
+        "backend/syrax/test_claims_judged.py"
       ],
       "failure_modes": [
         "step limit \u2192 step_limit_hit \u2192 task PARTIAL",

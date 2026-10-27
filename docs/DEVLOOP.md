@@ -82,6 +82,10 @@ closed by the 2026-10-25 audit:
 - `backend/syrax/selfedit.py` (it chooses which tests the preflight runs) and
   `backend/syrax/conftest.py` (the environment the pytest gate runs in) are in
   `JUDGES`: only a human commit changes them.
+- `backend/syrax/claims.py` (audit 2026-10-27) is in `JUDGES` too: the rules that catch
+  SYRAX's own false claims (the claim patterns, the readings that back a claim, the
+  nudges and notes, `UNPROVEN_SOFT`). `agent.py` keeps the flow and imports them, so
+  SYRAX can still improve its own loop but not the rules that judge its answers.
 
 ## Truthfulness
 
