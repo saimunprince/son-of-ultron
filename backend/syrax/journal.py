@@ -617,6 +617,8 @@ class Journal:
         self.workspace_root = BACKEND_ROOT / "workspace"
         self._lock = threading.Lock()
         self._subs: List[Subscriber] = []
+        # run(): the event ids its own worker thread inserts (see run), so it fans out only those
+        self._mine = threading.local()
         self.recovered: List[dict] = []
         self.path.parent.mkdir(parents=True, exist_ok=True)
         # Another live process owns this journal: read it, never write it. Live
@@ -709,7 +711,11 @@ class Journal:
                 "INSERT INTO events(ts, task_id, type, payload, seq) VALUES (?,?,?,?,?)",
                 (ts, task_id, type_, _dumps(payload), seq),
             )
-        return int(cur.lastrowid)
+        ev_id = int(cur.lastrowid)
+        mine = getattr(self._mine, "ids", None)
+        if mine is not None:
+            mine.append(ev_id)
+        return ev_id
 
     def _apply(self, cur: sqlite3.Cursor, row: sqlite3.Row, type_: str, payload: dict, ev_id: int, ts: float) -> None:
         """Derive the task-row change implied by an event. Same transaction."""
@@ -2062,12 +2068,37 @@ class Journal:
 
     async def run(self, fn: Callable[..., Any], *args, **kwargs) -> Any:
         """Run a sync journal call in a worker thread, then fan out every event
-        it committed. Use this for objective/meta writes from async code."""
-        before = self.last_event_id()
-        result = await asyncio.to_thread(lambda: fn(*args, **kwargs))
-        for ev in self.events_since(before):
+        it committed. Use this for objective/meta writes from async code.
+
+        Only the events that call inserted: it fanned out every id after the one it began at, so the events other
+        coroutines committed meanwhile (already fanned out by their own record()) went out twice during a slow call
+        (derive_objectives, backup.snapshot): duplicate UI lines, a reminder.fired spoken twice."""
+
+        def call() -> Any:
+            self._mine.ids = ids = []
+            try:
+                return fn(*args, **kwargs), ids
+            finally:
+                self._mine.ids = None
+
+        result, ids = await asyncio.to_thread(call)
+        for ev in self._events_by_id(ids):
             await self._fanout(ev)
         return result
+
+    def _events_by_id(self, ids: List[int]) -> List[Event]:
+        """The committed events among `ids`, in id order (a rolled-back insert's id is not there, or is reused)."""
+        out: List[Event] = []
+        ids = sorted(set(ids))
+        for i in range(0, len(ids), 500):
+            part = ids[i:i + 500]
+            with self._lock:
+                rows = self._db.execute(
+                    f"SELECT id, ts, task_id, type, payload, seq FROM events WHERE id IN ({','.join('?' * len(part))}) ORDER BY id",
+                    part,
+                ).fetchall()
+            out += [Event(r["id"], r["ts"], r["task_id"], r["type"], r["seq"], _loads(r["payload"], {})) for r in rows]
+        return out
 
     async def add_objective(self, *args, **kwargs) -> Optional[dict]:
         return await self.run(self.add_objective_sync, *args, **kwargs)
@@ -2142,6 +2173,8 @@ class _Txn:
         except BaseException:
             self.j._lock.release()
             raise
+        mine = getattr(self.j._mine, "ids", None)
+        self._mark = len(mine) if mine is not None else None
         return self.cur
 
     def __exit__(self, exc_type, exc, tb) -> None:
@@ -2153,8 +2186,19 @@ class _Txn:
                     self.j._db.execute("ROLLBACK")
                 except sqlite3.Error:
                     pass
+                self._forget_rolled_back()
+        except BaseException:
+            self._forget_rolled_back()  # a failed COMMIT rolled back as well
+            raise
         finally:
             self.j._lock.release()
+
+    def _forget_rolled_back(self) -> None:
+        """Journal.run fans out the ids its thread inserted: a rolled-back insert's id may be reused by another
+        writer's event, which that writer fans out itself."""
+        mine = getattr(self.j._mine, "ids", None)
+        if mine is not None and self._mark is not None:
+            del mine[self._mark:]
 
 
 def _bound_context(messages: list) -> list:
