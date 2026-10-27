@@ -168,27 +168,98 @@ def strategy_of(events: List[dict]) -> List[str]:
     return out[:12]
 
 
+# The fixed wording of generated goals (limits.py, followup.py and the generators in this file), read off the live
+# objectives 2026-10-27: 106 of 320 goals start "My biggest measured limitation right now:" and restate their detail in
+# a templated plan ("`research` how comparable systems overcome ... `learn` one verified conclusion with sources ...").
+# Counted as shared words, that boilerplate let unrelated objectives recall each other ("push off by default" next to
+# "task durations"), so it is removed before the goals are compared. The limitation's area heading ("Self-model: ",
+# "Research engine + knowledge store: ") goes with it: two limitations of one area are not one subject.
+_GOAL_TEMPLATE = [re.compile(t, re.S) for t in (
+    r"My biggest measured limitation right now: (?:[A-Z][\w+/ -]{0,40}: )?",
+    r"\. Improve it\. Plan: .*",
+    r"Learn how to do what objective #\d+ could not: ",
+    r"`research` it and `learn` one verified conclusion with sources\.",
+    r"failed on its last use\. Diagnose why, then call it again with a harmless action that should succeed and report the result\.",
+    r"Verify that the ",
+    r"tool works on this machine by calling it with a harmless, read-only action and reporting exactly what it returned\.",
+    r"The last verification run was BLOCKED \(failing gates: ",
+    r"\)\. Investigate the failure output and report the root cause\.",
+    r"A task failed with: ",
+    r"\. Research the cause \(",
+    r"\) with `research`, store what you learn with `learn`, and say what should change\.",
+    r"Task quality regressed to [\d.]+% \([+-]?[\d.]+ pp\); failing cases: ",
+    r"\. Inspect those tasks in the journal, find why the outcome was wrong, fix the cause in SYRAX's own code or prompts, release, and run the quality suite again\.",
+    r" failed in the last two runs \(",
+    r"\)\. Read the case in backend/syrax/quality\.py and the journaled task \S+ find the cause in SYRAX's own behaviour "
+    r"\(code or prompts, never the case or its checks\), fix it and `release`; the objective closes when a newer quality run passes `[^`]*`\.",
+    r"Quality case ",
+    r"My knowledge contradicts itself: ",
+    r"`research` it again from primary sources and `learn` the correct conclusion, citing them\.",
+)]
+
+
+def goal_words(goal: str) -> set:
+    """The content words of a goal: its keywords once the generators' fixed wording is removed."""
+    text = str(goal or "")
+    for t in _GOAL_TEMPLATE:
+        text = t.sub(" ", text)
+    return set(auto_keywords(text))
+
+
+def _experience_subject(o: dict) -> str:
+    """What an objective is about: its check's tool, case, name or topic, else its limitation's subject."""
+    spec = o.get("check_spec") or {}
+    lim = (o.get("evidence") or {}).get("limitation") or {}
+    s = spec.get("tool") or spec.get("case") or spec.get("name") or spec.get("topic") or lim.get("subject") or ""
+    return " ".join(str(s).lower().split())
+
+
+# A past objective is "similar" when it is about the same subject or shares this many content words with the goal.
+# Same check kind alone no longer qualifies: live 2026-10-27, 801 of 1,100 recalled entries were DONE objectives that
+# matched on kind (knowledge_stored, 3 points) plus templated goal words, with no subject in common.
+EXPERIENCE_MIN_SHARED_WORDS = 3
+FAILED_STATUSES = ("BLOCKED", "DROPPED")
+# A word in more than this share of the closed goals is SYRAX's everyday vocabulary, not a subject: live 2026-10-27
+# (320 closed) that is "task", "one", "only", "file", "syrax", "release", "backend", ... and the long hand-written
+# change goals (100+ words) shared three of them with almost any limitation. Measured only on a pool big enough to
+# say what is common.
+EXPERIENCE_COMMON_SHARE = 0.08
+EXPERIENCE_COMMON_MIN_POOL = 50
+
+
 def past_experience(journal: Journal, objective: dict, limit: int = 3, budget: int = 900) -> str:
     """Phase 5: "last time this approach did badly because X, so this time Y".
-    The closed objectives most like this one (same check and subject first,
-    then shared goal keywords), with what worked or why they failed."""
+    The closed objectives about the same subject, or sharing at least EXPERIENCE_MIN_SHARED_WORDS content words
+    with this goal (generated boilerplate removed), with what worked or why they failed. Failed ones (BLOCKED,
+    DROPPED) come first, as the Mission asks ("retrieval of relevant previous failures before repeating a
+    workflow"); within each group, same subject, same check kind and shared words rank. Words common to more than
+    EXPERIENCE_COMMON_SHARE of the closed goals do not count as shared."""
     spec = objective.get("check_spec") or {}
-    subject = spec.get("tool") or spec.get("case") or spec.get("name") or spec.get("topic")
-    words = set(auto_keywords(objective.get("goal") or ""))
+    subject = _experience_subject(objective)
+    pool = [(o, goal_words(o.get("goal") or "")) for o in journal.objectives(limit=ALL_OBJECTIVES, status=["DONE", *FAILED_STATUSES])]
+    common: set = set()
+    if len(pool) >= EXPERIENCE_COMMON_MIN_POOL:
+        df: Dict[str, int] = {}
+        for _, ws in pool:
+            for w in ws:
+                df[w] = df.get(w, 0) + 1
+        common = {w for w, n in df.items() if n > EXPERIENCE_COMMON_SHARE * len(pool)}
+    words = goal_words(objective.get("goal") or "") - common
     scored = []
-    for o in journal.objectives(limit=ALL_OBJECTIVES, status=["DONE", "BLOCKED", "DROPPED"]):
+    for o, owords in pool:
         if o["id"] == objective.get("id"):
             continue
+        same = bool(subject) and _experience_subject(o) == subject
+        shared = len(words & owords)
+        if not same and shared < EXPERIENCE_MIN_SHARED_WORDS:
+            continue
         ospec = o.get("check_spec") or {}
-        osubject = ospec.get("tool") or ospec.get("case") or ospec.get("name") or ospec.get("topic")
-        score = (3 if ospec.get("kind") == spec.get("kind") else 0) + (4 if subject and osubject == subject else 0)
-        score += len(words & set(auto_keywords(o.get("goal") or "")))
-        if score >= 3:
-            scored.append((score, o))
+        score = (3 if ospec.get("kind") == spec.get("kind") else 0) + (4 if same else 0) + shared
+        scored.append((o["status"] in FAILED_STATUSES, score, o))
     if not scored:
         return ""
     lines = []
-    for _, o in sorted(scored, key=lambda x: (-x[0], -x[1]["updated"]))[:limit]:
+    for _, _, o in sorted(scored, key=lambda x: (not x[0], -x[1], -x[2]["updated"]))[:limit]:
         prog = o.get("progress") or {}
         log = prog.get("attempts_log") or []
         how = "; ".join((log[-1].get("strategy") or [])[:4]) if log else ""
