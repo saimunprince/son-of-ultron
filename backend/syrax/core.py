@@ -214,6 +214,8 @@ class Core:
         self._last_tool_args: dict = {}
         self._queued_requests: dict = {}  # task_id -> (request, said) of queued requests made in this process
         self._queue_hold_until = 0.0  # time.monotonic() before which no queued request starts (hold_queue)
+        self._queue_open = False  # a stalled queue may be restarted (after the boot's requeue, or a request queued here)
+        self._queue_kick: Optional[asyncio.Task] = None  # the restart of a stalled queue under way (_kick_stalled_queue)
         self._deadline: Optional[asyncio.TimerHandle] = None  # the running task's deadline watchdog (TASK_DEADLINE_S)
         self.journal.subscribe(self._on_journal_event)
         self.selfmodel = SelfModel(self.journal)
@@ -447,24 +449,61 @@ class Core:
                     return None
                 task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind, pending=True)
                 self._queued_requests[task_id] = (goal, said)
+                self._queue_open = True
                 await self.broadcast({"type": "queue", "items": self.queued()})
                 return task_id
             return await self._begin(goal, said, session_id, kind, max_steps, seed)
 
     def queued(self) -> List[dict]:
-        """The waiting human requests, oldest first, with their position (1 = next)."""
+        """The waiting human requests, oldest first, with their position (1 = next). Asking also restarts a queue
+        that stalled while SYRAX is idle (``_kick_stalled_queue``): its callers (the autonomy cycle, a session's
+        hello, the queue panel) are exactly the ones that would otherwise wait on it for ever."""
+        items = self._pending()
+        if items:
+            self._kick_stalled_queue()
+        return items
+
+    def _pending(self) -> List[dict]:
         rows = self.journal.tasks(limit=50, status="PENDING")
         rows.sort(key=lambda r: r["created"])
         return [{"task_id": r["task_id"], "goal": r["goal"], "created": r["created"], "session_id": r.get("session_id"),
                  "position": i + 1} for i, r in enumerate(rows)]
 
+    def _kick_stalled_queue(self) -> None:
+        """Review 2026-10-27: when a queued request failed to start (the agent could not be built after a restart, or
+        the request was removed while it was being started) the error was only logged, nothing restarted the queue,
+        and the autonomy cycle answered BUSY "a human request is waiting" for ever. An idle core with waiting
+        requests starts the oldest one; not before the boot's requeue (stale requests are dropped there first), not
+        while the queue is held, not while a submit or a start is under way."""
+        if not self._queue_open or self.busy or self.queue_held() or self._submit_lock.locked():
+            return
+        if self._queue_kick is not None and not self._queue_kick.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._queue_kick = loop.create_task(self._restart_queue())
+
+    async def _restart_queue(self) -> Optional[str]:
+        try:
+            tid = await self._start_next()
+        except Exception as e:
+            logger.warning(f"the stalled queue did not restart: {e}")
+            return None
+        if tid:
+            logger.warning(f"the queue had stalled with SYRAX idle; started queued request {tid}")
+        return tid
+
     async def cancel_queued(self, task_id: str, note: str = "removed by human") -> bool:
-        row = self.journal.task(task_id)
-        if not row or row.get("status") != "PENDING":
-            return False
-        await self.journal.record("task.cancelled", {"error": f"removed from the queue: {note}"}, task_id=task_id)
-        self._queued_requests.pop(task_id, None)
-        await self.broadcast({"type": "queue", "items": self.queued()})
+        # under the submit lock: a removal never lands while _start_next is starting the same request
+        async with self._submit_lock:
+            row = self.journal.task(task_id)
+            if not row or row.get("status") != "PENDING":
+                return False
+            await self.journal.record("task.cancelled", {"error": f"removed from the queue: {note}"}, task_id=task_id)
+            self._queued_requests.pop(task_id, None)
+        await self.broadcast({"type": "queue", "items": self._pending()})
         return True
 
     def hold_queue(self, seconds: float = QUEUE_HOLD_S) -> None:
@@ -475,27 +514,54 @@ class Core:
         return time.monotonic() < self._queue_hold_until
 
     async def _start_next(self) -> Optional[str]:
-        """The oldest queued request starts when the core is free and the queue is not held. Returns its id, or None."""
+        """The oldest queued request starts when the core is free and the queue is not held. Returns its id, or None.
+        A request that cannot start is settled (cancelled, or failed once it had started, with the reason) and the
+        next one is tried: one bad row never stalls the queue behind it."""
         async with self._submit_lock:
             if self.busy or self.queue_held():
                 return None
-            pending = self.queued()
-            if not pending:
-                return None
-            nxt = pending[0]
-            # the raw words live in memory; after a restart only the journal's masked copy of the goal is left to run
-            goal, said = self._queued_requests.pop(nxt["task_id"], (nxt["goal"], nxt["goal"]))
-            await self.broadcast({"type": "notice", "text": f"Queued request starting: {str(said or goal)[:80]}"})
-            tid = await self._begin(goal, said, nxt.get("session_id"), "conversation", None, None, task_id=nxt["task_id"])
-            await self.broadcast({"type": "queue", "items": self.queued()})
-            return tid
+            tried = set()
+            while True:
+                pending = [q for q in self._pending() if q["task_id"] not in tried]
+                if not pending:
+                    return None
+                nxt = pending[0]
+                tried.add(nxt["task_id"])
+                # the raw words live in memory; after a restart only the journal's masked copy of the goal is left to run
+                goal, said = self._queued_requests.pop(nxt["task_id"], (nxt["goal"], nxt["goal"]))
+                try:
+                    await self.broadcast({"type": "notice", "text": f"Queued request starting: {str(said or goal)[:80]}"})
+                    tid = await self._begin(goal, said, nxt.get("session_id"), "conversation", None, None, task_id=nxt["task_id"])
+                except Exception as e:
+                    await self._settle_unstarted(nxt["task_id"], e)
+                    continue
+                await self.broadcast({"type": "queue", "items": self._pending()})
+                return tid
+
+    async def _settle_unstarted(self, task_id: str, e: Exception) -> None:
+        """A queued request whose start failed: still PENDING -> cancelled with the reason (PENDING cannot fail);
+        started (IN_PROGRESS) -> failed; anything else (removed meanwhile) is left as it is."""
+        logger.warning(f"queued request {task_id} did not start: {e}")
+        status = (self.journal.task(task_id) or {}).get("status")
+        why = f"the queued request could not start: {_explain(e)}"
+        try:
+            if status == "PENDING":
+                await self.journal.record("task.cancelled", {"error": why, "error_class": "other"}, task_id=task_id)
+            elif status == "IN_PROGRESS":
+                await self.journal.record("task.failed", {"error": why, "error_class": error_class(e)}, task_id=task_id)
+            else:
+                return
+        except (sqlite3.Error, JournalError) as je:
+            logger.warning(f"could not settle queued request {task_id}: {je}")
+            return
+        await self.broadcast({"type": "error", "message": why})
 
     async def requeue_after_boot(self) -> dict:
         """Queued requests survive a restart (SYRAX restarts itself into new code). After recovery a
         young one starts; one older than QUEUE_STALE_S is cancelled with a note rather than run late."""
         now = time.time()
         kept, dropped = [], []
-        for q in self.queued():
+        for q in self._pending():
             age_min = int((now - q["created"]) / 60)
             if now - q["created"] > QUEUE_STALE_S:
                 await self.journal.record("task.cancelled", {"error": f"SYRAX restarted before it got to this request (queued {age_min} min ago)"},
@@ -503,6 +569,7 @@ class Core:
                 dropped.append(q["task_id"])
             else:
                 kept.append(q["task_id"])
+        self._queue_open = True  # stale requests are gone: a stalled queue may be restarted from here on
         started = await self._start_next() if kept else None
         return {"kept": kept, "dropped": dropped, "started": started}
 
@@ -515,6 +582,10 @@ class Core:
         self._starting += 1  # busy from here, not only once the coroutine exists
         try:
             return await self._begin_now(goal, said, session_id, kind, max_steps, seed, task_id)
+        except BaseException:
+            if self.current is not None and self.current.task is None:  # prepared, never launched: nothing runs
+                self.current = None
+            raise
         finally:
             self._starting -= 1
 
@@ -815,7 +886,7 @@ class Core:
         return True
 
     async def reset(self) -> None:
-        for q in self.queued():  # a reset starts over: nothing waits either
+        for q in self._pending():  # a reset starts over: nothing waits either (and nothing is restarted meanwhile)
             await self.cancel_queued(q["task_id"], note="reset by human")
         if self._task_running():
             assert self.current is not None and self.current.task is not None
