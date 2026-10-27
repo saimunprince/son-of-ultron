@@ -343,7 +343,17 @@ def _args_of(call: ToolCall) -> Any:
         return raw
 
 
-_OBSERVED = re.compile(r"^Observed output of cmd `[^`]*` executed:\n")
+# Review 2026-10-27: a tool that returns an image (a desktop screenshot) is followed in memory by a user message
+# "Image returned by desktop:" carrying it (ToolCallAgent.act). _status_unread and _dispute_unread counted it as a
+# human request, so a reading before the image fell out of "this turn" and the previous turn's acts out of "that turn".
+def _human_turn(m: Message) -> bool:
+    """A user message the human wrote: not a console nudge (ECHO) and not a tool's image."""
+    content = str(m.content or "")
+    return (m.role == "user" and not ECHO.search(content) and not getattr(m, "base64_image", None)
+            and not content.startswith("Image returned by "))
+
+
+_OBSERVED =re.compile(r"^Observed output of cmd `[^`]*` executed:\n")
 
 
 def mark_untrusted(result: str) -> str:
@@ -1227,7 +1237,7 @@ class SyraxAgent(Manus):
                 or not STATUS_ASK.search(self.task_goal or "")):
             return False
         msgs = [m for m in self.memory.messages if m.role != "system"]
-        asks = [i for i, m in enumerate(msgs) if m.role == "user" and not ECHO.search(str(m.content or ""))]
+        asks = [i for i, m in enumerate(msgs) if _human_turn(m)]
         turn = msgs[asks[-1]:] if asks else msgs
         results = {m.tool_call_id: str(m.content or "") for m in turn if m.role == "tool"}
         return not any(status_reading(tc.function.name, _args_of(tc)) and _succeeded(results.get(tc.id, "Error"))
@@ -1237,11 +1247,11 @@ class SyraxAgent(Manus):
         """The request disputes the previous turn of this conversation (is_dispute), that turn acted on the desktop,
         the browser or sent something (DISPUTE_ACTS, a reading excluded), and no call of this task read the screen or
         the player (is_reading). The turns are the agent's memory: a human request is a user message that is not a
-        console nudge (ECHO); the core keeps a conversation's memory across its tasks."""
+        console nudge (ECHO) or a tool's image (_human_turn); the core keeps a conversation's memory across its tasks."""
         if self.task_kind in ("autonomous", "eval"):
             return False
         msgs = [m for m in self.memory.messages if m.role != "system"]
-        asks = [i for i, m in enumerate(msgs) if m.role == "user" and not ECHO.search(str(m.content or ""))]
+        asks = [i for i, m in enumerate(msgs) if _human_turn(m)]
         if len(asks) < 2:
             return False
         prev, this = msgs[asks[-2]:asks[-1]], msgs[asks[-1]:]
