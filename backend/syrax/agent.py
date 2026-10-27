@@ -326,7 +326,7 @@ def _refused(name: str, result: str) -> bool:
 
 
 def _succeeded(result: str) -> bool:
-    body = _body(result).lstrip()
+    body = _body(result).split(_REPLAN_HEAD, 1)[0].lstrip()  # judged without the console's REPLAN_NOTE at its end
     flag = _SUCCESS_FLAG.search(body)
     if flag and not body.startswith("Error"):
         return flag.group(1) == "True"
@@ -379,6 +379,18 @@ LOOPING_CALL = (
     "or reply with the final answer or with what blocks you. One more repeat stops this task."
 )
 LOOP_LIMIT = 4  # consecutive repeats of one call that end the task
+# Journal audit 2026-10-27: 19 tasks had 3+ failed tool calls in a row (5 had 5+), mostly apply_patch, python_execute
+# and str_replace_editor, each a different call, so the loop guard above never saw them; nothing changed the approach.
+# A streak counts calls that ran and did not succeed (_succeeded); a refusal (permission gate, intent.HELD) and a call
+# the loop guard answered leave it as it is, any success resets it. At REPLAN_STREAK the note is added once per streak
+# to that observation (never to a final) and journaled plan.replan.
+REPLAN_STREAK = 3
+_REPLAN_HEAD = "\n\n[SYRAX check, not a new request] Three tool calls in a row failed"
+REPLAN_NOTE = (
+    _REPLAN_HEAD + " ({tools}). Before the next call, state in "
+    "one line what you expected and what happened instead, then change the approach (read the file or the state "
+    "first, use a different tool, or take a smaller step), or say that it cannot be done."
+)
 # Live 2026-10-10 (objective 105, attempt 1): the change was made and its new
 # tests passed (5 passed, exit 0), then the brain ended the task without
 # `release`, and the dev loop rolled the finished work back.
@@ -827,6 +839,7 @@ class SyraxAgent(Manus):
     reply_before_action: bool = False  # last_reply was written beside a tool call: it says what was about to happen
     seen_calls: dict = Field(default_factory=dict)  # tool+args already run this turn
     repeats: int = 0  # consecutive calls that were repeats of an earlier one
+    fail_streak: list = Field(default_factory=list)  # tools of the consecutive calls that ran and failed (REPLAN_NOTE)
     loop_stopped: bool = False  # the task was ended because it kept repeating one call
     release_called: bool = False  # `release` ran in this task (whatever its outcome)
     release_committed: bool = False  # and one of its runs committed
@@ -902,6 +915,7 @@ class SyraxAgent(Manus):
         self.reply_before_action = False
         self.seen_calls = {}
         self.repeats = 0
+        self.fail_streak = []
         self.loop_stopped = False
         self.release_called = False
         self.release_committed = False
@@ -1287,6 +1301,7 @@ class SyraxAgent(Manus):
                 result = REPEATED_CALL.format(name=name, step=seen[key])
         elif problem:
             result = f"Error: {problem}"
+            result += await self._streak_after(name, result)
         else:
             self.repeats = 0
             decision = permissions.classify(name, _args_of(command))
@@ -1348,7 +1363,21 @@ class SyraxAgent(Manus):
                     result += await self._change_started(name, _args_of(command))
                 if name == "ask_human":  # a yes to a question that names a target authorizes it (permissions.named_in)
                     self.consents.append((str(_args_of(command).get("inquire", "")), _OBSERVED.sub("", result, count=1).strip()))
+                result += await self._streak_after(name, result)
         return result
+
+    async def _streak_after(self, name: str, result: str) -> str:
+        """The bookkeeping of failed calls in a row for a call that ran: a success resets it; the REPLAN_STREAK-th
+        failure in a row is journaled plan.replan and gets REPLAN_NOTE for its observation (once per streak)."""
+        if _succeeded(result):
+            self.fail_streak = []
+            return ""
+        self.fail_streak.append(name)
+        if len(self.fail_streak) != REPLAN_STREAK:
+            return ""
+        tools = list(self.fail_streak)
+        await self._send({"type": "plan", "event": "replan", "streak": len(tools), "tools": tools, "step": self.current_step})
+        return REPLAN_NOTE.format(tools=", ".join(tools))
 
     async def _change_started(self, name: str, args: Any) -> str:
         """The first repository edit of a task that must release: journaled change.started (change_facts), and the

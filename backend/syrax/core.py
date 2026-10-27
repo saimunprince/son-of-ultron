@@ -75,6 +75,8 @@ def _journal_type(event: dict) -> Optional[str]:
         return f"intent.{event['event']}"  # the intent ledger (intent.py): recovery reads recorded-without-done
     if t == "change" and event.get("event") == "started":
         return "change.started"  # Phase 4: a release task's first repository edit, its covering tests and rollback point
+    if t == "plan" and event.get("event") == "replan":
+        return "plan.replan"  # Phase 2: REPLAN_STREAK failed calls in a row, the approach must change (agent.REPLAN_NOTE)
     if t in ("think", "ask", "final"):
         return t
     return None

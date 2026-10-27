@@ -363,7 +363,7 @@ _WIRE = {
     "checkpoint.created": "checkpoint",
     "verification.completed": "verification",
 }
-_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback", "maintenance", "presentation", "benchmark", "experiment", "quality", "permission", "claim", "reminder", "alert", "topic", "checkin", "camera", "live", "presence", "intent", "change")
+_GROUPED = ("task", "recovery", "brain", "objective", "cycle", "reflection", "autonomy", "knowledge", "research", "skill", "code", "commit", "push", "rollback", "maintenance", "presentation", "benchmark", "experiment", "quality", "permission", "claim", "reminder", "alert", "topic", "checkin", "camera", "live", "presence", "intent", "change", "plan")
 
 
 @dataclass(frozen=True)
