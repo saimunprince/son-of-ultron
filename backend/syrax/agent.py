@@ -229,7 +229,12 @@ def without_console_notes(text: str) -> str:
 
 PROMISE = re.compile(
     r"\b(i will now|i'll now|let me now|i am going to|i'm going to|the request is (fully )?(satisfied|complete)|"
-    r"i will (now )?(present|provide|give))\b", re.I,
+    r"i will (now )?(present|provide|give))\b"
+    # Quality run #88 (self_patch_with_test): "To create it, I need to provide the full content of the new file in
+    # the diff. I will do this in the next step." ended the task: work promised for a step that never came
+    r"|\bi(?:'ll| will) (?:do|create|fix|try|make|write|run|apply|add|update|handle|redo|retry) (?:this|that|it)\b[^.\n]{0,40}"
+    r"\b(?:next|now|shortly|right away|in a moment)\b"
+    r"|\bin (?:the|my) next step,? i(?:'ll| will)\b", re.I,
 )
 REPEATED_CALL = (
     "Not run again: you already called {name} with exactly these arguments at step {step}; the result is above. "
