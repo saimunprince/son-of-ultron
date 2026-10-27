@@ -150,12 +150,24 @@ _NOT_A_LITERAL = {"the", "a", "an", "your", "it", "that", "this", "me", "us", "t
 # as its whole answer and expects no further brain call, so that phrasing stays a judge's business, not this guard's.
 _SHAPE_FORMS = (
     ("number", re.compile(r"\b(?:number|numbers|year|integer)\s+only\b", re.I)),
-    ("word", re.compile(r"\b(?:one|a\s+single|single)\s+word\b(?!\s+(?:of|or|for)\b)|\bword\s+only\b", re.I)),
+    ("word", re.compile(r"\b(?<!every )(?<!each )(?<!any )(?:one|a\s+single|single)\s+word\b(?!\s+(?:of|or|for)\b)"
+                        r"|\bword\s+only\b", re.I)),
     ("name", re.compile(r"\bname\s+only\b", re.I)),
 )
 _DECIMALS = re.compile(r"\b(\d|one|two|three|four|five|six)\s+decimals?(?:\s+places?)?\b", re.I)
 _MAX_CHARS = re.compile(r"(?:at\s+most|no\s+more\s+than|under|within|max(?:imum)?(?:\s+of)?|up\s+to|<=|≤)\s*(\d{1,4})\s*(?:chars?|characters)\b"
                         r"|\b(\d{1,4})\s*(?:chars?|characters)\s+(?:or\s+(?:fewer|less)|max(?:imum)?|tops)\b", re.I)
+# Review 2026-10-27: words of the question were read as the answer's form: "Explain why Twitter allows up to 280
+# characters." held the answer to 280 characters, "Which of these passwords are under 8 characters: ..." to 8, "List
+# every single word in notes.txt that appears twice" and "Give a one word answer and then explain why" to one word.
+# A character limit states the answer's form only where it frames the answer (_LIMIT_LEAD before it: "in at most
+# 80", "Name only, max 20", "keep it under 50", "reply in 40 chars or fewer"); one word is no form for a request that
+# also asks for a list or an explanation after it (_MORE_THAN_A_WORD).
+_LIMIT_LEAD = re.compile(
+    r"(?:^|[.,;:!?(\n\-–—]|\b(?:in|within|using|reply|answer|respond|response|summary|keep\s+it"
+    r"|keep\s+(?:the|your)\s+(?:answer|reply|summary|response)))\s*$", re.I)
+_MORE_THAN_A_WORD = re.compile(
+    r"\b(?:and|then)\s+(?:then\s+)?(?:explain|list|describe|tell|give|justify|say\s+why|why)\b|\bexplain\s+why\b|\blist\b", re.I)
 _WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
 _EDGE = " \t\r\n\"'`“”‘’.,!:;()[]"
 NUMBER = re.compile(r"[-+]?\d[\d,]*(?:\.(\d+))?")
@@ -176,7 +188,7 @@ def exact_form(goal: str) -> Optional[dict]:
     text = str(goal or "")
     form: dict = {"literal": None, "shape": None, "decimals": None, "max_chars": None}
     for shape, rx in _SHAPE_FORMS:
-        if rx.search(text):
+        if rx.search(text) and not (shape == "word" and _MORE_THAN_A_WORD.search(text)):
             form["shape"] = shape
             break
     for rx in _LITERAL_FORMS:
@@ -188,7 +200,7 @@ def exact_form(goal: str) -> Optional[dict]:
         d = _DECIMALS.search(text)
         if d:
             form["decimals"] = _WORDS.get(d.group(1).lower(), None) if not d.group(1).isdigit() else int(d.group(1))
-    m = _MAX_CHARS.search(text)
+    m = next((m for m in _MAX_CHARS.finditer(text) if _LIMIT_LEAD.search(text[:m.start()])), None)
     if m:
         form["max_chars"] = int(m.group(1) or m.group(2))
     if not (form["literal"] or form["shape"] or form["max_chars"]):
