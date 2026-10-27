@@ -66,12 +66,20 @@ def _count_events(type_: str) -> Callable[[sqlite3.Connection, float, float], Va
 
 # ——— brain ———
 
+FULL_SHARE = 0.9  # of the largest run so far: the suite grows (52 cases on 10-22, 67 on 10-26), a rotation does not
+
+
 def quality_pass_rate(c, t0, t1) -> Value:
-    for r in c.execute("SELECT id, pass_rate, results FROM quality_runs WHERE ts>=? AND ts<? ORDER BY id DESC", (t0, t1)):
-        n = len(json.loads(r[2] or "[]"))
-        if n >= FULL_QUALITY_CASES:
-            return float(r[1]), f"run #{r[0]}, {n} cases"
-    return None, "no full quality run"
+    """The latest full run in the window. A run is full when it has at least FULL_QUALITY_CASES cases and at least
+    FULL_SHARE of the largest run recorded up to it: the 12-case rotation (run #86, 100 %) is a subset of the
+    67-case suite, not its pass rate."""
+    latest, largest = None, 0
+    for r in c.execute("SELECT id, ts, pass_rate, json_array_length(results) FROM quality_runs WHERE ts<? ORDER BY id", (t1,)):
+        n = int(r[3] or 0)
+        largest = max(largest, n)
+        if r[1] >= t0 and n >= FULL_QUALITY_CASES and n >= FULL_SHARE * largest:
+            latest = (float(r[2]), f"run #{r[0]}, {n} cases")
+    return latest or (None, "no full quality run")
 
 
 def _closed_machine_objectives(c, t0, t1) -> List[sqlite3.Row]:
@@ -306,7 +314,7 @@ def published_matrix_age(c, t0, t1) -> Value:
 
 
 METRICS: List[Metric] = [
-    Metric("quality", "Brain", "Quality suite pass rate", "higher", "%", "Latest full quality run (at least 10 cases) in the window: real tasks through the real brains, judged by checks on disk and in the journal.", quality_pass_rate),
+    Metric("quality", "Brain", "Quality suite pass rate", "higher", "%", "Latest full quality run in the window (at least 10 cases and 90 % of the largest run so far; a rotation subset is not the suite): real tasks through the real brains, judged by checks on disk and in the journal.", quality_pass_rate),
     Metric("objective_success", "Brain", "Machine-checked objectives done", "higher", "%", "Objectives closed in the window whose check is evidence (not task_success): DONE out of DONE + BLOCKED.", objective_success),
     Metric("attempts", "Brain", "Attempts per objective done", "lower", "attempts", "Median attempts of the machine-checked objectives closed DONE in the window.", attempts_to_done),
     Metric("repeated_failures", "Brain", "Objectives that repeated a failed strategy", "lower", "%", "Objectives with two or more attempts, updated in the window, whose attempts_log holds two attempts that were not DONE and used the same strategy fingerprint (the distinct tool calls of the attempt, as autonomy records them), out of all objectives with two or more attempts.", repeated_failures),
