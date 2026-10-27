@@ -17,7 +17,8 @@ from typing import Any, List, Optional, Tuple
 
 from app.exceptions import ToolError
 from app.tool.file_operators import LocalFileOperator
-from app.tool.str_replace_editor import StrReplaceEditor
+from app.tool.base import CLIResult
+from app.tool.str_replace_editor import SNIPPET_LINES, StrReplaceEditor
 
 from syrax import guard
 from syrax.journal import BACKEND_ROOT
@@ -107,7 +108,44 @@ def reindent(new: str, old: str, actual_first: str) -> str:
     return "\n".join(out)
 
 
-SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".next", ".cache"}
+# Tabs stay tabs (2026-10-27 review): upstream str_replace/insert ran `read_file().expandtabs()` and wrote the whole
+# file back, so one edit turned every tab in it into spaces (Makefile recipes broke: "missing separator"; Go, TSV
+# and C files churned whole) and undo_edit restored the expanded text. Matching may still use the expanded text (view
+# shows tabs as spaces, so a model copies spaces), but the change is spliced into the file's own text.
+def _expanded_offsets(raw: str) -> dict:
+    """{offset in raw.expandtabs(): index in raw} for every character start (and the end), str.expandtabs' rules."""
+    out, x, col = {}, 0, 0
+    for i, ch in enumerate(raw):
+        out[x] = i
+        if ch == "\t":
+            w = 8 - col % 8
+            col += w
+        elif ch in "\r\n":
+            w, col = 1, 0
+        else:
+            w = 1
+            col += 1
+        x += w
+    out[x] = len(raw)
+    return out
+
+
+def splice_expanded(raw: str, start: int, end: int, new: str) -> str:
+    """`raw` with raw.expandtabs()[start:end] replaced by `new`; every other character, tabs included, kept as is.
+    A match that begins or ends inside a tab's spaces expands only the lines it touches."""
+    at = _expanded_offsets(raw)
+    if start in at and end in at:
+        return raw[:at[start]] + new + raw[at[end]:]
+    expanded = raw.expandtabs()
+    first, last = expanded.count("\n", 0, start), expanded.count("\n", 0, end)
+    lines = raw.split("\n")
+    seg_x = "\n".join(ln.expandtabs() for ln in lines[first:last + 1])
+    base = expanded.rfind("\n", 0, start) + 1
+    seg = seg_x[:start - base] + new + seg_x[end - base:]
+    return "\n".join(lines[:first] + [seg] + lines[last + 1:])
+
+
+SKIP_DIRS ={".git", "node_modules", ".venv", "venv", "__pycache__", ".next", ".cache"}
 
 
 def list_directory(path: Path, depth: int = 2, limit: int = 400) -> str:
@@ -309,13 +347,62 @@ class SyraxEditor(StrReplaceEditor):
             end = -1 if end > n else start
         return [start, end]
 
+    async def str_replace(self, path: Any, old_str: str, new_str: Optional[str] = None, operator: Any = None) -> CLIResult:
+        """Upstream's str_replace without its expandtabs: the exact text first, then the tab-expanded text (what view
+        shows); either way only the match changes, and history keeps the raw file so undo_edit restores its bytes."""
+        raw = await operator.read_file(path)
+        new_str = "" if new_str is None else new_str
+        exact = raw.count(old_str)
+        if exact == 1:
+            start = raw.index(old_str)
+            new_raw = raw[:start] + new_str + raw[start + len(old_str):]
+            at_line = raw[:start].count("\n")
+        else:
+            content, old_x = raw.expandtabs(), old_str.expandtabs()
+            hits = exact or content.count(old_x)
+            if hits == 0:
+                raise ToolError(f"No replacement was performed, old_str `{old_str}` did not appear verbatim in {path}.")
+            if hits > 1:
+                text, needle = (raw, old_str) if exact else (content, old_x)
+                lines = [k + 1 for k, ln in enumerate(text.split("\n")) if needle in ln]
+                raise ToolError(f"No replacement was performed. Multiple occurrences of old_str `{old_str}` "
+                                f"in lines {lines}. Please ensure it is unique")
+            start = content.index(old_x)
+            new_raw = splice_expanded(raw, start, start + len(old_x), new_str)
+            at_line = content[:start].count("\n")
+        await operator.write_file(path, new_raw)
+        self._file_history[path].append(raw)
+        first = max(0, at_line - SNIPPET_LINES)
+        last = at_line + SNIPPET_LINES + new_str.count("\n")
+        snippet = "\n".join(new_raw.split("\n")[first:last + 1])
+        return CLIResult(output=f"The file {path} has been edited. " + self._make_output(snippet, f"a snippet of {path}", first + 1)
+                         + "Review the changes and make sure they are as expected. Edit the file again if necessary.")
+
+    async def insert(self, path: Any, insert_line: int, new_str: str, operator: Any = None) -> CLIResult:
+        """Upstream's insert without its expandtabs (see str_replace); history keeps the raw file."""
+        raw = await operator.read_file(path)
+        lines = raw.split("\n")
+        if insert_line < 0 or insert_line > len(lines):
+            raise ToolError(f"Invalid `insert_line` parameter: {insert_line}. It should be within "
+                            f"the range of lines of the file: {[0, len(lines)]}")
+        new_lines = new_str.split("\n")
+        await operator.write_file(path, "\n".join(lines[:insert_line] + new_lines + lines[insert_line:]))
+        self._file_history[path].append(raw)
+        snippet = "\n".join(lines[max(0, insert_line - SNIPPET_LINES):insert_line] + new_lines
+                            + lines[insert_line:insert_line + SNIPPET_LINES])
+        return CLIResult(output=f"The file {path} has been edited. "
+                         + self._make_output(snippet, "a snippet of the edited file", max(1, insert_line - SNIPPET_LINES + 1))
+                         + "Review the changes and make sure they are as expected (correct indentation, no duplicate "
+                         "lines, etc). Edit the file again if necessary.")
+
     async def _loose_replace(self, path: Path, old: str, new: Optional[str], operator: Any) -> Optional[str]:
         """None when the exact text is there (the normal path handles it).
         Otherwise replace a single whitespace-tolerant match, or raise an error
         that shows the nearest lines."""
         if await operator.is_directory(path):
             return None
-        content = (await operator.read_file(path)).expandtabs()
+        raw = await operator.read_file(path)
+        content = raw.expandtabs()
         old_x = old.expandtabs()
         if old_x in content:
             return None
@@ -324,10 +411,11 @@ class SyraxEditor(StrReplaceEditor):
         if len(hits) == 1:
             i = hits[0]
             n_old = len(old_x.strip("\n").split("\n"))
-            replacement = reindent((new or "").expandtabs(), old_x, lines[i])
-            new_lines = lines[:i] + replacement.split("\n") + lines[i + n_old:]
+            raw_lines = raw.split("\n")  # expandtabs keeps the line count: the match is spliced into the raw lines
+            replacement = reindent((new or "").expandtabs(), old_x, raw_lines[i])
+            new_lines = raw_lines[:i] + replacement.split("\n") + raw_lines[i + n_old:]
             await operator.write_file(path, "\n".join(new_lines))
-            self._file_history[str(path)].append(content)
+            self._file_history[str(path)].append(raw)
             snippet = "\n".join(f"{k + 1:6}\t{lines_k}" for k, lines_k in enumerate(new_lines) if i - 3 <= k <= i + n_old + 3)
             return (f"The file {path} has been edited (old_str matched at line {i + 1} once whitespace was ignored; "
                     f"new_str was re-indented to match).\n{snippet}\nReview the changes and make sure they are as expected.")
