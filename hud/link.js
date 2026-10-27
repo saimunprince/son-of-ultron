@@ -76,6 +76,20 @@
     if (firstTarget(e)) parts.push(firstTarget(e));
     return parts.length === 1 && !harm ? '' : parts.join(' · ');
   }
+  // the question a running task still waits on, from its journal events: server.py boot sends them as `task_events`
+  // ([{id, ts, task_id, type, seq, payload}], journal.py events) when the HUD connects while a task runs, and the hello
+  // snapshot itself carries no pending question. An answer, the agent moving on (a question that timed out returns
+  // into the ask_human tool's result) or the task ending settles it. null when nothing waits.
+  const SETTLES_ASK = ['answer', 'think', 'final', 'tool.started', 'tool.completed', 'tool.failed'];
+  function pendingAskFrom(events) {
+    let q = null;
+    (Array.isArray(events) ? events : []).forEach(ev => {
+      if (!ev || typeof ev.type !== 'string') return;
+      if (ev.type === 'ask') q = ev.payload && typeof ev.payload.question === 'string' ? ev.payload.question : '';
+      else if (SETTLES_ASK.includes(ev.type) || ev.type.startsWith('task.')) q = null;
+    });
+    return q;
+  }
 
   // one backend event -> state change + effects for the HUD
   function reduce(s, e, now) {
@@ -267,6 +281,15 @@
         if (e.event === 'resumed') { if (s.interrupted) s.interrupted--; log('RESUMED' + (e.task_id ? ' · ' + String(e.task_id).slice(0, 8) : '')); }
         else log('RECOVERY ' + String(e.event || '').toUpperCase() + (typeof e.count === 'number' ? ' · ' + e.count + ' TASK' + (e.count === 1 ? '' : 'S') : ''));
         break;
+      case 'task_events': {
+        // a reconnect while a task runs: without this the question is lost and the typed answer goes out as a new task
+        if (!s.task || !e.task_id || e.task_id !== s.task.id || !Array.isArray(e.events)) break;
+        const q = pendingAskFrom(e.events);
+        if (q === null) { s.pendingAsk = null; s.waiting = null; break; }
+        if (q === s.pendingAsk) break;
+        s.pendingAsk = q; s.waiting = q; mode('LISTENING'); log('WAITING FOR YOU · ' + short(q, 60).toUpperCase()); fx.push({ kind: 'ask', question: q });
+        break;
+      }
       case 'replay': {
         // server.py replay -> journal.events_between(since, until): {type, since, until, events: [{id, ts, task_id, type, seq, payload}]}
         // connect() asks for today's events once hello arrives; the refusals in it make `counters.refused` a true count for TODAY
@@ -343,5 +366,5 @@
     return link;
   }
 
-  return { initial, reduce, offline, connect, argSummary, short, dayStart, interruptedLine, queuedLine, taskRow, permissionLine, permissionDetail, ON_OPEN };
+  return { initial, reduce, offline, connect, argSummary, short, dayStart, interruptedLine, queuedLine, taskRow, permissionLine, permissionDetail, pendingAskFrom, ON_OPEN };
 });

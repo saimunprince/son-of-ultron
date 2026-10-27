@@ -39,6 +39,7 @@ import type { Heard } from "@/lib/wake";
 import { useHandsFree } from "@/components/useHandsFree";
 import { LiveTalk, type LiveEvent, type LiveState } from "@/lib/live";
 import { liveUrl } from "@/lib/livePcm";
+import { pendingAskFrom } from "@/lib/taskView";
 
 type CameraState = "off" | "starting" | "on" | "error";
 type AgentState = "booting" | "idle" | "thinking" | "acting";
@@ -151,6 +152,7 @@ export default function Syrax() {
   const voiceOnRef = useRef(true);
   const talkRef = useRef<LiveTalk | null>(null);
   const pendingAskRef = useRef<string | null>(null);
+  const runningTaskRef = useRef<string | null>(null); // the task the backend runs now (hello.running, task.started)
 
   const [camera, setCamera] = useState<CameraState>("off");
   const [tracker, setTracker] = useState<TrackerStatus>({ hands: 0, mode: "idle" });
@@ -333,6 +335,7 @@ export default function Syrax() {
       switch (e.type) {
         case "hello":
           setToolCount(e.tools.length);
+          runningTaskRef.current = e.running?.task_id ?? null;
           for (const t of e.interrupted) {
             push({
               kind: "notice",
@@ -534,6 +537,7 @@ export default function Syrax() {
           setReplayEvents(e.events);
           break;
         case "task":
+          if (e.event === "started" && e.task_id) runningTaskRef.current = e.task_id;
           if (e.event === "completed" || e.event === "failed" || e.event === "cancelled" || e.event === "interrupted") setPhase(null);
           if (e.event !== "started" && consoleTabRef.current !== "live") {
             clientRef.current?.send(consoleTabRef.current === "history" ? { type: "history", limit: 50 } : { type: "replay", since: startOfToday() });
@@ -563,9 +567,17 @@ export default function Syrax() {
         case "verification":
         case "stage":
         case "history":
-        case "task_events":
         case "verifications":
           break; // observed by the journal; nothing to draw yet
+        case "task_events": {
+          // a (re)connect while a task runs replays its events (server.py boot): a question it still waits on
+          // comes back here, so the next thing typed goes out as its answer, not as a new task
+          if (!e.task_id || e.task_id !== runningTaskRef.current) break;
+          const question = pendingAskFrom(e.events);
+          if (question !== null && question !== pendingAskRef.current) push({ kind: "ask", id: nextId++, text: question });
+          setPendingAsk(question);
+          break;
+        }
         case "brains": {
           const { type: _t, ...rest } = e;
           void _t;
@@ -588,7 +600,10 @@ export default function Syrax() {
         case "state":
           setAgent(e.state);
           setActiveTool(e.state === "acting" ? (e.tool ?? null) : null);
-          if (e.state === "idle") setPendingAsk(null);
+          if (e.state === "idle") {
+            setPendingAsk(null);
+            runningTaskRef.current = null;
+          }
           break;
         case "user":
           push({ kind: "user", id: nextId++, text: e.text, voice: e.voice });
