@@ -59,7 +59,14 @@ export class MicListener {
   strict = false;
   paused = false;
 
-  constructor(private h: MicHandlers) {}
+  private h: MicHandlers;
+  /** stop() ran: a start() still awaiting the mic or the worklet lets go of what it got. */
+  private stopped = false;
+
+  // a plain field, not a parameter property: node's strip-only TypeScript (the lib tests) cannot run those
+  constructor(h: MicHandlers) {
+    this.h = h;
+  }
 
   get active() {
     return this.ctx !== null;
@@ -67,11 +74,14 @@ export class MicListener {
 
   async start() {
     if (this.ctx) return;
+    this.stopped = false;
     this.h.onState?.("starting");
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       });
+      // hands-free went off while the browser asked for the mic: stop() ran before the stream existed
+      if (this.stopped) return this.stop();
       const ctx = new AudioContext();
       this.ctx = ctx;
       this.rate = ctx.sampleRate;
@@ -79,6 +89,7 @@ export class MicListener {
       const url = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
       await ctx.audioWorklet.addModule(url);
       URL.revokeObjectURL(url);
+      if (this.stopped) return this.stop();
       this.source = ctx.createMediaStreamSource(this.stream);
       this.node = new AudioWorkletNode(ctx, "syrax-tap");
       this.node.port.onmessage = (e) => this.onFrame(e.data as Float32Array);
@@ -92,6 +103,7 @@ export class MicListener {
   }
 
   stop() {
+    this.stopped = true;
     this.node?.port.close();
     this.node?.disconnect();
     this.source?.disconnect();

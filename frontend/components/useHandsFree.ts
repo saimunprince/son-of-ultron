@@ -89,6 +89,7 @@ export function useHandsFree({ context, onHeard, onLevel, lang }: Options) {
   }, []);
 
   const startWeb = useCallback(() => {
+    webRef.current?.stop(); // a language switch: the old recognizer would keep restarting itself
     const ear = new WebSpeechEar({
       onFinal: (t) => {
         webAliveAtRef.current = Date.now();
@@ -139,6 +140,10 @@ export function useHandsFree({ context, onHeard, onLevel, lang }: Options) {
     micRef.current = m;
     try {
       await m.start();
+      if (micRef.current !== m) {
+        m.stop(); // hands-free went off while the mic was starting: nothing may keep listening
+        return;
+      }
       setError(null);
     } catch (e) {
       micRef.current = null;
