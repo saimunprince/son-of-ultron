@@ -5,9 +5,14 @@
 const { app, BrowserWindow, ipcMain, session, nativeTheme, globalShortcut, screen } = require('electron');
 const path = require('path');
 const si = require('systeminformation');
+const guard = require('./guard');
 
 const CORE = (process.env.SYRAX_URL || 'http://127.0.0.1:8765').replace(/\/$/, '');
 const HUD_URL = CORE + '/hud/'; // trailing slash: link.js is relative to the page
+const HUD_FILE = path.join(__dirname, 'hud.html');  // the local copy loadHud falls back to
+// only the HUD itself lives in its window (guard.js): it alone gets the preload bridge and the mic, camera and position
+const trusted = url => guard.trustedPage(url, CORE, HUD_FILE);
+const permitted = (wc, perm, requesting) => guard.permissionAllowed(perm, wc && !wc.isDestroyed() ? wc.getURL() : null, requesting, CORE, HUD_FILE);
 
 // dark native chrome everywhere (window borders, context menus), never the light Windows theme
 nativeTheme.themeSource = 'dark';
@@ -134,6 +139,11 @@ function createWindow() {
     win.setAlwaysOnTop(true); win.show(); win.focus(); win.setAlwaysOnTop(false);
   });
   loadHud(win);
+  // a dropped link or file, or a link the page follows, would load another page with the preload bridge (ultronWin,
+  // ultronSys) in this window: only the HUD's own pages may load here (loadHud's loadURL/loadFile do not pass through
+  // will-navigate), and no new window is ever opened
+  win.webContents.on('will-navigate', (e, url) => { if (!trusted(e.url || url)) e.preventDefault(); });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
 
   // on Windows the fullscreen events can lag or be skipped, so each change reports the state it knows is true
   win.on('enter-full-screen', () => sendWinState(win, true));
@@ -177,9 +187,9 @@ if (SHOT || SELFTEST) app.setPath('userData', path.join(app.getPath('temp'), 'sy
 if (!SHOT && !SELFTEST && !app.requestSingleInstanceLock()) app.quit();
 else {
   app.whenReady().then(() => {
-    const allowed = ['media', 'geolocation', 'fullscreen', 'notifications'];
-    session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(allowed.includes(perm)));
-    session.defaultSession.setPermissionCheckHandler((wc, perm) => allowed.includes(perm));
+    // the mic, camera, position, fullscreen and notifications, for the HUD's own page only (guard.js), never by name alone
+    session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details) => cb(permitted(wc, perm, details && details.requestingUrl)));
+    session.defaultSession.setPermissionCheckHandler((wc, perm, origin, details) => permitted(wc, perm, (details && details.requestingUrl) || origin));
     ipcMain.handle('sys', () => sys);
     ipcMain.on('win', (e, cmd) => {
       const w = BrowserWindow.fromWebContents(e.sender);
