@@ -23,7 +23,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 from pydantic import Field
 
@@ -58,6 +58,25 @@ def infer_type(text: str) -> str:
     if _PREFERENCE.search(text):
         return "preference"
     return "fact"
+
+
+# Memory provenance (2026-10-27 audit: the eval case `remember_fact` wrote "The human's favourite editor is Vim" into the
+# owner's memory, re-written 12 times, and nothing told it from the owner's word). `remember` records where a row came
+# from: the task_id column and, for any task that is not a human conversation, an "origin:<task kind>" tag. Rows of a
+# HIDDEN_ORIGINS kind are stored and exported with their origin, but never reach the owner's view (`facts()`, the
+# prompt block, the memory panel, `recall` in a conversation); only a task of that same kind recalls them. Rows
+# without an origin tag (the human's conversations, and every row older than this) stay as they are. Autonomous work
+# is tagged too, but stays visible: it has no human words, so `remember` files it as a labelled observation anyway.
+HIDDEN_ORIGINS = ("eval",)  # a quality case is a test fixture, never the owner speaking
+OWNER_ORIGIN = "conversation"
+
+
+def origin_of(tags) -> Optional[str]:
+    """The task kind that wrote a memory row ("origin:<kind>" tag), None for the owner's own (no tag)."""
+    for t in tags or []:
+        if str(t).startswith("origin:") and len(str(t)) > 7:
+            return str(t)[7:]
+    return None
 
 
 def type_of(tags) -> str:
@@ -214,19 +233,28 @@ class MemoryStore:
         # provenance for the memory panel and the export: how the row came to be, how sure, how often it was used
         return {"id": str(k["id"]), "text": k["claim"], "created": k["created"], "updated": k.get("last_used"),
                 "type": type_of(k.get("tags")), "confidence": k.get("confidence"), "basis": k.get("basis"),
-                "last_used": k.get("last_used"), "uses": k.get("uses", 0)}
+                "last_used": k.get("last_used"), "uses": k.get("uses", 0),
+                "origin": origin_of(k.get("tags")), "task_id": k.get("task_id")}
 
-    def facts(self) -> List[dict]:
+    def facts(self, origin: Optional[str] = None, everything: bool = False) -> List[dict]:
+        """The owner's memory: rows written by a HIDDEN_ORIGINS task (an eval) are left out, unless `origin` is that
+        kind (the eval recalls its own rows too) or `everything` (forget)."""
         try:
             self._migrate()
-            return [self._as_fact(k) for k in self._journal().human_facts(MAX_FACTS)]
+            rows = [self._as_fact(k) for k in self._journal().human_facts(MAX_FACTS)]
         except Exception:
             return [{"id": f.get("id", "?"), "text": f["text"], "created": f.get("created")} for f in self._file_facts()]
+        if everything:
+            return rows
+        return [f for f in rows if f.get("origin") not in HIDDEN_ORIGINS or f.get("origin") == origin]
 
-    def remember(self, text: str, kind: Optional[str] = None, said: Optional[str] = None) -> str:
+    def remember(self, text: str, kind: Optional[str] = None, said: Optional[str] = None,
+                 origin: Optional[str] = None, task_id: Optional[str] = None) -> str:
         """Store `text`. `said` is what the human said this task (None: unknown, the caller vouches for the text):
         a fact, preference or rule that is not grounded in it is stored as an observation (confidence 0.5, basis
-        INFERRED_BASIS), never as the human's own word; "remember that ..." from the human keeps it a fact."""
+        INFERRED_BASIS), never as the human's own word; "remember that ..." from the human keeps it a fact.
+        `origin` is the kind of the task that calls (None or "conversation": the owner), `task_id` its id; a row from
+        any other kind is tagged "origin:<kind>", and a HIDDEN_ORIGINS row only ever updates rows of its own origin."""
         text = " ".join(str(text or "").split())[:400]
         if not text:
             return "Nothing to remember."
@@ -237,15 +265,23 @@ class MemoryStore:
         if said is not None and kind != "observation" and not (_EXPLICIT.search(said) or grounded(text, said)):
             kind, inferred = "observation", True
         new = _words(text)
-        tags = ["memory", f"type:{kind}"] + sorted(new)[:6]
+        origin = origin if origin and origin != OWNER_ORIGIN else None
+        hidden = origin in HIDDEN_ORIGINS
+        tags = ["memory", f"type:{kind}"] + sorted(new)[:6] + ([f"origin:{origin}"] if origin else [])
         if kind == "observation":  # SYRAX's own inference: half the weight of the human's word, and labelled so
             conf, basis = 0.5, (INFERRED_BASIS if inferred else OBSERVED_BASIS)
         else:
             conf, basis = 1.0, "human said (remember tool)"
+        if origin:
+            basis = f"{basis}; {origin} task {task_id or '?'}"
         with self._lock:
             j = self._journal()
             self._migrate()
-            for f in self.facts():
+            if task_id and j.task(task_id) is None:  # the column is a task reference: an unknown id stays in the basis only
+                task_id = None
+            # an eval's rows dedupe among themselves: a test fixture never rewrites the owner's memory
+            candidates = [f for f in self.facts(origin) if f.get("origin") == origin] if hidden else self.facts()
+            for f in candidates:
                 old = _words(f["text"])
                 subj_new = _subject(text)
                 subj_old = _subject(f["text"])
@@ -255,27 +291,29 @@ class MemoryStore:
                 if f.get("type") != "observation" and kind == "observation":
                     return f"Kept what the human said: {f['text']} (an observation never overwrites it)"
                 # the new row takes the new type and confidence: a human fact over an observation is a fact at 1.0
-                j.update_knowledge_claim_sync(int(f["id"]), text, confidence=conf, tags=tags, basis=basis)
+                j.update_knowledge_claim_sync(int(f["id"]), text, task_id=task_id, confidence=conf, tags=tags, basis=basis)
                 was = f" (was an observation, now a {kind} at {conf:.1f})" if f.get("type") == "observation" and kind != "observation" else ""
                 return (f"Updated memory: {f['text']} -> {text}{was}" if same_subject else f"Updated memory: {text}{was}")
-            j.add_knowledge_sync(text, "human", tags=tags, confidence=conf, basis=basis)
+            j.add_knowledge_sync(text, "human", tags=tags, confidence=conf, basis=basis, task_id=task_id)
+        aside = f" (kept with the {origin} task, out of the owner's memory)" if hidden else ""
         if inferred:
             return (f"Stored as an observation, not a fact: the human never said this, SYRAX inferred it from the "
-                    f"conversation (confidence 0.5). {text}")
-        return f"Remembered ({kind}): {text}"
+                    f"conversation (confidence 0.5). {text}{aside}")
+        return f"Remembered ({kind}): {text}{aside}"
 
-    def recall(self, query: str = "", limit: int = 15) -> List[dict]:
-        facts = self.facts()
+    def recall(self, query: str = "", limit: int = 15, origin: Optional[str] = None) -> List[dict]:
+        facts = self.facts(origin)
         q = _words(query)
         if not q:
             return facts[-limit:]
         scored = [(len(q & _words(f["text"])), i, f) for i, f in enumerate(facts)]
         return [f for s, _, f in sorted(scored, key=lambda x: (-x[0], -x[1])) if s > 0][:limit]
 
-    def forget(self, query: str, said: Optional[str] = None) -> List[str]:
+    def forget(self, query: str, said: Optional[str] = None, origin: Optional[str] = None) -> List[str]:
         """Delete the memories `query` names (a fact id, 'everything', or words matched as whole words). Raises
         ForgetRefused for a needle under FORGET_MIN_CHARS, and when more than FORGET_MAX_UNNAMED rows would go unless
-        the human's words (`said`; None = unknown, the caller vouches) name them."""
+        the human's words (`said`; None = unknown, the caller vouches) name them. A HIDDEN_ORIGINS task (`origin`)
+        forgets only its own rows, never the owner's."""
         q = str(query or "").strip().lower()
         if not q:
             return []
@@ -285,6 +323,8 @@ class MemoryStore:
                                 "it would match too much. Name the memory, or use its id from `recall`.")
         with self._lock:
             facts = self.facts()
+            if origin in HIDDEN_ORIGINS:
+                facts = [f for f in self.facts(origin) if f.get("origin") == origin]
             if everything:
                 hits = facts
             else:
@@ -462,10 +502,16 @@ class RememberTool(BaseTool):
     store: Optional[MemoryStore] = Field(default=None, exclude=True)
     # what the human said this task (the agent wires it); None = unknown, and the text is taken at its word
     said_provider: Optional[Callable[[], Optional[str]]] = Field(default=None, exclude=True)
+    # memory provenance: (task kind, task_id) of the task that calls (the agent wires it); None = the owner's own
+    origin_provider: Optional[Callable[[], Tuple[Optional[str], Optional[str]]]] = Field(default=None, exclude=True)
 
     async def execute(self, fact: str, type: Optional[str] = None) -> str:  # noqa: A002 - the tool's parameter name
         said = self.said_provider() if self.said_provider else None
-        return (self.store or get_memory()).remember(fact, type, said=said)
+        store = self.store or get_memory()
+        if self.origin_provider is None:
+            return store.remember(fact, type, said=said)
+        origin, task_id = self.origin_provider()
+        return store.remember(fact, type, said=said, origin=origin, task_id=task_id)
 
 
 class RecallTool(BaseTool):
@@ -477,9 +523,14 @@ class RecallTool(BaseTool):
         "required": [],
     }
     store: Optional[MemoryStore] = Field(default=None, exclude=True)
+    origin_provider: Optional[Callable[[], Tuple[Optional[str], Optional[str]]]] = Field(default=None, exclude=True)
 
     async def execute(self, query: str = "") -> str:
-        hits = (self.store or get_memory()).recall(query)
+        store = self.store or get_memory()
+        if self.origin_provider is None:
+            hits = store.recall(query)
+        else:  # an eval recalls what it remembered itself; any other task sees the owner's memory only
+            hits = store.recall(query, origin=self.origin_provider()[0])
         return "\n".join(f"[{f['id']}] ({f.get('type', 'fact')}) {f['text']}" for f in hits) or "No matching memories."
 
 
@@ -493,11 +544,16 @@ class ForgetTool(BaseTool):
     }
     store: Optional[MemoryStore] = Field(default=None, exclude=True)
     said_provider: Optional[Callable[[], Optional[str]]] = Field(default=None, exclude=True)
+    origin_provider: Optional[Callable[[], Tuple[Optional[str], Optional[str]]]] = Field(default=None, exclude=True)
 
     async def execute(self, query: str) -> str:
         said = self.said_provider() if self.said_provider else None
         try:
-            removed = (self.store or get_memory()).forget(query, said=said)
+            store = self.store or get_memory()
+            if self.origin_provider is None:
+                removed = store.forget(query, said=said)
+            else:
+                removed = store.forget(query, said=said, origin=self.origin_provider()[0])
         except ForgetRefused as e:
             return str(e)
         if not removed:

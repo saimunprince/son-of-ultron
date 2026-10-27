@@ -257,6 +257,8 @@ class Core:
             raise RuntimeError(f"building the agent took over {AGENT_CREATE_TIMEOUT_S:.0f}s (MCP servers not answering)") from None
         self.agent = agent
         agent.checkpoint = self._checkpoint
+        if "task_id_provider" in getattr(type(agent), "model_fields", {}):  # memory provenance: `remember` files the task id
+            agent.task_id_provider = self.current_task_id
         tools = agent.available_tools
         tool = tools.get_tool("self_inspect")
         if isinstance(tool, SelfInspectTool):

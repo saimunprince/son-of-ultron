@@ -864,6 +864,8 @@ class SyraxAgent(Manus):
     # ask_human answers of this task, grants the yes/no already given per call.
     task_kind: str = "conversation"
     task_goal: str = ""
+    # memory provenance: the core wires its current task id, so `remember` records which task wrote a row
+    task_id_provider: Optional[Callable[[], Optional[str]]] = Field(default=None, exclude=True)
     consents: list = Field(default_factory=list)
     grants: dict = Field(default_factory=dict)
     step_limit_hit: bool = False
@@ -892,6 +894,10 @@ class SyraxAgent(Manus):
             tool = instance.available_tools.get_tool(name)
             if isinstance(tool, (RememberTool, ForgetTool)):
                 tool.said_provider = instance.human_words
+        for name in ("remember", "recall", "forget"):  # memory provenance: the tools know which task calls them
+            tool = instance.available_tools.get_tool(name)
+            if isinstance(tool, (RememberTool, RecallTool, ForgetTool)):
+                tool.origin_provider = instance.task_origin
         await instance.initialize_mcp_servers()
         instance._initialized = True
         return instance
@@ -902,6 +908,10 @@ class SyraxAgent(Manus):
         if self.task_kind == "autonomous":
             return ""
         return " ".join([self.task_goal or ""] + [str(a or "") for _, a in self.consents])
+
+    def task_origin(self) -> tuple:
+        """The task kind and id a memory row is filed under (memory.py HIDDEN_ORIGINS keeps an eval's out of the owner's)."""
+        return self.task_kind, (self.task_id_provider() if self.task_id_provider else None)
 
     async def _send(self, event: dict) -> None:
         if self.emit is not None:
