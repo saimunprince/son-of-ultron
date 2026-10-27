@@ -56,6 +56,9 @@
   }
   // one waiting request: a hello.queue item (core.py queued(): {task_id, goal, created, session_id, position}) or task.queued (journal.py:706 {goal, kind})
   function queuedLine(goal, position) { return 'QUEUED · ' + short(goal, 40).toUpperCase() + ' · POSITION ' + position; }
+  // SYRAX is working on a task: a command typed now waits its turn (sent with queue: true) and must not wipe what the HUD
+  // shows of the running task
+  function isBusy(s) { return s.state === 'thinking' || s.state === 'acting'; }
   // the SYRAX panel's TASK row (hud.html): the running goal, then how many human requests wait behind it; nothing when none do
   function taskRow(s) {
     return (s.task ? String(s.task.goal || '').toUpperCase().slice(0, 26) : '—') + (s.queue && s.queue.length ? ' · QUEUE ' + s.queue.length : '');
@@ -367,7 +370,9 @@
       link.ws.send(JSON.stringify(msg)); return true;
     }
     link.send = send;
-    link.ask = (text, voice) => send({ type: 'task', text, voice: !!voice });
+    // queue: a request made while SYRAX works waits for the running task instead of being refused (server.py task {text,
+    // voice, queue}: "Already executing" without it; core.py submit journals it PENDING and starts it when the task ends)
+    link.ask = (text, voice, queue) => send(queue ? { type: 'task', text, voice: !!voice, queue: true } : { type: 'task', text, voice: !!voice });
     link.answer = text => send({ type: 'answer', text });
     link.stop = () => send({ type: 'stop', reason: 'hud' });
     link.refresh = () => ON_OPEN.forEach(m => send(m));
@@ -378,5 +383,5 @@
     return link;
   }
 
-  return { initial, reduce, offline, connect, argSummary, short, dayStart, interruptedLine, queuedLine, taskRow, permissionLine, permissionDetail, pendingAskFrom, ON_OPEN };
+  return { initial, reduce, offline, connect, argSummary, short, dayStart, interruptedLine, queuedLine, taskRow, permissionLine, permissionDetail, pendingAskFrom, isBusy, ON_OPEN };
 });

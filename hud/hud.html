@@ -721,8 +721,10 @@ async function ask(text, spoken = false) {
     cmd.placeholder = 'type a command — or press V and speak';
     if (S.link.pendingAsk) { link.answer(text); setMode('THINKING'); return; }
     if (/^(stop|abort|cancel)$/i.test(text)) { link.stop(); return; }
-    if (!link.ask(text, spoken)) { log('LINK BUSY'); return; }
-    setMode('THINKING'); S.cog = [];
+    // never lost while SYRAX works: it waits its turn (queue), and the running task's cognition stays on screen
+    const busy = SyraxLink.isBusy(S.link);
+    if (!link.ask(text, spoken, true)) { log('LINK BUSY'); return; }
+    if (!busy) { setMode('THINKING'); S.cog = []; }
     return;
   }
   setMode('THINKING');
