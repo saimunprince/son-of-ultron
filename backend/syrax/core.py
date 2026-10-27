@@ -183,6 +183,8 @@ class Core:
         # the human's conversation, kept aside while SYRAX does its own work
         self._human_context: Optional[list] = None
         self._submit_lock = asyncio.Lock()
+        # a task is being started (``_begin``, ``resume``): its coroutine does not exist yet, but SYRAX is busy
+        self._starting = 0
         self._agent_lock = asyncio.Lock()
         self.observers: List[Observer] = []
         self.state: dict = {"state": "idle"}  # last direct state event
@@ -308,6 +310,13 @@ class Core:
 
     @property
     def busy(self) -> bool:
+        """A task runs, or one is being started. Review 2026-10-27: ``busy`` was False while ``_begin`` still awaited
+        the agent build, the worktree and the routing, so a RESUME (or a quality run, a forced cycle, a brief proof)
+        passed its busy check in that window and a second coroutine drove the same agent."""
+        return self._starting > 0 or self._task_running()
+
+    def _task_running(self) -> bool:
+        """The running task's coroutine exists and has not ended (what cancel, reset and the deadline act on)."""
         return self.current is not None and self.current.task is not None and not self.current.task.done()
 
     async def emit(self, event: dict) -> None:
@@ -472,6 +481,16 @@ class Core:
     ) -> str:
         """Start a task now (the caller holds ``_submit_lock`` and knows the core is free). A ``task_id``
         names a queued (PENDING) task to begin; otherwise a new task row is created."""
+        self._starting += 1  # busy from here, not only once the coroutine exists
+        try:
+            return await self._begin_now(goal, said, session_id, kind, max_steps, seed, task_id)
+        finally:
+            self._starting -= 1
+
+    async def _begin_now(
+        self, goal: str, said: Optional[str], session_id: Optional[str], kind: str,
+        max_steps: Optional[int], seed: Optional[dict], task_id: Optional[str],
+    ) -> str:
         await self.ensure_agent()
         await asyncio.to_thread(self.devloop.begin_task)  # a task owns only the changes it makes
         if task_id is None:
@@ -542,7 +561,7 @@ class Core:
         """The watchdog: the task is still running after its deadline, so it is cancelled with the reason the
         journal and the notice carry. A task that already ended (or a later one) is left alone."""
         self._deadline = None
-        if self.current is None or self.current.task_id != task_id or not self.busy:
+        if self.current is None or self.current.task_id != task_id or not self._task_running():
             return
         logger.warning(f"task {task_id} ran past its deadline ({_span(limit)}): cancelling")
         self._cancel_now(DEADLINE_REASON.format(span=_span(limit)))
@@ -732,7 +751,7 @@ class Core:
     async def cancel(self, reason: str = "aborted by human") -> bool:
         """Stop the running task. `reason` is journaled: a timeout is not a human
         (live 2026-10-12: a quality case that ran out of time read "aborted by human")."""
-        if not self.busy:
+        if not self._task_running():
             return False
         self._cancel_now(reason)
         return True
@@ -759,7 +778,7 @@ class Core:
     async def reset(self) -> None:
         for q in self.queued():  # a reset starts over: nothing waits either
             await self.cancel_queued(q["task_id"], note="reset by human")
-        if self.busy:
+        if self._task_running():
             assert self.current is not None and self.current.task is not None
             self.current.task.cancel()
             await asyncio.gather(self.current.task, return_exceptions=True)
@@ -781,9 +800,22 @@ class Core:
         case (OWN_WORK_NOT_RESUMED) is dismissed as the boot policy would dismiss it, journaled, and the
         note comes back for the UI; an UNCERTAIN one still needs force and a note first (dismissing it drops
         the question asked of the human). A conversation gets the preparation a new task gets (``_prepare``)
-        on top of its checkpoint context, the resume note and the intent ledger's open sends."""
-        if self.busy:
-            return "Already executing. Stop it first."
+        on top of its checkpoint context, the resume note and the intent ledger's open sends.
+
+        Review 2026-10-27: a resume checked ``busy`` without ``_submit_lock``, so one made while a submit was still
+        starting its task (or a second RESUME from another session) also launched: two coroutines drove one agent.
+        A resume now holds the submit lock from the busy check to the launch, and SYRAX is busy meanwhile."""
+        async with self._submit_lock:
+            if self.busy:
+                return "Already executing. Stop it first."
+            self._starting += 1
+            try:
+                return await self._resume_now(task_id, session_id, force, note)
+            finally:
+                self._starting -= 1
+
+    async def _resume_now(self, task_id: str, session_id: Optional[str], force: bool, note: str) -> Optional[str]:
+        """``resume``'s work; the caller holds ``_submit_lock`` and knows the core is free."""
         try:
             ctx = self.journal.resume_context(task_id)
         except JournalError as e:
@@ -918,7 +950,7 @@ class Core:
 
     def snapshot(self) -> dict:
         running = None
-        if self.busy and self.current is not None:
+        if self._task_running() and self.current is not None:
             row = self.journal.task(self.current.task_id) or {}
             running = {
                 "task_id": self.current.task_id,
@@ -944,7 +976,7 @@ class Core:
 
     async def shutdown(self) -> None:
         await self.autonomy.stop()
-        if self.busy:
+        if self._task_running():
             assert self.current is not None and self.current.task is not None
             self.current.task.cancel()
             await asyncio.gather(self.current.task, return_exceptions=True)
