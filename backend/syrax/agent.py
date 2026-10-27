@@ -537,10 +537,18 @@ class ToolCrash(RuntimeError):
 # Live 2026-10-03: three autonomous attempts read the journal, changed nothing,
 # and ended "Fixed task quality regression ... by ensuring prompt alignment".
 # A final answer that claims a change the task never made is sent back once.
+# Review 2026-10-27: in human conversations CLAIM caught answers that claim nothing, and CLAIM_FALLBACK replaced
+# them: "check config.yaml, don't change it" -> "I have not modified anything. The port is 8080." lost the port.
+# Never after a negation ("I have not changed", "I never modified"); a sentence-initial word that names a kind of
+# thing ("Fixed-point arithmetic", "Implemented in Rust, ripgrep ...") or a dated passive ("has been changed since
+# 2020") is no claim; and a passive "has been ..." in a conversation counts only when the request asks for a change
+# (CHANGE_ASKED, _change_claimed): "Python 2 has been removed from macOS" answers a question, "the file has been
+# deleted" answers "delete the file".
+_HISTORY = r"(?![^.!?\n]*\b(?:since|ago|(?:in|as of|by) (?:1[89]|20)\d\d)\b)"
 CLAIM = re.compile(
-    r"(?:^|[.!]\s+)(?:fixed|resolved|repaired|patched|implemented)\b"
-    r"|\b(?:has|have) been (?:successfully )?(?:\w+ and )?(?:fixed|resolved|repaired|patched|implemented|updated|changed|modified)\b"
-    r"|\bi(?:'ve| have)? (?:\w+ )?(?:fixed|resolved|repaired|patched|implemented|updated|changed|modified|released)\b",
+    r"(?:^|[.!]\s+)(?:fixed|resolved|repaired|patched|implemented)\b(?!-)(?!\s+(?:in|as)\s+(?-i:[A-Z]))"
+    rf"|\b(?:has|have) been (?:successfully )?(?:\w+ and )?(?:fixed|resolved|repaired|patched|implemented|updated|changed|modified)\b{_HISTORY}"
+    r"|\bi(?:'ve| have)? (?!(?:not|never|neither)\b)(?:\w+ )?(?:fixed|resolved|repaired|patched|implemented|updated|changed|modified|released)\b",
     re.I,
 )
 # Live 2026-10-10: in one morning eight autonomous finals said a `release`
@@ -562,13 +570,29 @@ OWN_WORK_CLAIM = re.compile(
 # nothing, and answered "The file has been deleted." CLAIM knew only words for
 # fixing. A claimed change to things (deleted, created, written, moved) that no
 # tool in the task made gets one chance to be done for real, then an honest answer.
+# Review 2026-10-27: a text the brain wrote in its answer is not a thing changed: "Here's a short poem I wrote for
+# you:", "I created a haiku:" were sent back as world claims. Wrote, written or created a poem, story, joke ... (or
+# "for you", "below", a colon ending the line) is no claim unless the sentence names a file or folder.
 _WORLD = r"(?:deleted|removed|created|written|saved|moved|renamed|copied|overwritten)"
+_WRITTEN = (r"(?:poem|haiku|story|stories|song|joke|limerick|verse|rhyme|riddle|essay|sonnet|lyrics|toast|speech"
+            r"|tagline|slogan)s?")
+_TEXT_WORK = (r"(?!\s*:[ \t]*(?:\n|$)|\s+for you\b|\s+(?:above|below)\b"
+              rf"|\s+(?:(?:you|for you)\s+)?(?:a|an|this|the|that|some|your)\s+(?:[\w-]+\s+){{0,2}}{_WRITTEN}\b"
+              r"(?![^.!?\n]*(?:\bfile\b|\bfolder\b|\.\w{1,4}\b)))")
 WORLD_CLAIM = re.compile(
-    rf"\b(?:has|have) been (?:successfully )?(?:[\w-]+(?:,| and) )*{_WORLD}\b"
-    r"|\bi(?:'ve| have)? (?:successfully |now |just )?(?:deleted|removed|created|wrote|written|saved|moved|renamed|copied|overwrote)\b"
-    r"(?!\s+(?:nothing|no\b))",
+    rf"\b(?:has|have) been (?:successfully )?(?:[\w-]+(?:,| and) )*{_WORLD}\b{_HISTORY}"
+    r"|\bi(?:'ve| have)? (?:successfully |now |just )?(?:deleted|removed|saved|moved|renamed|copied|overwrote)\b"
+    r"(?!\s+(?:nothing|no\b))"
+    r"|\bi(?:'ve| have)? (?:successfully |now |just )?(?:created|wrote|written)\b"
+    rf"(?!\s+(?:nothing|no\b)){_TEXT_WORK}",
     re.I,
 )
+# a request that asks for some change (any word for one, so the check errs toward staying on): see CLAIM
+CHANGE_ASKED = re.compile(
+    r"\b(?:delet|remov|eras|creat|mak|writ|wrote|sav|mov|renam|cop(?:y|ie)|overwr|fix|repair|patch|resolv|implement"
+    r"|updat|chang|modif|edit|add|set|install|uninstall|appl|replac|build|generat|put|clean|clear|append|insert"
+    r"|rewr|refactor|correct|improv|releas|undo|restor|revert|commit|push)\w*",
+    re.I)
 WORLD_NUDGE = (
     "[SYRAX check, not a new request] Your answer says something was deleted, created, written or moved, but no "
     "tool in this task did that. If the request asks for it, do it now with a tool, then answer. If it does not, "
@@ -1041,7 +1065,7 @@ class SyraxAgent(Manus):
                 self.last_reply = ECHO_FALLBACK
         if self.exact_form and self.last_reply and not self.step_limit_hit and not self.loop_stopped:
             await self._hold_to_form()
-        if (self.last_reply and not self.changed and WORLD_CLAIM.search(self.last_reply)
+        if (self.last_reply and not self.changed and self._change_claimed(WORLD_CLAIM, self.last_reply)
                 and not self.step_limit_hit and not self.loop_stopped):
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
             await self._send({"type": "notice", "text": "The answer claims a change no tool made: asking once to do it or say so."})
@@ -1150,8 +1174,15 @@ class SyraxAgent(Manus):
             self.last_reply = cleaned
 
     def _claims_change(self, text: str) -> bool:
-        return bool(CLAIM.search(text) or WORLD_CLAIM.search(text)
+        return bool(self._change_claimed(CLAIM, text) or self._change_claimed(WORLD_CLAIM, text)
                     or (self.task_kind == "autonomous" and OWN_WORK_CLAIM.search(text)))
+
+    def _change_claimed(self, rx: "re.Pattern", text: str) -> bool:
+        """`rx` (CLAIM or WORLD_CLAIM) finds a claim in `text`. A passive "has been ..." counts in SYRAX's own work,
+        or when the human's request asks for some change (CHANGE_ASKED); otherwise it states a fact of the world."""
+        passive_counts = self.task_kind == "autonomous" or bool(CHANGE_ASKED.search(self.task_goal or ""))
+        return any(passive_counts or not m.group(0).lower().startswith(("has ", "have "))
+                   for m in rx.finditer(text or ""))
 
     def _outcome_claimed(self, text: str) -> Optional[str]:
         """The first class in OUTCOME_CLAIMS that `text` claims and no tool of that class succeeded this task
