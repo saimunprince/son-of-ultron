@@ -487,7 +487,10 @@ CREATE TABLE IF NOT EXISTS knowledge (
   task_id      TEXT,
   created      REAL NOT NULL,
   last_used    REAL,
-  uses         INTEGER NOT NULL DEFAULT 0
+  uses         INTEGER NOT NULL DEFAULT 0,
+  status       TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DISPUTED','SUPERSEDED')),
+  verified_at  REAL,
+  superseded_by INTEGER
 );
 CREATE INDEX IF NOT EXISTS knowledge_created ON knowledge(created);
 CREATE TABLE IF NOT EXISTS benchmarks (
@@ -565,7 +568,28 @@ CREATE TABLE IF NOT EXISTS skills (
 _ADDED_COLUMNS = (
     ("skills", "content_hash", "TEXT"),
     ("skills", "code_version", "INTEGER NOT NULL DEFAULT 1"),
+    # knowledge state (audit 2026-10-27, item 4): DISPUTED was recomputed from recent events and aged out, and an
+    # overwritten row left no row behind. Old rows become ACTIVE (the four rows the live journal's three contradiction
+    # events name are all 78.4 vs 78.37 °C, which consolidate.agree has called the same figure since 2026-10-26, so
+    # replaying those events would dispute correct rows); verified_at = created for every row that rests on a source
+    # (every kind but human: add_knowledge_sync refuses the others without one), NULL for the human's own word.
+    ("knowledge", "status", "TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DISPUTED','SUPERSEDED'))"),
+    ("knowledge", "verified_at", "REAL"),
+    ("knowledge", "superseded_by", "INTEGER"),
 )
+# run once, in the transaction that adds the column
+_BACKFILL = {
+    ("knowledge", "verified_at"): "UPDATE knowledge SET verified_at=created WHERE kind!='human'",
+}
+
+# ACTIVE: believed. DISPUTED: another stored row contradicts it; shown marked, never stated as fact. SUPERSEDED: a
+# newer row replaced it (superseded_by); kept for the record, skipped by retrieval. SUPERSEDED is final.
+KNOWLEDGE_STATUSES = ("ACTIVE", "DISPUTED", "SUPERSEDED")
+KNOWLEDGE_TRANSITIONS: Dict[str, frozenset] = {
+    "ACTIVE": frozenset({"DISPUTED", "SUPERSEDED"}),
+    "DISPUTED": frozenset({"ACTIVE", "SUPERSEDED"}),
+    "SUPERSEDED": frozenset(),
+}
 
 SKILL_STATUSES = ("NOT_TESTED", "VERIFIED", "FAILED", "DISABLED")
 
@@ -632,6 +656,8 @@ class Journal:
                 f"file:{self.path.resolve().as_posix()}?mode=ro", uri=True, check_same_thread=False, isolation_level=None, timeout=10
             )
             self._db.row_factory = sqlite3.Row
+            # an owner still on the old schema: read it as it is (every row ACTIVE), never migrate it from here
+            self._kstate = "status" in self._columns("knowledge")
             return
         self._db = sqlite3.connect(
             str(self.path), check_same_thread=False, isolation_level=None, timeout=10
@@ -641,9 +667,8 @@ class Journal:
         self._db.execute("PRAGMA synchronous=FULL")
         self._db.execute("PRAGMA foreign_keys=ON")
         self._db.executescript(_DDL)
-        for table, column, decl in _ADDED_COLUMNS:
-            if column not in {r["name"] for r in self._db.execute(f"PRAGMA table_info({table})").fetchall()}:
-                self._db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        self._add_columns()
+        self._kstate = True
         self._db.execute(
             "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)",
             (str(SCHEMA_VERSION),),
@@ -665,6 +690,30 @@ class Journal:
             self.recovered = self.recover_interrupted()
 
     # ——— helpers ———
+
+    def _columns(self, table: str) -> set:
+        return {r["name"] for r in self._db.execute(f"PRAGMA table_info({table})").fetchall()}
+
+    def _add_columns(self) -> None:
+        """Add the _ADDED_COLUMNS an older file lacks, and their _BACKFILL, in one transaction: a crash between the
+        ALTER and the backfill would leave the column added and never filled (the check below would skip it next time)."""
+        if all(c in self._columns(t) for t, c, _ in _ADDED_COLUMNS):
+            return
+        self._db.execute("BEGIN IMMEDIATE")
+        try:
+            for table, column, decl in _ADDED_COLUMNS:  # re-read inside the lock: another process may have just added it
+                if column not in self._columns(table):
+                    self._db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+                    if (table, column) in _BACKFILL:
+                        self._db.execute(_BACKFILL[(table, column)])
+            self._db.execute("COMMIT")
+        except BaseException:
+            self._db.execute("ROLLBACK")
+            raise
+
+    def _live(self) -> str:
+        """The SQL condition for knowledge rows retrieval may return: not SUPERSEDED."""
+        return "status!='SUPERSEDED'" if getattr(self, "_kstate", True) else "1"
 
     def _txn(self):
         return _Txn(self)
@@ -1330,6 +1379,9 @@ class Journal:
         d = dict(row)
         d["sources"] = _loads(d.get("sources"), [])
         d["tags"] = _loads(d.get("tags"), [])
+        d.setdefault("status", "ACTIVE")  # a read-only handle on an owner still on the old schema
+        d.setdefault("verified_at", None)
+        d.setdefault("superseded_by", None)
         return d
 
     def add_knowledge_sync(
@@ -1348,7 +1400,8 @@ class Journal:
         basis: Optional[str] = None,
     ) -> dict:
         """Store a fact with provenance. Confidence is capped by the evidence
-        kind; a caller may lower it, never raise it above the policy."""
+        kind; a caller may lower it, never raise it above the policy. A row stored with a source is verified now
+        (verified_at); the human's own word (kind human) has no source to check and stays unverified."""
         if kind not in KNOWLEDGE_KINDS:
             raise JournalError(f"bad knowledge kind {kind!r}")
         claim = (claim or "").strip()
@@ -1362,11 +1415,12 @@ class Journal:
         with self._txn() as cur:
             cur.execute(
                 "INSERT INTO knowledge(claim, kind, source_url, source_title, excerpt, confidence, basis, sources, "
-                "tags, question, task_id, created) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "tags, question, task_id, created, status, verified_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'ACTIVE',?)",
                 (
                     claim[:2000], kind, source_url, source_title, (excerpt or "")[:2000] or None, conf,
                     basis or f"{kind}: {agreeing_sources} source(s)", _dumps(sources or []),
                     _dumps(sorted({t.lower() for t in (tags or []) if t})), question, task_id, ts,
+                    None if kind == "human" else ts,
                 ),
             )
             kid = int(cur.lastrowid)
@@ -1377,11 +1431,12 @@ class Journal:
         return self.knowledge(kid)
 
     def human_facts(self, limit: int = 300) -> List[dict]:
-        """Facts the human told SYRAX (kind human), oldest first."""
+        """Facts the human told SYRAX (kind human), oldest first; earlier versions a correction replaced
+        (SUPERSEDED) are not facts any more and are left out."""
         limit = max(1, min(int(limit), 1000))
         with self._lock:
             rows = self._db.execute(
-                "SELECT * FROM knowledge WHERE kind='human' ORDER BY created DESC LIMIT ?", (limit,)
+                f"SELECT * FROM knowledge WHERE kind='human' AND {self._live()} ORDER BY created DESC LIMIT ?", (limit,)
             ).fetchall()
         return [self._knowledge_dict(r) for r in reversed(rows)]
 
@@ -1390,24 +1445,40 @@ class Journal:
                                     basis: Optional[str] = None) -> Optional[dict]:
         """Overwrite a row's claim and, when given, its confidence (capped by the kind's policy), tags and basis.
         The `knowledge.updated` event keeps `previous` (the old text, memory type and confidence), so an overwrite
-        can be audited (memory truth, 2026-10-25)."""
+        can be audited (memory truth, 2026-10-25). When the text changes, the old version is also kept as a row of
+        its own (audit 2026-10-27, item 4: the event cut it at 160 characters): a copy of the old row, SUPERSEDED,
+        superseded_by this id, named by the event's `previous_id`. The row itself keeps its id, so the memory panel
+        and every reference to it still point at the current text. A SUPERSEDED row is never rewritten."""
         ts = _now()
         with self._txn() as cur:
             row = cur.execute("SELECT * FROM knowledge WHERE id=?", (knowledge_id,)).fetchone()
             if row is None:
                 return None
             old = self._knowledge_dict(row)
+            if old["status"] == "SUPERSEDED":
+                raise JournalError(f"knowledge {knowledge_id} is SUPERSEDED by {old['superseded_by']}: it is not rewritten")
             new_tags = old["tags"] if tags is None else sorted({t.lower() for t in tags if t})
             conf = old["confidence"] if confidence is None else max(0.0, min(float(confidence), confidence_for(old["kind"])))
+            previous_id = None
+            if claim[:2000] != old["claim"]:
+                cur.execute(
+                    "INSERT INTO knowledge(claim, kind, source_url, source_title, excerpt, confidence, basis, sources, tags, "
+                    "question, task_id, created, last_used, uses, status, verified_at, superseded_by) "
+                    "SELECT claim, kind, source_url, source_title, excerpt, confidence, basis, sources, tags, question, task_id, "
+                    "created, last_used, uses, 'SUPERSEDED', verified_at, id FROM knowledge WHERE id=?", (knowledge_id,))
+                previous_id = int(cur.lastrowid)
             cur.execute("UPDATE knowledge SET claim=?, confidence=?, tags=?, basis=?, last_used=? WHERE id=?",
                         (claim[:2000], conf, _dumps(new_tags), basis or old["basis"], ts, knowledge_id))
             self._insert_event(cur, ts, task_id, "knowledge.updated", {
                 "knowledge_id": knowledge_id, "kind": old["kind"], "claim": claim[:160], "type": _memory_type(new_tags), "confidence": conf,
-                "previous": {"claim": old["claim"][:160], "type": _memory_type(old["tags"]), "confidence": old["confidence"]}})
+                "previous": {"claim": old["claim"][:160], "type": _memory_type(old["tags"]), "confidence": old["confidence"]},
+                "previous_id": previous_id})
         return self.knowledge(knowledge_id)
 
     def forget_knowledge_sync(self, ids: List[int], reason: str = "human asked", task_id: Optional[str] = None) -> List[dict]:
-        """Delete knowledge rows (the human's right to be forgotten); the deletion itself is journaled."""
+        """Delete knowledge rows (the human's right to be forgotten); the deletion itself is journaled. The earlier
+        versions of a forgotten human fact (SUPERSEDED rows a correction left, superseded_by it) go with it, named in
+        the event's `versions`: forgetting a fact forgets what it used to say."""
         gone = []
         ts = _now()
         with self._txn() as cur:
@@ -1415,12 +1486,105 @@ class Journal:
                 row = cur.execute("SELECT * FROM knowledge WHERE id=?", (int(kid),)).fetchone()
                 if row is None:
                     continue
+                versions, todo = [], [int(kid)] if row["kind"] == "human" else []
+                while todo:
+                    nxt = [r[0] for r in cur.execute(
+                        f"SELECT id FROM knowledge WHERE kind='human' AND superseded_by IN ({','.join('?' * len(todo))})", todo)]
+                    versions += nxt
+                    todo = nxt
                 cur.execute("DELETE FROM knowledge WHERE id=?", (int(kid),))
+                if versions:
+                    cur.execute(f"DELETE FROM knowledge WHERE id IN ({','.join('?' * len(versions))})", versions)
                 gone.append(self._knowledge_dict(row))
-                self._insert_event(cur, ts, task_id, "knowledge.forgotten", {"knowledge_id": int(kid), "kind": row["kind"], "claim": row["claim"][:160], "reason": reason})
+                self._insert_event(cur, ts, task_id, "knowledge.forgotten", {"knowledge_id": int(kid), "kind": row["kind"], "claim": row["claim"][:160], "reason": reason,
+                                                                             **({"versions": versions} if versions else {})})
         return gone
 
+    # Knowledge state (audit 2026-10-27, item 4). Every change is checked against KNOWLEDGE_TRANSITIONS and journaled
+    # in the same transaction; SUPERSEDED never comes back.
+
+    def dispute_knowledge_sync(self, ids: List[int], why: str, task_id: Optional[str] = None,
+                               contradiction: Optional[dict] = None) -> List[int]:
+        """Mark rows DISPUTED: stored knowledge contradicts itself. `contradiction` (the knowledge.contradiction
+        payload that found it) is journaled in the same transaction, so the finding and the state never part.
+        `knowledge.disputed {knowledge_ids, disputed, why}` is journaled when a row changed. SUPERSEDED rows stay
+        SUPERSEDED. Returns the ids that became DISPUTED."""
+        ts = _now()
+        changed, involved = [], []
+        with self._txn() as cur:
+            if contradiction is not None:
+                task = self._row(cur, task_id) if task_id else None
+                ev_id = self._insert_event(cur, ts, task_id, "knowledge.contradiction", dict(contradiction))
+                if task is not None and ev_id is not None:
+                    self._apply(cur, task, "knowledge.contradiction", contradiction, ev_id, ts)
+            for kid in dict.fromkeys(int(i) for i in ids if i is not None):
+                row = cur.execute("SELECT status FROM knowledge WHERE id=?", (kid,)).fetchone()
+                if row is None or row["status"] == "SUPERSEDED":
+                    continue
+                involved.append(kid)
+                if row["status"] != "DISPUTED":
+                    self._knowledge_transition(row["status"], "DISPUTED")
+                    cur.execute("UPDATE knowledge SET status='DISPUTED' WHERE id=?", (kid,))
+                    changed.append(kid)
+            if changed:
+                self._insert_event(cur, ts, task_id, "knowledge.disputed", {"knowledge_ids": involved, "disputed": changed, "why": str(why)[:300]})
+        return changed
+
+    def supersede_knowledge_sync(self, losers: List[int], winner: int, why: str, evidence: Optional[list] = None,
+                                 task_id: Optional[str] = None) -> List[int]:
+        """Settle a dispute: `losers` become SUPERSEDED (superseded_by `winner`), the winner ACTIVE and verified now;
+        journaled as `knowledge.superseded {knowledge_ids, superseded_by, why, evidence}`. A row only supersedes rows
+        of its own kind (a conclusion never replaces a web excerpt or the human's word), and a SUPERSEDED row
+        supersedes nothing. Returns the ids that became SUPERSEDED."""
+        ts = _now()
+        changed = []
+        with self._txn() as cur:
+            w = cur.execute("SELECT id, kind, status FROM knowledge WHERE id=?", (int(winner),)).fetchone()
+            if w is None:
+                raise JournalError(f"unknown knowledge {winner}")
+            if w["status"] == "SUPERSEDED":
+                raise JournalError(f"knowledge {winner} is SUPERSEDED: it supersedes nothing")
+            for kid in dict.fromkeys(int(i) for i in losers if i is not None and int(i) != int(winner)):
+                row = cur.execute("SELECT kind, status FROM knowledge WHERE id=?", (kid,)).fetchone()
+                if row is None or row["status"] == "SUPERSEDED":
+                    continue
+                if row["kind"] != w["kind"]:
+                    raise JournalError(f"knowledge {winner} ({w['kind']}) cannot supersede {kid} ({row['kind']})")
+                self._knowledge_transition(row["status"], "SUPERSEDED")
+                cur.execute("UPDATE knowledge SET status='SUPERSEDED', superseded_by=? WHERE id=?", (int(winner), kid))
+                changed.append(kid)
+            self._knowledge_transition(w["status"], "ACTIVE")
+            cur.execute("UPDATE knowledge SET status='ACTIVE', verified_at=? WHERE id=?", (ts, int(winner)))
+            self._insert_event(cur, ts, task_id, "knowledge.superseded", {
+                "knowledge_ids": changed, "superseded_by": int(winner), "was": w["status"], "why": str(why)[:300],
+                "evidence": list(evidence or [])[:10]})
+        return changed
+
+    def verify_knowledge_sync(self, knowledge_id: int, why: str = "", evidence: Optional[list] = None,
+                              resolve: bool = False, task_id: Optional[str] = None) -> Optional[dict]:
+        """The row was confirmed again (its page still says it, or an independent source supports it): verified_at
+        = now. With `resolve`, a DISPUTED row becomes ACTIVE (`knowledge.resolved`): the caller found independent
+        evidence and nothing stored contradicts it any more. A SUPERSEDED row is left as it is (None)."""
+        ts = _now()
+        with self._txn() as cur:
+            row = cur.execute("SELECT status FROM knowledge WHERE id=?", (int(knowledge_id),)).fetchone()
+            if row is None or row["status"] == "SUPERSEDED":
+                return None
+            cur.execute("UPDATE knowledge SET verified_at=? WHERE id=?", (ts, int(knowledge_id)))
+            if resolve and row["status"] == "DISPUTED":
+                self._knowledge_transition("DISPUTED", "ACTIVE")
+                cur.execute("UPDATE knowledge SET status='ACTIVE' WHERE id=?", (int(knowledge_id),))
+                self._insert_event(cur, ts, task_id, "knowledge.resolved",
+                                   {"knowledge_id": int(knowledge_id), "why": str(why)[:300], "evidence": list(evidence or [])[:10]})
+        return self.knowledge(knowledge_id)
+
+    @staticmethod
+    def _knowledge_transition(current: str, new: str) -> None:
+        if current != new and new not in KNOWLEDGE_TRANSITIONS.get(current, frozenset()):
+            raise JournalError(f"invalid knowledge transition {current} -> {new}")
+
     def knowledge(self, knowledge_id: int) -> Optional[dict]:
+        """One row by id, whatever its status (a cited id, the memory panel's row): callers read `status`."""
         with self._lock:
             row = self._db.execute("SELECT * FROM knowledge WHERE id=?", (knowledge_id,)).fetchone()
         return self._knowledge_dict(row) if row else None
@@ -1434,15 +1598,17 @@ class Journal:
             return None
         with self._lock:
             row = self._db.execute(
-                "SELECT * FROM knowledge WHERE kind='web' AND source_url=? AND excerpt=? ORDER BY id ASC LIMIT 1",
+                f"SELECT * FROM knowledge WHERE kind='web' AND source_url=? AND excerpt=? AND {self._live()} ORDER BY id ASC LIMIT 1",
                 (source_url, stored),
             ).fetchone()
         return self._knowledge_dict(row) if row else None
 
-    def knowledge_recent(self, limit: int = 50, since: Optional[float] = None, tag: Optional[str] = None) -> List[dict]:
+    def knowledge_recent(self, limit: int = 50, since: Optional[float] = None, tag: Optional[str] = None,
+                         include_superseded: bool = False) -> List[dict]:
+        """The newest rows; SUPERSEDED rows only with `include_superseded` (they are history, not knowledge)."""
         limit = max(1, min(int(limit), 500))
         sql, params = "SELECT * FROM knowledge", []
-        conds = []
+        conds = [] if include_superseded else [self._live()]
         if since is not None:
             conds.append("created>=?"); params.append(since)
         if tag:
@@ -1456,7 +1622,8 @@ class Journal:
         return [self._knowledge_dict(r) for r in rows]
 
     def knowledge_of_kind(self, kinds, limit: int = 2000) -> List[dict]:
-        """Rows of the given kinds (e.g. ("conclusion", "web")), oldest first, with their sources: the memory export."""
+        """Rows of the given kinds (e.g. ("conclusion", "web")), oldest first, with their sources and status, SUPERSEDED
+        ones included: the memory export (the record) and consolidate (which skips them itself)."""
         kinds = tuple(k for k in kinds if k in KNOWLEDGE_KINDS)
         if not kinds:
             return []
@@ -1468,12 +1635,12 @@ class Journal:
         return [self._knowledge_dict(r) for r in rows]
 
     def knowledge_search(self, query: str, limit: int = 8) -> List[dict]:
-        """Keyword-overlap ranking over claim, excerpt, tags and question."""
+        """Keyword-overlap ranking over claim, excerpt, tags and question; SUPERSEDED rows are not retrieved."""
         words = {w for w in re_words(query) if len(w) > 2}
         if not words:
             return []
         with self._lock:
-            rows = self._db.execute("SELECT * FROM knowledge ORDER BY created DESC LIMIT 2000").fetchall()
+            rows = self._db.execute(f"SELECT * FROM knowledge WHERE {self._live()} ORDER BY created DESC LIMIT 2000").fetchall()
         scored = []
         for r in rows:
             hay = " ".join(str(r[k] or "") for k in ("claim", "excerpt", "tags", "question")).lower()

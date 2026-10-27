@@ -19,6 +19,24 @@ reinforced, not stored again, and the contradiction is still reported (the
 same audit found three identical ethanol rows stored because a conflict
 skipped the duplicate check).
 
+The state of a row is kept on the row (audit 2026-10-27, item 4: DISPUTED was
+recomputed from the last events and aged out):
+
+- a contradiction marks the rows involved DISPUTED (``knowledge.disputed``,
+  journaled with the ``knowledge.contradiction`` that found it); ``know``
+  shows them marked, never as fact;
+- a later ``learn`` settles it (``settles``) when a row involved is already
+  DISPUTED and the claim rests on ``independent`` evidence (a stored source row,
+  not a conclusion, whose text fully supports the claim and that none of the
+  rows involved already rests on) at least as strong as every row it
+  contradicts: the row the claim confirms (or the new row) becomes ACTIVE and
+  verified, the rows it contradicts SUPERSEDED (``superseded_by``);
+- a DISPUTED row confirmed by independent evidence with nothing left to
+  contradict it is resolved back to ACTIVE;
+- SUPERSEDED rows are history: they are compared with nothing.
+
+Citing the same rows again settles nothing: the evidence must be new.
+
 "Same subject" is keyword overlap (Jaccard ≥ SIMILAR) between the claims;
 figures are the numbers in them. Words, not embeddings: no model is needed
 and every decision can be read in the journal.
@@ -41,7 +59,7 @@ from __future__ import annotations
 
 import re
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from typing import List, Optional, Tuple
+from typing import Iterable, List, Optional, Set, Tuple
 
 from syrax.journal import Journal
 
@@ -99,11 +117,12 @@ def similarity(a: str, b: str) -> float:
 
 def compare(claim: str, journal: Journal, limit: int = 5000) -> Tuple[Optional[dict], List[dict]]:
     """(the stored conclusion this duplicates or None, conclusions it contradicts), over every stored
-    conclusion (newest first). Both can be set: a duplicate is reported even when another row conflicts."""
+    conclusion that is not SUPERSEDED (newest first). Both can be set: a duplicate is reported even when another
+    row conflicts."""
     mine = figures(claim)
     duplicate, conflicts = None, []
     for k in reversed(journal.knowledge_of_kind(("conclusion",), limit=limit)):
-        if similarity(claim, k["claim"]) < SIMILAR:
+        if k.get("status") == "SUPERSEDED" or similarity(claim, k["claim"]) < SIMILAR:
             continue
         theirs = figures(k["claim"])
         if mine and theirs and not _overlap(mine, theirs):
@@ -111,3 +130,34 @@ def compare(claim: str, journal: Journal, limit: int = 5000) -> Tuple[Optional[d
         elif duplicate is None and (not mine or not theirs or _covered(mine, theirs) or _covered(theirs, mine)):
             duplicate = k
     return duplicate, conflicts
+
+
+def _rests_on(rows: Iterable[dict]) -> Set[int]:
+    """The rows themselves and every stored row they cite."""
+    out: Set[int] = set()
+    for k in rows:
+        out.add(int(k["id"]))
+        out |= {int(x) for x in k.get("sources") or [] if isinstance(x, int) or str(x).isdigit()}
+    return out
+
+
+def independent(cited: Iterable[dict], full: Set[int], involved: Iterable[dict]) -> List[dict]:
+    """The cited rows that are new evidence about the rows `involved`: a source (not a conclusion), not SUPERSEDED,
+    whose text fully supports the claim (its id is in `full`), and neither one of the involved rows nor a row they
+    already cite."""
+    seen = _rests_on(involved)
+    return [k for k in cited if k and k["id"] in full and k["kind"] != "conclusion"
+            and k.get("status") != "SUPERSEDED" and int(k["id"]) not in seen]
+
+
+def settles(duplicate: Optional[dict], conflicts: List[dict], fresh: List[dict]) -> bool:
+    """True when a claim settles a dispute in its favour: it contradicts stored rows, a row involved (the one it
+    duplicates or one it contradicts) is already DISPUTED, and its strongest independent evidence (`fresh`) is at
+    least as strong as every row it contradicts. A first contradiction is never settled on the spot: it is
+    disputed and journaled first."""
+    if not conflicts or not fresh:
+        return False
+    involved = ([duplicate] if duplicate else []) + list(conflicts)
+    if not any(k.get("status") == "DISPUTED" for k in involved):
+        return False
+    return max(k["confidence"] for k in fresh) >= max(k["confidence"] for k in conflicts)

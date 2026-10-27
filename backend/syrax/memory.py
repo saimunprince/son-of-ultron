@@ -247,7 +247,7 @@ class MemoryStore:
         return {"id": str(k["id"]), "text": k["claim"], "created": k["created"], "updated": k.get("last_used"),
                 "type": type_of(k.get("tags")), "confidence": k.get("confidence"), "basis": k.get("basis"),
                 "last_used": k.get("last_used"), "uses": k.get("uses", 0),
-                "origin": origin_of(k.get("tags")), "task_id": k.get("task_id")}
+                "origin": origin_of(k.get("tags")), "task_id": k.get("task_id"), "status": k.get("status") or "ACTIVE"}
 
     def facts(self, origin: Optional[str] = None, everything: bool = False) -> List[dict]:
         """The owner's memory: rows written by a HIDDEN_ORIGINS task (an eval) are left out, unless `origin` is that
@@ -356,8 +356,9 @@ class MemoryStore:
     def correct(self, fact_id, text: str) -> dict:
         """The human rewrites one remembered fact in place (memory panel EDIT). The row keeps its id and type, takes
         the new text at confidence 1.0 with basis CORRECTED_BASIS, and `knowledge.updated` journals `previous` (what
-        it replaced). Raises CorrectRefused for an empty or secret-looking text, and for an id that is no remembered
-        fact (unknown, or a knowledge row of another kind). Returns the refreshed fact."""
+        it replaced); the old text is kept as a SUPERSEDED row pointing at this one (journal.update_knowledge_claim_sync).
+        Raises CorrectRefused for an empty or secret-looking text, and for an id that is no remembered fact (unknown, a
+        knowledge row of another kind, or an earlier version a correction already replaced). Returns the refreshed fact."""
         text = " ".join(str(text or "").split())[:400]
         if not text:
             raise CorrectRefused("Refused: a corrected memory needs some text (use FORGET to drop it).")
@@ -368,7 +369,7 @@ class MemoryStore:
             j = self._journal()
             self._migrate()
             row = j.knowledge(int(fid)) if fid.isdigit() else None
-            if row is None or row.get("kind") != "human":
+            if row is None or row.get("kind") != "human" or row.get("status") == "SUPERSEDED":
                 raise CorrectRefused(f"Refused: no remembered fact {fid!r}.")
             kind = type_of(row.get("tags"))
             tags = ["memory", f"type:{kind}"] + sorted(_words(text))[:6]
@@ -378,7 +379,9 @@ class MemoryStore:
     def export(self, path=None) -> dict:
         """Write every remembered fact (with its provenance) and the conclusion/web knowledge rows with their sources
         to one JSON document, atomically (`_atomic_write`), at `path` or `export_dir()/memory-<YYYYMMDD-HHMMSS>.json`
-        (backend/config/exports, gitignored). Returns {path, count, knowledge, exported}.
+        (backend/config/exports, gitignored). Returns {path, count, knowledge, exported}. Every entry carries its
+        status (ACTIVE / DISPUTED / SUPERSEDED); `superseded_facts` holds the earlier versions corrections replaced,
+        each with the id of the fact that replaced it (`superseded_by`).
 
         Secrets: `remember` already refuses secret-looking text, and the whole document still goes through agent.py's
         CREDENTIAL mask (`_redacted`), so a key that slipped into a conclusion, an excerpt or a URL leaves the file as
@@ -394,15 +397,21 @@ class MemoryStore:
                 if k.get("source_url"):
                     f["source_url"] = k["source_url"]
                 facts.append(f)
+            superseded = [{"id": k["id"], "text": k["claim"], "status": k["status"], "superseded_by": k.get("superseded_by"),
+                           "type": type_of(k.get("tags")), "confidence": k.get("confidence"), "basis": k.get("basis"),
+                           "created": k["created"]}
+                          for k in j.knowledge_of_kind(("human",), limit=5000) if k.get("status") == "SUPERSEDED"]
             knowledge = [{"id": k["id"], "kind": k["kind"], "text": k["claim"], "confidence": k["confidence"],
                           "basis": k["basis"], "sources": k["sources"], "source_url": k.get("source_url"),
                           "source_title": k.get("source_title"), "question": k.get("question"), "tags": k["tags"],
-                          "created": k["created"], "last_used": k.get("last_used"), "uses": k.get("uses", 0)}
+                          "created": k["created"], "last_used": k.get("last_used"), "uses": k.get("uses", 0),
+                          "status": k.get("status") or "ACTIVE", "verified_at": k.get("verified_at"),
+                          "superseded_by": k.get("superseded_by")}
                          for k in j.knowledge_of_kind(("conclusion", "web"))]
             now = time.time()
             doc = _redacted({
                 "exported": datetime.fromtimestamp(now, timezone.utc).isoformat(timespec="seconds"), "exported_ts": now,
-                "git_head": _git_head(j.repo_root), "count": len(facts), "facts": facts,
+                "git_head": _git_head(j.repo_root), "count": len(facts), "facts": facts, "superseded_facts": superseded,
                 "knowledge_count": len(knowledge), "knowledge": knowledge,
             })
             out = Path(path) if path else export_dir() / time.strftime("memory-%Y%m%d-%H%M%S.json", time.localtime(now))
@@ -471,7 +480,7 @@ class MemoryStore:
             for t, title in groups:
                 mine = [f for f in facts if f.get("type", "fact") == t]
                 if mine:
-                    lines.append(f"{title}:\n" + "\n".join(f"- {f['text']}" for f in mine))
+                    lines.append(f"{title}:\n" + "\n".join(f"- {_marked(f)}" for f in mine))
             parts.append("LONG-TERM MEMORY (from earlier sessions):\n" + "\n".join(lines))
         if recent:
             parts.append(
@@ -487,6 +496,11 @@ class MemoryStore:
             "`forget` when asked. Never store passwords, keys, tokens or other secrets."
         )
         return "\n\n".join(parts)
+
+
+def _marked(fact: dict) -> str:
+    """The fact's text, with "(disputed)" in front when stored knowledge contradicts it: shown, not stated as fact."""
+    return f"(disputed) {fact['text']}" if fact.get("status") == "DISPUTED" else fact["text"]
 
 
 _store: Optional[MemoryStore] = None
@@ -544,7 +558,7 @@ class RecallTool(BaseTool):
             hits = store.recall(query)
         else:  # an eval recalls what it remembered itself; any other task sees the owner's memory only
             hits = store.recall(query, origin=self.origin_provider()[0])
-        return "\n".join(f"[{f['id']}] ({f.get('type', 'fact')}) {f['text']}" for f in hits) or "No matching memories."
+        return "\n".join(f"[{f['id']}] ({f.get('type', 'fact')}) {_marked(f)}" for f in hits) or "No matching memories."
 
 
 class ForgetTool(BaseTool):

@@ -194,6 +194,8 @@ class Researcher:
                 await self.journal.record("knowledge.reinforced", {
                     "knowledge_id": known["id"], "kind": "web", "claim": known["claim"][:300], "tags": known.get("tags") or [],
                     "question": question, "source_url": src.url, "agreeing_sources": agree.get(src.url, 1)}, task_id=task_id)
+                # the page still says it: the row is verified again (verified_at), its status untouched
+                await asyncio.to_thread(self.journal.verify_knowledge_sync, known["id"], task_id=task_id)
                 src.knowledge_id = known["id"]
                 reinforced += 1
                 continue
@@ -303,17 +305,24 @@ class KnowTool(BaseTool):
         rows = await asyncio.to_thread(self.journal.knowledge_search, query)
         if not rows:
             return ToolResult(output="Nothing stored about that yet. Use `research` to find out.")
-        disputed: dict = {}
-        for e in await asyncio.to_thread(self.journal.recent_events, 3000):
-            if e["type"] == "knowledge.contradiction":
-                ids = [e["payload"].get("knowledge_id"), *(e["payload"].get("conflicts_with") or [])]
-                for x in ids:
-                    disputed.setdefault(x, set()).update(i for i in ids if i != x)
+        # DISPUTED is the row's own state (audit 2026-10-27: it was recomputed from the last 3000 events and aged
+        # out); the events only name the other side when they still hold it. SUPERSEDED rows are not retrieved.
+        partners: dict = {}
+        if any(k.get("status") == "DISPUTED" for k in rows):
+            for e in await asyncio.to_thread(self.journal.recent_events, 3000):
+                if e["type"] == "knowledge.contradiction":
+                    ids = [e["payload"].get("knowledge_id"), *(e["payload"].get("conflicts_with") or [])]
+                    for x in ids:
+                        partners.setdefault(x, set()).update(i for i in ids if i != x)
         lines = [f"KNOWN ({len(rows)} entries):"]
         for k in rows:
             src = k["source_url"] or (f"sources {k['sources']}" if k["sources"] else "no url")
-            warn = f"\n    DISPUTED: contradicts id(s) {sorted(disputed[k['id']])}" if k["id"] in disputed else ""
-            lines.append(f"- id={k['id']} [{k['kind']} · confidence {k['confidence']:.2f}] {k['claim'][:300]}\n    source: {src}{warn}")
+            mark, warn = "", ""
+            if k.get("status") == "DISPUTED":
+                mark = " (disputed)"
+                warn = ("\n    DISPUTED: " + (f"contradicts id(s) {sorted(partners[k['id']])}" if partners.get(k["id"]) else "another stored row contradicts it")
+                        + ". Do not state it as fact until fresh research settles it.")
+            lines.append(f"- id={k['id']} [{k['kind']} · confidence {k['confidence']:.2f}]{mark} {k['claim'][:300]}\n    source: {src}{warn}")
         return ToolResult(output="\n".join(lines))
 
 
@@ -376,6 +385,10 @@ class LearnTool(BaseTool):
         missing = [i for i, k in zip(ids, cited) if k is None]
         if missing:
             return ToolResult(error=f"learn refused: unknown knowledge_id(s) {missing}")
+        replaced = [k for k in cited if k.get("status") == "SUPERSEDED"]
+        if replaced:  # history, not evidence (audit 2026-10-27, item 4)
+            return ToolResult(error="learn refused: " + "; ".join(f"knowledge_id {k['id']} was superseded by {k['superseded_by']}" for k in replaced)
+                                    + ": cite the current rows or fresh research")
         strength = {i: support(claim, k) for i, k in zip(ids, cited)}
         unsupported = [i for i, s in strength.items() if s == 0]
         if unsupported:  # the rows exist but say nothing about the claim: nothing is stored
@@ -390,17 +403,27 @@ class LearnTool(BaseTool):
 
         tid = self.task_id_provider() if self.task_id_provider else None
         duplicate, conflicts = await asyncio.to_thread(consolidate.compare, claim, self.journal)
+        full = {i for i, s in strength.items() if s >= SUPPORT_WORDS}
+        fresh = consolidate.independent(cited, full, ([duplicate] if duplicate else []) + conflicts)
+        settled = consolidate.settles(duplicate, conflicts, fresh)
         if duplicate is not None:  # Phase 5: reinforce what is known instead of storing it again
             await asyncio.to_thread(self.journal.record_sync, "knowledge.reinforced",
                                     {"knowledge_id": duplicate["id"], "claim": claim[:300], "tags": duplicate.get("tags") or []}, task_id=tid)
             out = (f"Already known as id={duplicate['id']} (confidence {duplicate['confidence']:.2f}): "
                    f"{duplicate['claim'][:200]} - reinforced, not stored again.")
-            if conflicts:  # still a duplicate, and the dispute stays on record against the row it duplicates
-                await asyncio.to_thread(self.journal.record_sync, "knowledge.contradiction", {
-                    "knowledge_id": duplicate["id"], "claim": claim[:300], "conflicts_with": [k["id"] for k in conflicts],
-                    "their_claims": [k["claim"][:200] for k in conflicts[:3]], "tags": duplicate.get("tags") or []}, task_id=tid)
+            if settled:
+                out += await self._settle(duplicate["id"], conflicts, fresh, tid)
+            elif conflicts:  # still a duplicate, and the dispute stays on record against the row it duplicates
+                await self._dispute(duplicate, claim, conflicts, tid)
                 out += (" It CONTRADICTS " + "; ".join(f"id={k['id']}: {k['claim'][:160]}" for k in conflicts[:3])
                         + ". Do not rely on either until fresh research settles which is right.")
+            elif fresh:  # confirmed again by a source it did not rest on: verified now, and a dispute with nothing left is over
+                was = duplicate.get("status")
+                await asyncio.to_thread(self.journal.verify_knowledge_sync, duplicate["id"], "confirmed by independent evidence",
+                                        [k["id"] for k in fresh], True, tid)
+                if was == "DISPUTED":
+                    out += (f" It was DISPUTED; knowledge_id {', '.join(str(k['id']) for k in fresh)} confirms it and nothing "
+                            "stored contradicts it now: ACTIVE again.")
             return ToolResult(output=out)
         try:
             row = await asyncio.to_thread(
@@ -417,10 +440,27 @@ class LearnTool(BaseTool):
         if weak:
             out += (f" Weak support: knowledge_id {', '.join(map(str, weak))} shares under {SUPPORT_WORDS} content words with the claim, "
                     "so the cap was halved; cite rows whose text states it for full weight.")
-        if conflicts:
-            await asyncio.to_thread(self.journal.record_sync, "knowledge.contradiction", {
-                "knowledge_id": row["id"], "claim": claim[:300], "conflicts_with": [k["id"] for k in conflicts],
-                "their_claims": [k["claim"][:200] for k in conflicts[:3]], "tags": row.get("tags") or []}, task_id=tid)
+        if settled:
+            out += await self._settle(row["id"], conflicts, fresh, tid)
+        elif conflicts:
+            await self._dispute(row, claim, conflicts, tid)
             out += (" It CONTRADICTS " + "; ".join(f"id={k['id']}: {k['claim'][:160]}" for k in conflicts[:3])
                     + ". Do not rely on either until fresh research settles which is right.")
         return ToolResult(output=out)
+
+    async def _dispute(self, row: dict, claim: str, conflicts: List[dict], tid: Optional[str]) -> None:
+        """Journal the contradiction and mark every row in it DISPUTED, in one transaction."""
+        await asyncio.to_thread(
+            self.journal.dispute_knowledge_sync, [row["id"], *(k["id"] for k in conflicts)],
+            f"id={row['id']} and id(s) {[k['id'] for k in conflicts]} state different figures about the same thing", tid,
+            {"knowledge_id": row["id"], "claim": claim[:300], "conflicts_with": [k["id"] for k in conflicts],
+             "their_claims": [k["claim"][:200] for k in conflicts[:3]], "tags": row.get("tags") or []})
+
+    async def _settle(self, winner: int, conflicts: List[dict], fresh: List[dict], tid: Optional[str]) -> str:
+        """Independent evidence settles the dispute for `winner`: the rows it contradicts are SUPERSEDED by it."""
+        await asyncio.to_thread(
+            self.journal.supersede_knowledge_sync, [k["id"] for k in conflicts], winner,
+            f"independent evidence {[k['id'] for k in fresh]} (confidence {max(k['confidence'] for k in fresh):.2f}) supports id={winner}",
+            [k["id"] for k in fresh], tid)
+        return (f" SETTLED: knowledge_id {', '.join(str(k['id']) for k in fresh)} (independent of the disputed rows) supports id={winner}; "
+                + "; ".join(f"id={k['id']} ({k['claim'][:120]})" for k in conflicts[:3]) + f" SUPERSEDED by id={winner}.")
