@@ -277,6 +277,9 @@ parallel agents in their own worktrees, reviewed and gated together.
   server and agent loaded before one line ran. The worker now starts with
   __main__'s spec and file hidden for the start only: 0.19-0.21 s per call
   with a server-like __main__, from 2.59-2.74 s. 4 tests, 2 red before.
+- 0477b2d: the app.tool package loads its tools lazily: importing app.tool.base
+  (every skill and skill-test process) took 0.84 s, now 0.49 s; `from
+  app.tool import X` is unchanged. 3 tests.
 
 ### A tie names its windows; the matrix counts only evidence its code produced (2026-10-26)
 
