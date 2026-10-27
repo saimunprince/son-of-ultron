@@ -1063,7 +1063,13 @@ class Autonomy:
         strategy = strategy_of(task_events)
         kept = rolled_back(task_events) if verdict != "DONE" else None
         if verdict != "DONE" and task.get("status") == "PARTIAL":
-            lesson = f"ran out of steps; {lesson}"
+            # a PARTIAL is a step limit or loop stop, or (since 2026-10-27) an answer whose claim survived its nudge
+            # (core._run: task.completed {reason: "claim_unproven", check}); the lesson names which one it was
+            done = next((e["payload"] for e in reversed(task_events) if e["type"] == "task.completed"), {}) or {}
+            if done.get("reason") == "claim_unproven":
+                lesson = f"its answer claimed what no tool showed ({done.get('check')}); {lesson}"
+            else:
+                lesson = f"ran out of steps; {lesson}"
         log = list(((objective.get("progress") or {}).get("attempts_log")) or [])
         # Phase 1: which plan steps the journal now proves, across all attempts
         steps = await asyncio.to_thread(plan.status, self.journal, objective, plan.task_ids_of(objective, task_id))
