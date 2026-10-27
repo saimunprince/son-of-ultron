@@ -11,6 +11,14 @@ conclusion is compared with the stored conclusions about the same thing:
   stored, journaled as ``knowledge.contradiction`` and reported, and the
   autonomy cycle opens an objective to settle it with fresh research.
 
+Every stored conclusion is compared, not the most recent rows of every kind
+(audit 2026-10-27: web rows filled the last 300, so "SQLite was first released
+in 2000" came back as new 412 rows later and is stored ten times). A duplicate
+stays a duplicate when another stored conclusion contradicts the claim: it is
+reinforced, not stored again, and the contradiction is still reported (the
+same audit found three identical ethanol rows stored because a conflict
+skipped the duplicate check).
+
 "Same subject" is keyword overlap (Jaccard ≥ SIMILAR) between the claims;
 figures are the numbers in them. Words, not embeddings: no model is needed
 and every decision can be read in the journal.
@@ -89,16 +97,17 @@ def similarity(a: str, b: str) -> float:
     return len(wa & wb) / len(wa | wb) if wa and wb else 0.0
 
 
-def compare(claim: str, journal: Journal, limit: int = 300) -> Tuple[Optional[dict], List[dict]]:
-    """(the stored conclusion this duplicates or None, conclusions it contradicts)."""
+def compare(claim: str, journal: Journal, limit: int = 5000) -> Tuple[Optional[dict], List[dict]]:
+    """(the stored conclusion this duplicates or None, conclusions it contradicts), over every stored
+    conclusion (newest first). Both can be set: a duplicate is reported even when another row conflicts."""
     mine = figures(claim)
     duplicate, conflicts = None, []
-    for k in journal.knowledge_recent(limit=limit):
-        if k.get("kind") != "conclusion" or similarity(claim, k["claim"]) < SIMILAR:
+    for k in reversed(journal.knowledge_of_kind(("conclusion",), limit=limit)):
+        if similarity(claim, k["claim"]) < SIMILAR:
             continue
         theirs = figures(k["claim"])
         if mine and theirs and not _overlap(mine, theirs):
             conflicts.append(k)
         elif duplicate is None and (not mine or not theirs or _covered(mine, theirs) or _covered(theirs, mine)):
             duplicate = k
-    return (None if conflicts else duplicate), conflicts
+    return duplicate, conflicts

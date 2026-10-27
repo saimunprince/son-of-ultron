@@ -393,8 +393,15 @@ class LearnTool(BaseTool):
         if duplicate is not None:  # Phase 5: reinforce what is known instead of storing it again
             await asyncio.to_thread(self.journal.record_sync, "knowledge.reinforced",
                                     {"knowledge_id": duplicate["id"], "claim": claim[:300], "tags": duplicate.get("tags") or []}, task_id=tid)
-            return ToolResult(output=f"Already known as id={duplicate['id']} (confidence {duplicate['confidence']:.2f}): "
-                                     f"{duplicate['claim'][:200]} - reinforced, not stored again.")
+            out = (f"Already known as id={duplicate['id']} (confidence {duplicate['confidence']:.2f}): "
+                   f"{duplicate['claim'][:200]} - reinforced, not stored again.")
+            if conflicts:  # still a duplicate, and the dispute stays on record against the row it duplicates
+                await asyncio.to_thread(self.journal.record_sync, "knowledge.contradiction", {
+                    "knowledge_id": duplicate["id"], "claim": claim[:300], "conflicts_with": [k["id"] for k in conflicts],
+                    "their_claims": [k["claim"][:200] for k in conflicts[:3]], "tags": duplicate.get("tags") or []}, task_id=tid)
+                out += (" It CONTRADICTS " + "; ".join(f"id={k['id']}: {k['claim'][:160]}" for k in conflicts[:3])
+                        + ". Do not rely on either until fresh research settles which is right.")
+            return ToolResult(output=out)
         try:
             row = await asyncio.to_thread(
                 self.journal.add_knowledge_sync,
