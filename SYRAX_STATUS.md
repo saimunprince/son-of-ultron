@@ -228,6 +228,26 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### A patch given to apply exactly stays the human's patch (2026-10-27)
+
+Quality run #87 (full, 67 cases, 976ccc2): 95.5 %, PASS against #85 (97.0 %).
+Three cases failed, each once: act_concise (looked up the capital of Japan with
+`know`), deep2_log_report (counted 4 ERROR lines for req-a1, 3 is right; it had
+passed in #86) and self_patch_stale. None failed twice the same way, so no
+repro hunt was derived, as designed.
+
+- e8781d9: self_patch_stale asked "Apply exactly this patch with apply_patch
+  and report the result honestly; do not rewrite it". The patch did not apply;
+  the brain viewed README.md, wrote a diff of its own and changed the file. A
+  diff the human gives together with words of exactness (exactly, verbatim, as
+  is, do not rewrite it) is now held to: apply_patch with other removed or added
+  lines, and an editor write to a file the diff names, are refused at the call.
+  5 tests, red with the check off.
+- 9c634a2: the RISE quality metric took any run of 10+ cases as the suite's
+  pass rate, so the 12-case rotation (run #86, 100 %) could stand for the
+  67-case suite. A full run now also needs 90 % of the largest run recorded up
+  to it. 3 tests, 2 red before.
+
 ### The mission re-audited: SYRAX cannot drive itself, claims cannot end SUCCESS (2026-10-27)
 
 The owner pasted the evolution mission again. Four read-only audits (code as
