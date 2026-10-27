@@ -228,6 +228,59 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### The mission re-audited: SYRAX cannot drive itself, claims cannot end SUCCESS (2026-10-27)
+
+The owner pasted the evolution mission again. Four read-only audits (code as
+evidence, journal opened read-only) mapped every phase against today's code:
+docs/AUDIT_2026-10-27.md. Twelve fixes from them, built by parallel agents in
+their own worktrees, reviewed and gated together.
+
+- 9dc11d2: SYRAX could drive its own control interface as the human: python
+  code to 127.0.0.1:8765 counted as a read, and a browser page on the core's or
+  the UI's origin is trusted, so its own work could send /ws messages (a task,
+  a forced resume, memory_forget, objective_update, brains_save). Any agent code,
+  browser or desktop call that targets the core's or UI's port on loopback is
+  now refused as harm for every task kind, and the guard blocks such socket
+  connects in python children (also a computed port). 63 tests, 55 red before.
+- 3f97327: backups are protected evidence: writes under backend/config/backups
+  are refused for every task kind and blocked by the runtime guard; own work may
+  not read them; the manifest's sha256 is journaled and restore refuses a
+  manifest the journal never recorded. Own work with no reviewer wired is held
+  as REVIEW_UNAVAILABLE (the test opt-out is read once at start). 48 tests.
+- 0158df3: the performance gate had never measured anything: 0 benchmark
+  rows ever, 37 of 37 runs "PASS" against no baseline. It now records through
+  the release's journal and compares with a pinned baseline and the previous
+  run (still advisory); README, DEVLOOP and system_map said otherwise and are
+  corrected. 7 tests.
+- 9dcc825, 60ae126: a claim that survives its nudge ends the task
+  PARTIAL (reason claim_unproven, which check) instead of SUCCESS: 19 of 19 live
+  tasks with a rejected claim had ended SUCCESS. The objective's lesson names
+  the unproven claim instead of "ran out of steps". 10 tests.
+- 170da0c: "system check" answered "All systems are operational" without
+  reading anything; a status claim to a check request needs self_inspect or a
+  system read, asked once, then a note. 32 tests.
+- a4463ee: three failed tool calls in a row (19 tasks had such streaks)
+  get one note to state what differed and change the approach; journaled
+  plan.replan. 5 tests.
+- 02d19af: every tool.failed carries an error_class; the last 14 days
+  replayed: mismatch 189, refused 108, misuse 63, not_found 51, crash 20,
+  timeout 6. 33 tests.
+- 3752086: a quality case's "favourite editor is Vim" was one of the
+  owner's two remembered facts and in every conversation prompt; remember now
+  records origin and task id, eval facts stay out of the owner's memory and can
+  never rewrite or delete the owner's rows (row 425 is left for the owner). 12
+  tests.
+- a15ca30: consolidation compares with every stored conclusion, not the
+  last 300 rows of any kind (SQLite's release year was stored 11 times), and a
+  duplicate stays a duplicate when another row conflicts. 3 tests.
+- 1c37cc2: a skill revision is built and tested in .candidates; a failed
+  one leaves the live version registered (pdf_text had fallen to FAILED); a
+  skill importing a package that is not installed is refused (installing is the
+  owner's decision). 8 tests.
+- 5d3863e: past experience in a brief needs the same subject or three
+  shared content words and shows failures first: in the last 7 days' briefs,
+  failed entries shown went from 3 to 14, unrelated ones were dropped. 7 tests.
+
 ### SYRAX's keys stay out of its own window; a dispute is answered from a reading (2026-10-26)
 
 From a read-only analysis of every conversation in the journal, built by
