@@ -369,17 +369,19 @@
         "skills carry a permission level: declared risk, never below what their source shows (evidence.risk in skill.json)"
       ],
       "limitations": [
-        "skill code runs in-process (no sandbox), like every tool",
+        "a skill call runs in a process of its own under python_execute's guard (journal, keys, backups read-only; killed with what it started on timeout); the guard is a guard rail, not a sandbox, and a skill's module is still imported in the server once to read its name and schema",
         "dependencies recorded, not installed",
         "no automatic skill generation from objectives; generated skills are not auto-committed (Phase 8)"
       ],
       "code": [
         "backend/syrax/skills.py",
+        "backend/syrax/_skill_child.py",
         "backend/skills/README.md",
         "backend/syrax/skillevo.py"
       ],
       "tests": [
         "backend/syrax/test_skills.py",
+        "backend/syrax/test_skill_box.py",
         "backend/syrax/test_bridge.py (skill section)"
       ],
       "failure_modes": [

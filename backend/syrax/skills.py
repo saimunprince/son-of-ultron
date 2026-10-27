@@ -18,9 +18,10 @@ appears in the model's tool list on the next think step (ToolCallAgent calls
 it in the same task. VERIFIED skills are re-registered at boot from the
 registry. Nothing here marks a skill VERIFIED without a passing test run.
 
-Skill code runs in the server process, like every other tool. This is the
-owner's own machine and the model already runs arbitrary code through
-python_execute; the factory adds tests and a registry, not a sandbox.
+A registered skill's calls run in a process of their own under the same guard
+as python_execute's workers (IsolatedSkill, syrax._skill_child): the journal,
+the keys and the backups stay read-only to it, and a call past its timeout is
+killed with everything it started. Its tests run under that guard too.
 """
 
 from __future__ import annotations
@@ -38,7 +39,6 @@ import shutil
 import subprocess
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -314,21 +314,135 @@ def load_skill(skill_dir: Path) -> BaseTool:
     return tool
 
 
-# A registered skill runs in a worker thread with its own event loop. SYRAX writes its
-# skills, and one blocking call froze the whole server live on 2026-10-12: disk_usage ran
-# os.walk("C:\\") inside its async execute(), and WebSocket, voice and /health all stopped
-# (stall-20261012-163219.txt). Now a skill can block only its own thread, and after
-# SKILL_CALL_TIMEOUT_S the agent gets an error back while the thread finishes on its own.
+# A registered skill runs in a process of its own. Live 2026-10-12, a skill's blocking call froze the whole server
+# (disk_usage ran os.walk("C:\\") inside its async execute(); WebSocket, voice and /health stopped,
+# stall-20261012-163219.txt), so skills moved to a worker thread. Audit 2026-10-25/27 (open item 8): that thread was
+# still the server process, outside the guard python_execute's workers get, so a skill handed the journal's path, the
+# keys (brains.json) or a backup as its argument could write it, and a call past SKILL_CALL_TIMEOUT_S ran on forever
+# in the background. Each call now starts a child (syrax._skill_child) that installs the same guard as a python_execute
+# worker (guard.child_env + guard.install with guard.protected_paths(), so every Python it starts is guarded too),
+# imports the skill there and runs execute(**kwargs); its result or its exception comes back over a pipe. A call past
+# the timeout kills the child and everything it started (tools._kill_quietly, the whole tree), and a task abort does the
+# same. Prebuilt skills (backend/prebuilt/, human-written) run the same way: none of them needs an object of the server
+# process (they import the standard library, installed packages and syrax.browser.find_chrome), and they are
+# installed into the same folder as SYRAX's own skills, where SYRAX can revise them. The cost is a process start and
+# the import of app.tool.base per call (about half a second).
 SKILL_CALL_TIMEOUT_S = 180.0
-_SKILL_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="syrax-skill")
+SKILL_START_TIMEOUT_S = 30.0  # starting the child normally takes well under a second
 
 
-def _run_in_own_loop(tool: BaseTool, kwargs: dict) -> Any:
-    return asyncio.run(tool.execute(**kwargs))
+def _tool_result_class(name: str) -> type:
+    """ToolResult or its subclass of that name in app.tool.base (CLIResult, ToolFailure); ToolResult otherwise."""
+    import app.tool.base as base
+
+    cls = getattr(base, name, None)
+    return cls if isinstance(cls, type) and issubclass(cls, ToolResult) else ToolResult
+
+
+def _unpack_result(msg: dict) -> Any:
+    """The child's answer as the call's return value, or the skill's exception raised here."""
+    import pickle
+
+    kind = msg.get("kind")
+    if kind == "tool_result":
+        return _tool_result_class(str(msg.get("cls") or ""))(**(msg.get("fields") or {}))
+    if kind == "value":
+        if msg.get("pickled") is not None:
+            try:
+                return pickle.loads(msg["pickled"])
+            except Exception:
+                pass  # a value of the skill's own class: its text stands for it
+        return msg.get("text")
+    if msg.get("pickled") is not None:
+        try:
+            err = pickle.loads(msg["pickled"])
+        except Exception:
+            err = None
+        if isinstance(err, Exception):
+            raise err
+    if msg.get("stage") == "guard":
+        return ToolResult(error=f"the skill did not run: its guard could not be installed ({msg.get('type')}: {msg.get('message')})")
+    raise RuntimeError(f"{msg.get('type')}: {msg.get('message')}")
+
+
+def _skill_source(tool: BaseTool) -> Tuple[str, Optional[str], str]:
+    """(module name, module file, class qualname): what the child needs to build the same tool."""
+    cls = type(tool)
+    mod = sys.modules.get(cls.__module__)
+    return cls.__module__, getattr(mod, "__file__", None), cls.__qualname__
+
+
+def _timed_out(name: str, timeout: float) -> ToolResult:
+    return ToolResult(error=f"`{name}` did not finish within {int(timeout)} s, so SYRAX stopped it (its process and everything it "
+                            "started were ended; its result is lost). Try a smaller input.")
+
+
+async def run_skill_call(tool: BaseTool, kwargs: dict, name: Optional[str] = None) -> Any:
+    """One call of `tool` in a guarded child process; a call past SKILL_CALL_TIMEOUT_S kills the child's tree."""
+    import multiprocessing
+
+    from syrax import _skill_child
+    from syrax.tools import _kill_quietly, _poll, start_without_main
+
+    name = name or getattr(tool, "name", "skill")
+    timeout = float(SKILL_CALL_TIMEOUT_S)
+    module, file, qualname = _skill_source(tool)
+    extra = [str(Path(file).resolve().parent.parent.parent), str(BACKEND_ROOT)] if file else []  # `from skills.<other>.skill import`
+    deadline = time.monotonic() + timeout
+    recv, send = multiprocessing.Pipe(duplex=False)
+    proc = multiprocessing.Process(target=_skill_child.run, args=(module, file, qualname, dict(kwargs), send, guard.protected_paths(), extra),
+                                   daemon=True, name=f"syrax-skill-{name}")
+    starter = asyncio.ensure_future(asyncio.to_thread(start_without_main, proc))
+    try:
+        done, _ = await asyncio.wait({starter}, timeout=max(0.05, min(SKILL_START_TIMEOUT_S, timeout)))
+    except asyncio.CancelledError:
+        starter.add_done_callback(lambda _f: _kill_quietly(proc))
+        raise
+    if not done:  # whatever the stuck start brings up later is killed
+        starter.add_done_callback(lambda _f: _kill_quietly(proc))
+        recv.close()
+        if time.monotonic() >= deadline:
+            return _timed_out(name, timeout)
+        return ToolResult(error=f"`{name}` could not start its process within {SKILL_START_TIMEOUT_S:g} s (the machine may be short of memory); nothing ran")
+    if starter.exception() is not None:
+        recv.close()
+        return ToolResult(error=f"`{name}` could not start its process: {starter.exception()}; nothing ran")
+    send.close()  # the child holds its own end; EOF once it is gone
+    msg = None
+    try:
+        while time.monotonic() < deadline:
+            if _poll(recv):
+                try:
+                    msg = recv.recv()
+                except (EOFError, OSError):
+                    pass
+                break
+            if not proc.is_alive():
+                if _poll(recv, 0.2):  # sent just before it exited
+                    try:
+                        msg = recv.recv()
+                    except (EOFError, OSError):
+                        pass
+                break
+            await asyncio.sleep(0.05)
+    except asyncio.CancelledError:  # the task was aborted: the call ends with it
+        _kill_quietly(proc)
+        recv.close()
+        raise
+    recv.close()
+    if msg is None and proc.is_alive() and time.monotonic() >= deadline:
+        await asyncio.to_thread(_kill_quietly, proc)  # the tree's wait stays off the event loop
+        return _timed_out(name, timeout)
+    if proc.is_alive():  # it answered (or closed its end): what it started on purpose outlives it, as after a normal exit
+        await asyncio.to_thread(proc.join, 2)
+        _kill_quietly(proc, tree=False)
+    if msg is None:
+        return ToolResult(error=f"`{name}` stopped (exit code {proc.exitcode}) before returning a result")
+    return _unpack_result(msg)
 
 
 class IsolatedSkill(BaseTool):
-    """The live tool for a skill: same name, description and schema, executed off the server's loop."""
+    """The live tool for a skill: same name, description and schema; each call runs in a guarded process of its own."""
 
     inner: Any = Field(default=None, exclude=True)
 
@@ -341,12 +455,7 @@ class IsolatedSkill(BaseTool):
         return str(getattr(self.inner, "risk", "") or "")
 
     async def execute(self, **kwargs) -> Any:
-        job = asyncio.get_running_loop().run_in_executor(_SKILL_POOL, _run_in_own_loop, self.inner, kwargs)
-        try:
-            return await asyncio.wait_for(asyncio.shield(job), SKILL_CALL_TIMEOUT_S)
-        except asyncio.TimeoutError:
-            return ToolResult(error=f"`{self.name}` did not finish within {int(SKILL_CALL_TIMEOUT_S)} s, so SYRAX stopped waiting "
-                                    "(the call keeps running in the background and its result is dropped). Try a smaller input.")
+        return await run_skill_call(self.inner, kwargs, self.name)
 
 
 def schema_problems(tool: BaseTool) -> List[str]:
