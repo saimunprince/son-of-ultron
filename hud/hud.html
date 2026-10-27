@@ -158,12 +158,17 @@ async function fetchQuakes() {
 const feedUrl = (name, direct) => location.protocol.startsWith('http') ? location.origin + '/hud/feed/' + name : direct;
 async function fetchSolar() {
   try {
-    const r = await fetch(feedUrl('solar', 'https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json'), { cache: 'no-store' });
-    const rows = (await r.json()).slice(1).filter(x => x[2] != null);
+    // through the core: the table [time, density, speed, temp]; from disk: NOAA's rtsw objects, newest first
+    const r = await fetch(feedUrl('solar', 'https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json'), { cache: 'no-store' });
+    const raw = await r.json();
+    const rows = (Array.isArray(raw[0]) ? raw.slice(1)
+      : raw.map(x => [x.time_tag, x.proton_density, x.proton_speed, x.proton_temperature]).sort((a, b) => String(a[0]).localeCompare(String(b[0]))))
+      .filter(x => x[2] != null);
     const last = rows[rows.length - 1];
     S.solar = { density: +last[1], speed: +last[2], temp: +last[3], hist: rows.slice(-120).map(x => +x[2]) };
     const k = await (await fetch(feedUrl('kp', 'https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json'), { cache: 'no-store' })).json();
-    S.kp = +k[k.length - 1][1];
+    const lastK = k[k.length - 1];
+    S.kp = +(Array.isArray(lastK) ? lastK[1] : lastK.Kp);  // NOAA now sends objects ({Kp}); the core sends the table
     if (!S.solarLogged) { S.solarLogged = true; log(`SOLAR WIND ${S.solar.speed | 0} KM/S · KP ${S.kp}`); }
   } catch (e) { S.solar = null; }
 }

@@ -103,10 +103,33 @@ HUD_FILES = {"hud.html": "text/html; charset=utf-8", "link.js": "text/javascript
 # Public feeds the HUD draws that send no CORS headers (fine from file://, blocked from the core's origin):
 # the core fetches them for the page, this allowlist only, cached a minute.
 HUD_FEEDS = {
-    "solar": "https://services.swpc.noaa.gov/products/solar-wind/plasma-1-day.json",
+    # 2026-10-27: products/solar-wind/ is gone (404); the real-time solar wind is json/rtsw (newest first, objects)
+    "solar": "https://services.swpc.noaa.gov/json/rtsw/rtsw_wind_1m.json",
     "kp": "https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json",
 }
 HUD_FEED_TTL_S = 60
+HUD_SOLAR_ROWS = 120  # the HUD draws the last 120 readings; the upstream file is ~2.4 MB of 1-minute rows
+# The HUD reads the tables NOAA served before (a header row, then rows): [time_tag, density, speed, temperature]
+# for the solar wind, [time_tag, Kp, ...] for Kp. Upstream now sends lists of objects; they are put back in that shape.
+_HUD_TABLES = {
+    "solar": ("time_tag", "proton_density", "proton_speed", "proton_temperature"),
+    "kp": ("time_tag", "Kp", "a_running", "station_count"),
+}
+
+
+def _hud_table(name: str, body: bytes) -> bytes:
+    """``body`` as the table the HUD reads, oldest row first; anything that is not a list of objects is passed on."""
+    try:
+        rows = json.loads(body)
+    except ValueError:
+        return body
+    cols = _HUD_TABLES.get(name)
+    if not cols or not isinstance(rows, list) or not rows or not all(isinstance(r, dict) for r in rows):
+        return body
+    rows = sorted((r for r in rows if r.get(cols[2 if name == "solar" else 1]) is not None), key=lambda r: str(r.get("time_tag")))
+    if name == "solar":
+        rows = rows[-HUD_SOLAR_ROWS:]
+    return json.dumps([list(cols)] + [[r.get(c) for c in cols] for r in rows]).encode("utf-8")
 _hud_feed_cache: dict = {}
 # Review 2026-10-27: NOAA answers 404 for plasma-1-day.json (the logs had a warning for each HUD poll). The right
 # product URL could not be established from the code, so a failing feed fails quietly: upstream is asked again only
@@ -308,6 +331,7 @@ async def hud_feed(name: str):
         _hud_feed_failures[name] = (now, logged)
         raise HTTPException(status_code=502, detail="feed unavailable")
     _hud_feed_failures.pop(name, None)
+    body = _hud_table(name, body)
     _hud_feed_cache[name] = (time.time(), body)
     return Response(content=body, media_type="application/json")
 
