@@ -27,7 +27,9 @@
       cog: [], log: [],
       brain: { active: null, model: null, ready: 0, total: 0, ms: null },
       autonomy: null, tools: [], toolLevels: {},
-      memories: null, objectives: null, skills: null, quality: null, interrupted: null,
+      // skills: every registered skill; skillsVerified: those whose tests passed (skills.py: VERIFIED is the only status a
+      // passing test run gives; NOT_TESTED, FAILED and DISABLED are not "built and tested")
+      memories: null, objectives: null, skills: null, skillsVerified: null, quality: null, interrupted: null,
       // refused is TODAY's count: seeded from the journal (replay since local midnight) and kept live.
       // One refusal fires permission.refused AND a refused tool_result; lastRefusal pairs them so it counts once.
       counters: { tasks: 0, toolsOk: 0, toolsFailed: 0, refused: 0, commits: 0, rollbacks: 0, claims: 0 },
@@ -277,7 +279,9 @@
       case 'objectives':
         s.objectives = (e.objectives || []).filter(o => !/^(DONE|DROPPED)$/.test(o.status || '')).length; break;
       case 'skills':
-        s.skills = (e.skills || []).length; break;
+        s.skills = (e.skills || []).length;
+        s.skillsVerified = (e.skills || []).filter(k => k && k.status === 'VERIFIED').length;
+        break;
       case 'presence':
         if (e.event === 'window') {  // the application SYRAX just acted in (observed by the core, title redacted)
           s.window = { process: e.process || '', title: e.title || '', tool: e.tool || '' };

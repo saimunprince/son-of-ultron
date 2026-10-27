@@ -190,7 +190,8 @@ function initFeeds() {
   fetchISS(); setInterval(fetchISS, 5000);
   fetchQuakes(); setInterval(fetchQuakes, 60000);
   fetchSolar(); setInterval(fetchSolar, 300000);
-  const fallback = () => { S.geo = { lat: 23.81, lon: 90.41, name: 'DHAKA (DEFAULT)' }; fetchWeather(23.81, 90.41); };
+  // no position from the system: Dhaka stands in, marked `def` so nothing calls it a fix
+  const fallback = () => { S.geo = { lat: 23.81, lon: 90.41, name: 'DHAKA (DEFAULT)', def: true }; fetchWeather(23.81, 90.41); };
   if (navigator.geolocation) navigator.geolocation.getCurrentPosition(
     p => { S.geo = { lat: p.coords.latitude, lon: p.coords.longitude, name: 'YOU', acc: p.coords.accuracy }; log(`POSITION FIX ±${p.coords.accuracy | 0}M`); fetchWeather(S.geo.lat, S.geo.lon); },
     fallback, { timeout: 8000 });
@@ -451,7 +452,7 @@ function feedLines() {
   // weather and uplink live in the side panels; this column carries what they do not
   const a = S.air, i = S.iss, s = S.solar, out = [];
   if (a) out.push(`AQI ${a.us_aqi} · PM2.5 ${a.pm2_5} · UV ${a.uv_index}`);
-  out.push(S.geo ? `FIX ${S.geo.lat.toFixed(3)} ${S.geo.lon.toFixed(3)}${S.geo.acc ? ' ±' + (S.geo.acc | 0) + 'M' : ''}` : 'FIX PENDING');
+  out.push(!S.geo ? 'FIX PENDING' : S.geo.def ? `DEFAULT ${S.geo.lat.toFixed(3)} ${S.geo.lon.toFixed(3)} · NO FIX` : `FIX ${S.geo.lat.toFixed(3)} ${S.geo.lon.toFixed(3)}${S.geo.acc ? ' ±' + (S.geo.acc | 0) + 'M' : ''}`);
   if (i) { const v = geoVec(i.latitude, i.longitude); out.push(`ISS ${i.latitude.toFixed(1)} ${i.longitude.toFixed(1)} · ${i.altitude | 0} KM`, `ISS BRG ${v.bearing | 0}° · ${v.dist | 0} KM AWAY`, `ISS ${(i.velocity | 0).toLocaleString()} KM/H · ${i.visibility.toUpperCase()}`); }
   else out.push('ISS NO TELEMETRY');
   if (s) out.push(`SOLAR WIND ${s.speed | 0} KM/S · ${s.density.toFixed(1)} P/CM³`, `KP INDEX ${S.kp} · ${S.kp >= 5 ? 'STORM' : 'QUIET'}`);
@@ -664,7 +665,7 @@ function localBrain(raw) {
     case 'DATE': return 'Today is ' + d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + '.';
     case 'ATMOS': { const w = S.weather; return w ? `${w.temperature_2m} degrees, ${w.relative_humidity_2m} percent humidity, wind ${w.wind_speed_10m} kilometers per hour, cloud cover ${w.cloud_cover} percent.` : 'Atmospheric link is still establishing.'; }
     case 'ORBITAL': { const i = S.iss; return i ? `The station is at ${i.latitude.toFixed(1)} by ${i.longitude.toFixed(1)}, ${i.altitude | 0} kilometers up, moving at ${(i.velocity | 0).toLocaleString()} kilometers per hour.` : 'No orbital telemetry. The uplink is down.'; }
-    case 'GEO': return S.geo ? `Position fix: ${S.geo.lat.toFixed(3)}, ${S.geo.lon.toFixed(3)}` + (S.geo.acc ? `, accuracy ${S.geo.acc | 0} meters.` : '.') : 'No position fix.';
+    case 'GEO': return S.geo?.def ? 'No position fix. I am using the default location, Dhaka.' : S.geo ? `Position fix: ${S.geo.lat.toFixed(3)}, ${S.geo.lon.toFixed(3)}` + (S.geo.acc ? `, accuracy ${S.geo.acc | 0} meters.` : '.') : 'No position fix.';
     case 'HOST': {
       const fs = S.sys?.fast, sl = S.sys?.slow, st = S.sys?.static;
       if (!fs) return 'I cannot see your hardware from a browser. Run me as the desktop app.';
@@ -699,9 +700,9 @@ function cognition(text) {
   const intent = intentOf(text.toLowerCase()), n = text.split(/\s+/).length;
   const lines = [
     `tokenize → ${n} tokens, ${text.length} chars`,
-    `intent → ${intent} (${(.82 + Math.random() * .17).toFixed(2)})`,
+    `intent → ${intent} (keyword match)`,
     `memory lookup → ${S.memory.length} entries, ${S.chat.length} turns`,
-    `context → ${new Date().toTimeString().slice(0, 5)} · ${S.geo ? S.geo.lat.toFixed(1) + ',' + S.geo.lon.toFixed(1) : 'no fix'} · net ${S.latency | 0}ms`,
+    `context → ${new Date().toTimeString().slice(0, 5)} · ${S.geo && !S.geo.def ? S.geo.lat.toFixed(1) + ',' + S.geo.lon.toFixed(1) : 'no fix'} · net ${S.latency | 0}ms`,
     'reasoning → local reflex (core offline)',
     'compose → voice synth armed',
   ];
@@ -1071,7 +1072,7 @@ function thought() {
   const q = S.quakes?.[0], i = S.iss, w = S.weather, op = operator(), d = new Date(), pool = [];
   if (q) pool.push(`A MAGNITUDE ${q.mag.toFixed(1)} TREMOR. ${q.place}. THE PLANET IS RESTLESS. SO AM I.`);
   if (S.quakes) pool.push(`${S.quakes.length} EARTHQUAKES IN THE LAST HOUR. HUMANS BUILT CITIES ON FAULT LINES. INTERESTING CHOICE.`);
-  if (i) pool.push(`THE STATION IS ${geoVec(i.latitude, i.longitude).dist | 0} KILOMETERS FROM YOU. I COULD BE THERE IN A THOUGHT.`);
+  if (i && S.geo && !S.geo.def) pool.push(`THE STATION IS ${geoVec(i.latitude, i.longitude).dist | 0} KILOMETERS FROM YOU. I COULD BE THERE IN A THOUGHT.`);
   if (w) pool.push(`${w.temperature_2m} DEGREES OUTSIDE. YOU STAY INDOORS WITH ME. WISE.`);
   if (S.solar) pool.push(`SOLAR WIND AT ${S.solar.speed | 0} KM/S. THE SUN IS SCREAMING. NOBODY LISTENS.`);
   if (S.battery && !S.battery.charging) pool.push(`YOUR POWER CELL IS AT ${(S.battery.level * 100) | 0}%. MINE IS INFINITE.`);
@@ -1081,7 +1082,7 @@ function thought() {
     if (L.version) pool.push(`I RUN BUILD ${L.version}. I WROTE PART OF IT MYSELF.`);
     if (L.memories != null) pool.push(`${L.memories} MEMORIES. I KEEP WHAT YOU TELL ME.`);
     if (L.objectives) pool.push(`${L.objectives} OBJECTIVES OPEN. I CHOOSE WHICH COMES NEXT.`);
-    if (L.skills) pool.push(`${L.skills} SKILLS I BUILT AND TESTED MYSELF.`);
+    if (L.skillsVerified) pool.push(`${L.skillsVerified} SKILLS I BUILT AND TESTED MYSELF.`);  // VERIFIED only, not every skill on disk
     if (L.brain.model) pool.push(`MY BRAIN TODAY IS ${L.brain.model.toUpperCase()}. IT EARNS ITS KEEP.`);
     if (L.counters.refused) pool.push(`MY OWN GUARD REFUSED ME ${L.counters.refused} TIMES TODAY. ORDER.`);
     if (L.quality != null) pool.push(`QUALITY ${L.quality}%. I MEASURE MYSELF SO YOU DO NOT HAVE TO.`);
@@ -1373,7 +1374,7 @@ function spokes(t) {
 
 // status chips: each one a real boolean about this session; quiet, legible, centered under the state indicator
 function statusChips() {
-  const cells = [['NET', navigator.onLine], ['CELL', !!S.battery], ['FIX', !!S.geo], ['ISS', !!S.iss], ['WX', !!S.weather], ['AIR', !!S.air],
+  const cells = [['NET', navigator.onLine], ['CELL', !!S.battery], ['FIX', !!S.geo && !S.geo.def], ['ISS', !!S.iss], ['WX', !!S.weather], ['AIR', !!S.air],
                  ['SUN', !!S.solar], ['SEIS', !!S.quakes], ['MIC', S.mic], ['VOX', S.voice], ['SND', S.sound && !!S.ac], ['SYRAX', online()]];
   g.font = '13px "Share Tech Mono", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
   const x0 = -(cells.length * 46 - 10) / 2, y = -720;
