@@ -276,6 +276,9 @@ TOOLS_GUIDE = (
     "weaknesses, call `self_inspect` and answer from its evidence; never guess. "
     "To read a past task, call `self_inspect` with its task_id; for anything else in your journal use "
     "`journal_query` (read-only SQL), never python or sqlite3. Your own code lives under the repo_root that `self_inspect` reports; use absolute paths there. "
+    # quality case act_concise, 7 of 33 runs (#25..#87): "What is the capital of Japan?" went to `know` first
+    "Common knowledge you are sure of (a country's capital, a well-known date, a basic definition) is answered "
+    "directly in one short sentence, with no tool and no source. "
     "For facts you do not have, check `know` first, then `research` (web, with sources); "
     "when the human explicitly says research, look up or search, call `research` even if `know` has something. "
     "store a verified conclusion with `learn`, citing the knowledge_ids. Never present an "
