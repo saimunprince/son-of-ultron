@@ -228,7 +228,115 @@ def _loads(text: Optional[str], default: Any = None) -> Any:
         return default
 
 
+_SHA1_HEX = re.compile(r"[0-9a-f]{40}")
+_FALLBACK = object()  # "not sure": ask git itself
+# Any of these changes how git finds the repository or its refs: never guess, ask git.
+_GIT_DISCOVERY_ENV = ("GIT_DIR", "GIT_COMMON_DIR", "GIT_WORK_TREE", "GIT_CEILING_DIRECTORIES",
+                      "GIT_DISCOVERY_ACROSS_FILESYSTEM", "GIT_NAMESPACE", "GIT_REF_STORAGE")
+
+
+def _read_small(path: str) -> Optional[str]:
+    """A small text file's content, or None when it is missing or unreadable."""
+    try:
+        with open(path, "r", encoding="utf-8", newline="") as fh:
+            return fh.read(64 * 1024)
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _git_head_from_files(cwd: Path) -> Any:
+    """HEAD's sha read from the repository files, None when cwd is in no repository,
+    or _FALLBACK whenever anything is unusual (git then answers)."""
+    if any(os.environ.get(k) for k in _GIT_DISCOVERY_ENV):
+        return _FALLBACK
+    start = os.path.realpath(str(cwd))
+    if not os.path.isdir(start):
+        return _FALLBACK
+    # find the .git entry the way git's discovery does: walk up from cwd
+    gitdir = None
+    here = start
+    while True:
+        if os.path.basename(here).lower() == ".git":
+            return _FALLBACK  # cwd inside a git dir: git's own rules apply
+        dotgit = os.path.join(here, ".git")
+        if os.path.isdir(dotgit):
+            gitdir = dotgit
+            break
+        if os.path.isfile(dotgit):
+            text = _read_small(dotgit)
+            if text is None or not text.startswith("gitdir: ") or text.count("\n") > 1:
+                return _FALLBACK
+            target = text[len("gitdir: "):].strip()
+            if not target:
+                return _FALLBACK
+            gitdir = os.path.normpath(os.path.join(here, target))
+            break
+        if os.path.exists(os.path.join(here, ".git")):
+            return _FALLBACK  # .git of another kind
+        if os.path.isfile(os.path.join(here, "HEAD")) and os.path.isdir(os.path.join(here, "objects")):
+            return _FALLBACK  # looks like a bare repository
+        parent = os.path.dirname(here)
+        if parent == here:
+            return None  # no repository above cwd: git says the same
+        here = parent
+    if not os.path.isdir(gitdir):
+        return _FALLBACK
+    common = gitdir
+    if os.path.exists(os.path.join(gitdir, "commondir")):
+        text = _read_small(os.path.join(gitdir, "commondir"))
+        if text is None or not text.strip() or text.count("\n") > 1:
+            return _FALLBACK
+        common = os.path.normpath(os.path.join(gitdir, text.strip()))
+    if not (os.path.isdir(os.path.join(common, "objects")) and os.path.isdir(os.path.join(common, "refs"))):
+        return _FALLBACK
+    if os.path.exists(os.path.join(common, "reftable")) or os.path.exists(os.path.join(gitdir, "reftable")):
+        return _FALLBACK
+    head = _read_small(os.path.join(gitdir, "HEAD"))
+    if head is None or head.count("\n") > 1:
+        return _FALLBACK
+    head = head.rstrip("\n")
+    if _SHA1_HEX.fullmatch(head):
+        return head  # detached
+    if not head.startswith("ref: "):
+        return _FALLBACK
+    ref = head[len("ref: "):]
+    parts = ref.split("/")
+    if (not ref.startswith("refs/heads/") or len(parts) < 3 or ref.endswith(".lock") or "\\" in ref
+            or any(p in ("", ".", "..") or p.startswith(".") for p in parts)
+            or any(c in ref for c in " ~^:?*[\r\t\x7f") or "@{" in ref
+            or any(ord(c) < 32 for c in ref)):
+        return _FALLBACK
+    rel = os.path.join(*parts)
+    if gitdir != common and os.path.exists(os.path.join(gitdir, rel)):
+        return _FALLBACK  # a per-worktree copy git would not read: doubt
+    loose = os.path.join(common, rel)
+    if os.path.exists(loose):
+        if not os.path.isfile(loose):
+            return _FALLBACK
+        text = _read_small(loose)
+        if text is None or text.count("\n") > 1:
+            return _FALLBACK
+        text = text.rstrip("\n")
+        return text if _SHA1_HEX.fullmatch(text) else _FALLBACK  # symbolic chains etc. go to git
+    packed = _read_small(os.path.join(common, "packed-refs"))
+    if packed is None:
+        return _FALLBACK  # unborn branch or something odd
+    for line in packed.split("\n"):
+        if not line or line[0] in "#^":
+            continue
+        sha, sep, name = line.partition(" ")
+        if sep and name.rstrip("\r") == ref:
+            return sha if _SHA1_HEX.fullmatch(sha) else _FALLBACK
+    return _FALLBACK
+
+
 def _git_head(cwd: Path) -> Optional[str]:
+    try:
+        fast = _git_head_from_files(cwd)
+    except Exception:
+        fast = _FALLBACK
+    if fast is not _FALLBACK:
+        return fast
     try:
         out = subprocess.run(
             ["git", "rev-parse", "HEAD"],
