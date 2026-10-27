@@ -1,6 +1,13 @@
-// Decisions the live console (components/Syrax.tsx) makes about the running task, kept pure here so
-// `node --experimental-strip-types --test lib/taskView.test.ts` covers them without a browser.
-import type { JournalEvent } from "./syraxClient";
+// Decisions the live console (components/Syrax.tsx) makes about the running task and what the backend reports,
+// kept pure here so `node --experimental-strip-types --test lib/taskView.test.ts` covers them without a browser.
+import type { AutonomyStatus, JournalEvent } from "./syraxClient";
+
+/** autonomy.py set_enabled journals autonomy.toggled {enabled}; every session gets it as {type: "autonomy", event:
+ *  "toggled", enabled}, but only the session that flipped it gets a fresh autonomy_status. The others keep their
+ *  status and change only `enabled`, so the AUTONOMY switch shows the truth everywhere. */
+export function autonomyToggled(prev: AutonomyStatus | null, enabled: boolean): AutonomyStatus | null {
+  return prev && prev.enabled !== enabled ? { ...prev, enabled } : prev;
+}
 
 // Journal types after which a question no longer waits: the human answered (core.py answer -> "answer"), the agent
 // moved on (a question that timed out returns into the ask_human tool's result, tools.py WebAskHuman.execute, and the

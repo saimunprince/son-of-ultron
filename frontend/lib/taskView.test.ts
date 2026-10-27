@@ -1,8 +1,8 @@
 // The live console's decisions about the running task (lib/taskView.ts), on the payloads the backend really sends.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pendingAskFrom, settlesPendingAsk, stopRunningTools } from "./taskView.ts";
-import type { JournalEvent } from "./syraxClient.ts";
+import { autonomyToggled, pendingAskFrom, settlesPendingAsk, stopRunningTools } from "./taskView.ts";
+import type { AutonomyStatus, JournalEvent } from "./syraxClient.ts";
 
 // journal.py events(): rows {id, ts, task_id, type, seq, payload}, oldest first; server.py boot sends them as task_events
 let seq = 0;
@@ -63,4 +63,17 @@ test("a tool row with no result when the task ends is marked stopped, not left r
   assert.deepEqual(after.map((x) => ("status" in x ? x.status : null)), [null, "ok", "stopped", "fail"]);
   assert.equal(entries[2].status, "running", "the old array is not mutated (React state)");
   assert.equal(stopRunningTools(after), after, "nothing running: the same array, no re-render");
+});
+
+test("autonomy switched on another UI: this one's status follows (autonomy.py set_enabled -> autonomy.toggled)", () => {
+  const status: AutonomyStatus = {
+    enabled: false, running_loop: false, interval_s: 900, last_cycle: null, cycles: 3,
+    objectives: { OPEN: 1, ACTIVE: 0, DONE: 2, BLOCKED: 0, DROPPED: 0 }, resources: {} as AutonomyStatus["resources"], pressure: null, last_maintenance: null,
+  };
+  const on = autonomyToggled(status, true);
+  assert.equal(on?.enabled, true);
+  assert.equal(on?.cycles, 3, "the rest of the status is kept");
+  assert.equal(status.enabled, false, "not mutated");
+  assert.equal(autonomyToggled(on, true), on, "no change, same object");
+  assert.equal(autonomyToggled(null, true), null, "before hello there is nothing to update");
 });

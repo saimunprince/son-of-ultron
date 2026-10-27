@@ -261,6 +261,14 @@
         break;
       case 'autonomy_status':
         s.autonomy = e; break;
+      case 'autonomy':
+        // autonomy.py set_enabled -> autonomy.toggled {enabled}, sent to every UI; only the one that flipped it gets a fresh
+        // autonomy_status, so the HUD's AUTONOMY ON/OFF follows the event
+        if (e.event === 'toggled' && typeof e.enabled === 'boolean') {
+          s.autonomy = Object.assign({}, s.autonomy || {}, { enabled: e.enabled });
+          log('AUTONOMY ' + (e.enabled ? 'ON' : 'OFF'));
+        }
+        break;
       case 'memories':
         s.memories = (e.facts || []).length; break;
       case 'objectives':

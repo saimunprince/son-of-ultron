@@ -39,7 +39,7 @@ import type { Heard } from "@/lib/wake";
 import { useHandsFree } from "@/components/useHandsFree";
 import { LiveTalk, type LiveEvent, type LiveState } from "@/lib/live";
 import { liveUrl } from "@/lib/livePcm";
-import { pendingAskFrom, settlesPendingAsk, stopRunningTools } from "@/lib/taskView";
+import { autonomyToggled, pendingAskFrom, settlesPendingAsk, stopRunningTools } from "@/lib/taskView";
 
 type CameraState = "off" | "starting" | "on" | "error";
 type AgentState = "booting" | "idle" | "thinking" | "acting";
@@ -438,6 +438,7 @@ export default function Syrax() {
           break;
         }
         case "autonomy":
+          setAutonomy((a) => autonomyToggled(a, e.enabled)); // toggled on another UI: this switch follows
           push({ kind: "notice", id: nextId++, text: e.enabled ? "AUTONOMY ON · SYRAX will pursue its own objectives when idle." : "AUTONOMY OFF." });
           break;
         case "permission":
