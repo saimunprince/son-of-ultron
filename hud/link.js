@@ -138,7 +138,10 @@
       case 'state':
         s.state = e.state || 'idle'; s.tool = e.tool || null; if (e.step) s.step = e.step;
         if (s.state === 'idle') { s.tool = null; s.task = null; s.phase = null; s.pendingAsk = null; s.window = null; }
-        if (/^(thinking|acting|idle)$/.test(s.state)) s.waiting = null;  // the question was answered or the task ended (agent.py:431/548/587, core.py:529)
+        // a new step (agent.py: state thinking) or the end of the task means the question was answered or timed out (tools.py
+        // returns "did not answer in time" and the agent goes on): it must not take the next command as its answer.
+        // `acting` does not: the agent reports acting on a tool BEFORE that tool asks, and a reconnect replays it while SYRAX waits
+        if (/^(thinking|idle)$/.test(s.state)) { s.waiting = null; s.pendingAsk = null; }
         mode(s.pendingAsk ? 'LISTENING' : STATE_MODE[s.state] || 'IDLE');
         break;
       case 'phase':
@@ -186,7 +189,8 @@
         break;
       case 'user':
         // the HUD already shows what it sent; the human's answer comes back as `user` with the task's id (journal.py:249 _WIRE "answer" -> "user", journal.py:277)
-        if (e.task_id) s.waiting = null;
+        // an answer from any UI (this HUD or the web UI) settles the question; a new request's echo has no task_id
+        if (e.task_id) { if (s.pendingAsk !== null) mode(STATE_MODE[s.state] || 'IDLE'); s.waiting = null; s.pendingAsk = null; }
         break;
       case 'answer':
         s.waiting = null; break;

@@ -1,7 +1,7 @@
 // The live console's decisions about the running task (lib/taskView.ts), on the payloads the backend really sends.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pendingAskFrom } from "./taskView.ts";
+import { pendingAskFrom, settlesPendingAsk } from "./taskView.ts";
 import type { JournalEvent } from "./syraxClient.ts";
 
 // journal.py events(): rows {id, ts, task_id, type, seq, payload}, oldest first; server.py boot sends them as task_events
@@ -35,4 +35,18 @@ test("an answered, timed-out or ended question is not restored", () => {
   );
   assert.equal(pendingAskFrom([]), null);
   assert.equal(pendingAskFrom(undefined), null);
+});
+
+test("a question that timed out or was answered elsewhere does not take the next command as its answer", () => {
+  // agent.py: the next step starts with {"type": "state", "state": "thinking", "step": n}; a timed-out question ends up there too
+  assert.equal(settlesPendingAsk("state", { state: "thinking" }), true);
+  assert.equal(settlesPendingAsk("state", { state: "idle" }), true);
+  // agent.py: tool_start -> {"type": "state", "state": "acting", "tool": name} -> the tool asks: acting comes BEFORE the
+  // question, and server.py boot replays it after task_events on a reconnect, so it must keep the question
+  assert.equal(settlesPendingAsk("state", { state: "acting" }), false);
+  // the HUD answered: core.py answer journals "answer" -> {type: "user", text, session_id, task_id} to every UI
+  assert.equal(settlesPendingAsk("user", { task_id: "t-1" }), true);
+  // server.py task: {type: "user", text, voice} echoes a new request, no task_id: SYRAX still waits
+  assert.equal(settlesPendingAsk("user", {}), false);
+  assert.equal(settlesPendingAsk("notice", { task_id: "t-1" }), false);
 });

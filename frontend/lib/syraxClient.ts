@@ -429,7 +429,8 @@ export type ServerEvent =
   | { type: "brain_models"; id: string; models: string[]; error?: string }
   | ({ type: "brain_test" } & BrainTestResult)
   | { type: "state"; state: "booting" | "idle" | "thinking" | "acting"; step?: number; tool?: string }
-  | { type: "user"; text: string; voice?: boolean }
+  // a new request's echo (server.py task) has no task_id; an answer comes back with one (journal.py _WIRE "answer" -> "user")
+  | { type: "user"; text: string; voice?: boolean; task_id?: string; session_id?: string }
   | ({ type: "think"; step: number; content: string; tools: { id: string; name: string; args: unknown }[] } & Journaled)
   | ({ type: "tool_start"; id: string; name: string; args: unknown; step?: number } & Journaled)
   | ({ type: "tool_result"; id: string; name: string; ok: boolean; output: string; truncated: boolean; image?: string; step?: number } & Journaled)

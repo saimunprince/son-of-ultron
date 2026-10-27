@@ -7,6 +7,19 @@ import type { JournalEvent } from "./syraxClient";
 // next step thinks), or the task ended (task.completed / failed / cancelled / ...).
 const SETTLES_ASK = new Set(["answer", "think", "final", "tool.started", "tool.completed", "tool.failed"]);
 
+/** Whether an event means the question SYRAX asked no longer waits, so the next thing typed is a new request:
+ *  - `state` idle (the task ended) or thinking (agent.py: the next step starts, so the question was answered or
+ *    timed out; tools.py returns "did not answer in time" into the tool's result and the agent goes on);
+ *  - `user` with a task_id: an answer, from this UI or another, journaled as "answer" and sent as `user`
+ *    (journal.py _WIRE). A new request's echo (server.py: {type: "user", text, voice}) has no task_id.
+ *  `acting` does not settle it: the agent reports acting on a tool before that tool asks (agent.py tool_start ->
+ *  state acting -> the ask or the permission question), and a reconnect replays that state while SYRAX waits. */
+export function settlesPendingAsk(type: string, detail: { state?: string; task_id?: string | null }): boolean {
+  if (type === "state") return detail.state === "idle" || detail.state === "thinking";
+  if (type === "user") return !!detail.task_id;
+  return false;
+}
+
 /** The question the running task still waits on, from its journal events (server.py boot sends them as
  *  `task_events` when a UI connects while a task runs). The hello snapshot carries no pending question, so
  *  without this a reload forgets it and the typed answer goes out as a new task. null when none waits. */

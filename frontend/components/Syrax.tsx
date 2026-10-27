@@ -39,7 +39,7 @@ import type { Heard } from "@/lib/wake";
 import { useHandsFree } from "@/components/useHandsFree";
 import { LiveTalk, type LiveEvent, type LiveState } from "@/lib/live";
 import { liveUrl } from "@/lib/livePcm";
-import { pendingAskFrom } from "@/lib/taskView";
+import { pendingAskFrom, settlesPendingAsk } from "@/lib/taskView";
 
 type CameraState = "off" | "starting" | "on" | "error";
 type AgentState = "booting" | "idle" | "thinking" | "acting";
@@ -600,12 +600,11 @@ export default function Syrax() {
         case "state":
           setAgent(e.state);
           setActiveTool(e.state === "acting" ? (e.tool ?? null) : null);
-          if (e.state === "idle") {
-            setPendingAsk(null);
-            runningTaskRef.current = null;
-          }
+          if (settlesPendingAsk("state", { state: e.state })) setPendingAsk(null); // a timed-out question must not take the next command
+          if (e.state === "idle") runningTaskRef.current = null;
           break;
         case "user":
+          if (settlesPendingAsk("user", { task_id: e.task_id })) setPendingAsk(null); // answered here or on the HUD
           push({ kind: "user", id: nextId++, text: e.text, voice: e.voice });
           break;
         case "think":
