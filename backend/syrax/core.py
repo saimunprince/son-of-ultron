@@ -150,6 +150,24 @@ DEADLINE_REASON = "ran out of time: the task's deadline ({span}) passed"
 QUALITY_TIMEOUT_REASON = "the quality case ran out of time"  # quality.py's runner cancels with this text
 
 
+async def _to_the_end(aw: Awaitable, what: str) -> bool:
+    """Run ``aw`` to its end even when the caller is cancelled meanwhile (a task's cleanup must not stop half-way).
+    Returns True when a cancel landed on the caller, which should honour it afterwards; an error is logged."""
+    inner = asyncio.ensure_future(aw)
+    cancelled = False
+    while True:
+        try:
+            await asyncio.shield(inner)
+            return cancelled
+        except asyncio.CancelledError:
+            if inner.done():  # the step itself was cancelled, not the caller
+                return cancelled
+            cancelled = True
+        except Exception as e:
+            logger.warning(f"{what} failed: {e}")
+            return cancelled
+
+
 def _span(seconds: float) -> str:
     return f"{seconds / 60:g} min" if seconds >= 60 else f"{seconds:g} s"
 
@@ -680,13 +698,21 @@ class Core:
             await self.broadcast({"type": "error", "message": _explain(e)})
         finally:
             self._disarm_deadline()  # the task ended: no timer may outlive it
-            await self._clean_repo_after_task()
-            self.current = None
-            await self.broadcast({"type": "state", "state": "idle"})
+            # Review 2026-10-27: a cancel that landed here (reset(), a cancelled core.wait(), shutdown) aborted the
+            # rollback half-way and left `current` set, no idle and no next request. The cleanup and the idle now run
+            # to their end whatever lands meanwhile, and the cancel is honoured afterwards.
+            late_cancel = False
             try:
-                await self._start_next()  # a human request that waited behind this task
+                late_cancel = await _to_the_end(self._clean_repo_after_task(), "the cleanup after the task")
+            finally:
+                self.current = None
+                late_cancel = await _to_the_end(self.broadcast({"type": "state", "state": "idle"}), "the idle state") or late_cancel
+            try:
+                await self._start_next()  # a human request that waited behind this task (not while the queue is held)
             except Exception as e:  # the queue never takes down the task that just ended
                 logger.warning(f"queued request did not start: {e}")
+            if late_cancel:
+                raise asyncio.CancelledError()
 
     async def _clean_repo_after_task(self) -> None:
         """Autonomous work may edit SYRAX's own repository, but only `release`
