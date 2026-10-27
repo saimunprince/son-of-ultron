@@ -95,11 +95,18 @@ def _overlap(a: set, b: set) -> float:
     return len(a & b) / max(1, len(a | b))
 
 
+# A subject replaces the old row only when it names one thing about someone ("Prince's favourite editor", 2+ content
+# words). A bare name is no subject (2026-10-27 review: "Prince is a developer." overwrote "Prince was born in Dhaka.",
+# so every "The human is X" collapsed into one row); those dedupe by the 0.8 overlap rule only.
+SUBJECT_MIN_WORDS = 2
+
+
 def _subject(text: str) -> Optional[tuple]:
     m = re.match(r"(.+?)\s+(?:is|are|was|were)\s+", text, re.I)
     if not m:
         return None
-    return tuple(sorted(_words(m.group(1)))) or None
+    words = content_words(m.group(1))
+    return tuple(sorted(words)) if len(words) >= SUBJECT_MIN_WORDS else None
 
 
 # Memory truth (2026-10-25 audit): `remember` is called by the model, so its text may be the model's own inference
