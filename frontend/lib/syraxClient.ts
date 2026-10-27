@@ -509,7 +509,7 @@ export type ServerEvent =
     } & Journaled)
   /** the intent ledger (agent.py _execute_guarded): recorded before an EXTERNAL_WRITE call runs, done after it,
    *  refused when the same call is asked again while the first was never seen to finish (first_step: where it was) */
-  | ({ type: "intent"; event: "recorded" | "done" | "refused"; tool: string; args_hash: string; summary?: string; ok?: boolean; step?: number; first_step?: number | null } & Journaled)
+  | ({ type: "intent"; event: "recorded" | "done" | "refused" | "uncertain"; tool: string; args_hash: string; summary?: string; ok?: boolean; step?: number; first_step?: number | null; why?: string | null } & Journaled)
   | ({ type: "autonomy"; event: "toggled"; enabled: boolean } & Journaled)
   | ({
       type: "objective";

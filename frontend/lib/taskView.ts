@@ -2,6 +2,26 @@
 // kept pure here so `node --experimental-strip-types --test lib/taskView.test.ts` covers them without a browser.
 import type { AutonomyStatus, JournalEvent } from "./syraxClient";
 
+/** The console line for one intent ledger event (backend/syrax/intent.py, agent.py _execute_guarded): recorded before
+ *  an EXTERNAL_WRITE call runs, done after it, refused when the same send is asked again while the first was never
+ *  seen to finish, uncertain {tool, args_hash, summary, step, why} when the call timed out or lost its connection
+ *  while it ran: it may have gone out, and the human must be told. error: shown as an error entry. */
+export function intentLine(e: {
+  event: string;
+  tool: string;
+  summary?: string;
+  ok?: boolean;
+  first_step?: number | null;
+  why?: string | null;
+}): { error: boolean; text: string } | null {
+  if (e.event === "recorded") return { error: false, text: `INTENT · ${e.summary ?? e.tool}` };
+  if (e.event === "done") return { error: false, text: `INTENT ${e.ok ? "DONE" : "FAILED"} · ${e.tool}` };
+  if (e.event === "refused")
+    return { error: true, text: `INTENT HELD · ${e.tool} · the same action may already have gone out (step ${e.first_step ?? "?"}); not repeated` };
+  if (e.event === "uncertain") return { error: true, text: `INTENT UNCERTAIN · ${e.tool} · ${e.why || "timed out"} · may have gone out` };
+  return null;
+}
+
 /** autonomy.py set_enabled journals autonomy.toggled {enabled}; every session gets it as {type: "autonomy", event:
  *  "toggled", enabled}, but only the session that flipped it gets a fresh autonomy_status. The others keep their
  *  status and change only `enabled`, so the AUTONOMY switch shows the truth everywhere. */

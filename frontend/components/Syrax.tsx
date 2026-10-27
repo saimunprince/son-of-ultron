@@ -39,7 +39,7 @@ import type { Heard } from "@/lib/wake";
 import { useHandsFree } from "@/components/useHandsFree";
 import { LiveTalk, type LiveEvent, type LiveState } from "@/lib/live";
 import { liveUrl } from "@/lib/livePcm";
-import { autonomyToggled, pendingAskFrom, settlesPendingAsk, stopRunningTools } from "@/lib/taskView";
+import { autonomyToggled, intentLine, pendingAskFrom, settlesPendingAsk, stopRunningTools } from "@/lib/taskView";
 
 type CameraState = "off" | "starting" | "on" | "error";
 type AgentState = "booting" | "idle" | "thinking" | "acting";
@@ -451,13 +451,13 @@ export default function Syrax() {
                 : `AUTHORIZED · ${e.tool} · ${e.level} · by ${e.authorized_by === "goal" ? "your words" : "your answer"}${e.targets?.length ? ` · ${e.targets.slice(0, 2).join(", ")}` : ""}`,
           });
           break;
-        case "intent":
-          // the intent ledger (backend/syrax/intent.py): what SYRAX is about to send, written before it goes out
-          if (e.event === "recorded") push({ kind: "notice", id: nextId++, text: `INTENT · ${e.summary ?? e.tool}` });
-          else if (e.event === "done") push({ kind: "notice", id: nextId++, text: `INTENT ${e.ok ? "DONE" : "FAILED"} · ${e.tool}` });
-          else if (e.event === "refused")
-            push({ kind: "error", id: nextId++, text: `INTENT HELD · ${e.tool} · the same action may already have gone out (step ${e.first_step ?? "?"}); not repeated` });
+        case "intent": {
+          // the intent ledger (backend/syrax/intent.py): what SYRAX is about to send, written before it goes out;
+          // uncertain: the send timed out or lost its connection and may have gone out
+          const line = intentLine(e);
+          if (line) push({ kind: line.error ? "error" : "notice", id: nextId++, text: line.text });
           break;
+        }
         case "objective":
           if (e.event === "created") push({ kind: "notice", id: nextId++, text: `OBJECTIVE · P${e.priority ?? "?"} · ${e.goal ?? ""}` });
           else if (e.event === "completed") push({ kind: "notice", id: nextId++, text: `OBJECTIVE DONE · #${e.objective_id} · ${e.note ?? ""}` });

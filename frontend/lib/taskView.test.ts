@@ -1,7 +1,7 @@
 // The live console's decisions about the running task (lib/taskView.ts), on the payloads the backend really sends.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { autonomyToggled, pendingAskFrom, settlesPendingAsk, stopRunningTools } from "./taskView.ts";
+import { autonomyToggled, intentLine, pendingAskFrom, settlesPendingAsk, stopRunningTools } from "./taskView.ts";
 import type { AutonomyStatus, JournalEvent } from "./syraxClient.ts";
 
 // journal.py events(): rows {id, ts, task_id, type, seq, payload}, oldest first; server.py boot sends them as task_events
@@ -76,4 +76,25 @@ test("autonomy switched on another UI: this one's status follows (autonomy.py se
   assert.equal(status.enabled, false, "not mutated");
   assert.equal(autonomyToggled(on, true), on, "no change, same object");
   assert.equal(autonomyToggled(null, true), null, "before hello there is nothing to update");
+});
+
+test("intent.uncertain tells the human a send may have gone out (agent.py: the call timed out or lost its connection)", () => {
+  // agent.py:1397  {"type": "intent", "event": "uncertain", **ledger, "why": why, "step": n}; ledger = {tool, args_hash, summary}
+  assert.deepEqual(
+    intentLine({ event: "uncertain", tool: "email", summary: "send the report to boss@example.com", why: "timed out", ok: undefined }),
+    { error: true, text: "INTENT UNCERTAIN · email · timed out · may have gone out" },
+  );
+  assert.deepEqual(intentLine({ event: "uncertain", tool: "email", why: "connection reset" }), {
+    error: true,
+    text: "INTENT UNCERTAIN · email · connection reset · may have gone out",
+  });
+  assert.equal(intentLine({ event: "uncertain", tool: "email" })?.text, "INTENT UNCERTAIN · email · timed out · may have gone out");
+  // the lines the console already showed are unchanged
+  assert.deepEqual(intentLine({ event: "recorded", tool: "email", summary: "send the report" }), { error: false, text: "INTENT · send the report" });
+  assert.deepEqual(intentLine({ event: "done", tool: "email", ok: true }), { error: false, text: "INTENT DONE · email" });
+  assert.deepEqual(intentLine({ event: "refused", tool: "email", first_step: 3 }), {
+    error: true,
+    text: "INTENT HELD · email · the same action may already have gone out (step 3); not repeated",
+  });
+  assert.equal(intentLine({ event: "later", tool: "email" }), null);
 });
