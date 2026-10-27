@@ -151,6 +151,11 @@ def find(title_part: str, wins: Optional[List[Tuple[int, str]]] = None) -> Optio
     return None
 
 
+def _same(a, b) -> bool:
+    """Two window handles are the same window (the default c_int restype can sign a handle: compare its 32 bits)."""
+    return bool(a) and bool(b) and (int(a) & 0xFFFFFFFF) == (int(b) & 0xFFFFFFFF)
+
+
 def act(action: str, title_part: str = "") -> str:
     if action not in ACTIONS:
         raise ValueError(f"window value must be one of {', '.join(ACTIONS)}")
@@ -171,8 +176,16 @@ def act(action: str, title_part: str = "") -> str:
     elif action == "restore":
         u.ShowWindow(hwnd, SW_RESTORE)
     elif action == "focus":
-        u.ShowWindow(hwnd, SW_RESTORE)
-        u.SetForegroundWindow(hwnd)
+        # 2026-10-27 review: SW_RESTORE on every focus un-maximized a maximized window, and "focused." was said even
+        # when Windows refused the switch (the foreground lock: SetForegroundWindow returns 0, the window only
+        # flashes in the taskbar). Only a minimized window is restored, and the answer is what Windows did.
+        if u.IsIconic(hwnd):
+            u.ShowWindow(hwnd, SW_RESTORE)
+        ok = u.SetForegroundWindow(hwnd)
+        front = u.GetForegroundWindow()
+        if not (_same(front, hwnd) or (ok and not front)):
+            raise OSError(f"{title}: not focused. Windows refused to bring it to the front (another program holds the "
+                          "foreground); it may be flashing in the taskbar.")
     else:  # left / right half of the work area
         rect = wintypes.RECT()
         u.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0)
