@@ -256,16 +256,35 @@ GIVEN_PATCH_REFUSED = ("Error: refused: the human gave this patch and asked for 
                        "human's patch unchanged; if it does not apply, tell the human it failed and why, and change nothing else.")
 
 
+# Review 2026-10-27: a blank line kept a hunk open, so the human's words after the diff ("...\n\n- do not rewrite
+# it") were read as a removed line, and the human's own diff passed to apply_patch never matched: always refused.
+# A hunk with stated lengths ("@@ -7,2 +7,2 @@") ends when they are used up.
+_HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@")
+
+
 def diff_changed_lines(diff: str) -> list:
     """The - and + lines of a unified diff's hunks, trailing spaces dropped: what the diff removes and adds, whatever
-    its line numbers and context say. Text before the first header and after the last hunk is not part of it."""
-    out, inside = [], False
+    its line numbers and context say. Text before the first header and after the last hunk is not part of it: a
+    hunk ends when the old and new lengths its @@ header states are used up (a blank line is a context line)."""
+    out, inside, left = [], False, None  # left: [old, new] lines the current hunk still holds, None when unstated
     for line in str(diff or "").splitlines():
+        tag = line[:1]
+        if left is not None and max(left) > 0 and tag in ("+", "-", " ", "", "\\"):
+            if tag in ("+", "-"):
+                out.append(line.rstrip())
+            left[0] -= tag in ("-", " ", "")
+            left[1] -= tag in ("+", " ", "")
+            continue
+        if left is not None:  # the stated lengths are used up, or a line no hunk holds
+            inside, left = False, None
         if line.startswith(("--- ", "+++ ", "@@")):
             inside = True
-        elif inside and line[:1] in ("+", "-"):
+            m = _HUNK.match(line)
+            if m:
+                left = [int(m.group(1) or 1), int(m.group(2) or 1)]
+        elif inside and tag in ("+", "-"):
             out.append(line.rstrip())
-        elif inside and line[:1] not in (" ", "\\", ""):
+        elif inside and tag not in (" ", "\\", ""):
             inside = False
     return out
 
