@@ -1093,8 +1093,10 @@ class SyraxAgent(Manus):
         # Live 2026-10-22 (quality run #58, build_cli): step 2 said "Now I will create the `main.py` file" beside its
         # tool call, the last steps ran tools without a word, and that sentence became the final answer. Words
         # written beside an action are what was about to happen, never the answer: ask once for the answer.
+        # Review 2026-10-27: a loop stop's answer (LOOP_STOPPED) is the honest final; the words beside the repeated
+        # call kept reply_before_action set, and FINAL_ASK replaced the stop with "Checking myself again."
         if ((not self.last_reply or self.reply_before_action or PROMISE.search(self.last_reply))
-                and any(m.role == "tool" for m in self.memory.messages)):
+                and any(m.role == "tool" for m in self.memory.messages) and not self.loop_stopped):
             await self._final_answer()
         if self.last_reply and ECHO.search(self.last_reply):
             await self._send({"type": "notice", "text": "The answer repeated a console nudge: asking once for the answer itself."})
@@ -1420,7 +1422,7 @@ class SyraxAgent(Manus):
             if self.repeats >= LOOP_LIMIT:
                 result = LOOP_STOPPED.format(name=name, n=self.repeats + 1)
                 self.loop_stopped = True
-                self.last_reply = result
+                self.last_reply, self.reply_before_action = result, False  # the stop is the answer, not words beside a call
                 self.state = AgentState.FINISHED
                 await self._send({"type": "notice", "text": f"Stopped: {name} repeated {self.repeats + 1} times in a row."})
             elif self.repeats >= 2:
