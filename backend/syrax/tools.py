@@ -64,7 +64,36 @@ class WebAskHuman(BaseTool):
         return False
 
 
+import sys  # noqa: E402
 import multiprocessing  # noqa: E402
+import threading  # noqa: E402
+
+# Windows starts a worker by spawning a fresh interpreter, and spawn re-imports the parent's __main__ module first
+# when it has a module spec or a file (multiprocessing.spawn.get_preparation_data). Live, __main__ is syrax.server
+# (`python -m syrax.server`): every python_execute worker imported the whole server, FastAPI and the agent before
+# running one line. Measured 2026-10-27 with a server-like __main__: 2.59-2.74 s per call as it was, 0.13-0.20 s with
+# __main__ hidden during the start; the live journal's median short call was 2.9-3.3 s. The worker's target lives in
+# _pyexec_child (stdlib only) and needs nothing from __main__.
+_MAIN_LOCK = threading.Lock()
+
+
+def start_without_main(proc) -> None:
+    """proc.start() with __main__'s __spec__ and __file__ hidden for the moment the spawn data is taken, so the
+    child does not re-import the parent's main module; both are put back however the start ends."""
+    main = sys.modules.get("__main__")
+    with _MAIN_LOCK:
+        saved = {k: getattr(main, k) for k in ("__spec__", "__file__") if main is not None and hasattr(main, k)}
+        try:
+            if main is not None:
+                main.__spec__ = None
+                if "__file__" in saved:
+                    del main.__file__
+            proc.start()
+        finally:
+            for k, v in saved.items():
+                setattr(main, k, v)
+            if main is not None and "__spec__" not in saved and hasattr(main, "__spec__"):
+                del main.__spec__
 import time  # noqa: E402
 from typing import Dict  # noqa: E402
 
@@ -174,7 +203,7 @@ class AsyncPythonExecute(PythonExecute):
     async def _execute(self, code: str, timeout: int, safe_globals: dict, paths: list, out_path: str) -> Dict:
         recv, send = multiprocessing.Pipe(duplex=False)
         proc = multiprocessing.Process(target=guarded_run, args=(code, send, safe_globals, paths, out_path), daemon=True)
-        starter = asyncio.ensure_future(asyncio.to_thread(proc.start))
+        starter = asyncio.ensure_future(asyncio.to_thread(start_without_main, proc))
         try:
             done, _ = await asyncio.wait({starter}, timeout=START_TIMEOUT_S)
         except asyncio.CancelledError:
