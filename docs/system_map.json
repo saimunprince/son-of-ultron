@@ -174,11 +174,13 @@
       "code": [
         "backend/syrax/journal.py",
         "backend/syrax/backup.py (daily verified snapshot of journal.db, brains.json, memory.json, config.toml; human-run restore)",
+        "backend/syrax/knowngood.py (journals restart.fallback and a reminder when the launcher starts the core from the last known-good commit in .syrax/known-good because a restarted core did not come up)",
         "backend/syrax/redact.py (the credential mask: every log line and the journal's copies of goal, think, tool args, tool output and checkpoint context are masked at write time)"
       ],
       "tests": [
         "backend/syrax/test_journal.py (SIGKILL crash matrix, transition table, recovery, resume, fan-out)",
         "backend/syrax/test_backup.py (snapshot/verify/prune/due, a flipped byte is caught, restore reproduces rows and refuses while running)",
+        "backend/syrax/test_knowngood.py, test_knowngood_launcher.py (the known-good marker, the fallback decision and worktree, the launcher loop with fake processes, the journaled fallback)",
         "backend/syrax/test_redact.py, test_redact_leftovers.py (log lines, tracebacks, tool output, goal, tool args and checkpoint context masked; the agent keeps the key)"
       ],
       "failure_modes": [

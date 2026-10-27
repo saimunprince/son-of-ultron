@@ -228,6 +228,43 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### The audit's open items closed: skills, knowledge, sends, claims, fallback (2026-10-27)
+
+The rest of the 2026-10-27 audit's open list, and two owner decisions. Live
+after the sweep (SYRAX restarted into 2c2fe63 at 15:38): "Messi currently plays
+for which club?" answered "Inter Miami." with no claim check firing; a README
+read "do not change anything" and a media reading ended SUCCESS; the HUD opened
+and loaded from the core.
+
+- Skills (open item 8): a skill call runs in a child process of its own under
+  python_execute's guard (_skill_child.py, a judge): a skill can no longer
+  write the journal, the keys or the backups, and one that runs out of time is
+  killed with everything it started.
+- Knowledge (item 4): rows carry status ACTIVE / DISPUTED / SUPERSEDED,
+  verified_at and superseded_by. A dispute no longer ages out, a correction
+  keeps the old text as a superseded row, readers skip superseded rows and mark
+  disputed ones; settle objectives follow the DISPUTED rows, and only ACTIVE
+  knowledge counts as evidence for contracts and follow-ups. Migrated on a copy
+  of the live journal first: 700 rows, ids kept, integrity ok.
+- Untrusted input (item 7): clipboard, screen text, window and media titles
+  and MCP output carry UNTRUSTED_LOCAL, as web text carries UNTRUSTED_WEB.
+- Judges (item 3): the claim-check rules moved from agent.py to claims.py, a
+  judge; rise, phases and core read them from there. SYRAX may still improve
+  its own loop in agent.py but cannot loosen the checks on its own answers.
+- Known-good fallback (item 6): a core that answered for 120 s marks its
+  commit known-good; if a restarted core does not come up within 180 s, the
+  launcher runs the known-good commit from a worktree (.syrax/known-good)
+  against the live journal and keys, journals restart.fallback and reminds the
+  human. main and the working tree are never touched.
+- Owner decision: Enter (or a newline, or a Send click) in a messaging app in
+  front is an external send: the human's words must name it, else SYRAX asks;
+  own work never sends.
+- HUD: NOAA moved the solar wind (products/solar-wind/ answers 404) and the Kp
+  product now sends objects; the feeds read json/rtsw and the new Kp shape.
+
+Not changed on purpose: a token for every UI client (any local program can read
+the token file, and a browser cannot forge Origin, so it adds no protection).
+
 ### A bug sweep: four reviews, thirty-seven fixes (2026-10-27)
 
 The owner asked that no problem be left anywhere in the project. Four read-only
