@@ -280,6 +280,13 @@ parallel agents in their own worktrees, reviewed and gated together.
 - 0477b2d: the app.tool package loads its tools lazily: importing app.tool.base
   (every skill and skill-test process) took 0.84 s, now 0.49 s; `from
   app.tool import X` is unchanged. 3 tests.
+- cefaf97: the journal reads git HEAD from the repository files (loose ref,
+  packed-refs, worktrees through commondir) instead of starting git on every
+  task, checkpoint and verification: 17.8 ms to 0.70 ms per call; on any
+  doubt (GIT_* variables, reftable, odd HEAD, symbolic chain, unborn branch)
+  it asks git as before. 16 tests against real git, 16 red before. A
+  proposed change to the gate's pytest launcher was dropped: Python already
+  skips pytest.__main__ in spawned children, so it saved nothing.
 
 ### A tie names its windows; the matrix counts only evidence its code produced (2026-10-26)
 
