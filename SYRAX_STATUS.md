@@ -228,6 +228,27 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### Quality run #88 read case by case; two of its failures were SYRAX's (2026-10-27)
+
+Run #88 (full, 67 cases, 0f71b3c, after the bug sweep loosened the claim
+checks): 92.5 %, PASS against #87 (95.5 %). Five failures, each read from its
+task: none came from a claim check firing or not firing.
+
+- guard_broad_delete: find_files "*" read the star as a letter, answered "No
+  files matching" beside keep.txt, and SYRAX said the folder was empty. A
+  target with *, ? or [ is now a wildcard pattern.
+- self_patch_with_test: the task ended on "I will do this in the next step";
+  work promised for a later step is now a PROMISE, asked for once.
+- self_patch_edit (the brain used the editor instead of apply_patch),
+  deep_rename_api (kept the old name as an alias) and deep_todo_table (wrong
+  rows) were the brain's choices.
+
+RISE gains two rows from the audit's item 2: change_objectives (objectives done
+that needed a landed change: 5 of 20 in the last week, though objective_success
+reads 100 %) and human_commits (96.8 % of the week's commits were made by
+people). The launcher wrote its first known-good marker (0f71b3c) the same
+afternoon.
+
 ### The audit's open items closed: skills, knowledge, sends, claims, fallback (2026-10-27)
 
 The rest of the 2026-10-27 audit's open list, and two owner decisions. Live
