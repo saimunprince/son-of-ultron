@@ -51,10 +51,14 @@ export class LiveTalk {
   private playing = new Set<AudioBufferSourceNode>();
   private ended = false;
 
-  constructor(
-    private url: string,
-    private h: LiveHandlers,
-  ) {}
+  private url: string;
+  private h: LiveHandlers;
+
+  // plain fields, not parameter properties: node's strip-only TypeScript (the lib tests) cannot run those
+  constructor(url: string, h: LiveHandlers) {
+    this.url = url;
+    this.h = h;
+  }
 
   async start() {
     this.h.onState("connecting");
@@ -62,12 +66,15 @@ export class LiveTalk {
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       });
+      // stopped while the browser asked for the mic: finish() ran before the stream existed, so release it here
+      if (this.ended) return this.release();
       const ctx = new AudioContext();
       this.ctx = ctx;
       if (ctx.state === "suspended") await ctx.resume();
       const mod = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
       await ctx.audioWorklet.addModule(mod);
       URL.revokeObjectURL(mod);
+      if (this.ended) return this.release();
       this.source = ctx.createMediaStreamSource(this.stream);
       this.node = new AudioWorkletNode(ctx, "syrax-live-tap");
       this.node.port.onmessage = (e) => this.onMic(e.data as Float32Array);
@@ -76,6 +83,7 @@ export class LiveTalk {
       this.finish("error", `microphone: ${e instanceof Error ? e.message : String(e)}`);
       return;
     }
+    if (this.ended) return this.release(); // never open the live connection after a stop
     const ws = new WebSocket(this.url);
     ws.binaryType = "arraybuffer";
     this.ws = ws;
@@ -160,6 +168,13 @@ export class LiveTalk {
   private finish(state: "off" | "error", detail?: string) {
     if (this.ended) return;
     this.ended = true;
+    this.release();
+    this.h.onLevel?.(0);
+    this.h.onState(state, detail);
+  }
+
+  /** Let go of the playback, the connection, the mic and the audio context: whatever exists by now. */
+  private release() {
     this.flush();
     if (this.ws) {
       this.ws.onclose = null;
@@ -173,7 +188,8 @@ export class LiveTalk {
     this.stream?.getTracks().forEach((t) => t.stop());
     void this.ctx?.close().catch(() => {});
     this.ctx = null;
-    this.h.onLevel?.(0);
-    this.h.onState(state, detail);
+    this.stream = null;
+    this.node = null;
+    this.source = null;
   }
 }
