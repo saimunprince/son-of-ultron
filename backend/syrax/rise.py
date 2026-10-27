@@ -207,6 +207,39 @@ def _rollbacks(cleanup: bool) -> Callable[[sqlite3.Connection, float, float], Va
     return fn
 
 
+# Audit 2026-10-27 (open item 2): objective_success counts every machine-checked closure, and most of them were
+# research objectives (knowledge_stored: 13 "biggest measured limitation" objectives in a week, none led to code).
+# These are the checks an objective can only pass once a change landed and was measured.
+CHANGE_CHECKS = ("change_released", "quality_case_passes", "quality_recovered", "tool_reliability", "repro_proven",
+                 "benchmark_recovered", "verification_green")
+
+
+def change_objectives_done(c, t0, t1) -> Value:
+    rows = c.execute("SELECT check_spec FROM objectives WHERE status='DONE' AND updated>=? AND updated<?", (t0, t1)).fetchall()
+    n = sum(1 for (spec,) in rows if (json.loads(spec or "{}") or {}).get("kind") in CHANGE_CHECKS)
+    return float(n), f"{n} of {len(rows)} objectives done needed a landed change"
+
+
+def _commit_authors(t0: float, t1: float) -> Optional[List[str]]:
+    import subprocess
+
+    try:
+        r = subprocess.run(["git", "log", f"--since=@{int(t0)}", f"--until=@{int(t1)}", "--format=%an"], cwd=str(REPO_ROOT),
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return None if r.returncode else [a for a in r.stdout.splitlines() if a.strip()]
+
+
+def human_commit_share(c, t0, t1) -> Value:
+    """Commits in the repository in the window that a person made (any author but SYRAX), out of all commits: the
+    audit found 88.7 % of 14 days' commits were human, which no metric showed."""
+    authors = _commit_authors(t0, t1)
+    if authors is None:
+        return None, "git log unavailable"
+    return _share(sum(1 for a in authors if a.strip().lower() != "syrax"), len(authors))
+
+
 def human_interventions(c, t0, t1) -> Value:
     asked = _one(c, "SELECT COUNT(*) FROM events WHERE type='ask' AND ts>=? AND ts<?", t0, t1)
     perm = _one(c, "SELECT COUNT(*) FROM events WHERE type='permission.authorized' AND json_extract(payload,'$.authorized_by')='human' AND ts>=? AND ts<?", t0, t1)
@@ -316,6 +349,7 @@ def published_matrix_age(c, t0, t1) -> Value:
 METRICS: List[Metric] = [
     Metric("quality", "Brain", "Quality suite pass rate", "higher", "%", "Latest full quality run in the window (at least 10 cases and 90 % of the largest run so far; a rotation subset is not the suite): real tasks through the real brains, judged by checks on disk and in the journal.", quality_pass_rate),
     Metric("objective_success", "Brain", "Machine-checked objectives done", "higher", "%", "Objectives closed in the window whose check is evidence (not task_success): DONE out of DONE + BLOCKED.", objective_success),
+    Metric("change_objectives", "Brain", "Objectives done that needed a landed change", "higher", "count", "Objectives closed DONE in the window whose check passes only after a change landed and was measured (a release, a quality case or run, tool reliability, a repro hunt, a benchmark, a GREEN gate); research objectives are not counted.", change_objectives_done),
     Metric("attempts", "Brain", "Attempts per objective done", "lower", "attempts", "Median attempts of the machine-checked objectives closed DONE in the window.", attempts_to_done),
     Metric("repeated_failures", "Brain", "Objectives that repeated a failed strategy", "lower", "%", "Objectives with two or more attempts, updated in the window, whose attempts_log holds two attempts that were not DONE and used the same strategy fingerprint (the distinct tool calls of the attempt, as autonomy records them), out of all objectives with two or more attempts.", repeated_failures),
     Metric("brain_calls_per_objective", "Brain", "Brain calls per verified objective (median)", "lower", "calls", "Median over the machine-checked objectives closed DONE in the window of the brain.answered events of all their tasks (every attempt, from attempts_log, evidence.task_id and last_task_id); objectives closed without a task are left out and counted in the detail.", brain_calls_per_objective),
@@ -332,6 +366,7 @@ METRICS: List[Metric] = [
     Metric("review_rejections", "Evolution", "Changes a second brain rejected", "-", "count", "review.completed with approve false.", review_rejections),
     Metric("experiments", "Evolution", "Experiments run", "higher", "count", "Rows in the experiments table: baseline against candidate, verdict computed from numbers.", experiments_run),
     Metric("human_interventions", "Evolution", "Human interventions", "lower", "count", "Times a person had to step in: ask events (SYRAX asked a question), permission.authorized with authorized_by human, objective.* events whose note a human wrote (\"human: ...\", a dismissal), and task.cancelled by a human (aborted, removed from the queue or dismissed).", human_interventions),
+    Metric("human_commits", "Evolution", "Commits a person made", "-", "%", "Commits in the repository in the window by any author but SYRAX, out of all commits (git log): how much of the change still comes from people.", human_commit_share),
     Metric("knowledge_stored", "Memory", "Conclusions stored", "-", "count", "knowledge.stored events (verified conclusions with sources).", _count_events("knowledge.stored")),
     Metric("knowledge_used", "Memory", "Conclusions read back", "higher", "count", "Stored conclusions whose last use falls in the window: memory that was used, not only kept.", knowledge_used),
     Metric("knowledge_settled", "Memory", "Conclusions reinforced or contradicted", "-", "count", "knowledge.reinforced and knowledge.contradiction: memory checked against new evidence.", knowledge_settled),
