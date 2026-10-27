@@ -108,6 +108,12 @@ HUD_FEEDS = {
 }
 HUD_FEED_TTL_S = 60
 _hud_feed_cache: dict = {}
+# Review 2026-10-27: NOAA answers 404 for plasma-1-day.json (the logs had a warning for each HUD poll). The right
+# product URL could not be established from the code, so a failing feed fails quietly: upstream is asked again only
+# after HUD_FEED_RETRY_S, one log line per feed per HUD_FEED_LOG_S, and the HUD shows no data (it gets a 502).
+HUD_FEED_RETRY_S = 600
+HUD_FEED_LOG_S = 3600
+_hud_feed_failures: dict = {}  # name -> (when it last failed, when that was last logged)
 
 
 @asynccontextmanager
@@ -283,6 +289,9 @@ async def hud_feed(name: str):
     hit = _hud_feed_cache.get(name)
     if hit and time.time() - hit[0] < HUD_FEED_TTL_S:
         return Response(content=hit[1], media_type="application/json")
+    failed = _hud_feed_failures.get(name)
+    if failed and time.time() - failed[0] < HUD_FEED_RETRY_S:
+        raise HTTPException(status_code=502, detail="feed unavailable")
     import httpx
 
     try:
@@ -291,8 +300,14 @@ async def hud_feed(name: str):
             r.raise_for_status()
             body = r.content
     except Exception as e:
-        logger.warning(f"HUD feed {name} failed: {e}")
+        now = time.time()
+        logged = failed[1] if failed else 0.0
+        if now - logged >= HUD_FEED_LOG_S:
+            logger.warning(f"HUD feed {name} failed: {e} (said once an hour; the HUD shows no {name} data meanwhile)")
+            logged = now
+        _hud_feed_failures[name] = (now, logged)
         raise HTTPException(status_code=502, detail="feed unavailable")
+    _hud_feed_failures.pop(name, None)
     _hud_feed_cache[name] = (time.time(), body)
     return Response(content=body, media_type="application/json")
 
