@@ -1,5 +1,5 @@
-"""SYRAX benchmark suite: measure SYRAX's own mechanisms, compare with the last
-run, and say REGRESSION / PASS / BASELINE from numbers, never from feelings.
+"""SYRAX benchmark suite: measure SYRAX's own mechanisms, compare with the pinned
+baseline and the last run, and say REGRESSION / PASS / BASELINE from numbers, never from feelings.
 
 Metrics (all on a throwaway journal so the real one is untouched):
   journal_record_p50_ms / _p95_ms   one durable event write (BEGIN…COMMIT + fsync)
@@ -9,11 +9,15 @@ Metrics (all on a throwaway journal so the real one is untouched):
   selfmodel_summary_ms              SelfModel.snapshot("summary")
   events_between_ms                 a replay window query
 
-A regression is a metric that got slower than the previous run by more than
-REGRESSION_PCT and by more than MIN_ABS_MS (small absolute jitter is not a
-regression). The first run is a BASELINE, not a PASS.
+A regression is a metric that got slower by more than REGRESSION_PCT and by
+more than MIN_ABS_MS (small absolute jitter is not a regression), measured
+against two references: the PINNED baseline (meta key ``bench_baseline_id``)
+and the previous run. The pinned baseline catches slow creep that no single
+step trips; the previous run catches a sudden jump. The first recorded run is
+a BASELINE, not a PASS, and becomes the pinned baseline when none is set. Only
+a human re-pins it (``--pin-baseline``; no agent tool does).
 
-    .venv/bin/python -m syrax.bench [--json] [--journal path]
+    .venv/bin/python -m syrax.bench [--json] [--journal path] [--pin-baseline ID|latest]
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from syrax.journal import Journal, _git_head
 REGRESSION_PCT = 50.0
 MIN_ABS_MS = 5.0
 LOWER_IS_BETTER = True
+BASELINE_KEY = "bench_baseline_id"  # journal meta: the pinned known-good run
 
 
 def _timeit(fn: Callable[[], None], n: int) -> List[float]:
@@ -118,19 +123,87 @@ def compare(current: Dict[str, float], previous: Optional[Dict[str, float]]) -> 
     return ("REGRESSION" if regressed else "PASS"), deltas
 
 
+def pinned_baseline(journal: Journal) -> Optional[dict]:
+    """The pinned baseline row, or None when nothing is pinned (or the pinned
+    row is gone)."""
+    raw = journal.get_meta(BASELINE_KEY)
+    try:
+        return journal.benchmark(int(raw)) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+def pin_baseline(journal: Journal, benchmark_id: Optional[int] = None) -> dict:
+    """Pin a recorded run as the baseline every later run is compared with
+    (default: the latest). A human decision: run it from the CLI, never from
+    an agent tool. Returns the pinned row."""
+    if getattr(journal, "read_only", False):
+        raise RuntimeError(f"journal {journal.path} is owned by a running SYRAX: stop it before re-pinning")
+    row = journal.benchmark(int(benchmark_id)) if benchmark_id is not None else next(iter(journal.benchmarks(limit=1)), None)
+    if row is None:
+        raise ValueError(f"no benchmark #{benchmark_id}" if benchmark_id is not None else "no benchmark recorded yet")
+    journal.set_meta(BASELINE_KEY, str(row["id"]))
+    return row
+
+
+def _oldest(journal: Journal) -> Optional[dict]:
+    with journal._lock:
+        r = journal._db.execute("SELECT id FROM benchmarks ORDER BY id ASC LIMIT 1").fetchone()
+    return journal.benchmark(int(r[0])) if r else None
+
+
+def evaluate(metrics: Dict[str, float], journal: Journal) -> Tuple[str, Dict[str, dict], Optional[dict], Optional[dict]]:
+    """Compare ``metrics`` with the pinned baseline and with the previous run.
+    Returns (status, deltas, baseline_row, previous_row). ``before``/``pct`` in
+    each delta are against the baseline; ``prev``/``prev_pct`` against the
+    previous run; ``regression`` is true when either comparison regressed."""
+    previous = next(iter(journal.benchmarks(limit=1)), None)
+    baseline = pinned_baseline(journal) or _oldest(journal)
+    if baseline is None:
+        status, deltas = compare(metrics, None)
+        return status, deltas, None, None
+    status, deltas = compare(metrics, baseline["metrics"])
+    if previous is not None and previous["id"] != baseline["id"]:
+        pstatus, pdeltas = compare(metrics, previous["metrics"])
+        for k, d in deltas.items():
+            p = pdeltas.get(k) or {}
+            d["prev"], d["prev_pct"] = p.get("before"), p.get("pct")
+            d["regression"] = bool(d["regression"] or p.get("regression"))
+        if pstatus == "REGRESSION":
+            status = "REGRESSION"
+    return status, deltas, baseline, previous
+
+
 def run_and_record(journal: Journal, task_id: Optional[str] = None) -> dict:
-    """Measure, compare with the last stored run, store the result."""
+    """Measure, compare with the pinned baseline and the previous run, store the
+    result. The first recorded run is pinned as the baseline when none is set."""
     metrics = run_suite()
-    prev = journal.benchmarks(limit=1)
-    status, deltas = compare(metrics, prev[0]["metrics"] if prev else None)
-    return journal.add_benchmark_sync(metrics, status, deltas, compared_to=prev[0]["id"] if prev else None, task_id=task_id)
+    status, deltas, baseline, previous = evaluate(metrics, journal)
+    row = journal.add_benchmark_sync(metrics, status, deltas, compared_to=baseline["id"] if baseline else None, task_id=task_id)
+    if pinned_baseline(journal) is None:
+        journal.set_meta(BASELINE_KEY, str((baseline or row)["id"]))
+    row["baseline_id"] = int(journal.get_meta(BASELINE_KEY))
+    row["previous_id"] = previous["id"] if previous else None
+    return row
 
 
 def format_report(row: dict) -> str:
-    lines = [f"BENCHMARK {row['status']}" + (f" (vs #{row['compared_to']})" if row.get("compared_to") else "")]
+    head = f"BENCHMARK {row['status']}"
+    if row.get("compared_to"):
+        head += f" (vs pinned baseline #{row['compared_to']}"
+        if row.get("previous_id") and row["previous_id"] != row["compared_to"]:
+            head += f" and previous #{row['previous_id']}"
+        head += ")"
+    elif row.get("id") and row.get("baseline_id") == row["id"]:
+        head += f" (recorded #{row['id']}, pinned as the baseline)"
+    lines = [head]
     for k, d in row["deltas"].items():
-        before = "" if d["before"] is None else f"  before {d['before']}ms ({d['pct']:+.1f}%)"
+        before = "" if d["before"] is None else f"  baseline {d['before']}ms ({d['pct']:+.1f}%)"
+        if d.get("prev") is not None:
+            before += f"  previous {d['prev']}ms ({d['prev_pct']:+.1f}%)"
         lines.append(f"  {'REGRESSION' if d['regression'] else 'ok':<10} {k:<24} {d['now']:>9}ms{before}")
+    if row.get("id") and row.get("compared_to"):
+        lines.append(f"  recorded as #{row['id']}")
     return "\n".join(lines)
 
 
@@ -138,8 +211,23 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Run the SYRAX benchmark suite.")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--journal", help="journal to compare against and record into (default SYRAX_JOURNAL_FILE or none)")
+    ap.add_argument("--pin-baseline", metavar="ID", help="human only: pin benchmark #ID (or 'latest') as the baseline, then exit")
     args = ap.parse_args(argv)
     path = args.journal or os.getenv("SYRAX_JOURNAL_FILE")
+    if args.pin_baseline:
+        if not path:
+            sys.stderr.write("--pin-baseline needs --journal (or SYRAX_JOURNAL_FILE)\n")
+            return 2
+        j = Journal(path, recover=False)
+        try:
+            row = pin_baseline(j, None if args.pin_baseline == "latest" else int(args.pin_baseline))
+        except (ValueError, RuntimeError) as e:
+            sys.stderr.write(f"{e}\n")
+            return 2
+        finally:
+            j.close()
+        sys.stdout.write(f"pinned benchmark #{row['id']} ({row['status']}, git {row.get('git_head') or '?'}) as the baseline\n")
+        return 0
     if path:
         j = Journal(path, recover=False)
         row = run_and_record(j)

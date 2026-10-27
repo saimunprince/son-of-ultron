@@ -385,29 +385,43 @@ def venv_python(backend: Path = BACKEND_ROOT) -> str:
     return str(candidate) if candidate.exists() else sys.executable
 
 
-def performance_gate(journal_path: Optional[str] = None) -> Tuple[bool, str]:
-    """Run the benchmark suite and compare with the last stored run. BASELINE and
-    PASS are ok; REGRESSION fails. Without a journal there is nothing to compare
-    with, so the run is recorded nowhere and reported as a baseline."""
+def performance_gate(journal_path: Optional[str] = None, journal: Optional[Journal] = None) -> Tuple[bool, str]:
+    """Run the benchmark suite, compare it with the pinned baseline and the
+    previous run, and record it. BASELINE and PASS are ok; REGRESSION fails
+    (the gate is advisory: required=False). The journal comes from the caller
+    (DevLoop passes its own open journal), else ``journal_path``, else
+    SYRAX_JOURNAL_FILE. Without one nothing is compared or recorded, and the
+    report says so instead of passing silently."""
     from syrax import bench
 
-    path = journal_path or os.getenv("SYRAX_JOURNAL_FILE")
-    if not path:
+    if journal is None:
+        path = journal_path or os.getenv("SYRAX_JOURNAL_FILE")
+        if not path:
+            metrics = bench.run_suite()
+            status, deltas = bench.compare(metrics, None)
+            return True, bench.format_report({"status": status, "deltas": deltas, "compared_to": None}) + "\n(no journal: not recorded)"
+        own = Journal(path, recover=False)
+        try:
+            return performance_gate(journal=own)
+        finally:
+            own.close()
+    if getattr(journal, "read_only", False):
+        # another live process owns this journal: compare, but only the owner records
         metrics = bench.run_suite()
-        status, deltas = bench.compare(metrics, None)
-        return True, bench.format_report({"status": status, "deltas": deltas, "compared_to": None}) + "\n(no journal: not recorded)"
-    j = Journal(path, recover=False)
-    try:
-        row = bench.run_and_record(j)
-    finally:
-        j.close()
+        status, deltas, baseline, previous = bench.evaluate(metrics, journal)
+        row = {"status": status, "deltas": deltas, "compared_to": baseline["id"] if baseline else None,
+               "previous_id": previous["id"] if previous else None}
+        return status != "REGRESSION", bench.format_report(row) + f"\n(journal {journal.path} is owned by a running SYRAX: not recorded)"
+    row = bench.run_and_record(journal)
     return row["status"] != "REGRESSION", bench.format_report(row)
 
 
-def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None) -> List[Gate]:
+def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None, journal: Optional[Journal] = None) -> List[Gate]:
     """The release gate for the tree at ``root``: the live repository, or a
     worktree where SYRAX prepared a change (M1, isolated evolution). The checks
-    are the same; only the directories they run in follow ``root``."""
+    are the same; only the directories they run in follow ``root``. The
+    performance gate records into ``journal`` (an open Journal: DevLoop's own)
+    or ``journal_path``; with neither it reports "not recorded"."""
     root = Path(root)
     backend, frontend = root / "backend", root / "frontend"
     live = root.resolve() == REPO_ROOT.resolve()
@@ -443,7 +457,7 @@ def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None) ->
         Gate("hud_test", [_npm(), "test", "--silent"], cwd=root / "hud"),
         Gate("next_build", isolated_next_build if live else (lambda: isolated_next_build(frontend))),
         Gate("diff_scan", lambda: diff_scan(root)),
-        Gate("performance", lambda: performance_gate(journal_path), required=False, timeout=600),
+        Gate("performance", lambda: performance_gate(journal_path, journal), required=False, timeout=600),
     ]
 
 
@@ -465,18 +479,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--json", action="store_true", help="print the verification as JSON")
     ap.add_argument("--journal", help="journal file to record into (default: SYRAX_JOURNAL_FILE or none)")
     args = ap.parse_args(argv)
-    gates = default_gates(journal_path=args.journal or os.getenv("SYRAX_JOURNAL_FILE"))
+    path = args.journal or os.getenv("SYRAX_JOURNAL_FILE")
+    journal = Journal(path, recover=False) if path else None  # one open journal: gates record into it, the verification too
+    gates = default_gates(journal=journal)
     if args.gate:
         wanted = set(args.gate)
         gates = [g for g in gates if g.name in wanted]
         missing = wanted - {g.name for g in gates}
         if missing:
             sys.stderr.write(f"unknown gate(s): {', '.join(sorted(missing))}\n")
+            if journal is not None:
+                journal.close()
             return 2
-    journal = None
-    path = args.journal or os.getenv("SYRAX_JOURNAL_FILE")
-    if path:
-        journal = Journal(path, recover=False)
     v = run_gates(gates, journal=journal)
     if journal is not None:
         journal.close()

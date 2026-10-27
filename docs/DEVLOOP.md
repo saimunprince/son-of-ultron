@@ -101,6 +101,9 @@ RETRY with the lesson "the gate rolled it back".
 - `SYRAX_AUTOPUSH` is off: SYRAX commits locally, a human pushes.
 - The gate runs the whole suite (about a minute); one release per task step.
 - Commits are authored as `SYRAX <syrax@localhost>`.
-- No benchmark gate yet (performance stays NOT_VERIFIED, optional).
+- The performance gate is advisory (optional): it records a benchmark into
+  the DevLoop's journal on every release and compares it with the pinned
+  baseline (`bench_baseline_id`) and the previous run; a regression is
+  reported, never blocking. Without a journal it says "not recorded".
 - Rollback restores tracked files and removes new ones; it does not undo
   side effects outside the repository (installed packages, files elsewhere).

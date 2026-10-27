@@ -490,7 +490,7 @@
     },
     {
       "component": "Experiments + benchmarks",
-      "purpose": "Measured self-improvement: a benchmark suite of SYRAX's own mechanisms compared with the previous run (BASELINE/PASS/REGRESSION), an experiment engine that runs baseline vs candidate tool calls and computes the verdict from measurements, and objectives derived from benchmark regressions, repeatedly blocked strategies and weakly supported knowledge. Plus a task-quality benchmark: ten fixed tasks run through the real core and brain, outcomes checked by machine, pass rate compared run to run. compare_versions measures two commits in clean worktrees (tests, then benchmarks).",
+      "purpose": "Measured self-improvement: a benchmark suite of SYRAX's own mechanisms compared with a pinned baseline and the previous run (BASELINE/PASS/REGRESSION), an experiment engine that runs baseline vs candidate tool calls and computes the verdict from measurements, and objectives derived from benchmark regressions, repeatedly blocked strategies and weakly supported knowledge. Plus a task-quality benchmark: ten fixed tasks run through the real core and brain, outcomes checked by machine, pass rate compared run to run. compare_versions measures two commits in clean worktrees (tests, then benchmarks).",
       "dependencies": [
         "syrax.journal benchmarks/experiments tables",
         "syrax.selfmodel (performance section)",
@@ -516,7 +516,7 @@
         "regression = >50% and >5 ms slower than the last run",
         "verdicts from numbers only; 10% noise band; both-fail = INCONCLUSIVE",
         "dangerous tools cannot be experiment arms",
-        "performance gate records every release's benchmark"
+        "performance gate records every DevLoop release's benchmark into the journal and compares it with the pinned baseline (meta bench_baseline_id) and the previous run; without a journal it reports not recorded"
       ],
       "limitations": [
         "performance gate is optional (laptop noise)",

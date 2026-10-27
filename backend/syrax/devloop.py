@@ -314,7 +314,7 @@ class DevLoop:
         # set by the core: a different brain must approve an autonomous change. available False (no brain
         # could review) holds the change; skipped is the human's explicit opt-out (SYRAX_REVIEW=0) and commits.
         self.reviewer: Optional[Callable[..., Any]] = None
-        self.gates = gates or (lambda: default_gates(self.root))
+        self.gates = gates or (lambda: default_gates(self.root, journal=self.journal))  # the performance gate records here
         self.task_id_provider = task_id_provider or (lambda: None)
         self.snapshot_dir = Path(snapshot_dir or SNAPSHOT_DIR)
         self.autopush = os.getenv("SYRAX_AUTOPUSH", "0") == "1"

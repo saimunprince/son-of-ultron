@@ -431,10 +431,15 @@ before any gate runs. Pushing stays with you unless
 ## Measured, not asserted: benchmarks and experiments
 
 `python -m syrax.bench` measures SYRAX's own mechanisms (durable write,
-checkpoint, registry query, recovery, self-model) and compares with the last
-run; a metric that got more than 50 % and 5 ms slower is a REGRESSION, the
-first run is a BASELINE. The release gate records a benchmark on every
-release. The `experiment` tool runs a baseline and a candidate tool call,
+checkpoint, registry query, recovery, self-model) and compares with a pinned
+baseline and with the previous run; a metric that got more than 50 % and 5 ms
+slower than either is a REGRESSION. The first recorded run is a BASELINE and
+is pinned as the baseline (journal meta `bench_baseline_id`); only a human
+re-pins it (`python -m syrax.bench --journal <db> --pin-baseline <id|latest>`).
+The release gate's performance step (advisory, not required) records a
+benchmark into the journal on every DevLoop release and on
+`python -m syrax.verify --journal <db>`; run without a journal it says
+"(no journal: not recorded)". The `experiment` tool runs a baseline and a candidate tool call,
 repeated, and computes the verdict from the numbers. Regressions, repeatedly
 blocked strategies and weakly supported knowledge become objectives about
 SYRAX itself. `quality_run` over WebSocket runs a fixed suite of 61 cases (52
