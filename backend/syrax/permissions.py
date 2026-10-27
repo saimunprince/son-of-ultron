@@ -90,6 +90,69 @@ SEND_VERBS = re.compile(r"\b(send\w*|sent|email\w*|mail\w*|messag\w*|text\w*|pos
 AFFIRMATIVE = re.compile(r"^\s*(y|yes|yeah|yep|ok|okay|sure|do it|go ahead|go|proceed|confirm(ed)?|affirmative|approved|allow(ed)?|ha|haan|hya|kor|koro|thik ache)\b", re.I)
 PATH_LITERAL = re.compile(r"""(?:r|rb|b)?['"]([^'"\n]{3,})['"]""")
 
+# Review 2026-10-27: a message sent through the desktop (SYRAX types into Telegram or WhatsApp and presses Enter) was
+# SYSTEM, like any keystroke: no gate asked for the send, the intent ledger never held a repeat, and the true "Message
+# sent" after one read as an unbacked claim. Live 2026-10-25 (task cb8cc6cf3028): an invented "hello" was typed, Enter
+# went into the wrong window, and the answer was "Message sent". A desktop action that submits text (Enter or
+# ctrl+Enter; shift+Enter is a new line; a typed newline; a click on a Send button) while a messaging app is in front
+# is an EXTERNAL_WRITE: a send. Typing alone sends nothing and stays SYSTEM. The front window is read when the call
+# is classified (front_window); when it cannot be read the call stays SYSTEM, as before.
+# (app, how its window or program shows it in desktop.front_window's "'Title' (Program.exe)", how the human names it;
+# None where the name is an everyday word: Signal, LINE, Messages, Teams are known by their window only)
+MESSAGING_APPS: Tuple[Tuple[str, "re.Pattern[str]", Optional["re.Pattern[str]"]], ...] = tuple(
+    (app, re.compile(window, re.I), re.compile(words, re.I) if words else None) for app, window, words in (
+        ("Telegram", r"\btelegram\b", r"\btelegram\b"),
+        ("WhatsApp", r"\bwhatsapp\b", r"\bwhats ?app\b"),
+        ("Messenger", r"\bmessenger\b", r"\bmessenger\b"),
+        ("Discord", r"\bdiscord\b", r"\bdiscord\b"),
+        ("Slack", r"\bslack\b", r"\bslack\b"),
+        ("Microsoft Teams", r"\bmicrosoft teams\b|\(ms-teams\.exe\)|\(teams\.exe\)", r"\b(?:microsoft|ms) teams\b"),
+        ("Skype", r"\bskype\b", r"\bskype\b"),
+        ("Viber", r"\bviber\b", r"\bviber\b"),
+        ("WeChat", r"\bwechat\b|\bweixin\b", r"\bwechat\b"),
+        ("Instagram", r"\binstagram\b", r"\binsta(?:gram)?\b"),
+        ("Signal", r"^'signal'|\(signal\.exe\)", None),
+        ("LINE", r"^'line'|\(line\.exe\)", None),
+        ("Messages", r"\bmessages for web\b|\bmessages\.google\.com\b", None),
+    ))
+# a send named in the human's own words, beside SEND_VERBS: "reply ok on whatsapp", "msg bro bhi"
+REPLY_VERBS = re.compile(r"\b(repl(?:y|ies|ied|ying)|respond\w*|msg\w*|dm)\b", re.I)
+SEND_BUTTON = re.compile(r"\bsend\b", re.I)
+
+
+def messaging_app(window: str) -> Optional[str]:
+    """The messaging app a front window ("'Title' (Program.exe)") belongs to; None for any other window."""
+    w = str(window or "").strip()
+    return next((app for app, rx, _ in MESSAGING_APPS if rx.search(w)), None)
+
+
+def submits_text(args: Any) -> bool:
+    """A desktop call that submits what is typed in a chat: a key press with Enter (shift+Enter is a new line in a
+    chat), typed text with a newline in it (wininput.type_text presses Enter for one), a click on a Send button.
+    The value is stripped first, as the desktop tool strips it."""
+    a = args if isinstance(args, dict) else {}
+    action = str(a.get("action") or "")
+    value = str(a.get("value") or "").strip()
+    if action == "hotkey":
+        keys = {k.strip().lower() for k in value.replace(" ", "").split("+") if k.strip()}
+        return bool(keys & {"enter", "return"}) and "shift" not in keys
+    if action == "type_text":
+        return "\n" in value or "\r" in value
+    if action == "click_text":
+        return bool(SEND_BUTTON.search(str(a.get("target") or "")))
+    return False
+
+
+def front_window() -> Optional[str]:
+    """desktop.front_window(): "'Title' (Program.exe)", "" when nothing is in front, None when unreadable (and off
+    Windows). Tests replace this function; any error reads as None, which keeps the call SYSTEM."""
+    try:
+        from syrax import desktop
+
+        return desktop.front_window()
+    except Exception:
+        return None
+
 LEVEL_REASON = {
     READ_ONLY: "observes", WRITE: "changes files or SYRAX's own state", EXTERNAL_READ: "reads from the network",
     SYSTEM: "acts on the host", EXTERNAL_WRITE: "sends messages or money", DESTRUCTIVE: "destroys data",
@@ -315,6 +378,8 @@ def classify(name: str, args: Any) -> Decision:
             return Decision(name, SYSTEM, f"desktop {action or '?'}" + (f" {target}" if target else ""), [target] if target else [], harm)
         if action in DESKTOP_READ or (action == "window" and str(a.get("value") or "list") == "list"):
             return Decision(name, READ_ONLY, f"desktop {action}", [target] if target else [])
+        if submits_text(a) and (front := front_window()) and (app := messaging_app(front)):
+            return Decision(name, EXTERNAL_WRITE, f"sends a message in {app}", [front])  # see MESSAGING_APPS
         return Decision(name, SYSTEM, f"desktop {action or '?'}" + (f" {target}" if target else ""), [target] if target else [])
     level = level_of_tool(name)
     # Live 2026-10-27 (audit): a browser call carries no targets, so a page on the core's own origin (the HUD) or
@@ -351,6 +416,8 @@ def named_in(texts: Iterable[str], decision: Decision) -> bool:
     text = " ".join(t for t in texts if t)
     if not text.strip():
         return False
+    if decision.tool == "desktop" and decision.level == EXTERNAL_WRITE:
+        return _names_desktop_send(text, decision)
     verbs = SEND_VERBS if decision.level == EXTERNAL_WRITE else DESTRUCTIVE_VERBS
     if not verbs.search(text):
         return False
@@ -369,6 +436,17 @@ def named_in(texts: Iterable[str], decision: Decision) -> bool:
             continue
         return False
     return True
+
+
+def _names_desktop_send(text: str, decision: Decision) -> bool:
+    """A send through the desktop (classify, MESSAGING_APPS) is named when the words ask for a send ("send message to
+    bro bhi", "reply ok on whatsapp"). The chat is not checked (most messaging windows do not show it in the title);
+    the app is: words that name messaging apps, none of them the one in front, do not cover a send in it."""
+    if not (SEND_VERBS.search(text) or REPLY_VERBS.search(text)):
+        return False
+    front = messaging_app(decision.targets[0]) if decision.targets else None
+    named = {app for app, _, words in MESSAGING_APPS if words is not None and words.search(text)}
+    return not named or front in named
 
 
 def affirmative(answer: str) -> bool:

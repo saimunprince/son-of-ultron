@@ -4,9 +4,9 @@ Audit 2026-10-25 ("Task runtime"): external side effects (a message, a payment, 
 action) had no idempotency key, so a crash, a cancel or a timeout in the middle of one left nothing
 that said "this may already have gone out", and a resumed or retried task could send it again.
 
-An EXTERNAL_WRITE call (permissions.py: NET_SEND code, a skill declared EXTERNAL_WRITE) is journaled
-as ``intent.recorded`` {tool, args_hash, summary, step} before it runs and ``intent.done`` {tool,
-args_hash, ok} after; the agent refuses the same call again while the first is still only recorded,
+An EXTERNAL_WRITE call (permissions.py: NET_SEND code, a skill declared EXTERNAL_WRITE, a desktop key
+press or typed newline that submits text in a messaging app) is journaled as ``intent.recorded``
+{tool, args_hash, summary, step} before it runs and ``intent.done`` {tool, args_hash, ok} after; the agent refuses the same call again while the first is still only recorded,
 recovery classifies a crash inside it as EXTERNAL_UNCERTAIN, and a resume carries the summary.
 Pure helpers only (stdlib): agent.py, core.py and journal.py all import this module.
 """
@@ -55,6 +55,10 @@ def args_hash(args: Any) -> str:
 def summary(tool: str, args: Any) -> str:
     """"<tool>: <the most telling argument>", at most SUMMARY_CHARS of it, for a notice or a resume note."""
     a = args if isinstance(args, dict) else {}
+    if tool == "desktop" and a.get("action"):
+        # a send through the desktop (permissions.MESSAGING_APPS): "desktop hotkey: enter", not "desktop: action=hotkey"
+        what = " ".join(str(a.get("value") or a.get("target") or "").split())
+        return f"desktop {a['action']}" + (f": {what[:SUMMARY_CHARS]}" if what else "")
     key = next((k for k in TELLING_KEYS if a.get(k) not in (None, "")), None)
     if key is None:
         key = next((k for k, v in a.items() if v not in (None, "")), None)
