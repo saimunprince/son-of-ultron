@@ -465,7 +465,9 @@ class Core:
 
     def _pending(self) -> List[dict]:
         rows = self.journal.tasks(limit=50, status="PENDING")
-        rows.sort(key=lambda r: r["created"])
+        # two requests queued in one clock tick (~15 ms on Windows) share `created` and the query's order between them
+        # is arbitrary: the queue event's id (a pending row's only event) keeps them in the order they came in
+        rows.sort(key=lambda r: (r["created"], r.get("last_event_id") or 0))
         return [{"task_id": r["task_id"], "goal": r["goal"], "created": r["created"], "session_id": r.get("session_id"),
                  "position": i + 1} for i, r in enumerate(rows)]
 
