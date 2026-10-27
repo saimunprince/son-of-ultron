@@ -2019,19 +2019,29 @@ class Journal:
 
     def backup_to(self, path: Path | str) -> int:
         """Copy the whole journal into a new SQLite file at `path` with the online backup API (syrax.backup).
-        The lock is held for the copy, so no write of this process interleaves and the copy is one consistent
-        state even under WAL; the copy is turned into a plain rollback-journal file, so nothing (-wal, -shm)
-        has to travel with it. A read-only handle can copy too: that is how `python -m syrax.backup
-        --snapshot` works beside a running SYRAX. Returns the copy's size in bytes."""
+        The copy reads through a connection of its own, read-only, in one backup step: one read transaction,
+        so under WAL it is one consistent snapshot of what was committed, and writes go on beside it. It held
+        the journal lock for the whole copy (~150 MB) instead, and every sync read on the event loop (task(),
+        events(), get_meta()) waits on that lock: the daily backup froze the loop. Outside WAL a reader would
+        block writers, so there the lock is still held as before. The copy is turned into a plain
+        rollback-journal file, so nothing (-wal, -shm) has to travel with it. A read-only handle can copy too:
+        that is how `python -m syrax.backup --snapshot` works beside a running SYRAX. Returns the copy's size."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        dst = sqlite3.connect(str(path))
+        src = sqlite3.connect(f"file:{self.path.resolve().as_posix()}?mode=ro", uri=True, timeout=10)
         try:
-            with self._lock:
-                self._db.backup(dst)
-            dst.execute("PRAGMA journal_mode=DELETE")
+            dst = sqlite3.connect(str(path))
+            try:
+                if str(src.execute("PRAGMA journal_mode").fetchone()[0]).lower() == "wal":
+                    src.backup(dst)  # pages=-1: every page in one step, one snapshot
+                else:
+                    with self._lock:
+                        src.backup(dst)
+                dst.execute("PRAGMA journal_mode=DELETE")
+            finally:
+                dst.close()
         finally:
-            dst.close()
+            src.close()
         return path.stat().st_size
 
     def close(self) -> None:
