@@ -37,8 +37,14 @@ PROMPT_FACTS = 60
 PROMPT_EXCHANGES = 6
 MAX_HISTORY = 200
 
+# Secret words match as whole words (plural s allowed), 2026-10-27 review: the bare substrings refused "Prince loves
+# hotpot." (otp), "Prince's sister is a secretary." (secret) and "Prince is learning tokenizers." (token). A letter
+# is the only thing that glues a word on: "access_token", "SECRET_KEY", "otp123456" still match, and so does a
+# camelCase name ("githubToken", "dbPassword"), case-sensitively.
 _SECRET = re.compile(
-    r"(password|passwd|api[_ -]?key|secret|token|otp|pin code|credit card|cvv|\bsk-[A-Za-z0-9]|\bgsk_|\bAIza)",
+    r"(?<![a-z])(password|passwd|api[_ -]?key|secret|token|otp|pin code|credit card|cvv)s?(?![a-z])"
+    r"|(?-i:[a-z0-9](?:Password|Passwd|ApiKey|Secret|Token|Otp|Cvv)s?(?![a-z]))"
+    r"|\bsk-[A-Za-z0-9]|\bgsk_|\bAIza",
     re.I,
 )
 
