@@ -228,6 +228,53 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### A bug sweep: four reviews, thirty-seven fixes (2026-10-27)
+
+The owner asked that no problem be left anywhere in the project. Four read-only
+reviews (core runtime, agent and tools, UI and HUD, the live journal and logs)
+reported about 35 findings with file:line and a scenario each; every fix below
+has a new test that failed without it, and existing tests are unchanged.
+
+- Security: \\?\C:\..., \\.\C:\... and \\localhost\C$\... spellings of a path
+  passed the permission gate, the editor's isolation and the python_execute
+  guard (an autonomous create of brains.json was allowed). guard.canonical_path
+  reads every path in its plain form; administrative shares are never written,
+  SYRAX's own work writes no network path.
+- Answers: ordinary text read as false claims and replaced or marked PARTIAL
+  ("I have not modified anything. The port is 8080.", "Messi is playing for
+  Inter Miami.", "Once you've navigated to your folder..."); question words read
+  as an answer format ("up to 280 characters"); screenshots counted as human
+  turns; a loop stop's message overwritten; text after a given diff counted as
+  diff lines; "not sent" not read as acknowledging a refusal.
+- Memory and files: "Prince is X" overwrote "Prince was Y" (a bare name was a
+  subject); "hotpot", "secretary" refused as secrets; every str_replace turned
+  the file's tabs into spaces; an empty old_str wrote the file and reported an
+  error; window focus un-maximized windows; python_execute's children outlived
+  a timeout.
+- Core: a RESUME during a task's start ran two tasks on one agent; a stop at
+  shutdown started the next queued request (and the launcher's stop had been
+  refused since the token change); a failed start stalled the queue for good; a
+  cancel during cleanup skipped it; a resumed conversation lost its context;
+  requests queued in one clock tick ran newest first.
+- Journal: crash recovery read UTF-8 files as cp1252 (non-ASCII edits became
+  UNCERTAIN); Journal.run broadcast other tasks' events twice; the daily backup
+  held the journal lock for the whole copy; codebench timeouts were journaled as
+  "aborted by human"; test runs left log files in backend/logs.
+- Research: the page fetcher sent its browser string under the header
+  "WebSearch", so requests went out as python-requests (Wikipedia: 403; 200 with
+  the browser User-Agent, checked live).
+- UI and HUD: live talk and hands-free kept the mic open when stopped while
+  starting; a pending question was lost on reload and the answer became a new
+  task; a stale question captured the next command; tool rows stayed RUN; the
+  autonomy switch and intent.uncertain were not shown; the HUD window could be
+  navigated to any page with the preload bridge; HUD numbers that were not read
+  from SYRAX (an unverified skills count, a random confidence, a default
+  position shown as a fix) are labelled or read now.
+
+Open: the NOAA plasma feed URL returns 404 (quieted, not fixed); the UI's Origin
+trust and desktop-typed sends counted as SYSTEM rather than EXTERNAL_WRITE are
+the owner's decisions.
+
 ### A patch given to apply exactly stays the human's patch (2026-10-27)
 
 Quality run #87 (full, 67 cases, 976ccc2): 95.5 %, PASS against #85 (97.0 %).
