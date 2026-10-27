@@ -281,6 +281,11 @@ class SyraxEditor(StrReplaceEditor):
             # Quality run #50 (self_patch_docs): old_str was the whole file, upstream reads a missing new_str as ""
             # An explicit new_str "" still deletes.
             raise ToolError("Parameter `new_str` is required for command: str_replace (new_str \"\" deletes old_str; file_text is read only by create). Nothing was changed.")
+        if command == "str_replace" and kwargs.get("old_str") == "":
+            # Eval task a6b54589a40d: on an empty file upstream wrote new_str, then raised "empty separator", so the
+            # change was applied but reported failed and the retry duplicated it; on any other file "" matched every line.
+            raise ToolError("Parameter `old_str` is empty: str_replace needs the exact text to replace. To fill a new or "
+                            "empty file use `create` (file_text); to add lines use `insert` (insert_line, new_str). Nothing was changed.")
         if command == "str_replace" and kwargs.get("old_str") is not None:
             loose = await self._loose_replace(resolved, kwargs["old_str"], kwargs.get("new_str"), operator)
             if loose is not None:
