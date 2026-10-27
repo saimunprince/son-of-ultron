@@ -273,6 +273,7 @@ from syrax.research import KnowTool, LearnTool, ResearchTool
 from syrax.selfmodel import SelfInspectTool
 from syrax.skills import SkillCreateTool, SkillListTool, SkillTestTool
 from syrax.tools import AsyncPythonExecute, Emit, WebAskHuman
+from syrax.tool_error import tool_error_class
 from syrax.versions import CompareVersionsTool
 
 RESULT_PREVIEW_CHARS = 4000
@@ -1275,6 +1276,9 @@ class SyraxAgent(Manus):
         }
         if _refused(name, result):
             event["refused"] = True
+        if not event["ok"]:
+            # Phase One, error classification (audit 2026-10-27): a tool.failed event says why, not only which tool
+            event["error_class"] = tool_error_class(name, result, bool(event.get("refused")))
         if self._current_base64_image:
             event["image"] = self._current_base64_image
         await self._send(event)
