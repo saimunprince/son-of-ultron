@@ -16,7 +16,7 @@ its follow-ups once (idempotent keys).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from syrax import plan
 from syrax.journal import Journal
@@ -41,6 +41,28 @@ def drop_dependents(journal: Journal, objective_id: int) -> List[int]:
     return dropped
 
 
+def _believed(journal: Journal, kid: Any) -> bool:
+    try:
+        k = journal.knowledge(int(kid))
+    except (TypeError, ValueError):
+        return False
+    return bool(k) and k.get("status", "ACTIVE") == "ACTIVE"
+
+
+def _current(journal: Journal, kid: Any) -> Optional[dict]:
+    """The row a briefing may use for `kid`: the row itself while ACTIVE, the row that superseded it once SUPERSEDED
+    (followed to the current version), None when it is DISPUTED or gone (fix-settle, 2026-10-27)."""
+    try:
+        k = journal.knowledge(int(kid))
+    except (TypeError, ValueError):
+        return None
+    seen = set()
+    while k and k.get("status") == "SUPERSEDED" and k.get("superseded_by") and k["id"] not in seen and len(seen) < 20:
+        seen.add(k["id"])
+        k = journal.knowledge(int(k["superseded_by"]))
+    return k if k and k.get("status", "ACTIVE") == "ACTIVE" else None
+
+
 def derive(journal: Journal, objective: dict) -> List[dict]:
     """Objectives created from a just-BLOCKED objective (re-read after the block)."""
     ev = objective.get("evidence") or {}
@@ -57,7 +79,9 @@ def derive(journal: Journal, objective: dict) -> List[dict]:
         # twelve objectives this way). The human uses the tool; that verifies it.
         return []
     commits = [e for e in events if e["type"] == "commit.created"]
-    learned = [e for e in events if e["type"] == "knowledge.stored"]
+    # learned = stored and still believed (fix-settle, 2026-10-27): a row since SUPERSEDED or forgotten was
+    # replaced, a DISPUTED one is contradicted; the objective did not learn how
+    learned = [e for e in events if e["type"] == "knowledge.stored" and _believed(journal, e["payload"].get("knowledge_id"))]
     log = ((objective.get("progress") or {}).get("attempts_log")) or []
     lessons = [str(a.get("lesson") or "")[:200] for a in log[-3:]]
     base: Dict[str, Any] = {k: ev[k] for k in KEEP if ev.get(k)}
@@ -122,7 +146,7 @@ def learned_brief(journal: Journal, objective: dict, budget: int = 900) -> str:
         return ""
     r = journal.objective(int(rid)) or {}
     ids = (((r.get("evidence") or {}).get("judged")) or {}).get("matching") or []
-    rows = [k for k in (journal.knowledge(int(i)) for i in ids[:3]) if k]
+    rows = list({k["id"]: k for k in (_current(journal, i) for i in ids[:3]) if k}.values())
     if not rows:
         return ""
     lines = [f"- #{k['id']} ({k['confidence']:.0%}): {str(k['claim'])[:260]}" + (f" [{k['source_url']}]" if k.get("source_url") else "") for k in rows]

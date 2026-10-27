@@ -378,28 +378,96 @@ def own_work_may_not_call(journal: Journal, name: str) -> bool:
     return bool(row) and row.get("status") == "VERIFIED" and risk in (permissions.SYSTEM, permissions.EXTERNAL_WRITE, permissions.DESTRUCTIVE)
 
 
-def derive_objectives(journal: Journal, selfmodel: Any) -> int:
-    """Turn evidence-based weaknesses into objectives. Idempotent via keys."""
-    from syrax import repro  # with repro hunts on, some derivations give way to hunts
+SETTLE_EVENTS = ("knowledge.superseded", "knowledge.resolved")
 
-    created = 0
-    caps = selfmodel.capabilities()
-    # Phase 5: contradicting conclusions are settled by fresh research
-    for e in journal.recent_events(2000):
-        if e["type"] != "knowledge.contradiction":
-            continue
+
+def _derive_settle_objectives(journal: Journal) -> int:
+    """Phase 5: contradicting conclusions are settled by fresh research. Derived from the rows' own DISPUTED state
+    (fix-settle, 2026-10-27): reading the last 2000 events gave an older dispute no objective at all, and opened one
+    for a pair already settled. A contradiction gets its objective while a row of it is still DISPUTED and another
+    row of it is still believed (not SUPERSEDED, not forgotten); a DISPUTED row no open contradiction names gets one
+    of its own. The check names the rows: it is met only once none of them is DISPUTED (judge)."""
+    disputed = {k["id"]: k for k in journal.disputed_knowledge()}
+    if not disputed:
+        return 0
+    created, covered = 0, set()
+    for e in reversed(journal.events_of_type("knowledge.contradiction", limit=5000)):  # newest first
         p = e["payload"]
         ids = sorted({p.get("knowledge_id"), *(p.get("conflicts_with") or [])} - {None})
+        open_ids = [i for i in ids if i in disputed]
+        if not open_ids:
+            continue  # settled (resolved or superseded) or forgotten: nothing to research
+        live = [i for i in ids if i in disputed or ((journal.knowledge(int(i)) or {}).get("status") or "SUPERSEDED") != "SUPERSEDED"]
+        if len(live) < 2:
+            continue  # the other side is settled or gone: the row left is handled alone below
+        covered.update(open_ids)
         ok = journal.add_objective_sync(
             goal=(f"My knowledge contradicts itself: id={p.get('knowledge_id')} says {str(p.get('claim'))[:160]!r} but "
                   f"{'; '.join(repr(c[:120]) for c in p.get('their_claims') or [])} (ids {ids}). `research` it again from primary "
                   "sources and `learn` the correct conclusion, citing them."),
             reason="two stored conclusions about the same thing disagree",
             priority=3, source="selfmodel", key=f"contradiction:{':'.join(map(str, ids))}",
-            check={"kind": "knowledge_stored", "topic": " ".join((p.get("tags") or [])[:6]) or str(p.get("claim"))[:80]},
+            check={"kind": "knowledge_stored", "topic": " ".join((p.get("tags") or [])[:6]) or str(p.get("claim"))[:80], "disputed": ids},
             evidence={"knowledge_ids": ids},
         )
         created += bool(ok)
+    for kid, k in disputed.items():
+        if kid in covered:
+            continue
+        ok = journal.add_objective_sync(
+            goal=(f"My knowledge contradicts itself: id={kid} says {str(k['claim'])[:160]!r} and is DISPUTED, but what it was "
+                  f"disputed against is settled or gone (ids {[kid]}). `research` it again from primary "
+                  "sources and `learn` the correct conclusion, citing them."),
+            reason="a stored conclusion is still disputed and nothing open settles it",
+            priority=3, source="selfmodel", key=f"contradiction:{kid}",
+            check={"kind": "knowledge_stored", "topic": " ".join((k.get("tags") or [])[:6]) or str(k["claim"])[:80], "disputed": [kid]},
+            evidence={"knowledge_ids": [kid]},
+        )
+        created += bool(ok)
+    return created
+
+
+def _disputed_ids(objective: dict) -> List[int]:
+    """The rows a settle objective is about: its check's `disputed`, or, for one an older version created, the
+    knowledge_ids of a `contradiction:` key."""
+    spec = objective.get("check_spec") or {}
+    ids = spec.get("disputed")
+    if not ids and str(objective.get("key") or "").startswith("contradiction:"):
+        ids = (objective.get("evidence") or {}).get("knowledge_ids")
+    out = []
+    for i in ids or []:
+        try:
+            out.append(int(i))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _settlements(journal: Journal, objective: dict, ids: List[int]) -> List[dict]:
+    """knowledge.superseded / knowledge.resolved events after the objective was set that settled one of `ids`."""
+    want = set(ids)
+    out = []
+    for t in SETTLE_EVENTS:
+        for e in journal.events_of_type(t, since=objective["created"], limit=5000):
+            p = e["payload"]
+            if t == "knowledge.superseded":
+                if not (p.get("knowledge_ids") or []) and p.get("was") != "DISPUTED":
+                    continue  # nothing was superseded and the winner was not disputed: it settled nothing
+                named = {p.get("superseded_by"), *(p.get("knowledge_ids") or [])}
+            else:
+                named = {p.get("knowledge_id")}
+            if want & named:
+                out.append(e)
+    return sorted(out, key=lambda e: e["id"])
+
+
+def derive_objectives(journal: Journal, selfmodel: Any) -> int:
+    """Turn evidence-based weaknesses into objectives. Idempotent via keys."""
+    from syrax import repro  # with repro hunts on, some derivations give way to hunts
+
+    created = 0
+    caps = selfmodel.capabilities()
+    created += _derive_settle_objectives(journal)
     # a traceback inside SYRAX's own code is a bug SYRAX can fix
     for e in journal.recent_events(300):
         if e["type"] != "tool.failed":
@@ -660,8 +728,27 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         # a conclusion learned again is reinforced, not stored twice (consolidate.py): it still counts
         rows += [{"id": e["payload"].get("knowledge_id"), "claim": e["payload"].get("claim") or "", "tags": e["payload"].get("tags") or []}
                  for e in journal.events_between(objective["created"], limit=5000) if e["type"] == "knowledge.reinforced"]
+        # only knowledge still believed counts (fix-settle, 2026-10-27): a row since SUPERSEDED (or forgotten) was
+        # replaced, a DISPUTED one is contradicted by another stored row; neither is a verified conclusion
+        believed: Dict[Any, bool] = {}
+        for k in rows:
+            kid = k.get("id")
+            if kid is not None and kid not in believed:
+                believed[kid] = ((journal.knowledge(int(kid)) or {}).get("status")) == "ACTIVE"
+        rows = [k for k in rows if believed.get(k.get("id"))]
         hits = [k for k in rows if topic_words & set(auto_keywords(" ".join([k["claim"], k.get("question") or "", " ".join(k["tags"])])))]
-        return ("DONE" if hits else "RETRY"), {"topic": spec.get("topic"), "stored_after_objective": len(rows), "matching": [k["id"] for k in hits][:10]}
+        ev = {"topic": spec.get("topic"), "stored_after_objective": len(rows), "matching": [k["id"] for k in hits][:10]}
+        ids = _disputed_ids(objective)
+        if not ids:
+            return ("DONE" if hits else "RETRY"), ev
+        # a settle objective is met only when none of its rows is DISPUTED any more (resolved or superseded) and
+        # either that settlement happened after it was set or a believed conclusion on the topic was stored after
+        # it; a reinforcement alone, with the rows still DISPUTED, settles nothing
+        states = {i: ((journal.knowledge(i) or {}).get("status") or "GONE") for i in ids}
+        still = [i for i, s in states.items() if s == "DISPUTED"]
+        settled = _settlements(journal, objective, ids)
+        ev.update({"disputed": ids, "states": states, "still_disputed": still, "settled_by": [e["id"] for e in settled][:10]})
+        return ("DONE" if not still and (settled or hits) else "RETRY"), ev
     if kind == "quality_case_passes":
         rows = journal.quality_runs(limit=1)
         case = spec.get("case")
@@ -682,7 +769,9 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         base = journal.knowledge(int(spec.get("knowledge_id") or 0))
         want = float(spec.get("min") or 0.6)
         tags = set((base or {}).get("tags") or [])
-        newer = [k for k in journal.knowledge_recent(limit=200, since=objective["created"]) if k["confidence"] >= want and (tags & set(k["tags"]))]
+        # a DISPUTED row is contradicted by another stored row: it is not the stronger evidence asked for
+        newer = [k for k in journal.knowledge_recent(limit=200, since=objective["created"])
+                 if k["confidence"] >= want and (tags & set(k["tags"])) and k.get("status", "ACTIVE") == "ACTIVE"]
         return ("DONE" if newer else "RETRY"), {"knowledge_id": spec.get("knowledge_id"), "min": want, "stronger": [k["id"] for k in newer][:5]}
     if kind == "repro_proven":
         from syrax import repro
@@ -1274,6 +1363,9 @@ def _lesson(objective: dict, task: dict, verdict: str, evidence: dict) -> str:
         return f"{spec.get('path')} does not exist, or was not written after the objective was set"
     if spec.get("kind") == "file_absent":
         return f"{spec.get('path')} still exists"
+    if spec.get("kind") == "knowledge_stored" and evidence.get("still_disputed"):
+        return (f"knowledge {evidence['still_disputed']} is still DISPUTED: `learn` the correct conclusion citing an independent "
+                "primary source (not the disputed rows) at least as strong as what it contradicts, to settle it")
     if spec.get("kind") == "knowledge_stored":
         return f"nothing about {spec.get('topic')!r} was stored; research and `learn` must actually run"
     return f"task ended {task.get('status')} with error {task.get('error')!r}"

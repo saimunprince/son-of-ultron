@@ -121,8 +121,15 @@ def _evidence_for(journal: Journal, objective: dict, evidence: dict, repo_root: 
         ids = evidence.get("matching") or evidence.get("stronger") or []
         for kid in ids:
             k = journal.knowledge(int(kid)) if kid is not None else None
-            if k:
+            # only a row still believed is evidence (fix-settle, 2026-10-27): a SUPERSEDED row was replaced by
+            # another, a DISPUTED one is contradicted by another stored row
+            if k and k.get("status", "ACTIVE") == "ACTIVE":
                 items.append({"type": "knowledge", "id": k["id"], "task_id": k.get("task_id")})
+        settled = set(evidence.get("settled_by") or [])
+        if settled:  # a settle objective: the knowledge.superseded / knowledge.resolved that settled the dispute
+            for e in events_after(journal, objective):
+                if e["id"] in settled and e["type"] in ("knowledge.superseded", "knowledge.resolved"):
+                    items.append({"type": "event", "id": e["id"], "task_id": e.get("task_id")})
     elif kind == "skill_verified":
         name = spec.get("name")
         for e in events_after(journal, objective):
@@ -177,6 +184,11 @@ def assess(journal: Journal, objective: dict, task: Optional[dict], verdict: str
     if kind == "task_success":
         return withdraw(NOT_VERIFIABLE)
 
+    if kind == "knowledge_stored" and evidence.get("disputed"):
+        # a settle objective: its rows are re-read here, not taken from the judged evidence
+        still = [i for i in evidence["disputed"] if ((journal.knowledge(int(i)) or {}).get("status")) == "DISPUTED"]
+        if still:
+            return withdraw(f"knowledge {still} is still DISPUTED")
     items = _evidence_for(journal, objective, evidence, repo_root)
     if not items:
         return withdraw("the judged evidence could not be traced to anything in the journal")

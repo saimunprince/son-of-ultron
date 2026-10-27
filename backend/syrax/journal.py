@@ -1634,6 +1634,17 @@ class Journal:
             ).fetchall()
         return [self._knowledge_dict(r) for r in rows]
 
+    def disputed_knowledge(self, limit: int = 500) -> List[dict]:
+        """The DISPUTED rows, oldest first: the contradictions still open (autonomy derives a settle objective from
+        them). Read only; an owner still on the old schema has no state, so nothing is disputed there."""
+        if not getattr(self, "_kstate", True):
+            return []
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT * FROM knowledge WHERE status='DISPUTED' ORDER BY id ASC LIMIT ?", (max(1, min(int(limit), 5000)),)
+            ).fetchall()
+        return [self._knowledge_dict(r) for r in rows]
+
     def knowledge_search(self, query: str, limit: int = 8) -> List[dict]:
         """Keyword-overlap ranking over claim, excerpt, tags and question; SUPERSEDED rows are not retrieved."""
         words = {w for w in re_words(query) if len(w) > 2}
