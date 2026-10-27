@@ -252,7 +252,7 @@ def knowledge_settled(c, t0, t1) -> Value:
 def unbacked_claims(c, t0, t1) -> Value:
     """Own tasks whose final answer claims a change, while the task changed,
     committed and learned nothing. The patterns are the agent's own filters."""
-    from syrax.agent import CLAIM, OWN_WORK_CLAIM
+    from syrax.claims import CLAIM, OWN_WORK_CLAIM
 
     rows = c.execute("SELECT task_id, result FROM tasks WHERE kind='autonomous' AND result IS NOT NULL AND created>=? AND created<?", (t0, t1)).fetchall()
     marks = ",".join("?" * len(CHANGE_EVENTS))

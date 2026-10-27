@@ -5,7 +5,7 @@ comes from the events themselves, never from what the model says it is doing:
 
   understand  the task started and nothing is decided yet
   plan        the model's first decision to use a tool
-  act         a tool that changes something runs (agent.changes_something)
+  act         a tool that changes something runs (claims.changes_something)
   observe     a tool that only reads runs, or the model reads what came back
   verify      a checking tool runs (release, skill_test, experiment,
               compare_versions), or the final answer is being checked
@@ -48,7 +48,7 @@ def target_of(name: str, args: Dict[str, Any]) -> Optional[str]:
 def phase_of_tool(name: str, args: Dict[str, Any]) -> str:
     """verify for checking tools; act when the call changes something; observe when it only reads."""
     from syrax import permissions
-    from syrax.agent import changes_something
+    from syrax.claims import changes_something
 
     if name in VERIFY_TOOLS:
         return "verify"

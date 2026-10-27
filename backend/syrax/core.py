@@ -29,7 +29,8 @@ from typing import Awaitable, Callable, List, Optional
 from app.logger import logger
 from app.schema import Message
 
-from syrax.agent import UNPROVEN_SOFT, SyraxAgent, ToolCrash
+from syrax.agent import SyraxAgent, ToolCrash
+from syrax.claims import UNPROVEN_SOFT
 from syrax.brains import BrainError, get_router
 from syrax import intent, phases, redact
 from syrax.devloop import REPO_ROOT, DevLoop, ReleaseTool
