@@ -271,6 +271,12 @@ parallel agents in their own worktrees, reviewed and gated together.
   (_pyexec_child.py, now a judge file: it installs the guard first) and no
   longer imports app or pydantic: 0.23 s instead of 1.0 s per call in the
   tests; the live server's saving is not measured yet. 12 tests.
+- 727dfd3: measured live the next morning: a short python_execute call still
+  took 2.9 s (journal median, 3.3 s before). Windows' spawn re-imports the
+  parent's __main__ in every worker, and live that is syrax.server: the whole
+  server and agent loaded before one line ran. The worker now starts with
+  __main__'s spec and file hidden for the start only: 0.19-0.21 s per call
+  with a server-like __main__, from 2.59-2.74 s. 4 tests, 2 red before.
 
 ### A tie names its windows; the matrix counts only evidence its code produced (2026-10-26)
 
