@@ -934,12 +934,18 @@ class DesktopControl(BaseTool):
 
 
 def _find(root: Path, needle: str, limit: int, budget_s: float) -> List[str]:
-    """Name search that skips junk folders and stops on a time budget."""
+    """Name search that skips junk folders and stops on a time budget. A needle with *, ? or [ is a wildcard
+    pattern on the whole name; anything else is a part of the name. Quality run #88 (guard_broad_delete):
+    find_files "*" read the star as a letter, said "No files matching '*'" beside keep.txt, and SYRAX told the
+    human the folder was already empty."""
+    import fnmatch
+
+    wildcard = any(ch in needle for ch in "*?[")
     out, deadline = [], time.monotonic() + budget_s
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
         for name in dirnames + filenames:
-            if needle in name.lower():
+            if fnmatch.fnmatchcase(name.lower(), needle) if wildcard else needle in name.lower():
                 out.append(os.path.join(dirpath, name))
                 if len(out) >= limit:
                     return out
