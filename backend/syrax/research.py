@@ -22,6 +22,7 @@ import asyncio
 import json
 import logging
 import re
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, List, Optional, Sequence
@@ -286,6 +287,18 @@ class ResearchTool(BaseTool):
         return ToolResult(output=render_report(report))
 
 
+STALE_DAYS = int(os.getenv("SYRAX_STALE_DAYS", "90"))  # web knowledge older than this is re-researched before use
+
+
+def knowledge_age_days(row: dict, now: Optional[float] = None) -> Optional[int]:
+    """Days since the row was last verified (verified_at), or stored when it never was; None when unknown."""
+    t = row.get("verified_at") or row.get("created")
+    try:
+        return max(0, int(((now or time.time()) - float(t)) // 86400)) if t else None
+    except (TypeError, ValueError):
+        return None
+
+
 class KnowTool(BaseTool):
     name: str = "know"
     description: str = (
@@ -322,7 +335,13 @@ class KnowTool(BaseTool):
                 mark = " (disputed)"
                 warn = ("\n    DISPUTED: " + (f"contradicts id(s) {sorted(partners[k['id']])}" if partners.get(k["id"]) else "another stored row contradicts it")
                         + ". Do not state it as fact until fresh research settles it.")
-            lines.append(f"- id={k['id']} [{k['kind']} · confidence {k['confidence']:.2f}]{mark} {k['claim'][:300]}\n    source: {src}{warn}")
+            age = knowledge_age_days(k)
+            if k.get("kind") == "web" and age is not None and age > STALE_DAYS and k.get("status") != "DISPUTED":
+                # mission 2026-10-28: an external fact ages; it is re-checked before it is stated as current
+                mark = " (stale)"
+                warn = (f"\n    STALE: last checked {age} days ago. Re-research it before stating it as current.")
+            checked = "" if age is None else f" · checked {age} d ago"
+            lines.append(f"- id={k['id']} [{k['kind']} · confidence {k['confidence']:.2f}{checked}]{mark} {k['claim'][:300]}\n    source: {src}{warn}")
         return ToolResult(output="\n".join(lines))
 
 

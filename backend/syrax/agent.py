@@ -20,6 +20,7 @@ from syrax import browser  # noqa: F401  (sets BU_CDP_URL before MCP starts)
 from syrax import redact
 from syrax.brains import get_router
 from syrax.desktop import DesktopControl
+from syrax.github_research import GitHubSearchTool
 from syrax.editor import SyraxEditor
 from syrax.journal import JournalError
 from syrax.journal_query import JournalQueryTool
@@ -463,7 +464,7 @@ class SyraxAgent(Manus):
         default_factory=lambda: ToolCollection(
             AsyncPythonExecute(), SyraxEditor(), DesktopControl(),
             RememberTool(), RecallTool(), ForgetTool(), RemindTool(), WatchTopicTool(), UndoTool(), SelfInspectTool(), JournalQueryTool(),
-            ResearchTool(), KnowTool(), LearnTool(),
+            ResearchTool(), KnowTool(), LearnTool(), GitHubSearchTool(),
             SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), RepoMapTool(), ApplyPatchTool(), PresentTool(), ExperimentTool(), CompareVersionsTool(), Terminate()
         )
     )
