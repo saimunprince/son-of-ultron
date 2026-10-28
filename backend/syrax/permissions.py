@@ -465,6 +465,24 @@ def question(decision: Decision) -> str:
 
 # ——— policy ———
 
+def with_real(targets: Iterable[str]) -> List[str]:
+    """Each target and, for an absolute one, where it really leads (symlinks resolved). Audit 2026-10-28: a link
+    in the workspace to backend/config/brains.json passed every check made on the link's own name, and open()
+    followed it. Every protected-target check now also judges the real path."""
+    out: List[str] = []
+    for t in targets:
+        s = str(t or "").strip()
+        out.append(t)
+        if s and os.path.isabs(s):
+            try:
+                real = os.path.realpath(s)
+            except (OSError, ValueError):
+                continue
+            if os.path.normcase(real) != os.path.normcase(os.path.normpath(s)):
+                out.append(real)
+    return out
+
+
 def repo_relative(target: str) -> Optional[str]:
     """A target as a repository path (backend/syrax/x.py), also when it is inside a
     task's worktree, which mirrors the repository; None when it is elsewhere."""
@@ -486,7 +504,7 @@ def protected_targets(targets: Iterable[str]) -> List[str]:
     """Targets in the protected set: the files that judge SYRAX (devloop.JUDGES)."""
     from syrax.devloop import JUDGES  # devloop does not import permissions
 
-    return sorted({rel for t in targets if (rel := repo_relative(t)) in JUDGES})
+    return sorted({rel for t in with_real(targets) if (rel := repo_relative(t)) in JUDGES})
 
 
 # The edit tools whose targets are the files they change (classify resolves them to absolute paths); a path in
@@ -500,7 +518,7 @@ def unreleasable(targets: Iterable[str]) -> List[str]:
     from syrax.devloop import edit_problems  # devloop does not import permissions
 
     problems: List[str] = []
-    for t in targets:
+    for t in with_real(targets):
         rel = repo_relative(t)
         if not rel:
             continue
@@ -514,7 +532,7 @@ def data_targets(targets: Iterable[str], files: Tuple[str, ...]) -> List[str]:
     normalized path: absolute under the repository root or repository-relative, either slash,
     any case, `..` folded (live 2026-10-25, audit)."""
     hits = set()
-    for t in targets:
+    for t in with_real(targets):
         s = str(t or "").strip()
         if not s:
             continue
@@ -528,7 +546,7 @@ def dir_targets(targets: Iterable[str], dirs: Tuple[str, ...] = PROTECTED_DIRS) 
     """Targets inside one of ``dirs`` (repository folders ending in "/", PROTECTED_DIRS) or naming the
     folder itself, normalized like data_targets (audit 2026-10-27: the backups)."""
     hits = set()
-    for t in targets:
+    for t in with_real(targets):
         s = str(t or "").strip()
         if not s:
             continue
