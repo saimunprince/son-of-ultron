@@ -339,30 +339,60 @@ _ID_ALPHABET = string.ascii_letters + string.digits
 _TEXT_CALL = re.compile(r"<tool_call>(.*?)(?:</tool_call>|\Z)", re.S)
 _TEXT_FUNC = re.compile(r"<function=([\w.-]+)>(.*?)(?:</function>|\Z)", re.S)
 _TEXT_PARAM = re.compile(r"<parameter=([\w.-]+)>(.*?)</parameter>", re.S)
+_FENCE = re.compile(r"\A```(?:json)?\s*(.*?)\s*```\Z", re.S)
+
+
+def _json_call(obj) -> tuple:
+    """(name, arguments) of {"name": ..., "arguments": {...}}, or (None, None)."""
+    if not isinstance(obj, dict):
+        return None, None
+    args = obj.get("arguments") or obj.get("parameters") or {}
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except ValueError:
+            return None, None
+    return obj.get("name"), args
 
 
 def text_tool_calls(content: str, tools: Optional[List[dict]]) -> tuple:
     """Tool calls a model wrote as text, in the two shapes seen from open models:
     <tool_call>{"name": ..., "arguments": {...}}</tool_call> and
     <tool_call><function=NAME><parameter=KEY>VALUE</parameter>...</function></tool_call>.
+    A third shape, live 2026-10-28 from Ollama qwen2.5-coder:7b on the OpenAI endpoint: the whole reply is the bare
+    JSON {"name": ..., "arguments": {...}} (or a list of them, or one in a ```json fence); it counts only when the
+    reply is nothing else, so an answer that shows JSON in a sentence stays an answer.
     Only functions that were offered count. Returns (calls, the text before the first call)."""
     from openai.types.chat.chat_completion_message_tool_call import ChatCompletionMessageToolCall, Function
 
     offered = {(t.get("function") or {}).get("name") for t in tools or []}
+
+    def call(name, args):
+        return ChatCompletionMessageToolCall(id=_new_call_id(), type="function", function=Function(name=name, arguments=json.dumps(args)))
+
     first = content.find("<tool_call>")
     if first < 0:
-        return [], content
+        body = content.strip()
+        fenced = _FENCE.match(body)
+        body = fenced.group(1) if fenced else body
+        if body[:1] not in "{[":
+            return [], content
+        try:
+            obj = json.loads(body)
+        except ValueError:
+            return [], content
+        pairs = [_json_call(o) for o in (obj if isinstance(obj, list) else [obj])]
+        if not pairs or any(name not in offered or not isinstance(args, dict) for name, args in pairs):
+            return [], content
+        return [call(name, args) for name, args in pairs], ""
     calls = []
     for body in _TEXT_CALL.findall(content):
         body = body.strip()
         name, args = None, None
         if body.startswith("{"):
             try:
-                obj = json.loads(body)
-                name, args = obj.get("name"), obj.get("arguments") or obj.get("parameters") or {}
-                if isinstance(args, str):
-                    args = json.loads(args)
-            except (ValueError, AttributeError):
+                name, args = _json_call(json.loads(body))
+            except ValueError:
                 continue
         else:
             f = _TEXT_FUNC.search(body)
@@ -376,8 +406,7 @@ def text_tool_calls(content: str, tools: Optional[List[dict]]) -> tuple:
                 except ValueError:
                     args[key] = val
         if name in offered and isinstance(args, dict):
-            calls.append(ChatCompletionMessageToolCall(id=_new_call_id(), type="function",
-                                                       function=Function(name=name, arguments=json.dumps(args))))
+            calls.append(call(name, args))
     return calls, content[:first].strip()
 
 

@@ -228,6 +228,19 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### A reply that is only a JSON tool call is a call (2026-10-28)
+
+Live check of a local Ollama (0.40.12, qwen2.5-coder:7b, CPU only, about 8
+tokens/s) on the LAN: asked to use a tool, the model answered with the bare
+text {"name": "calc", "arguments": {"expr": "17*23"}} and no tool call. The
+loop would have taken that text for the final answer. brains.text_tool_calls
+now reads a reply that is nothing but a JSON call (or a list of them, or one in
+a ```json fence) to an offered tool as the call; JSON inside a sentence, an
+unoffered tool or non-object arguments stay an answer
+(test_bare_json_tool_call). The same Ollama ran with a 4096-token context
+while SYRAX fits Ollama requests to 8192: the host needs
+OLLAMA_CONTEXT_LENGTH=8192 or more (an owner setting, not code).
+
 ### Quality run #88 read case by case; two of its failures were SYRAX's (2026-10-27)
 
 Run #88 (full, 67 cases, 0f71b3c, after the bug sweep loosened the claim
