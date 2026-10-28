@@ -535,7 +535,12 @@ class SyraxAgent(Manus):
             block = get_memory().prompt_block()
         except Exception:
             block = ""
-        self.system_prompt = "\n\n".join(x for x in (base, TOOLS_GUIDE, block) if x)
+        from syrax.desktop import local_clock
+
+        # 2026-10-28 live: the brain invented a clock time ("18:03" at 15:18); nothing in the prompt said the time.
+        clock = (f"This task started at {local_clock()} on this machine. For the time now (later in a long task), "
+                 "read desktop system_info; never state a time or date you did not read.")
+        self.system_prompt = "\n\n".join(x for x in (base, TOOLS_GUIDE, clock, block) if x)
         self.next_step_prompt = STEP_PROMPT
         if self.next_step_prompt:
             from syrax.brains import STEP_PROMPTS

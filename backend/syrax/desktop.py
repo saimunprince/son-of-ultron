@@ -56,6 +56,15 @@ SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".cache", "
 VK = {"mute": 0xAD, "vol_down": 0xAE, "vol_up": 0xAF, "next": 0xB0, "prev": 0xB1, "stop": 0xB2, "play_pause": 0xB3}
 
 
+def local_clock(now=None) -> str:
+    """This machine's local date, time and UTC offset, e.g. 'Wednesday 2026-10-28 15:18:05 (UTC+06:00)'."""
+    import datetime as _dt
+
+    t = (now or _dt.datetime.now()).astimezone()
+    off = t.strftime("%z")
+    return f"{t.strftime('%A %Y-%m-%d %H:%M:%S')} (UTC{off[:3]}:{off[3:]})"
+
+
 def session_env() -> Dict[str, str]:
     """Environment that reaches the graphical session even from a service."""
     env = dict(os.environ)
@@ -729,7 +738,9 @@ class DesktopControl(BaseTool):
         return ToolResult(output="\n".join(found) if found else f"No files matching '{target}' under {root}.")
 
     async def _do_system_info(self, **_) -> ToolResult:
-        lines = []
+        # 2026-10-28 live: asked for the time, the brain read this tool (which had no clock) and answered
+        # "18:03" at 15:18. The clock is a reading like the others, so an answer about it has a source.
+        lines = [f"Local time: {local_clock()}"]
         load = await asyncio.to_thread(sysinfo.loadavg)
         if load:
             lines.append(f"CPU load: {load[0]:.2f} {load[1]:.2f} {load[2]:.2f} ({os.cpu_count()} cores)")
