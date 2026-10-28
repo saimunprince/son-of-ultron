@@ -323,7 +323,12 @@ PROVIDERS: Dict[str, Provider] = {
             note="Runs on this machine. Offline, private, slow on CPU. Steps down to a smaller installed model when RAM is short.",
             timeout=600.0,
             fallback_models=("qwen2.5:3b", "qwen2.5:1.5b", "llama3.2:3b", "llama3.2:1b"),
-            max_request_tokens=8192,  # default num_ctx of the small local models
+            # Measured 2026-10-28 (Ollama 0.40.12, CPU, qwen2.5-coder:7b with a 32k model context): the OpenAI-style
+            # /v1 endpoint ignores options.num_ctx and silently cuts a longer prompt to the server's context
+            # (4096 by default on a machine without VRAM): a 12k prompt arrived as 2,050 tokens and the answer was
+            # made up. 8192 here let 4-8k prompts through to be cut the same way. The budget is the server's real
+            # context: OLLAMA_CONTEXT_LENGTH on the Ollama service, told to SYRAX as SYRAX_OLLAMA_NUM_CTX.
+            max_request_tokens=int(os.getenv("SYRAX_OLLAMA_NUM_CTX", "4096")),
         ),
     ]
 }
