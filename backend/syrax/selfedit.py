@@ -21,8 +21,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -372,11 +374,19 @@ def run_tests(root: Path, test_files: List[str], timeout: float = TEST_TIMEOUT_S
     rel = [t[len("backend/"):] if t.startswith("backend/") else t for t in test_files]
     env = {k: v for k, v in os.environ.items() if not k.startswith("SYRAX_")}
     env.update({"OPENMANUS_DISABLE_BROWSER_USE": "1", "SYRAX_DISABLE_WHISPER_WARMUP": "1", "SYRAX_BROWSER": "0", "COLUMNS": "200"})
-    cmd = [venv_python(), "-m", "pytest", *rel, "-q", "-x", "--tb=short", "-p", "no:cacheprovider"]
+    from syrax import _confine
+
+    # the covering tests may be ones SYRAX just wrote: they change files only in the tree and a private TMPDIR
+    # (Linux Landlock via the running server's _confine.py; audit 2026-10-28)
+    tmp = tempfile.mkdtemp(prefix="syrax_preflight_tmp_")
+    env["TMPDIR"] = tmp
+    cmd = _confine.wrap([venv_python(), "-m", "pytest", *rel, "-q", "-x", "--tb=short", "-p", "no:cacheprovider"], [root, tmp])
     try:
         r = subprocess.run(cmd, cwd=str(root / "backend"), env=env, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
         return {"ok": False, "ran": rel, "summary": f"tests did not finish in {int(timeout)} s", "tail": ""}
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     out = (r.stdout or "") + (r.stderr or "")
     summary = next((ln for ln in reversed(out.splitlines()) if re.search(r"\d+ (passed|failed|error)", ln)), out.strip().splitlines()[-1] if out.strip() else "no output")
     return {"ok": r.returncode == 0, "ran": rel, "summary": summary.strip(), "tail": failure_text(out)}

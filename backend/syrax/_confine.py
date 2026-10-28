@@ -165,3 +165,37 @@ def apply(spec: Optional[dict]) -> Optional[str]:
         if spec.get("require_landlock"):
             return f"the write boundary for this task could not be set ({e}); nothing ran"
     return None
+
+
+def wrap(cmd: list, writable: Iterable[str]) -> list:
+    """`cmd` run under a Landlock write boundary: the live server's copy of this file (never the tree under test, which
+    could carry a changed one) applies it and then execs `cmd`. Unchanged where Landlock is absent."""
+    if abi() < 1:
+        return list(cmd)
+    args = [sys.executable, os.path.abspath(__file__)]
+    for path in writable:
+        args += ["--write", str(path)]
+    return [*args, "--", *map(str, cmd)]
+
+
+def _main(argv: List[str]) -> int:
+    """python _confine.py --write PATH [--write PATH ...] -- CMD ARGS...: confine, then exec CMD (fail closed)."""
+    if "--" not in argv:
+        sys.stderr.write("usage: _confine.py --write PATH ... -- CMD ...\n")
+        return 2
+    split = argv.index("--")
+    opts, cmd = argv[:split], argv[split + 1:]
+    writable = [opts[i + 1] for i, a in enumerate(opts) if a == "--write" and i + 1 < len(opts)]
+    if not cmd:
+        return 2
+    try:
+        landlock(writable + ["/dev/null", "/dev/shm"])
+    except OSError as e:
+        sys.stderr.write(f"confinement failed, nothing ran: {e}\n")
+        return 126
+    os.execvp(cmd[0], cmd)
+    return 127  # not reached
+
+
+if __name__ == "__main__":
+    sys.exit(_main(sys.argv[1:]))

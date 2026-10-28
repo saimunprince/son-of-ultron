@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -431,6 +432,16 @@ def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None, jo
         "SYRAX_DISABLE_WHISPER_WARMUP": "1",
         "SYRAX_BROWSER": "0",
     }
+    # Audit 2026-10-28: the suite runs code SYRAX may have written (a new test is always welcome), and it ran with the
+    # server's whole reach: it could rewrite the live guard, the keys or the journal. Now it may change files only in
+    # the tree under test and a private TMPDIR (Linux Landlock, applied by the running server's own _confine.py).
+    from syrax import _confine
+
+    gate_tmp = os.path.join(tempfile.gettempdir(), f"syrax_gate_tmp_{getattr(os, 'getuid', lambda: 0)()}")
+    os.makedirs(gate_tmp, mode=0o700, exist_ok=True)  # one per user: every root's gate has the same environment
+    test_env["TMPDIR"] = gate_tmp
+    pytest_cmd = _confine.wrap([py, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider", "-o", "faulthandler_timeout=300"],
+                               [root, gate_tmp])
     npx = _npx()
     tsc, eslint, node_test = [npx, "tsc", "--noEmit"], [npx, "eslint", "."], [_npm(), "test", "--silent"]
 
@@ -447,7 +458,7 @@ def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None, jo
         # (live 2026-10-12: the suite hung twice past the gate's timeout and nothing said where)
         # 2026-10-25: the suite passed 1,100 tests and the step ran 559-843 s nine times that day; twice the 900 s
         # default cut it on a loaded machine (NOT_VERIFIED, a correct change held). Its own ceiling, owner-settable.
-        Gate("pytest", [py, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider", "-o", "faulthandler_timeout=300"],
+        Gate("pytest", pytest_cmd,
              cwd=backend, env=test_env, timeout=float(os.getenv("SYRAX_PYTEST_GATE_TIMEOUT_S", str(PYTEST_GATE_TIMEOUT_S))),
              drop_env_prefixes=("SYRAX_",)),
         fe("tsc", tsc),
