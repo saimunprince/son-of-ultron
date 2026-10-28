@@ -182,6 +182,7 @@ JUDGES = (
     "backend/syrax/backup.py",  # it guards the evidence: human commits only
     "backend/syrax/tools.py", "backend/syrax/_pyexec_child.py", "backend/syrax/review.py",  # _pyexec_child installs the guard in every python_execute worker
     "backend/syrax/_skill_child.py",  # and in every skill call's process (skills.IsolatedSkill)
+    "backend/syrax/_confine.py",  # the kernel boundary (Landlock, rlimits, process group) around SYRAX's own code
     # and what measures it: a system that reports its own rise must not edit the ruler
     "backend/syrax/rise.py", "backend/syrax/capmatrix.py", "backend/syrax/contracts.py", "backend/syrax/ledger.py",
     "backend/syrax/repro.py",

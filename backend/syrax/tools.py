@@ -64,9 +64,46 @@ class WebAskHuman(BaseTool):
         return False
 
 
+import os  # noqa: E402
+import signal  # noqa: E402
 import sys  # noqa: E402
 import multiprocessing  # noqa: E402
 import threading  # noqa: E402
+
+# Workers that run model-written code are always SPAWNED, never forked (audit 2026-10-28). Linux defaulted to fork: the
+# worker was a copy of the server, with the journal's read-write connection, the listening socket and the brain keys
+# in memory, none of which the guard (which wraps new opens) could see. Windows always spawned; now every OS does.
+
+
+def ensure_spawn() -> None:
+    """Make spawn the start method of this process (checked before every worker start: nothing may switch it back)."""
+    if multiprocessing.get_start_method(allow_none=True) != "spawn":
+        multiprocessing.set_start_method("spawn", force=True)
+
+
+ensure_spawn()
+
+# What kind of task is running (core._begin_now sets it): SYRAX's own work ("autonomous") gets a kernel write
+# boundary around its code; a human's request keeps the reach the human gave it (home, desktop) under the guard.
+TASK_KIND: Optional[str] = None
+WRITE_ROOTS: tuple = ()  # extra writable roots for the running task (its isolation worktree)
+CONFINED_KINDS = ("autonomous",)
+
+
+def confinement(kind: Optional[str], out_path: str, tmpdir: str, timeout: int) -> dict:
+    """The OS confinement spec a python_execute worker applies before it runs (syrax._confine.apply)."""
+    spec = {
+        "cpu_s": int(timeout) * max(1, os.cpu_count() or 1) + 10,  # CPU seconds summed over threads: a backstop
+        "memory_mb": int(os.getenv("SYRAX_PYEXEC_MEMORY_MB", "8192")),
+        "file_mb": int(os.getenv("SYRAX_PYEXEC_FILE_MB", "2048")),
+        "tmpdir": tmpdir,
+    }
+    if kind in CONFINED_KINDS:
+        from app.config import config
+
+        spec["writable"] = [str(config.workspace_root), *map(str, WRITE_ROOTS), tmpdir, out_path, "/dev/null", "/dev/shm"]
+        spec["require_landlock"] = sys.platform.startswith("linux")  # fail closed where the kernel boundary exists
+    return spec
 
 # Windows starts a worker by spawning a fresh interpreter, and spawn re-imports the parent's __main__ module first
 # when it has a module spec or a file (multiprocessing.spawn.get_preparation_data). Live, __main__ is syrax.server
@@ -154,10 +191,20 @@ def _kill_quietly(proc, tree: bool = True) -> None:
     """Kill the worker and, with `tree`, everything it started. 2026-10-27 review: only the worker was killed on a
     timeout or an abort, and on Windows its children (a subprocess pytest, a Popen'd server) ran on with nobody
     waiting for them. The tree is read before the worker dies (after, its children have no parent to be found by);
-    without psutil, Windows' taskkill /T takes the tree."""
+    without psutil, Windows' taskkill /T takes the tree. On POSIX the worker leads a process group of its own
+    (syrax._confine.own_group), and the group dies with one killpg: no psutil needed (this Linux machine had none,
+    2026-10-28, and only the worker died), and a child whose parent already exited is still in the group."""
     try:
         if proc.pid is None or not proc.is_alive():
             return
+        if tree and hasattr(os, "killpg") and isinstance(proc, multiprocessing.process.BaseProcess):
+            try:
+                # only a group the worker leads: before its setsid it is still in the server's group, and that
+                # group must never be killed
+                if os.getpgid(proc.pid) == proc.pid:
+                    os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
         kids = _worker_descendants(proc) if tree else []
         if kids is None and sys.platform == "win32" and isinstance(proc, multiprocessing.process.BaseProcess):
             import subprocess
@@ -236,14 +283,21 @@ class AsyncPythonExecute(PythonExecute):
 
         fd, out_path = tempfile.mkstemp(prefix="syrax_py_", suffix=".out")
         __import__("os").close(fd)
+        tmpdir = tempfile.mkdtemp(prefix="syrax_py_tmp_")  # the worker's own TMPDIR (writable under the boundary)
         try:
-            return await self._execute(code, timeout, safe_globals, protected_paths(), out_path)
+            spec = confinement(TASK_KIND, out_path, tmpdir, timeout)
+            return await self._execute(code, timeout, safe_globals, protected_paths(), out_path, spec)
         finally:
             _remove_quietly(out_path)
+            import shutil
 
-    async def _execute(self, code: str, timeout: int, safe_globals: dict, paths: list, out_path: str) -> Dict:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    async def _execute(self, code: str, timeout: int, safe_globals: dict, paths: list, out_path: str,
+                       confine: Optional[dict] = None) -> Dict:
+        ensure_spawn()
         recv, send = multiprocessing.Pipe(duplex=False)
-        proc = multiprocessing.Process(target=guarded_run, args=(code, send, safe_globals, paths, out_path), daemon=True)
+        proc = multiprocessing.Process(target=guarded_run, args=(code, send, safe_globals, paths, out_path, confine), daemon=True)
         starter = asyncio.ensure_future(asyncio.to_thread(start_without_main, proc))
         try:
             done, _ = await asyncio.wait({starter}, timeout=START_TIMEOUT_S)

@@ -97,6 +97,9 @@ def run(module: str, file: Optional[str], qualname: str, kwargs: dict, conn, pat
     result: dict = {"kind": "raised", "stage": "guard", "type": "RuntimeError", "message": "the skill worker did not run", "pickled": None}
     stage = "guard"
     try:
+        from syrax import _confine
+
+        _confine.own_group()  # a timeout or a cancel kills the whole tree with one killpg (2026-10-28, Linux)
         if not paths:
             raise RuntimeError("no protected paths were given; a skill does not run unguarded")
         from syrax import guard

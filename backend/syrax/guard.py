@@ -425,6 +425,28 @@ def _guard_core_socket() -> None:
         proactor.connect = proactor_connect
 
 
+def _parent_of(pid: int) -> int:
+    """The parent pid from /proc/<pid>/stat (Linux), 0 when unknown. The command name in field 2 may hold spaces and
+    parentheses, so the fields are read after its last ')'."""
+    try:
+        with open(f"/proc/{int(pid)}/stat", "rb") as f:
+            data = f.read()
+        return int(data[data.rindex(b")") + 2:].split()[1])
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
+def _descends_from(pid: int, ancestor: int) -> bool:
+    """True when `pid` is a child, grandchild... of `ancestor` (Linux /proc; False where /proc is absent)."""
+    seen = 0
+    while pid > 1 and seen < 64:
+        pid = _parent_of(pid)
+        if pid == ancestor:
+            return True
+        seen += 1
+    return False
+
+
 def _guard_host() -> None:
     """Processes it did not start, the power state and system configuration
     are off limits to code SYRAX runs."""
@@ -435,7 +457,9 @@ def _guard_host() -> None:
             return True
         try:
             import psutil
-
+        except ImportError:  # Linux without psutil (2026-10-28): walk the parent chain in /proc instead
+            return _descends_from(pid, me)
+        try:
             return any(c.pid == pid for c in psutil.Process(me).children(recursive=True))
         except Exception:
             return False

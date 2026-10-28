@@ -602,6 +602,10 @@ class Core:
             task_id = await self.journal.start_task(said or goal, session_id=session_id, kind=kind)  # the row's goal is masked there
         else:  # a queued task starts: the journal's copy of the human's words is masked, the agent gets them raw below
             await self.journal.record("task.started", {"goal": redact.mask(said or goal), "kind": kind}, task_id=task_id)
+        from syrax import tools as _tools
+
+        # python_execute confines SYRAX's own work with a kernel write boundary (tools.confinement, 2026-10-28)
+        _tools.TASK_KIND, _tools.WRITE_ROOTS = kind, ()
         if kind == "autonomous" and os.getenv("SYRAX_ISOLATE", "0") == "1":
             # M1, isolated evolution: SYRAX's own work happens in a worktree, never in the running tree
             try:
@@ -609,6 +613,7 @@ class Core:
                 from syrax import editor as _editor
 
                 _editor.ROOT_MAP = (self.devloop.live_root, wt)
+                _tools.WRITE_ROOTS = (wt,)  # its worktree is writable to its code; the live tree and .git are not
                 goal = goal + ISOLATION_NOTE.format(worktree=wt, live=self.devloop.live_root)
                 await self.journal.record("isolation.started", {"worktree": str(wt)}, task_id=task_id)
                 seeded = await asyncio.to_thread(write_seed, wt, seed)
@@ -838,8 +843,10 @@ class Core:
             logger.warning(f"could not keep the worktree diff of task {self.current.task_id}: {e}")
         finally:
             from syrax import editor as _editor
+            from syrax import tools as _tools
 
             _editor.ROOT_MAP = None
+            _tools.WRITE_ROOTS = ()
             await asyncio.to_thread(self.devloop.discard)
 
     def _dirty_repo_info(self) -> Optional[dict]:

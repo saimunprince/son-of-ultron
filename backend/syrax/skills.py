@@ -382,13 +382,14 @@ async def run_skill_call(tool: BaseTool, kwargs: dict, name: Optional[str] = Non
     import multiprocessing
 
     from syrax import _skill_child
-    from syrax.tools import _kill_quietly, _poll, start_without_main
+    from syrax.tools import _kill_quietly, _poll, ensure_spawn, start_without_main
 
     name = name or getattr(tool, "name", "skill")
     timeout = float(SKILL_CALL_TIMEOUT_S)
     module, file, qualname = _skill_source(tool)
     extra = [str(Path(file).resolve().parent.parent.parent), str(BACKEND_ROOT)] if file else []  # `from skills.<other>.skill import`
     deadline = time.monotonic() + timeout
+    ensure_spawn()  # spawned, never forked: a fork carries the server's open journal and keys (2026-10-28)
     recv, send = multiprocessing.Pipe(duplex=False)
     proc = multiprocessing.Process(target=_skill_child.run, args=(module, file, qualname, dict(kwargs), send, guard.protected_paths(), extra),
                                    daemon=True, name=f"syrax-skill-{name}")

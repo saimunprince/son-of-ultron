@@ -68,12 +68,20 @@ class _PrintedOutput(StringIO):
             self._file = None
 
 
-def guarded_run(code: str, conn, safe_globals: dict, paths: list, out_path: Optional[str] = None) -> None:
-    """Runs in the child: guard the journal and keys, for this process and
-    every Python it starts, run the code, and send the result back. The
-    result is sent even when the code calls sys.exit or the guard fails."""
+def guarded_run(code: str, conn, safe_globals: dict, paths: list, out_path: Optional[str] = None,
+                confine: Optional[dict] = None) -> None:
+    """Runs in the child: confine this process at the OS level (its own process group, rlimits, and for SYRAX's own
+    work a Landlock write boundary: syrax._confine), guard the journal and keys, for this process and every Python it
+    starts, run the code, and send the result back. The result is sent even when the code calls sys.exit or the guard
+    fails. A boundary the task requires that cannot be set means the code does not run (fail closed)."""
     result = {"observation": "", "success": False}
     try:
+        from syrax import _confine
+
+        refused = _confine.apply(confine)
+        if refused:
+            result["observation"] = f"Error: {refused}"
+            return
         from syrax import guard
 
         guard.child_env(paths)
