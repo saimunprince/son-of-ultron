@@ -17,3 +17,6 @@ pypdf==6.19.0
 youtube-transcript-api==1.2.4
 # webcam, one frame on request (approved 2026-10-12; numpy>=2 was already here)
 opencv-python-headless==4.14.0.94
+# process trees: python_execute/skill tree kill and the guard's own-child check import it (it came in transitively on
+# Windows and was never declared; Linux lacked it, 2026-10-28). Approved by the owner, 2026-10-28.
+psutil==7.0.0
