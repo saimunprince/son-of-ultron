@@ -167,6 +167,12 @@ async def lifespan(_: FastAPI):
     if core.autonomy.enabled:
         core.autonomy.start()
         logger.info("autonomy loop started")
+    try:  # this process runs SYRAX's own last release: record it as running (release.live), once
+        from syrax.journal import BACKEND_ROOT as _BACKEND, _git_head
+
+        await core.note_running_release(await asyncio.to_thread(_git_head, _BACKEND.parent))
+    except Exception as e:
+        logger.warning(f"could not check the running release: {e}")
     voice.load_voice(journal)  # the voice the human picked in the UI last time
     from syrax import reminders
 

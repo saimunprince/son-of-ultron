@@ -201,6 +201,9 @@ def error_class(e: BaseException) -> str:
     return "other"
 
 
+SHUTDOWN_TIMEOUT_S = 20.0  # each shutdown step (mission 2026-10-28: bounded, never a hang)
+
+
 class Core:
     def __init__(self, journal: Optional[Journal] = None):
         self.journal = journal or get_journal()
@@ -1112,18 +1115,53 @@ class Core:
             "presence": self.presence.snapshot(),
         }
 
-    async def shutdown(self) -> None:
+    async def shutdown(self, timeout: float = SHUTDOWN_TIMEOUT_S) -> None:
+        """Stop scheduling, cancel the running task, close the agent, and journal the final state (system.shutdown).
+        Bounded (mission 2026-10-28): a step that hangs past ``timeout`` is abandoned and named in the record."""
         self.hold_queue(float("inf"))  # the task cancelled below must not start a queued request on its way out
-        await self.autonomy.stop()
+        cancelled = self.current.task_id if self._task_running() and self.current is not None else None
+        late: List[str] = []
+
+        async def bounded(name: str, coro) -> None:
+            try:
+                await asyncio.wait_for(coro, timeout)
+            except asyncio.TimeoutError:
+                late.append(name)
+            except Exception as e:  # a failing step must not keep the rest from closing
+                late.append(f"{name}: {type(e).__name__}")
+
+        await bounded("autonomy", self.autonomy.stop())
         if self._task_running():
             assert self.current is not None and self.current.task is not None
             self.current.task.cancel()
-            await asyncio.gather(self.current.task, return_exceptions=True)
+            await bounded("task", asyncio.gather(self.current.task, return_exceptions=True))
         if self.agent is not None:
-            await self.agent.shutdown()
+            await bounded("agent", self.agent.shutdown())
             self.agent = None
+        try:
+            await self.journal.record("system.shutdown", {
+                "cancelled_task": cancelled, "autonomy_state": (getattr(self.autonomy, "state", None) or {}).get("state"),
+                "queue_held": self.queue_held(), "late": late})
+        except Exception as e:
+            logger.warning(f"could not journal the shutdown: {e}")
         self.journal.unsubscribe(self._on_journal_event)
         self.journal.unsubscribe(self.presentation.on_event)
+
+    async def note_running_release(self, head: Optional[str]) -> Optional[dict]:
+        """At boot: when this process runs the commit SYRAX's own last release created, record release.live once
+        (mission 2026-10-28: "committed" and "running after a restart" are different facts; neither is "improved")."""
+        if not head:
+            return None
+        last = next((e for e in reversed(await asyncio.to_thread(self.journal.recent_events, 3000)) if e["type"] == "commit.created"), None)
+        if not last or str(last["payload"].get("commit") or "") != head:
+            return None
+        if any(e["type"] == "release.live" and e["payload"].get("commit") == head
+               for e in await asyncio.to_thread(self.journal.recent_events, 3000)):
+            return None
+        rec = {"commit": head, "released_by_task": last.get("task_id"), "boot_pid": os.getpid(),
+               "verified": "the core started on this commit and opened the journal; behaviour is measured separately"}
+        await self.journal.record("release.live", rec)
+        return rec
 
 
 async def _cross_review(info: dict, summary: str, authors: List[str]) -> dict:
