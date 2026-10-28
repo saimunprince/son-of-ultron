@@ -774,16 +774,45 @@ class Session:
                 await self.send({"type": "notice", "text": "A brief is proved while SYRAX is idle: try again when the task ends."})
                 return
             self.spawn(self._brief(msg, file=kind == "brief_add"), detached=True)
+        elif kind == "estop":
+            # The operator's emergency stop (syrax.estop): persistent, survives restarts, blocks the autonomy loop,
+            # forced cycles and every self-started task; on, it also stops whatever runs now. Only a human sets or
+            # clears it: SYRAX's own code may neither write the journal nor drive this socket (guard.py, auth.py).
+            from syrax import estop
+
+            note = str(msg.get("note") or "")[:300]
+            who = f"ws session {self.id} ({self.ws.headers.get('origin') or 'no origin'})"
+            if msg.get("on", True):
+                await asyncio.to_thread(estop.set_stop, self.core.journal, note, who)
+                await self.core.autonomy.stop()
+                running = self.core.current
+                if running is not None and self.core.busy:
+                    await self.core.journal.record("task.stop_requested", {
+                        "session": self.id, "origin": self.ws.headers.get("origin"), "reason": "emergency stop"},
+                        task_id=running.task_id)
+                    await self.core.cancel()
+            else:
+                await asyncio.to_thread(estop.clear_stop, self.core.journal, note, who)  # autonomy stays as it was set
+                if self.core.autonomy.enabled:
+                    self.core.autonomy.start()
+            await self.core.broadcast({"type": "autonomy_status", **await asyncio.to_thread(self.core.autonomy.status)})
         elif kind == "autonomy":
             if "enabled" in msg:
                 on = bool(msg.get("enabled"))
                 await self.core.autonomy.set_enabled_async(on)
-                if on:
+                if on and not self.core.autonomy.enabled:  # the emergency stop holds it off
+                    await self.send({"type": "notice", "text": "The emergency stop is on: clear it before turning autonomy on."})
+                elif on:
                     self.core.autonomy.start()
                 else:
                     await self.core.autonomy.stop()
             await self.send({"type": "autonomy_status", **await asyncio.to_thread(self.core.autonomy.status)})
         elif kind == "cycle_now":
+            from syrax import estop
+
+            if await asyncio.to_thread(estop.active, self.core.journal):
+                await self.send({"type": "notice", "text": "The emergency stop is on: no cycle runs until it is cleared."})
+                return
             if self.core.busy:
                 await self.send({"type": "notice", "text": "Already executing. Stop it first."})
                 return

@@ -443,7 +443,13 @@ class Core:
         (also when another submit got there first while this one waited).
         With ``queue``, a human request (kind conversation) made while SYRAX is busy is not
         refused: it is journaled PENDING, its id is returned, and it starts when the running
-        task ends (``_start_next``). SYRAX's own work (eval, autonomous) never queues."""
+        task ends (``_start_next``). SYRAX's own work (eval, autonomous) never queues.
+        While the emergency stop is on (syrax.estop), SYRAX's own work does not start at all: None, journaled."""
+        from syrax import estop
+
+        if kind in estop.BLOCKED_KINDS and await asyncio.to_thread(estop.active, self.journal):
+            await self.journal.record("estop.refused", {"kind": kind, "goal": redact.mask(said or goal)[:200]})
+            return None
         async with self._submit_lock:
             if self.busy:
                 if not (queue and kind == "conversation"):

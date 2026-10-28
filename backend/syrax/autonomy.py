@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional
 from app.logger import logger
 
 from syrax import resources
-from syrax import backup, contracts, followup, plan
+from syrax import backup, contracts, estop, followup, plan
 from syrax.journal import ALL_OBJECTIVES, BACKEND_ROOT, Journal, JournalError
 
 REPO_ROOT_PATH = BACKEND_ROOT.parent
@@ -116,7 +116,7 @@ BRIEF_HINTS = {
 @dataclass
 class CycleReport:
     started: float
-    outcome: str  # RAN | IDLE | SKIPPED | DISABLED | BUSY
+    outcome: str  # RAN | IDLE | SKIPPED | DISABLED | BUSY | STOPPED (emergency stop)
     reason: Optional[str] = None
     objective_id: Optional[int] = None
     task_id: Optional[str] = None
@@ -863,10 +863,18 @@ class Autonomy:
 
     @property
     def enabled(self) -> bool:
+        """On when the operator turned it on (or SYRAX_AUTONOMY=1 and the operator never chose), never while the
+        emergency stop is on. Audit 2026-10-28: SYRAX_AUTONOMY=1 overrode the operator's "off" (the UI said off,
+        the next boot started the loop); the environment may still force it off, but no longer over a human's off."""
+        if estop.active(self.journal):
+            return False
         env = os.getenv("SYRAX_AUTONOMY")
-        if env is not None:
-            return env == "1"
-        return self.journal.get_meta("autonomy_enabled", "0") == "1"
+        if env == "0":
+            return False
+        saved = self.journal.get_meta("autonomy_enabled")
+        if saved is not None:
+            return saved == "1"
+        return env == "1"
 
     def set_enabled(self, on: bool) -> None:
         self.journal.set_meta("autonomy_enabled", "1" if on else "0")
@@ -883,6 +891,7 @@ class Autonomy:
         snap = resources.snapshot()
         return {
             "enabled": self.enabled,
+            "estop": estop.state(self.journal),
             "running_loop": self._loop_task is not None and not self._loop_task.done(),
             "interval_s": self.interval,
             "last_cycle": last,
@@ -903,8 +912,11 @@ class Autonomy:
         return None
 
     async def run_once(self, force: bool = False) -> CycleReport:
-        """One bounded cycle. ``force`` ignores the enabled flag (manual `cycle_now`)."""
+        """One bounded cycle. ``force`` ignores the enabled flag (manual `cycle_now`), never the emergency stop."""
         rep = CycleReport(started=time.time(), outcome="IDLE")
+        if estop.active(self.journal):
+            rep.outcome, rep.reason = "STOPPED", "emergency stop is on"
+            return await self._finish(rep)
         if not force and not self.enabled:
             rep.outcome, rep.reason = "DISABLED", "autonomy is off"
             return await self._finish(rep)
@@ -1291,6 +1303,9 @@ class Autonomy:
             await asyncio.sleep(delay)
 
     def start(self) -> None:
+        if estop.active(self.journal):
+            logger.warning("autonomy not started: the emergency stop is on")
+            return
         if self._loop_task is None or self._loop_task.done():
             self._loop_task = asyncio.create_task(self.loop())
 

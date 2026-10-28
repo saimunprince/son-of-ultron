@@ -183,6 +183,11 @@ JUDGES = (
     "backend/syrax/tools.py", "backend/syrax/_pyexec_child.py", "backend/syrax/review.py",  # _pyexec_child installs the guard in every python_execute worker
     "backend/syrax/_skill_child.py",  # and in every skill call's process (skills.IsolatedSkill)
     "backend/syrax/_confine.py",  # the kernel boundary (Landlock, rlimits, process group) around SYRAX's own code
+    # and the operator's controls (audit 2026-10-28): the emergency stop, the socket that carries stop / estop /
+    # autonomy, the core that refuses self-started work and cancels, the resource gate, the isolation redirect,
+    # credential masking and the known-good fallback. A self-release must not rewrite what stops it.
+    "backend/syrax/estop.py", "backend/syrax/server.py", "backend/syrax/core.py", "backend/syrax/resources.py",
+    "backend/syrax/editor.py", "backend/syrax/redact.py", "backend/syrax/knowngood.py",
     # and what measures it: a system that reports its own rise must not edit the ruler
     "backend/syrax/rise.py", "backend/syrax/capmatrix.py", "backend/syrax/contracts.py", "backend/syrax/ledger.py",
     "backend/syrax/repro.py",
