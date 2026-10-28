@@ -67,7 +67,10 @@ def test_sha(text: Any) -> str:
 
 
 def _git_bytes(args: Sequence[str], cwd: Path, stdin: Optional[bytes] = None, timeout: float = 120) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", *args], cwd=str(cwd), input=stdin, capture_output=True, timeout=timeout)
+    from syrax.devloop import check_worktree_link, git_safe_env  # hooks off, worktree link checked (audit 2026-10-28)
+
+    check_worktree_link(Path(cwd))
+    return subprocess.run(["git", *args], cwd=str(cwd), input=stdin, capture_output=True, timeout=timeout, env=git_safe_env())
 
 
 def resolve(root: Path, ref: str = "HEAD") -> str:

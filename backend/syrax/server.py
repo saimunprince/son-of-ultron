@@ -164,6 +164,9 @@ async def lifespan(_: FastAPI):
 
     # if the event loop ever blocks, the stacks of every thread are kept (live 2026-10-12: two silent stalls)
     watchdog = stallwatch.Watchdog(asyncio.get_running_loop(), journal).start()
+    from syrax.devloop import install_git_safety
+
+    install_git_safety()  # every git this process starts runs with hooks and fsmonitor off (audit 2026-10-28)
     if core.autonomy.enabled:
         core.autonomy.start()
         logger.info("autonomy loop started")

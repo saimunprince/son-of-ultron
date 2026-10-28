@@ -533,6 +533,16 @@ def unreleasable(targets: Iterable[str]) -> List[str]:
     return problems
 
 
+def git_targets(targets: Iterable[str]) -> List[str]:
+    """Targets that are, or are inside, a `.git` file or directory (followed through symlinks)."""
+    hits = []
+    for t in with_real(targets):
+        parts = str(t or "").replace("\\", "/").split("/")
+        if ".git" in parts and str(t) not in hits:
+            hits.append(str(t))
+    return hits
+
+
 def data_targets(targets: Iterable[str], files: Tuple[str, ...]) -> List[str]:
     """Targets among ``files`` (PROTECTED_DATA / OWNER_DATA, repository paths), matched on the
     normalized path: absolute under the repository root or repository-relative, either slash,
@@ -610,6 +620,10 @@ def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[st
         # live 2026-10-14 (quality run #39, self_patch_stale): an eval task rewrote README's title and called
         # release; the gate ran four minutes before the case's timeout stopped it. A measurement never commits.
         return Verdict("refuse", None, "a quality case measures SYRAX; it never releases a change")
+    if kind in ("autonomous", "eval") and level != READ_ONLY and (gits := git_targets(decision.targets)):
+        # audit 2026-10-28: a hook or config written into .git ran inside the server's next git command
+        return Verdict("refuse", None, f"{', '.join(gits[:3])}: git's own files (hooks, config, the worktree link); "
+                       "SYRAX's own work never writes them")
     if kind in ("autonomous", "eval") and level != READ_ONLY and (judged := protected_targets(decision.targets)):
         # the protected set: own work may read the judges, never write them (the release would refuse it anyway)
         return Verdict("refuse", None, f"{', '.join(judged)}: this file judges SYRAX's own work; only a human changes it")

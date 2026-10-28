@@ -72,12 +72,72 @@ def remove_worktree(worktree: Path, live_root: Path) -> None:
     _git(["worktree", "prune"], live_root)
 
 
+# Audit 2026-10-28: SYRAX's own work could write .git/hooks/pre-commit (or core.fsmonitor in a config) and the
+# server's next `git commit`/`git status` ran it, outside every guard. Every git the server process starts runs with
+# hooks and fsmonitor off: config passed in the environment outranks any repository's own config.
+GIT_SAFE_CONFIG = (("core.hooksPath", "/dev/null"), ("core.fsmonitor", "false"))
+
+
+def git_safe_env(base: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    env = dict(os.environ if base is None else base)
+    n = int(env.get("GIT_CONFIG_COUNT", "0") or 0)
+    have = {env.get(f"GIT_CONFIG_KEY_{i}") for i in range(n)}
+    for key, value in GIT_SAFE_CONFIG:
+        if key not in have:
+            env[f"GIT_CONFIG_KEY_{n}"], env[f"GIT_CONFIG_VALUE_{n}"] = key, value
+            n += 1
+    env["GIT_CONFIG_COUNT"] = str(n)
+    return env
+
+
+def install_git_safety() -> None:
+    """Put the safe git config into this process's environment, for every git it or its libraries start."""
+    os.environ.update(git_safe_env())
+
+
+# the `.git` link of every worktree this process made, as git wrote it (devloop.isolate)
+WORKTREE_LINKS: Dict[str, str] = {}
+
+
+def remember_worktree_link(wt: Path) -> None:
+    try:
+        WORKTREE_LINKS[str(Path(wt).resolve())] = (Path(wt) / ".git").read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+
+
+def check_worktree_link(cwd: Path) -> None:
+    """A worktree's `.git` file must still say what git wrote. Own code may write inside its worktree (Landlock grants
+    the tree), so a rewritten link could lend git a config, hooks or filters of its making (audit 2026-10-28). A
+    worktree this process made must match its recorded link; any other must point at a `.git/worktrees/<name>`
+    directory outside the worktree itself."""
+    link = Path(cwd) / ".git"
+    if not link.is_file():
+        return
+    try:
+        text = link.read_text(encoding="utf-8", errors="replace").strip()
+    except OSError as e:
+        raise RuntimeError(f"cannot read {link}: {e}")
+    known = WORKTREE_LINKS.get(str(Path(cwd).resolve()))
+    if known is not None:
+        if text != known:
+            raise RuntimeError(f"{link} was changed after git made it: refusing to run git there")
+        return
+    target = Path(text[len("gitdir:"):].strip()) if text.startswith("gitdir:") else None
+    if target is not None:
+        target = (target if target.is_absolute() else link.parent / target).resolve()
+    if (target is None or target.parent.name != "worktrees" or target.parent.parent.name != ".git"
+            or not target.parent.parent.is_dir() or target.is_relative_to(Path(cwd).resolve())):
+        raise RuntimeError(f"{link} does not point at a repository's .git/worktrees: refusing to run git there")
+
+
 def _git(args: Sequence[str], cwd: Path, timeout: float = 60) -> subprocess.CompletedProcess:
     """git with its output read as UTF-8. Live 2026-10-19: the daily ledger release failed with "unsupported operand
     type(s) for +: 'NoneType' and 'str'": on Windows text mode read the diff as cp1252, a UTF-8 byte (0x90) killed
-    the reader thread, and stdout came back None."""
+    the reader thread, and stdout came back None. Hooks and fsmonitor are off, and a worktree's link is checked."""
+    check_worktree_link(Path(cwd))
     return subprocess.run(["git", *args], cwd=str(cwd), capture_output=True, text=True, encoding="utf-8", errors="replace",
-                          timeout=timeout)
+                          timeout=timeout, env=git_safe_env())
 
 
 def changed_files(root: Path) -> Dict[str, str]:
@@ -366,6 +426,7 @@ class DevLoop:
         add = _git(["worktree", "add", "--detach", str(wt), "HEAD"], self.live_root)
         if add.returncode != 0:
             raise RuntimeError(f"git worktree add failed: {(add.stderr or add.stdout).strip()[:300]}")
+        remember_worktree_link(wt)  # what git wrote; checked before every git run there (check_worktree_link)
         prepare_worktree(wt, self.live_root)  # the untracked runtime files a checkout needs to import
         self.live_baseline = dict(self.baseline)  # the human's uncommitted work in the running tree stays protected
         self.isolated, self.root, self.baseline = wt, wt, {}
