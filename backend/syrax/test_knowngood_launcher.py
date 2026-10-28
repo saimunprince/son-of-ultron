@@ -356,7 +356,8 @@ def test_respawn_starts_a_self_restart(launcher, monkeypatch):
 
 def test_journal_fallback_runs_the_known_good_code_against_the_given_journal(launcher, tmp_path, monkeypatch):
     """The real subprocess: `python -m syrax.knowngood` from a backend folder, the journal named by the environment."""
-    monkeypatch.setattr(launcher, "VENV", Path(sys.executable).resolve().parents[1])  # this venv runs the test
+    # .absolute(), not .resolve(): on Linux the venv python is a symlink into uv's interpreter, outside the venv
+    monkeypatch.setattr(launcher, "VENV", Path(sys.executable).absolute().parents[1])  # this venv runs the test
     db = tmp_path / "journal.db"
     env = {**os.environ, "SYRAX_JOURNAL_FILE": str(db)}
     assert launcher.journal_fallback(ROOT / "backend", env, X, K, "the core exited 3 s after it started")

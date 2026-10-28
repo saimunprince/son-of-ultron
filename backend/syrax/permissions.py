@@ -351,7 +351,10 @@ def classify(name: str, args: Any) -> Decision:
                 resolved, _ = resolve_path(path, cmd)
             except Exception:
                 resolved = Path(path)
-            return Decision(name, WRITE, f"edits {Path(path).name}", [str(resolved)], [], scope_of(resolved))
+            # a Windows drive path (C:/Users/...) on Linux/macOS names a place outside this machine's workspace,
+            # though the editor would make it a folder named "C:" there (2026-10-28)
+            scope = "outside" if os.sep == "/" and _DRIVE.match(path.strip().strip("'\"")) else scope_of(resolved)
+            return Decision(name, WRITE, f"edits {Path(path).name}", [str(resolved)], [], scope)
         return Decision(name, READ_ONLY, "views a file", [path] if path else [])
     if name == "apply_patch":  # Phase 3: a unified diff; its paths are the targets, so the protected set is checked per file
         from syrax.selfedit import diff_paths, normalize_headers, work_root
@@ -401,10 +404,13 @@ def _strings(value: Any) -> str:
 
 # ——— the human's words ———
 
+_DRIVE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
 def _norm(p: str) -> str:
     s = os.path.expanduser(str(p).strip().strip("'\""))
     s = os.path.normcase(os.path.normpath(s)).replace("\\", "/")
-    return s
+    return s.lower() if _DRIVE.match(s) else s  # a Windows drive path is case-blind on every host
 
 
 def _basename(p: str) -> str:

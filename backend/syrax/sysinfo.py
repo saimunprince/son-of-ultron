@@ -95,7 +95,7 @@ def gpu() -> Optional[Dict[str, Any]]:
             capture_output=True,
             text=True,
             timeout=2,
-            creationflags=subprocess.CREATE_NO_WINDOW if WINDOWS else 0,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if WINDOWS else 0,  # the constant exists only on Windows
         )
         if res.returncode != 0:
             return None
@@ -121,7 +121,7 @@ def gpu() -> Optional[Dict[str, Any]]:
                 capture_output=True,
                 text=True,
                 timeout=5,
-                creationflags=subprocess.CREATE_NO_WINDOW,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             if res.returncode == 0 and res.stdout.strip():
                 import json

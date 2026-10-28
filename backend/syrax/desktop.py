@@ -91,7 +91,7 @@ async def _run(*args: str, timeout: float = 15, stdin: Optional[bytes] = None, d
             stderr=asyncio.subprocess.DEVNULL, env=env, **kw,
         )
         return 0, "", ""
-    kw = {"creationflags": subprocess.CREATE_NO_WINDOW} if WINDOWS else {}
+    kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if WINDOWS else {}
     proc = await asyncio.create_subprocess_exec(
         *args, stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env, **kw,

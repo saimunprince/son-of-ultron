@@ -59,6 +59,8 @@ def resolve_path(raw: str, command: str) -> Tuple[Path, Optional[str]]:
     p = Path(guard.canonical_path(str(raw).strip().strip('"').strip("'")))
     if p.is_absolute():
         return p, None
+    if os.sep == "/" and "\\" in str(p):  # a Windows-style relative path (syrax\prompt.py) on Linux/macOS (2026-10-28)
+        p = Path(str(p).replace("\\", "/"))
     bases = [REPO_ROOT, BACKEND_ROOT, WORKSPACE]
     for base in bases:
         cand = base / p
