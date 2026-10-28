@@ -330,6 +330,12 @@ def change_facts(files: List[str]) -> dict:
             "backend": str(root / "backend")}
 
 
+# mission 2026-10-28: a bound on tool calls per task (steps bound the model's turns, but one turn may call many tools)
+TOOL_BUDGET = {"autonomous": int(os.getenv("SYRAX_MAX_TOOL_CALLS_OWN", "120")), "eval": int(os.getenv("SYRAX_MAX_TOOL_CALLS_OWN", "120"))}
+TOOL_BUDGET_HUMAN = int(os.getenv("SYRAX_MAX_TOOL_CALLS", "400"))
+BUDGET_STOPPED = (
+    "Stopped: this task used its budget of {n} tool calls. What I did is in the journal; the task is not finished."
+)
 LOOP_STOPPED = (
     "Stopped: I called {name} with the same arguments {n} times in a row without making progress. "
     "What I did before that is in the journal; the task is not finished."
@@ -418,6 +424,7 @@ class SyraxAgent(Manus):
     reply_before_action: bool = False  # last_reply was written beside a tool call: it says what was about to happen
     seen_calls: dict = Field(default_factory=dict)  # tool+args already run this turn
     repeats: int = 0  # consecutive calls that were repeats of an earlier one
+    calls_spent: int = 0  # tool calls in this task (TOOL_BUDGET); not `tool_calls`, the base agent's list of this turn's calls
     fail_streak: list = Field(default_factory=list)  # tools of the consecutive calls that ran and failed (REPLAN_NOTE)
     loop_stopped: bool = False  # the task was ended because it kept repeating one call
     release_called: bool = False  # `release` ran in this task (whatever its outcome)
@@ -505,6 +512,7 @@ class SyraxAgent(Manus):
         self.reply_before_action = False
         self.seen_calls = {}
         self.repeats = 0
+        self.calls_spent = 0
         self.fail_streak = []
         self.loop_stopped = False
         self.release_called = False
@@ -893,8 +901,19 @@ class SyraxAgent(Manus):
         the tool itself (``_call_tool``, under the MCP timeout) and the bookkeeping on its result."""
         key = _call_key(command)
         seen = self.seen_calls
-        problem = await browser.ensure_browser() if name.startswith("browser_") else None
-        if name not in ("terminate", "ask_human") and key in seen:
+        budget = TOOL_BUDGET.get(self.task_kind, TOOL_BUDGET_HUMAN)
+        if name not in ("terminate", "ask_human"):
+            self.calls_spent += 1
+        problem = await browser.ensure_browser() if name.startswith("browser_") and self.calls_spent <= budget else None
+        if name not in ("terminate", "ask_human") and self.calls_spent > budget:
+            result = BUDGET_STOPPED.format(n=budget)
+            self.loop_stopped = True  # ended by a bound, like a loop: never reported as done
+            self.last_reply, self.reply_before_action = result, False
+            self.state = AgentState.FINISHED
+            await self._send({"type": "notice", "text": f"Stopped: the task's budget of {budget} tool calls is spent."})
+            await self._send({"type": "budget", "event": "exhausted", "tool_calls": self.calls_spent - 1, "budget": budget,
+                              "step": self.current_step})
+        elif name not in ("terminate", "ask_human") and key in seen:
             # the same call again (live: self_inspect(summary) six times in a row) is a loop, not progress
             self.repeats += 1
             if self.repeats >= LOOP_LIMIT:

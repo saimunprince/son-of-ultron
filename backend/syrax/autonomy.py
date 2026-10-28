@@ -41,6 +41,9 @@ from syrax.journal import ALL_OBJECTIVES, BACKEND_ROOT, Journal, JournalError
 REPO_ROOT_PATH = BACKEND_ROOT.parent
 
 MAX_ATTEMPTS = 3
+# mission 2026-10-28: SYRAX's own work per local day (the operator's forced cycles are not counted)
+DAILY_TASKS = int(os.getenv("SYRAX_DAILY_TASKS", "40"))
+CONTROLLER_STATES = ("OBSERVING", "SELECTING", "WORKING", "VERIFYING", "WAITING", "STOPPED", "DISABLED")
 # Tools that cannot be exercised "harmlessly" without a real need: verifying them
 # on their own would mean junk releases, junk skills, fake memories or uncited
 # conclusions. Their evidence comes from real use.
@@ -826,6 +829,7 @@ class Autonomy:
         # Phase 1: when idle, rank own limitations and work on the strongest
         self.reflect = os.getenv("SYRAX_REFLECT", "1") != "0"
         self.reports: List[CycleReport] = []
+        self.state: dict = {}
         self._loop_task: Optional[asyncio.Task] = None
         self._cycle_running = False
         self.recover_active("process restarted")
@@ -883,6 +887,12 @@ class Autonomy:
     async def set_enabled_async(self, on: bool) -> None:
         await self.journal.run(self.set_enabled, on)
 
+    def _saved_state(self) -> dict:
+        try:
+            return json.loads(self.journal.get_meta("autonomy_state") or "{}")
+        except ValueError:
+            return {}
+
     def status(self) -> dict:
         last = self.reports[-1].to_dict() if self.reports else None
         counts = {st: 0 for st in ("OPEN", "ACTIVE", "DONE", "BLOCKED", "DROPPED")}
@@ -892,6 +902,9 @@ class Autonomy:
         return {
             "enabled": self.enabled,
             "estop": estop.state(self.journal),
+            "state": self.state or self._saved_state(),
+            "autonomous_today": self.autonomous_today(),
+            "daily_tasks": DAILY_TASKS,
             "running_loop": self._loop_task is not None and not self._loop_task.done(),
             "interval_s": self.interval,
             "last_cycle": last,
@@ -901,6 +914,38 @@ class Autonomy:
             "pressure": resources.pressure(snap),
             "last_maintenance": self.journal.get_meta("last_maintenance"),
         }
+
+    # ——— controller state and selection record (mission 2026-10-28) ———
+
+    async def _state(self, name: str, **info) -> None:
+        """The controller's state (OBSERVING, SELECTING, WORKING, VERIFYING, WAITING, STOPPED, DISABLED), kept in the
+        journal's meta so a restart and the operator read it; a change of state is journaled as autonomy.state."""
+        if name not in CONTROLLER_STATES:
+            raise ValueError(name)
+        prev = self.state.get("state")
+        self.state = {"state": name, "at": time.time(), **{k: v for k, v in info.items() if v is not None}}
+        await self.journal.run(self.journal.set_meta, "autonomy_state", json.dumps(self.state, default=str))
+        if name != prev:
+            await self.journal.record("autonomy.state", {"from": prev, **self.state})
+
+    async def _selected(self, objective: dict) -> None:
+        """Why this objective: its own reason, evidence and check, and the open alternatives it was chosen over
+        (priority, then age: journal.objectives / _pick)."""
+        others = [o for o in self.journal.objectives(limit=6, status="OPEN") if o["id"] != objective["id"]][:3]
+        spec = objective.get("check_spec") or objective.get("check") or None
+        await self.journal.record("goal.selected", {
+            "objective_id": objective["id"], "goal": str(objective.get("goal") or "")[:200],
+            "priority": objective.get("priority"), "reason": str(objective.get("reason") or "")[:300],
+            "attempts": objective.get("attempts"), "success_check": spec if isinstance(spec, (dict, str)) else None,
+            "rule": "highest priority, then oldest, among OPEN objectives whose dependencies are done",
+            "alternatives": [{"id": o["id"], "priority": o.get("priority"), "goal": str(o.get("goal") or "")[:120]} for o in others],
+        })
+        await self._state("WORKING", objective_id=objective["id"])
+
+    def autonomous_today(self) -> int:
+        """Autonomous tasks started since local midnight."""
+        midnight = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
+        return sum(1 for t in self.journal.tasks(limit=500) if t.get("kind") == "autonomous" and (t.get("created") or 0) >= midnight)
 
     # ——— one cycle ———
 
@@ -941,6 +986,12 @@ class Autonomy:
             return await self._finish(rep)
         if await self._restart_if_pending(rep):
             return await self._finish(rep)
+        spent = await asyncio.to_thread(self.autonomous_today)
+        if spent >= DAILY_TASKS and not force:
+            # mission 2026-10-28: a daily budget for SYRAX's own work (the operator's cycle_now is not counted against it)
+            rep.outcome, rep.reason = "SKIPPED", f"daily budget spent: {spent} of {DAILY_TASKS} autonomous tasks today (SYRAX_DAILY_TASKS)"
+            return await self._finish(rep)
+        await self._state("OBSERVING")
         await self.journal.record("cycle.started", {"forced": force})
         try:
             rep.derived = await self.journal.run(derive_objectives, self.journal, self.core.selfmodel)
@@ -964,6 +1015,7 @@ class Autonomy:
                 await self.journal.run(catalog.reopen_regressed, self.journal)
             except Exception as e:
                 logger.warning(f"re-checking catalog features failed: {e}")
+        await self._state("SELECTING")
         objective = self._pick()
         if objective is None and self.reflect:
             # Phase 1: nothing is failing loudly, so ask what limits SYRAX most
@@ -1073,6 +1125,7 @@ class Autonomy:
                     logger.warning(f"maintenance failed: {e}")
             return await self._finish(rep)
         rep.objective_id = objective["id"]
+        await self._selected(objective)
         if contracts.needs_a_check(objective):
             # no task is spent on an objective that nothing could ever prove done
             await self.journal.update_objective(objective["id"], status="BLOCKED", note=contracts.NOT_VERIFIABLE,
@@ -1149,6 +1202,7 @@ class Autonomy:
                 await asyncio.to_thread(repro.harvest, self.journal, objective, task)
             except Exception as e:
                 logger.warning(f"repro harvest failed: {e}")
+        await self._state("VERIFYING", objective_id=objective["id"], task_id=task_id)
         # ——— reflect: expected vs actual, judged from evidence ———
         verdict, evidence = await asyncio.to_thread(judge, self.journal, objective, task)
         judged = verdict
@@ -1276,6 +1330,11 @@ class Autonomy:
         return True
 
     async def _finish(self, rep: CycleReport) -> CycleReport:
+        after = {"STOPPED": "STOPPED", "DISABLED": "DISABLED"}.get(rep.outcome, "WAITING")
+        try:
+            await self._state(after, last_outcome=rep.outcome, reason=rep.reason)
+        except Exception as e:  # the state row is a report, never a reason to lose the cycle
+            logger.warning(f"could not record the autonomy state: {e}")
         self.reports.append(rep)
         if len(self.reports) > 200:
             self.reports = self.reports[-200:]

@@ -78,6 +78,8 @@ def _journal_type(event: dict) -> Optional[str]:
         return "change.started"  # Phase 4: a release task's first repository edit, its covering tests and rollback point
     if t == "plan" and event.get("event") == "replan":
         return "plan.replan"  # Phase 2: REPLAN_STREAK failed calls in a row, the approach must change (agent.REPLAN_NOTE)
+    if t == "budget" and event.get("event") == "exhausted":
+        return "budget.exhausted"  # mission 2026-10-28: the task's tool-call budget (agent.TOOL_BUDGET) ended it
     if t in ("think", "ask", "final"):
         return t
     return None
