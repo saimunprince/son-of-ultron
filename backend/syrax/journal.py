@@ -2035,6 +2035,18 @@ class Journal:
             row = self._db.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
         return self._task_dict(row) if row else None
 
+    def own_tasks_since(self, since: float, kind: Optional[str] = None) -> int:
+        """Tasks this PC started at or after `since` (optionally of one kind). A task merged in from another PC's journal
+        (syrax-tools/import_windows_journal.py) keeps its ids shifted below zero, so its last event id is negative:
+        it is history, never this PC's spending (2026-10-29: the daily autonomy budget counted 15 Windows tasks)."""
+        sql = "SELECT COUNT(*) FROM tasks WHERE created>=? AND (last_event_id IS NULL OR last_event_id>=0)"
+        params: list = [since]
+        if kind:
+            sql += " AND kind=?"
+            params.append(kind)
+        with self._lock:
+            return int(self._db.execute(sql, params).fetchone()[0])
+
     def tasks(self, limit: int = 20, status: Optional[str | Iterable[str]] = None) -> List[dict]:
         limit = max(1, min(int(limit), 500))
         sql = "SELECT * FROM tasks"

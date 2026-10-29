@@ -968,9 +968,10 @@ class Autonomy:
         await self._state("WORKING", objective_id=objective["id"])
 
     def autonomous_today(self) -> int:
-        """Autonomous tasks started since local midnight."""
+        """This PC's autonomous tasks started since local midnight: counted in the journal, never among a newest-500
+        window, and without tasks merged in from another PC's journal (Journal.own_tasks_since)."""
         midnight = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
-        return sum(1 for t in self.journal.tasks(limit=500) if t.get("kind") == "autonomous" and (t.get("created") or 0) >= midnight)
+        return self.journal.own_tasks_since(midnight, kind="autonomous")
 
     # ——— one cycle ———
 
