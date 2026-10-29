@@ -52,6 +52,7 @@ def wallpaper(action: str = "get", path: Optional[str] = None) -> str:
 
 class Skill(BaseTool):
     name: ClassVar[str] = "wallpaper"
+    platforms: ClassVar[tuple] = ("win32",)  # Windows code only: never offered as a tool elsewhere (skills.platform_problem)
     description: ClassVar[str] = ("Show (get) or change (set) the desktop wallpaper to an existing local image "
                                   "(.jpg, .png, .bmp). A change reports the old wallpaper so it can be undone.")
     risk: ClassVar[str] = "SYSTEM"

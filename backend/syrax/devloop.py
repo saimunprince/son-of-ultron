@@ -262,6 +262,10 @@ JUDGES = (
     "backend/syrax/selfedit.py", "backend/syrax/conftest.py",
     # and the rules that catch SYRAX's own false claims (audit 2026-10-27): agent.py keeps the flow and imports them
     "backend/syrax/claims.py",
+    # and the flow that applies those rules and the brains that answer (Prince, 2026-10-29): agent.py decides when a
+    # claim is checked, what a refused call returns and the tool budget; brains.py which model answers and what it
+    # is shown. A self-release that edits either could switch a check off without touching claims.py
+    "backend/syrax/agent.py", "backend/syrax/brains.py",
 )
 
 

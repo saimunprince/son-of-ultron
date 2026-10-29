@@ -164,7 +164,7 @@
         "verify_operation for str_replace_editor create/str_replace/insert",
         "bounded context storage (200 KB)",
         "maintain(): 30-day retention of chatty events and checkpoint contexts for finished tasks, WAL truncate, measured counts",
-        "backup.snapshot(): once a day when idle, a verified copy (integrity_check, row counts, sha256) of journal.db, brains.json, memory.json and config.toml into backend/config/backups/<stamp>, 7 kept; restore only by a human (python syrax.py --restore)"
+        "backup.snapshot(): once a day when idle, a verified copy (integrity_check, row counts, sha256) of journal.db, brains.json, journal.db.key, memory.json and config.toml into backend/config/backups/<stamp>, 7 kept; restore only by a human (python syrax.py --restore)"
       ],
       "limitations": [
         "file edits are reality-checked and calls that only read resume safely (F5); code, browser and writing calls stay UNCERTAIN with their level and targets listed",
@@ -173,7 +173,7 @@
       ],
       "code": [
         "backend/syrax/journal.py",
-        "backend/syrax/backup.py (daily verified snapshot of journal.db, brains.json, memory.json, config.toml; human-run restore)",
+        "backend/syrax/backup.py (daily verified snapshot of journal.db, brains.json, journal.db.key, memory.json, config.toml; human-run restore)",
         "backend/syrax/knowngood.py (journals restart.fallback and a reminder when the launcher starts the core from the last known-good commit in .syrax/known-good because a restarted core did not come up)",
         "backend/syrax/redact.py (the credential mask: every log line and the journal's copies of goal, think, tool args, tool output and checkpoint context are masked at write time)"
       ],

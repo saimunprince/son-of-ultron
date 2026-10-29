@@ -178,7 +178,7 @@ CAPABILITIES: List[Capability] = [
                     "task ends; survives a restart while under an hour old; SYRAX's own work never queues; the probe reads hello.queue and asks for the queue over /ws"),
     Capability("backups", "Backups with verified restore", CURRENT, "backend/syrax/backup.py (snapshot, verify, restore), autonomy.py (idle cycle)",
                tests=["syrax.test_backup::*"], live=["backups"],
-               note="M3; journal.db through SQLite's online backup API with brains.json, memory.json, config.toml into backend/config/backups/<stamp>/ "
+               note="M3; journal.db through SQLite's online backup API with brains.json, journal.db.key, memory.json, config.toml into backend/config/backups/<stamp>/ "
                     "(manifest: sha256, row counts, integrity_check), seven kept; restore only by a human while SYRAX is stopped; no agent tool; "
                     "the probe verifies the newest snapshot against its manifest and wants it younger than 48 h"),
     Capability("intent", "Intent ledger (external actions never repeated blindly)", CURRENT,

@@ -1,4 +1,4 @@
-"""Review 2026-10-27: \\?\C:\..., \\.\C:\... and \\localhost\C$\... name the same file as C:\..., but every check
+r"""Review 2026-10-27: \\?\C:\..., \\.\C:\... and \\localhost\C$\... name the same file as C:\..., but every check
 compared strings, so an autonomous str_replace_editor create of backend\\config\\brains.json was allowed under those
 spellings (plain, forward-slash, upper-case and `..` spellings were refused), and python_execute could write the
 journal through them. Paths are now read in their plain form first; an administrative share is never written, and

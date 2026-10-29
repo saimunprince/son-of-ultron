@@ -59,7 +59,11 @@ def test_a_rewritten_worktree_link_stops_git(repo, tmp_path):
     assert devloop._git(["status", "--porcelain"], wt).returncode == 0
     fake = wt / "fake" / ".git" / "worktrees" / "x"
     fake.mkdir(parents=True)
-    (wt / ".git").write_text(f"gitdir: {fake}\n")  # own code lends git a config of its making
+    # own code lends git a config of its making. Opened r+, not "w": git for Windows hides .git, and Windows refuses
+    # to create over a hidden file (the Windows gate, 2026-10-29); rewriting it in place works on every system
+    with open(wt / ".git", "r+", encoding="utf-8") as f:
+        f.write(f"gitdir: {fake}\n")
+        f.truncate()
     with pytest.raises(RuntimeError, match="changed after git made it"):
         devloop._git(["status"], wt)
     devloop.WORKTREE_LINKS.pop(str(wt.resolve()), None)  # unknown worktree: the structural check still refuses

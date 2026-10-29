@@ -98,7 +98,8 @@ def ensure_spawn() -> None:
 ensure_spawn()
 
 # What kind of task is running (core._begin_now sets it): SYRAX's own work ("autonomous") gets a kernel write
-# boundary around its code; a human's request keeps the reach the human gave it (home, desktop) under the guard.
+# boundary around its code; a human's request keeps the reach the human gave it (home, desktop) minus the secrets
+# (human_boundary, since 2026-10-29).
 TASK_KIND: Optional[str] = None
 WRITE_ROOTS: tuple = ()  # extra writable roots for the running task (its isolation worktree)
 CONFINED_KINDS = ("autonomous",)
@@ -164,6 +165,88 @@ def list_roots(repo: Optional[str] = None) -> list:
     return sorted(set(out))
 
 
+# A human's request (Prince, 2026-10-29: "your python_execute too"): its code keeps the reach the human gave it (the
+# home folders, the desktop, the web, local ports) and loses what an injected instruction would go for. It reads the
+# system and home except the secrets (HUMAN_SECRETS, backend/config); it writes the home's ordinary folders, /tmp and
+# the workspace, never a dotfile (a shell rc or an autostart entry would run injected code again later), the
+# repository's .git (hooks) or its isolation worktrees. Landlock grants whole
+# trees, so a folder holding a sealed one is granted entry by entry (_grant), and an entry whose real path is or lies
+# in a sealed folder (a symlink to ~/.ssh) is never granted.
+HUMAN_SECRETS = (".ssh", ".gnupg", ".claude", ".aws", ".azure", ".kube", ".docker", ".password-store", ".pki",
+                 ".netrc", ".git-credentials", ".pgpass", ".config/gh", ".config/gcloud", ".local/share/keyrings",
+                 ".mozilla", ".config/google-chrome", ".config/chromium", ".config/BraveSoftware")
+HUMAN_WRITE_DOT = (".cache",)  # the one dot folder a human's code writes: pip, matplotlib and model caches
+OTHER_READ = ("/media", "/mnt", "/srv")
+HUMAN_TMP = ("/tmp",)  # read and written whole: a human asks for /tmp/x.png
+
+
+def _grant(root, sealed: set) -> list:
+    """The entries under `root` minus the `sealed` real paths: an ancestor of a sealed path is walked into, anything
+    else is granted whole; an entry that is, or resolves into, a sealed path is left out. Compared as strings: with
+    pathlib's is_relative_to one build took 0.9 s, paid by every python_execute call."""
+    out = []
+    shut = [str(x) for x in sealed]
+
+    def inside(a: str, b: str) -> bool:
+        return a == b or a.startswith(b.rstrip("/") + "/")
+
+    def walk(d) -> None:
+        try:
+            entries = sorted(d.iterdir())
+        except OSError:
+            return
+        for entry in entries:
+            try:
+                real = str(entry.resolve())
+            except OSError:
+                continue
+            if any(inside(real, x) for x in shut):
+                continue
+            if any(inside(x, real) for x in shut):
+                walk(entry)
+            else:
+                out.append(str(entry))
+
+    walk(root)
+    return out
+
+
+def _repositories(repo) -> list:
+    """`repo` and, when it is a git worktree (a `.git` file "gitdir: <main>/.git/worktrees/<name>"), the main
+    repository it belongs to: a gate or a test runs from a worktree, and the live keys sit in the main one."""
+    from pathlib import Path
+
+    out = [repo]
+    try:
+        line = (repo / ".git").read_text(encoding="utf-8").strip()
+    except OSError:
+        return out
+    if line.startswith("gitdir:"):
+        gitdir = Path(line[len("gitdir:"):].strip())
+        if gitdir.parent.name == "worktrees" and gitdir.parent.parent.name == ".git":
+            out.append(gitdir.parent.parent.parent)
+    return out
+
+def human_boundary(tmpdir: str, out_path: str) -> dict:
+    """The Landlock spec of a human's python_execute and skill calls (HUMAN_SECRETS, _grant)."""
+    from pathlib import Path
+
+    from app.config import config
+    from syrax.journal import BACKEND_ROOT
+
+    home, repo = Path.home(), BACKEND_ROOT.parent
+    repos = _repositories(repo)
+    secrets = {(home / s).resolve() for s in HUMAN_SECRETS} | {(r / s).resolve() for r in repos for s in SEALED}
+    dots = {e.resolve() for e in home.iterdir() if e.name.startswith(".") and e.name not in HUMAN_WRITE_DOT} if home.is_dir() else set()
+    no_write = secrets | dots | {(r / d).resolve() for r in repos for d in (".git", ".syrax")}
+    readable = [p for p in (*SYSTEM_READ, *OTHER_READ, *HUMAN_TMP) if os.path.exists(p)]
+    readable += sorted({sys.prefix, sys.base_prefix, os.path.dirname(os.path.dirname(os.path.realpath(sys.executable)))})
+    readable += _grant(home, secrets) + _grant(repo, secrets) + [str(repo / f) for f in UNSEALED if (repo / f).is_file()]
+    writable = [str(config.workspace_root), *map(str, WRITE_ROOTS), tmpdir, out_path, *HUMAN_TMP, "/dev/null", "/dev/shm"]
+    writable += _grant(home, no_write) + _grant(repo, no_write)  # the repository wherever it lies, minus its .git
+    return {"readable": readable, "writable": writable, "listable": sorted({str(home), *list_roots()})}
+
+
 def confinement(kind: Optional[str], out_path: str, tmpdir: str, timeout: int) -> dict:
     """The OS confinement spec a python_execute worker applies before it runs (syrax._confine.apply)."""
     spec = {
@@ -182,6 +265,11 @@ def confinement(kind: Optional[str], out_path: str, tmpdir: str, timeout: int) -
         # browser's debug port, the local model (11434) or ssh, at the kernel (2026-10-29; Landlock ABI 4+)
         spec["tcp_connect"] = list(OWN_TCP_PORTS)
         spec["require_landlock"] = sys.platform.startswith("linux")  # fail closed where the kernel boundary exists
+    elif sys.platform.startswith("linux"):
+        # a human's request: its reach minus the secrets (HUMAN_SECRETS). Its environment stays whole: the human may
+        # hand a key to their own script (test_env_secrets), and the session bus opens apps and notifications
+        spec.update(human_boundary(tmpdir, out_path))
+        spec["require_landlock"] = True
     return spec
 
 # Windows starts a worker by spawning a fresh interpreter, and spawn re-imports the parent's __main__ module first

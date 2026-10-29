@@ -29,7 +29,8 @@ def test_own_work_s_code_sees_no_secrets(monkeypatch):
     monkeypatch.setattr(tools, "TASK_KIND", "autonomous")
     monkeypatch.setattr(tools, "WRITE_ROOTS", ())
     code = ("names = sorted(os.environ)\n"
-            "child = subprocess.run(['env'], capture_output=True, text=True).stdout\n"
+            "child = subprocess.run([sys.executable, '-c', 'import os; print(chr(10).join(k + \"=\" for k in os.environ))'], "
+            "capture_output=True, text=True).stdout\n"
             "print([k for k in " + repr(list(FAKE)) + " if k in names or k + '=' in child])")
     out = asyncio.new_event_loop().run_until_complete(tools.AsyncPythonExecute().execute(code=code, timeout=60))
     assert "['HARMLESS']" in out["observation"], out

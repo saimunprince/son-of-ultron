@@ -336,7 +336,9 @@ def test_ws_skills_carry_the_code_version_and_rollback_and_enable_round_trip(scr
         s = sk["skills"][0]
         assert s["content_hash"] == h1 and s["code_version"] == 3 and s["status"] == "VERIFIED" and s["registered"] and s["kept_versions"] == [2]
 
-        ws.send_json({"type": "task", "text": "remove it"})
+        # removing a skill is DESTRUCTIVE since 2026-10-29 (test_skill_remove_permission): a request that names it goes
+        # through, a bare "remove it" would ask the human first
+        ws.send_json({"type": "task", "text": "remove the shout skill"})
         r3, _ = recv_until(ws, "tool_result")
         assert r3["ok"] and "disabled" in r3["output"]
         drain_until_idle(ws)

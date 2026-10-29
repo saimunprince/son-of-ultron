@@ -70,7 +70,7 @@ def _journal_type(event: dict) -> Optional[str]:
         return f"brain.{event['event']}"
     if t == "permission" and event.get("event") in ("authorized", "refused"):
         return f"permission.{event['event']}"
-    if t == "claim" and event.get("event") in ("rejected", "uncited"):
+    if t == "claim" and event.get("event") in ("rejected", "uncited", "staged"):
         return f"claim.{event['event']}"
     if t == "intent" and event.get("event") in ("recorded", "done", "refused", "uncertain"):
         return f"intent.{event['event']}"  # the intent ledger (intent.py): recovery reads recorded-without-done
@@ -150,6 +150,7 @@ TASK_DEADLINE_S = {
     "eval": None,
 }
 DEADLINE_REASON = "ran out of time: the task's deadline ({span}) passed"
+ESTOP_AT_START = "emergency stop: it was set while the task was starting, so the task never ran"
 QUALITY_TIMEOUT_REASON = "the quality case ran out of time"  # quality.py's runner cancels with this text
 
 
@@ -594,7 +595,7 @@ class Core:
     async def _begin(
         self, goal: str, said: Optional[str], session_id: Optional[str], kind: str,
         max_steps: Optional[int], seed: Optional[dict], task_id: Optional[str] = None,
-    ) -> str:
+    ) -> Optional[str]:
         """Start a task now (the caller holds ``_submit_lock`` and knows the core is free). A ``task_id``
         names a queued (PENDING) task to begin; otherwise a new task row is created."""
         self._starting += 1  # busy from here, not only once the coroutine exists
@@ -610,7 +611,7 @@ class Core:
     async def _begin_now(
         self, goal: str, said: Optional[str], session_id: Optional[str], kind: str,
         max_steps: Optional[int], seed: Optional[dict], task_id: Optional[str],
-    ) -> str:
+    ) -> Optional[str]:
         await self.ensure_agent()
         await asyncio.to_thread(self.devloop.begin_task)  # a task owns only the changes it makes
         if task_id is None:
@@ -657,6 +658,21 @@ class Core:
             if hasattr(self.agent, "import_context"):
                 self.agent.import_context(self._human_context)
             self._human_context = None
+        from syrax import estop
+
+        if kind in estop.BLOCKED_KINDS and await asyncio.to_thread(estop.active, self.journal):
+            # Audit 2026-10-29: submit checked the stop before the agent build, the worktree and the routing above
+            # (minutes, at worst); an E-STOP pressed meanwhile found no running task to cancel. Checked again at the
+            # last moment: the task ends CANCELLED, nothing of it runs, and the caller sees a refusal (None).
+            await self._mark("task.cancelled", {"error": ESTOP_AT_START, "error_class": "human"})  # the operator stopped it
+            await self.journal.record("estop.refused", {"kind": kind, "goal": redact.mask(said or goal)[:200],
+                                                        "task_id": task_id, "stage": "start"})
+            try:
+                await _to_the_end(self._clean_repo_after_task(), "the cleanup after a stopped start")
+            finally:
+                self.current = None
+                await self.broadcast({"type": "state", "state": "idle"})
+            return None
         self._launch(goal, said)
         return task_id
 

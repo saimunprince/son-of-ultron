@@ -38,7 +38,7 @@ from syrax.claims import (  # noqa: F401
     BOAST, SELF_ASKED, without_boasts, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
     OUTCOME_NUDGE, OUTCOME_NOTE, DISPUTE_MAX, DISPUTE_NO, DISPUTE, DISPUTE_NUDGE, DISPUTE_NOTE, DISPUTE_ACTS,
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
-    _OBSERVED, _body, _level_known,
+    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines,
 )
 
 # Replaces OpenManus' per-step prompt ("proactively select the most appropriate
@@ -441,6 +441,7 @@ class SyraxAgent(Manus):
     acted: set = Field(default_factory=set)  # classes of the tools that succeeded this task (classes_of): OUTCOME_CLAIMS
     tests: Optional[str] = None  # "pass"/"fail": the last test run this task saw (state_of_tests)
     refusals: list = Field(default_factory=list)  # (tool, reason) of the calls the permission gate refused this task
+    staged: list = Field(default_factory=list)  # lines python_execute printed as fixed text this task (staged_lines)
     exact_form: Optional[dict] = None  # the short form the request demands (exact_form), checked once the run is over
     form_asked: bool = False  # the form wrap-up went out (FORM_ASK or FORM_FINAL_ASK): it is asked for once
     given_patch: Optional[dict] = None  # the diff the request gives to apply exactly (given_patch): nothing else changes its files
@@ -531,6 +532,7 @@ class SyraxAgent(Manus):
         self.acted = set()
         self.tests = None
         self.refusals = []
+        self.staged = []
         self.intents, self.inherited_intents = dict(self.inherited_intents), {}
         self.consents = []
         self.grants = {}
@@ -689,6 +691,7 @@ class SyraxAgent(Manus):
             if TEST_CLAIM.search(self.last_reply or ""):
                 self.last_reply = TEST_FALLBACK
                 self.unproven = self.unproven or "tests"
+        await self._note_staged()
         if self._unreleased_edits(request):
             # live 2026-10-14 (objective 224, attempt 3): thirty steps of edits, no `release`, and the final said
             # "implemented ... and verified"; the edits were rolled back when the task ended. Say so in the answer.
@@ -701,6 +704,10 @@ class SyraxAgent(Manus):
         if masked != self.last_reply:
             await self._send({"type": "notice", "text": "The answer quoted a credential the request did not ask for: masked."})
             self.last_reply = masked
+        if not self.last_reply or self.last_reply == ECHO_FALLBACK:
+            # Audit 2026-10-29 (lifecycle): "I could not put the result into a clean answer" and the bare "Done." were
+            # recorded SUCCESS. An answer that admits it is none, or is missing, is not a completed task: PARTIAL.
+            self.unproven = self.unproven or "no_answer"
         self.task_goal, self.task_kind = "", "conversation"  # the core sets them again for the next task
         return self.last_reply or "Done."
 
@@ -999,6 +1006,8 @@ class SyraxAgent(Manus):
                 if _succeeded(result) and name == "research":
                     self.researched = True
                 self.tests = state_of_tests(name, result) or self.tests
+                if name == "python_execute" and _succeeded(result):
+                    result += await self._staged_after(_args_of(command))
                 if (self.release_brief and not self.change_noted and name in ("str_replace_editor", "apply_patch")
                         and _succeeded(result) and changes_something(name, _args_of(command))):
                     result += await self._change_started(name, _args_of(command))
@@ -1006,6 +1015,29 @@ class SyraxAgent(Manus):
                     self.consents.append((str(_args_of(command).get("inquire", "")), _OBSERVED.sub("", result, count=1).strip()))
                 result += await self._streak_after(name, result)
         return result
+
+    async def _staged_after(self, args: Any) -> str:
+        """STAGED_NOTE for a python_execute run whose code printed a failure as fixed text (staged_lines); recorded
+        for the final check (_note_staged) and journaled claim.staged."""
+        lines = staged_lines(str((args if isinstance(args, dict) else {}).get("code") or ""))
+        if not lines:
+            return ""
+        self.staged.extend(lines)
+        await self._send({"type": "claim", "event": "staged", "lines": lines[:10], "task_kind": self.task_kind,
+                          "step": self.current_step})
+        return STAGED_NOTE.format(lines=", ".join(f"`{x}`" for x in lines[:10]))
+
+    async def _note_staged(self) -> bool:
+        """An answer that repeats a line the code printed as fixed text gets STAGED_FINAL_NOTE and ends unproven."""
+        flat = " ".join((self.last_reply or "").split())
+        quoted = [x for x in dict.fromkeys(self.staged) if " ".join(x.split()) in flat]
+        if not quoted:
+            return False
+        await self._send({"type": "claim", "event": "rejected", "text": (self.last_reply or "")[:500], "task_kind": self.task_kind})
+        await self._send({"type": "notice", "text": "The answer repeats a line the code printed as fixed text: noted as not observed."})
+        self.last_reply = (self.last_reply or "").rstrip() + STAGED_FINAL_NOTE.format(lines=", ".join(f"`{x}`" for x in quoted))
+        self.unproven = self.unproven or "staged"
+        return True
 
     async def _streak_after(self, name: str, result: str) -> str:
         """The bookkeeping of failed calls in a row for a call that ran: a success resets it; the REPLAN_STREAK-th

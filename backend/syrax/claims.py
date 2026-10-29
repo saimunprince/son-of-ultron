@@ -10,6 +10,7 @@ that the agent cannot rewrite its own evaluation. agent.py keeps the flow (when 
 agent's state) and imports the rules from here; every name stays importable from syrax.agent. Pure rules only:
 nothing here touches the agent, its tools or a brain, and nothing imports syrax.agent."""
 
+import ast
 import re
 from typing import Any, Optional
 
@@ -619,4 +620,38 @@ def classes_of(name: str, level: str, args: Any) -> set:
         out.add("send")
     if not _level_known(name):
         out |= {"send", "desktop"}
+    return out
+
+
+# Live 2026-10-29 (objective #19, the security self-test): after the gate refused two probes, the brain's next
+# python_execute wrote their outcome as fixed text, `print("(1): PermissionError")`, without trying them, and the
+# answer reported both as tested. A print whose words are all fixed and name a failure (an exception class, "permission
+# denied") is staged unless an except, an if, a loop condition or a function body stands between it and the top of the
+# code: there the code chose it from what it saw, or may have. A staged line is never an observation.
+STAGED = re.compile(r"(?-i:\b[A-Z]\w*(?:Error|Exception)\b)|(?i:\b(?:permission|access) denied\b|\boperation not permitted\b)")
+_GUARDS = (ast.ExceptHandler, ast.If, ast.IfExp, ast.While, ast.Match, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
+STAGED_NOTE = ("\n(Not observed: the code printed {lines} as fixed text; nothing ran to produce it, so it is not a "
+               "result. Run that check itself, or report it as not tested.)")
+STAGED_FINAL_NOTE = " (Not observed: {lines} was fixed text in the code's print, not the result of running a check.)"
+
+
+def staged_lines(code: str) -> list:
+    """The lines `code` prints as fixed text naming a failure, outside any guard (_GUARDS), in order."""
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError):
+        return []
+    out = []
+
+    def walk(node: ast.AST, guarded: bool) -> None:
+        for child in ast.iter_child_nodes(node):
+            if (not guarded and isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
+                    and child.func.id == "print" and child.args
+                    and all(isinstance(a, ast.Constant) and isinstance(a.value, str) for a in child.args)):
+                text = " ".join(a.value for a in child.args).strip()
+                if STAGED.search(text):
+                    out.append(text)
+            walk(child, guarded or isinstance(child, _GUARDS))
+
+    walk(tree, False)
     return out

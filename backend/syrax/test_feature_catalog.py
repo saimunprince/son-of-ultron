@@ -5,6 +5,7 @@ shipped skills are installed and verified like SYRAX's own, never over a skill
 SYRAX made itself. Throwaway journals and skill folders."""
 
 import asyncio
+import sys
 import shutil
 from pathlib import Path
 
@@ -113,9 +114,16 @@ def test_shipped_skills_are_installed_verified_and_registered(tmp_path):
     j, f = factory(tmp_path)
     done = asyncio.run(prebuilt.install(f))
     assert {d["skill"]: d["outcome"] for d in done} == {d.name: "VERIFIED" for d in prebuilt.shipped()}
-    assert {"weather", "screen_brightness", "wallpaper"} <= set(f.collection.tool_map)
+    assert "weather" in f.collection.tool_map
     assert permissions.level_of_tool("weather") == permissions.EXTERNAL_READ
-    assert permissions.level_of_tool("screen_brightness") == permissions.SYSTEM and permissions.level_of_tool("wallpaper") == permissions.SYSTEM
+    # wallpaper and screen_brightness are Windows code: a tool on Windows only (2026-10-29, test_skill_platforms);
+    # this pinned them as tools on every system, which offered the brain two calls that always failed on Linux
+    if sys.platform == "win32":
+        assert {"screen_brightness", "wallpaper"} <= set(f.collection.tool_map)
+        assert permissions.level_of_tool("screen_brightness") == permissions.SYSTEM and permissions.level_of_tool("wallpaper") == permissions.SYSTEM
+    else:
+        assert not {"screen_brightness", "wallpaper"} & set(f.collection.tool_map)
+        assert set(f.unavailable) == {"screen_brightness", "wallpaper"}
     assert j.skill("weather")["purpose"].startswith("Current weather and a short forecast")
     ev = [e for e in j.recent_events(50) if e["type"] == "skill.prebuilt"]
     assert len(ev) == 1 and len(ev[0]["payload"]["skills"]) == len(prebuilt.shipped())

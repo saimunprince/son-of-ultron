@@ -34,6 +34,7 @@ import { DISMISS_INTERRUPTED, HistoryList, ReplayView, UNCERTAIN_RESUME, WhyView
 import Stage from "@/components/Stage";
 import { estopLabel, estopMessage, estopOn, estopTitle } from "@/lib/estop";
 import { levelOf, levelStep, levelTitle } from "@/lib/autonomyLevel";
+import { isResubmit, type LastSent } from "@/lib/submitGuard";
 import BootSequence from "@/components/BootSequence";
 import UltronEyes from "@/components/UltronEyes";
 import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
@@ -154,6 +155,7 @@ export default function Syrax() {
   const voiceOnRef = useRef(true);
   const talkRef = useRef<LiveTalk | null>(null);
   const pendingAskRef = useRef<string | null>(null);
+  const lastSentRef = useRef<LastSent>(null); // the double-submit guard (lib/submitGuard)
   const runningTaskRef = useRef<string | null>(null); // the task the backend runs now (hello.running, task.started)
 
   const [camera, setCamera] = useState<CameraState>("off");
@@ -689,6 +691,17 @@ export default function Syrax() {
     };
   }, [theme]);
 
+  /** Send a control message; when the link is down say so (audit 2026-10-29: E-STOP, the level, AUTO and the rest
+   * were dropped without a word while offline, and the operator could believe a stop had been sent). */
+  const command = useCallback(
+    (msg: ClientMessage, what: string): boolean => {
+      const sent = clientRef.current?.send(msg) ?? false;
+      if (!sent) push({ kind: "error", id: nextId++, text: `LINK OFFLINE: ${what} was not sent. Start the SYRAX backend.` });
+      return sent;
+    },
+    [push],
+  );
+
   // Backend link lifecycle
   useEffect(() => {
     const client = new SyraxClient(DEFAULT_WS_URL, {
@@ -723,6 +736,8 @@ export default function Syrax() {
       stopSpeaking();
       unlockAudio();
       const asking = pendingAskRef.current !== null;
+      const now = Date.now();
+      if (isResubmit(lastSentRef.current, text, now, asking)) return; // a double Enter or click: queued once
       const sent = asking
         ? client.send({ type: "answer", text })
         : client.send({ type: "task", text, voice, queue: true }); // never lost while SYRAX works: it waits its turn
@@ -730,6 +745,7 @@ export default function Syrax() {
         push({ kind: "error", id: nextId++, text: "LINK OFFLINE. Start the SYRAX backend." });
         return;
       }
+      if (!asking) lastSentRef.current = { text, at: now };
       if (asking) setPendingAsk(null);
       arm(0);
       if (!voice) setInput("");
@@ -737,14 +753,19 @@ export default function Syrax() {
     [arm, input, push],
   );
 
-  const saveBrains = useCallback((changes: Record<string, BrainChange>, order: string[], selfChangeBrain?: string | null) => {
-    clientRef.current?.send({
-      type: "brains_save",
-      providers: changes,
-      order,
-      ...(selfChangeBrain === undefined ? {} : { self_change_brain: selfChangeBrain }),
-    });
-  }, []);
+  const saveBrains = useCallback(
+    (changes: Record<string, BrainChange>, order: string[], selfChangeBrain?: string | null): boolean =>
+      command(
+        {
+          type: "brains_save",
+          providers: changes,
+          order,
+          ...(selfChangeBrain === undefined ? {} : { self_change_brain: selfChangeBrain }),
+        },
+        "the brain settings",
+      ),
+    [command],
+  );
 
   const loadModels = useCallback((id: string, apiKey?: string) => {
     if (clientRef.current?.send({ type: "brain_models", id, ...(apiKey ? { api_key: apiKey } : {}) }))
@@ -837,16 +858,20 @@ export default function Syrax() {
   }, [speaking]);
 
   /** reason is journaled with the stop, so a cancelled task says what stopped it */
-  const stopTask = useCallback((reason: string) => {
-    stopSpeaking();
-    clientRef.current?.send({ type: "stop", reason });
-  }, []);
+  const stopTask = useCallback(
+    (reason: string) => {
+      stopSpeaking();
+      command({ type: "stop", reason }, "the stop");
+    },
+    [command],
+  );
 
   const resetMemory = useCallback(() => {
+    // audit 2026-10-29: one click wiped the conversation, and the feed was cleared even when nothing was sent
+    if (!window.confirm("Wipe SYRAX's conversation memory? The journal keeps its history.")) return;
     stopSpeaking();
-    clientRef.current?.send({ type: "reset" });
-    setEntries([]);
-  }, []);
+    if (command({ type: "reset" }, "the memory wipe")) setEntries([]);
+  }, [command]);
 
   // ——— Hands-free voice control ———
   const onHeard = useCallback(
@@ -1200,8 +1225,8 @@ export default function Syrax() {
               <WhyView
                 detail={taskDetail}
                 onBack={() => setTaskDetail(null)}
-                onResume={(id, force) => clientRef.current?.send(force ? { type: "resume", task_id: id, force: true, note: "confirmed in the UI" } : { type: "resume", task_id: id })}
-                onDismiss={(id) => clientRef.current?.send({ type: "dismiss", task_id: id, note: "dismissed in the UI" })}
+                onResume={(id, force) => command(force ? { type: "resume", task_id: id, force: true, note: "confirmed in the UI" } : { type: "resume", task_id: id }, "the resume")}
+                onDismiss={(id) => command({ type: "dismiss", task_id: id, note: "dismissed in the UI" }, "the dismiss")}
               />
             ) : historyTasks === null ? (
               <div className="entry entry-notice">Reading the journal…</div>
@@ -1290,7 +1315,7 @@ export default function Syrax() {
                           onClick={() => {
                             const a = e.action!;
                             if (a.confirm && !window.confirm(a.confirm)) return;
-                            clientRef.current?.send(a.msg);
+                            command(a.msg, `"${a.label}"`);
                           }}
                         >
                           {e.action.label}
@@ -1303,7 +1328,7 @@ export default function Syrax() {
                           onClick={() => {
                             const a = e.secondary!;
                             if (a.confirm && !window.confirm(a.confirm)) return;
-                            clientRef.current?.send(a.msg);
+                            command(a.msg, `"${a.label}"`);
                           }}
                         >
                           {e.secondary.label}
@@ -1502,7 +1527,7 @@ export default function Syrax() {
             type="button"
             className="hud-btn"
             aria-pressed={estopOn(autonomy)}
-            onClick={() => clientRef.current?.send(estopMessage(autonomy))}
+            onClick={() => command(estopMessage(autonomy), "the emergency stop")}
             title={estopTitle(autonomy)}
             style={{ color: "#ff4d4d", borderColor: "#ff4d4d" }}
           >
@@ -1511,7 +1536,7 @@ export default function Syrax() {
           <button
             type="button"
             className="hud-btn"
-            onClick={() => clientRef.current?.send(levelStep(autonomy, -1))}
+            onClick={() => command(levelStep(autonomy, -1), "the autonomy level")}
             title={levelTitle(autonomy)}
             disabled={levelOf(autonomy) <= 1}
           >
@@ -1521,7 +1546,7 @@ export default function Syrax() {
           <button
             type="button"
             className="hud-btn"
-            onClick={() => clientRef.current?.send(levelStep(autonomy, 1))}
+            onClick={() => command(levelStep(autonomy, 1), "the autonomy level")}
             title={levelTitle(autonomy)}
             disabled={levelOf(autonomy) >= 5}
           >
@@ -1532,7 +1557,7 @@ export default function Syrax() {
             className="hud-btn"
             aria-pressed={!!autonomy?.enabled}
             disabled={estopOn(autonomy)}
-            onClick={() => clientRef.current?.send({ type: "autonomy", enabled: !autonomy?.enabled })}
+            onClick={() => command({ type: "autonomy", enabled: !autonomy?.enabled }, "the autonomy switch")}
             title={autonomy?.pressure ? `Paused: ${autonomy.pressure}` : "Let SYRAX pursue its own objectives when idle"}
           >
             {autonomy?.enabled ? `AUTO ON · ${autonomy.objectives.OPEN} OPEN${autonomy.pressure ? " · PAUSED" : ""}` : "AUTO OFF"}
@@ -1542,7 +1567,7 @@ export default function Syrax() {
               type="button"
               className="hud-btn"
               aria-pressed={startup.enabled}
-              onClick={() => clientRef.current?.send({ type: "startup", enabled: !startup.enabled })}
+              onClick={() => command({ type: "startup", enabled: !startup.enabled }, "the start-at-login switch")}
               title="Start SYRAX when Windows starts (the next login; this run keeps going)"
             >
               {startup.enabled ? "BOOT ON" : "BOOT OFF"}
@@ -1566,7 +1591,7 @@ export default function Syrax() {
               title={`Voice: ${voicePick.current} (click for the next one)`}
               onClick={() => {
                 const i = voicePick.voices.indexOf(voicePick.current);
-                clientRef.current?.send({ type: "voice_set", voice: voicePick.voices[(i + 1) % voicePick.voices.length] });
+                command({ type: "voice_set", voice: voicePick.voices[(i + 1) % voicePick.voices.length] }, "the voice change");
               }}
             >
               VOICE · {voicePick.current.split("-")[2]?.replace(/Multilingual|Neural/g, "").toUpperCase() || voicePick.current}
@@ -1636,7 +1661,7 @@ export default function Syrax() {
           tab={mindTab}
           data={mind}
           onTab={openMind}
-          send={(msg) => clientRef.current?.send(msg)}
+          send={(msg) => command(msg, "the request")}
           onClose={() => setMindTab(null)}
         />
       )}

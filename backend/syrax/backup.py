@@ -11,6 +11,9 @@ What is copied, into backend/config/backups/<YYYYMMDD-HHMMSS>/ (a ``backups`` fo
   journal.db      through sqlite3's online backup API on the journal's own connection: consistent under
                   WAL while SYRAX keeps writing; the copy is a plain rollback-journal file (no -wal/-shm)
   brains.json     the API keys. THE FOLDER HOLDS SECRETS: the manifest says so and the folder is gitignored
+  journal.db.key  the HMAC key of the journal's event chain (journal.verify_chain): the journal is only provable
+                  with it, so they travel together (audit 2026-10-28; a restored journal with a fresh key failed
+                  every chained event). Secret like brains.json, and restored at mode 600
   memory.json, config.toml
   manifest.json   {created, git_head, secrets, files: {name: {bytes, sha256}}, journal: {tasks, events,
                   objectives, integrity}}
@@ -62,11 +65,13 @@ BACKUP_ROOT = BACKEND_ROOT / "config" / "backups"
 KEEP = 7
 EVERY_S = 86400.0
 JOURNAL_NAME = "journal.db"
-CONFIG_FILES = ("brains.json", "memory.json", "config.toml")
+CONFIG_FILES = ("brains.json", "journal.db.key", "memory.json", "config.toml")
+SECRET_FILES = ("brains.json", "journal.db.key")
 MANIFEST = "manifest.json"
 COUNTED = ("tasks", "events", "objectives")
 STAMP_RE = re.compile(r"^\d{8}-\d{6}(-\d+)?$")
-SECRETS_NOTE = "brains.json holds the API keys: keep this folder private, never commit or share it"
+SECRETS_NOTE = ("brains.json holds the API keys and journal.db.key the journal's chain key: keep this folder private, "
+                "never commit or share it")
 # the launcher's marks of a running SYRAX (syrax.py: PID_FILE, BACKEND_PORT)
 PID_FILE = BACKEND_ROOT.parent / "syrax.pid"
 BACKEND_PORT = int(os.getenv("SYRAX_PORT", "8765"))
@@ -168,8 +173,8 @@ def snapshot(journal: Journal, dest_root: Optional[Path | str] = None, config_di
             "created_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now)),
             "git_head": _git_head(BACKEND_ROOT.parent),
             "source": str(Path(journal.path).resolve()),
-            "secrets": "brains.json" in files,
-            "note": SECRETS_NOTE if "brains.json" in files else "no brains.json was beside the journal",
+            "secrets": any(n in files for n in SECRET_FILES),
+            "note": SECRETS_NOTE if any(n in files for n in SECRET_FILES) else "no brains.json or journal.db.key was beside the journal",
             "bytes": sum(f["bytes"] for f in files.values()),
             "files": files,
             "journal": info,
@@ -386,10 +391,11 @@ def restore(dir: Path | str, config_dir: Optional[Path | str] = None, now: Optio
         if _sha256(config_dir / name) != manifest["files"][name]["sha256"]:
             raise BackupError(f"{name} did not copy back intact; the previous files are in {aside}")
         restored.append(name)
-    try:
-        os.chmod(config_dir / JOURNAL_NAME, 0o600)
-    except OSError:
-        pass
+    for name in (JOURNAL_NAME, *SECRET_FILES):
+        try:
+            os.chmod(config_dir / name, 0o600)
+        except OSError:
+            pass
     return {"ok": True, "dir": str(d), "restored": restored, "replaced": replaced, "replaced_to": str(aside) if replaced else None,
             "journal": v["journal"], "warnings": warnings}
 

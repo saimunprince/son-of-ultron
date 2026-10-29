@@ -968,9 +968,10 @@ class Autonomy:
         await self._state("WORKING", objective_id=objective["id"])
 
     def autonomous_today(self) -> int:
-        """Autonomous tasks started since local midnight."""
+        """This PC's autonomous tasks started since local midnight: counted in the journal, never among a newest-500
+        window, and without tasks merged in from another PC's journal (Journal.own_tasks_since)."""
         midnight = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
-        return sum(1 for t in self.journal.tasks(limit=500) if t.get("kind") == "autonomous" and (t.get("created") or 0) >= midnight)
+        return self.journal.own_tasks_since(midnight, kind="autonomous")
 
     # ——— one cycle ———
 
@@ -1207,6 +1208,10 @@ class Autonomy:
             rep.outcome, rep.reason = "SKIPPED", f"could not start the task: {e}"
             return await self._finish(rep)
         if task_id is None:
+            if await asyncio.to_thread(estop.active, self.journal):  # the stop met the task at its start (core._begin_now)
+                await self.journal.update_objective(objective["id"], status="OPEN", note="emergency stop: not an attempt")
+                rep.outcome, rep.reason = "STOPPED", "emergency stop is on"
+                return await self._finish(rep)
             await self.journal.update_objective(objective["id"], status="OPEN", note="core busy")
             rep.outcome, rep.reason = "BUSY", "core refused the task"
             return await self._finish(rep)
@@ -1222,6 +1227,14 @@ class Autonomy:
             await self.journal.update_objective(objective["id"], status="OPEN", last_task_id=task_id,
                                                 note="no brain could be reached: not an attempt")
             rep.outcome, rep.reason = "NO_BRAIN", "no brain could be reached; the objective stays open"
+            return await self._finish(rep)
+        if task.get("status") == "CANCELLED" and await asyncio.to_thread(estop.active, self.journal):
+            # Audit 2026-10-29: an E-STOP during a forced cycle (cycle_now runs detached, so stopping the loop does not
+            # end it) cancelled the task, which was then judged a failed attempt: three of them BLOCKED the objective
+            # and derived follow-ups while the stop was on. The operator's stop is never the objective's failure.
+            await self.journal.update_objective(objective["id"], status="OPEN", last_task_id=task_id,
+                                                note="emergency stop: not an attempt")
+            rep.outcome, rep.reason = "STOPPED", "emergency stop is on; the objective stays open"
             return await self._finish(rep)
         if spec.get("kind") == "repro_proven":
             # what the hunt left in its worktree is judged by code: screened, bound to the evidence, proved, filed
