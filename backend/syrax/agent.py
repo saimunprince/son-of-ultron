@@ -704,6 +704,10 @@ class SyraxAgent(Manus):
         if masked != self.last_reply:
             await self._send({"type": "notice", "text": "The answer quoted a credential the request did not ask for: masked."})
             self.last_reply = masked
+        if not self.last_reply or self.last_reply == ECHO_FALLBACK:
+            # Audit 2026-10-29 (lifecycle): "I could not put the result into a clean answer" and the bare "Done." were
+            # recorded SUCCESS. An answer that admits it is none, or is missing, is not a completed task: PARTIAL.
+            self.unproven = self.unproven or "no_answer"
         self.task_goal, self.task_kind = "", "conversation"  # the core sets them again for the next task
         return self.last_reply or "Done."
 
