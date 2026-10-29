@@ -59,7 +59,7 @@ and a Chromium-based browser for the browser tool.
 python syrax.py --dev              # hot-reloading UI for development
 python syrax.py --setup            # install only, do not start
 python syrax.py --gate             # run the release gate
-python syrax.py --backup           # verified copy of journal.db, brains.json, memory.json, config.toml into backend/config/backups (7 kept)
+python syrax.py --backup           # verified copy of journal.db, brains.json, journal.db.key, memory.json, config.toml into backend/config/backups (7 kept)
 python syrax.py --restore DIR      # put a backup folder back; refuses while SYRAX runs
 python syrax.py --stop             # stop the running SYRAX (--restart: stop, then start in the background)
 python syrax.py --token            # print the token a non-browser client needs for /ws, /live and the voice endpoints

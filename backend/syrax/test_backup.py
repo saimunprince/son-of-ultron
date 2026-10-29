@@ -57,11 +57,11 @@ def test_snapshot_copies_a_consistent_journal_and_the_manifest_tells_the_truth(t
     m = backup.snapshot(j)
     d = Path(m["dir"])
     assert d.parent == tmp_path / "config" / "backups" and backup.STAMP_RE.match(d.name)
-    # exactly the four files and the manifest: the copy is self-contained, no -wal/-shm travel with it
-    assert sorted(p.name for p in d.iterdir()) == ["brains.json", "config.toml", "journal.db", "manifest.json", "memory.json"]
+    # exactly the five files (the chain key among them) and the manifest: the copy is self-contained, no -wal/-shm travel with it
+    assert sorted(p.name for p in d.iterdir()) == ["brains.json", "config.toml", "journal.db", "journal.db.key", "manifest.json", "memory.json"]
     on_disk = json.loads((d / "manifest.json").read_text(encoding="utf-8"))
     assert on_disk["journal"] == m["journal"] == {"tasks": 3, "events": events_before, "objectives": 1, "integrity": "ok"}
-    assert set(on_disk["files"]) == {"brains.json", "config.toml", "journal.db", "memory.json"}
+    assert set(on_disk["files"]) == {"brains.json", "config.toml", "journal.db", "journal.db.key", "memory.json"}
     assert all(len(f["sha256"]) == 64 and f["bytes"] > 0 for f in on_disk["files"].values())
     assert on_disk["bytes"] == sum(f["bytes"] for f in on_disk["files"].values()) == m["bytes"]
     assert on_disk["secrets"] is True and "API keys" in on_disk["note"]  # the folder holds brains.json: it says so
@@ -192,10 +192,10 @@ def test_restore_reproduces_the_rows_and_refuses_while_syrax_runs(tmp_path, monk
     assert "rotated" in (cfg / "brains.json").read_text(encoding="utf-8") and not list((cfg / "backups").glob("_replaced-*"))
     monkeypatch.setattr(backup, "running", lambda config_dir=None: None)
     r = backup.restore(d, config_dir=cfg)
-    assert r["ok"] and sorted(r["restored"]) == ["brains.json", "config.toml", "journal.db", "memory.json"]
+    assert r["ok"] and sorted(r["restored"]) == ["brains.json", "config.toml", "journal.db", "journal.db.key", "memory.json"]
     aside = Path(r["replaced_to"])
     assert aside.parent == cfg / "backups" and aside.name.startswith("_replaced-")
-    assert sorted(r["replaced"]) == ["brains.json", "config.toml", "journal.db", "journal.db-wal", "memory.json"]
+    assert sorted(r["replaced"]) == ["brains.json", "config.toml", "journal.db", "journal.db-wal", "journal.db.key", "memory.json"]
     assert "rotated" in (aside / "brains.json").read_text(encoding="utf-8") and (aside / "journal.db-wal").exists()
     assert not (cfg / "journal.db-wal").exists()
     assert (cfg / "brains.json").read_text(encoding="utf-8") == (d / "brains.json").read_text(encoding="utf-8")
