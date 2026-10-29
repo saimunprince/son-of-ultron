@@ -6,7 +6,7 @@ or a subprocess with a clean environment walks past it (audit 2026-10-28). This 
 - ``own_group()``: the worker leads a process group of its own, so a timeout or a cancel kills everything it started
   with one ``killpg`` (before, the tree was found through psutil, which this machine did not have: nothing but the
   worker died on Linux).
-- ``limits()``: CPU seconds, address space, file size and core dumps are capped with setrlimit.
+- ``limits()``: CPU seconds, writable memory (RLIMIT_DATA), file size and core dumps are capped with setrlimit.
 - ``landlock(writable)``: Linux Landlock (kernel 5.13+, no package): from here on this process and everything it
   starts can create, change, rename or delete files only beneath the given paths, whatever path, symlink, hard link
   or subprocess it uses; reading is not restricted. With Landlock ABI 6+ it also may not signal processes outside
@@ -170,7 +170,10 @@ def limits(cpu_s: Optional[int] = None, memory_mb: Optional[int] = None, file_mb
     except ImportError:
         return {}
     applied = {}
-    for name, value in (("RLIMIT_CPU", cpu_s), ("RLIMIT_AS", memory_mb and memory_mb * MB),
+    # memory is capped with RLIMIT_DATA, not RLIMIT_AS (live 2026-10-29): Chrome, Node and other JITs reserve hundreds
+    # of GB of address space they never touch, so an 8 GB AS cap killed headless Chrome at launch (SIGTRAP; the
+    # flight_search skill in own work). DATA counts the writable memory a process really takes.
+    for name, value in (("RLIMIT_CPU", cpu_s), ("RLIMIT_DATA", memory_mb and memory_mb * MB),
                         ("RLIMIT_FSIZE", file_mb and file_mb * MB), ("RLIMIT_CORE", 0)):
         if value is None or not hasattr(resource, name):
             continue
