@@ -4,11 +4,11 @@ The short, current page: where SYRAX stands now, what was done, what is next. Up
 Detail lives in [docs/AUDIT_2026-10-28.md](docs/AUDIT_2026-10-28.md) (findings and the open list), the commit
 messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
-## Now (2026-10-29, 18:45 +0600)
+## Now (2026-10-29, 19:15 +0600)
 
 - **Stage:** stabilized on Linux and running live with autonomy at **level 3** (it may edit its workspace and run
   code; no self-release, no self-restart). The emergency stop is off.
-- **main:** `0c9f898` and later. Every change went through a red test first, then the full release gate (about
+- **main:** `bee0cd0` and later. Every change went through a red test first, then the full release gate (about
   2,500 tests plus the frontend build) GREEN, then a push.
 - **Machines:** this Linux PC is the main one. The Windows PC still runs its own copy. Its journal (history from
   2026-09-30) was merged here on 10-29.
@@ -88,12 +88,12 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
   everything on this network" idle line. "Sensor grid calibrated" and "telemetry online" are no longer logged
   unconditionally.
 
-### In the gate now (pushed when GREEN)
 
 - **Own work may never remove a skill.** Live today at 14:24, an autonomous task asked to improve `flight_search`
   removed it instead, and the journal blamed the human. Removing a skill is now DESTRUCTIVE: refused for own work,
   and asked first when a human request does not name it.
 - **An admitted non-answer ends PARTIAL,** not SUCCESS ("I could not put the result into a clean answer").
+- **`flight_search` is back on.** The operator re-enabled it; it re-ran its tests and is VERIFIED again.
 
 ## Open
 
@@ -104,8 +104,6 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 - **10 Windows skills have no code on this PC:** make_docx, make_xlsx, make_pptx, make_pdf, disk_usage, image_tools,
   json_tools, youtube_open, aircraft_nearby and system_optimizer. Copy their `backend/skills/<name>` folders, then
   rerun the import.
-- **`flight_search` is still disabled** from the 14:24 incident. It needs `skill_enable` (an operator action) once the
-  fix above is live.
 - **From the audits, not fixed yet:**
   - **Journal write failures:** a failed write during a task is only counted, and the task can still end SUCCESS.
     If the write that failed was an `intent.recorded`, recovery cannot see that a send may have gone out.
@@ -118,8 +116,7 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
 ## Next
 
-1. Push the two fixes in the gate, then turn `flight_search` back on.
-2. Journal write failures must stop a task from claiming SUCCESS.
-3. Connect capability-gap detection to research and skill creation, and add a real-use check before a skill is
+1. Journal write failures must stop a task from claiming SUCCESS.
+2. Connect capability-gap detection to research and skill creation, and add a real-use check before a skill is
    trusted.
-4. Watch tomorrow's autonomy cycles. Tune Ollama when the machine is free.
+3. Watch tomorrow's autonomy cycles. Tune Ollama when the machine is free.
