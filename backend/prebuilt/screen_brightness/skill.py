@@ -53,6 +53,7 @@ def brightness(action: str = "get", level: Optional[int] = None) -> str:
 
 class Skill(BaseTool):
     name: ClassVar[str] = "screen_brightness"
+    platforms: ClassVar[tuple] = ("win32",)  # Windows code only: never offered as a tool elsewhere (skills.platform_problem)
     description: ClassVar[str] = ("Read (get) or change (set, 0-100) the brightness of this computer's built-in screen. "
                                   "A set reports the old level so it can be undone.")
     risk: ClassVar[str] = "SYSTEM"

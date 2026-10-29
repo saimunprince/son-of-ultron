@@ -508,6 +508,20 @@ def schema_problems(tool: BaseTool) -> List[str]:
     return out
 
 
+class NotOnThisPlatform(ValueError):
+    """A verified skill that declares the operating systems it runs on, and this is not one of them."""
+
+
+def platform_problem(tool: Any) -> Optional[str]:
+    """Why `tool` cannot run here, or None. A skill may declare `platforms` (sys.platform values: "win32", "linux",
+    "darwin"); none declared means every system. Audit 2026-10-29: wallpaper and screen_brightness are Windows code
+    (ctypes.windll, powershell) yet were VERIFIED tools on Linux, offered to the brain and failing at every call."""
+    plats = getattr(tool, "platforms", None)
+    if plats and sys.platform not in tuple(plats):
+        return f"runs on {', '.join(plats)}, not on {sys.platform}"
+    return None
+
+
 class SkillFactory:
     def __init__(self, journal: Journal, root: Optional[Path] = None, task_id_provider: Optional[Callable[[], Optional[str]]] = None):
         self.journal = journal
@@ -515,6 +529,9 @@ class SkillFactory:
         self.task_id_provider = task_id_provider or (lambda: None)
         self.collection: Optional[ToolCollection] = None  # the live agent's tools
         self.loaded: Dict[str, BaseTool] = {}
+        # verified skills this system cannot run (platform_problem): never registered here, their status untouched,
+        # since the journal may be shared with a PC where they do run (the Windows journal, merged 2026-10-29)
+        self.unavailable: Dict[str, str] = {}
 
     def attach(self, collection: ToolCollection) -> int:
         """Bind to the agent's tool collection and register VERIFIED skills."""
@@ -537,6 +554,8 @@ class SkillFactory:
                     raise ValueError("unsafe code: " + "; ".join(unsafe))
                 self._register(row["name"])
                 n += 1
+            except NotOnThisPlatform as e:
+                self.unavailable[row["name"]] = str(e)
             except Exception as e:  # a skill that no longer loads is not VERIFIED
                 self.journal.set_skill_status_sync(row["name"], "FAILED", note=f"failed to load at boot: {e}")
         return n
@@ -544,6 +563,11 @@ class SkillFactory:
     def _register(self, name: str) -> BaseTool:
         assert self.collection is not None
         tool = load_skill(self.root / name)
+        why = platform_problem(tool)
+        if why:
+            self._unregister(name)
+            raise NotOnThisPlatform(why)
+        self.unavailable.pop(name, None)
         problems = schema_problems(tool)
         if problems:
             raise ValueError("a model could not call it: " + "; ".join(problems))
@@ -797,6 +821,9 @@ class SkillFactory:
             try:
                 await asyncio.to_thread(self._register, name)
                 result["risk"] = permissions.level_of_tool(name)  # with the class's own declaration, if any
+            except NotOnThisPlatform as e:
+                self.unavailable[name] = str(e)  # verified, and kept so; just not a tool on this system
+                result = {**result, "available_here": False, "platform": str(e)}
             except Exception as e:
                 status = "FAILED"
                 result = {**result, "stage": "load", "evidence": f"tests passed but the skill failed to load: {e}"}
@@ -823,7 +850,8 @@ class SkillFactory:
     def list(self) -> List[dict]:
         from syrax import skillevo
 
-        return skillevo.annotate([{**r, "registered": r["name"] in self.loaded, "kept_versions": self.kept_versions(r["name"])}
+        return skillevo.annotate([{**r, "registered": r["name"] in self.loaded, "kept_versions": self.kept_versions(r["name"]),
+                                   **({"not_here": self.unavailable[r["name"]]} if r["name"] in self.unavailable else {})}
                                   for r in self.journal.skills()], self.journal)
 
 
@@ -912,7 +940,7 @@ class SkillListTool(BaseTool):
         if not rows:
             return ToolResult(output="No skills built yet.")
         return ToolResult(output="\n".join(
-            f"- {r['name']} v{r['version']} {r['status']}{' (registered)' if r['registered'] else ''}: {r['purpose']} "
+            f"- {r['name']} v{r['version']} {r['status']}{' (registered)' if r['registered'] else ''}{(' (not available here: ' + r['not_here'] + ')') if r.get('not_here') else ''}: {r['purpose']} "
             f"[{r['tests_passed']} passed/{r['tests_failed']} failed]" + (f" {_code_tag(r)}" if _code_tag(r) else "")
             + (f" ({len(r['kept_versions'])} kept)" if r.get("kept_versions") else "") for r in rows
         ))
