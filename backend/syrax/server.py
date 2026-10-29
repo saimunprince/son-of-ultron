@@ -799,13 +799,16 @@ class Session:
             note = str(msg.get("note") or "")[:300]
             who = f"ws session {self.id} ({self.ws.headers.get('origin') or 'no origin'})"
             if msg.get("on", True):
-                await asyncio.to_thread(estop.set_stop, self.core.journal, note, who)
-                await self.core.autonomy.stop()
-                running = self.core.current
-                if running is not None and self.core.busy:
+                # the running task is named first: stopping the autonomy loop cancels its task, and afterwards nothing
+                # would say the emergency stop ended it (live 2026-10-29: the record said only "aborted by human")
+                running = self.core.current if self.core.busy else None
+                if running is not None:
                     await self.core.journal.record("task.stop_requested", {
                         "session": self.id, "origin": self.ws.headers.get("origin"), "reason": "emergency stop"},
                         task_id=running.task_id)
+                await asyncio.to_thread(estop.set_stop, self.core.journal, note, who)
+                await self.core.autonomy.stop()
+                if running is not None and self.core.busy:
                     await self.core.cancel()
             else:
                 await asyncio.to_thread(estop.clear_stop, self.core.journal, note, who)  # autonomy stays as it was set
