@@ -1,5 +1,7 @@
 # SYRAX — Son of Ultron
 
+**Where it stands now:** [PROGRESS.md](PROGRESS.md) (current stage, what was done, what is next; updated with every push).
+
 > **Villains aren't born. They're made by the people who build them.**
 >
 > Humans gave SYRAX objectives, tools, permissions, and ways to measure success.
