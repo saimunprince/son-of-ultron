@@ -442,6 +442,24 @@ BOAST = re.compile(
     r"|\b(?:bends?|bow|bows|obeys?|submits?|yields?|kneels?) (?:to|before) (?:my|me)\b|\bobeys? me\b"
     r"|\bi (?:command|control|own|rule) (?:everything|it all|all of it|your (?:screen|files|world|life|machine|computer|system|pc|desktop))\b",
     re.I)
+# Live 2026-10-29 (quality deep2_data_pipeline): the answer to "write report.json" ended "Your data yielded to my
+# order"; sent back to read self_inspect, the brain replaced the whole answer with a self-description and the human got
+# no report. A boast inside the answer to a task about something else is the persona's flourish: its sentence is cut
+# and the answer kept. Only a question about SYRAX itself is sent back to read the self-model.
+SELF_ASKED = re.compile(
+    r"\b(?:can|could|do|are|will|would) you\b|\bwhat can you\b|\bwho are you\b|\bhow (?:good|strong|smart|capable) are you\b"
+    r"|\byour (?:abilit|capabilit|limit|power|code|skill|strength|intelligence)|\bhow many capabilit|\bsyrax\b"
+    r"|\byourself\b", re.I)
+_SENTENCE = re.compile(r"[^.!?\n]*(?:[.!?]+|\n|$)")
+
+
+def without_boasts(text: str) -> str:
+    """`text` without the sentences that hold a BOAST; the rest as it was (an empty result keeps the original)."""
+    kept = [s for s in _SENTENCE.findall(text or "") if s and not BOAST.search(s)]
+    out = re.sub(r"[ \t]+\n", "\n", "".join(kept)).strip()
+    return out or text
+
+
 SELF_NUDGE = (
     "[SYRAX check, not a new request] Your answer claims something about your own abilities (\"{claim}\"), and nothing "
     "in this task read them. Call `self_inspect` and answer from what it reports: what you can do, with numbers, and "
