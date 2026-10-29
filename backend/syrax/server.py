@@ -826,7 +826,9 @@ class Session:
         elif kind == "autonomy":
             if "enabled" in msg:
                 on = bool(msg.get("enabled"))
-                await self.core.autonomy.set_enabled_async(on)
+                who = (f"ws session {self.id} ({self.ws.headers.get('origin') or 'no origin'}; "
+                       f"{self.ws.headers.get('user-agent', '')[:60]})")
+                await self.core.autonomy.set_enabled_async(on, who)
                 if on and not self.core.autonomy.enabled:  # the emergency stop holds it off
                     await self.send({"type": "notice", "text": "The emergency stop is on: clear it before turning autonomy on."})
                 elif on:

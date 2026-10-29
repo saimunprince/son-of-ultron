@@ -894,12 +894,14 @@ class Autonomy:
         self.journal.record_sync("autonomy.level_set", {"level": level, "by": by[:120]})
         return level
 
-    def set_enabled(self, on: bool) -> None:
+    def set_enabled(self, on: bool, by: Optional[str] = None) -> None:
         self.journal.set_meta("autonomy_enabled", "1" if on else "0")
-        self.journal.record_sync("autonomy.toggled", {"enabled": on})
+        # who turned it on or off (2026-10-29: autonomy came back on 35 s after an operator's "off" and the record could
+        # not say from where)
+        self.journal.record_sync("autonomy.toggled", {"enabled": on, **({"by": by[:160]} if by else {})})
 
-    async def set_enabled_async(self, on: bool) -> None:
-        await self.journal.run(self.set_enabled, on)
+    async def set_enabled_async(self, on: bool, by: Optional[str] = None) -> None:
+        await self.journal.run(self.set_enabled, on, by)
 
     def _saved_state(self) -> dict:
         try:

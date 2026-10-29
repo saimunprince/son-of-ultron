@@ -120,3 +120,12 @@ def test_own_code_cannot_clear_the_stop_through_the_journal(tmp_path):
 def test_the_controls_are_judges():
     for path in ("estop.py", "server.py", "core.py", "resources.py", "editor.py", "redact.py", "knowngood.py"):
         assert f"backend/syrax/{path}" in JUDGES
+
+
+def test_an_autonomy_toggle_records_who_sent_it(script):
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "autonomy", "enabled": False})
+        recv_until(ws, "autonomy_status")
+    last = [e["payload"] for e in get_journal().recent_events() if e["type"] == "autonomy.toggled"][-1]
+    assert last["enabled"] is False and last["by"].startswith("ws session") and "http://localhost:3000" in last["by"]
