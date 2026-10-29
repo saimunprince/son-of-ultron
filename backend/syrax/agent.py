@@ -38,7 +38,7 @@ from syrax.claims import (  # noqa: F401
     BOAST, SELF_ASKED, without_boasts, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
     OUTCOME_NUDGE, OUTCOME_NOTE, DISPUTE_MAX, DISPUTE_NO, DISPUTE, DISPUTE_NUDGE, DISPUTE_NOTE, DISPUTE_ACTS,
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
-    _OBSERVED, _body, _level_known, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines,
+    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines,
 )
 
 # Replaces OpenManus' per-step prompt ("proactively select the most appropriate
