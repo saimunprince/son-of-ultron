@@ -83,8 +83,15 @@ def measure_worktree(worktree: Path, timeout: float = TEST_TIMEOUT_S) -> dict:
     if not (backend / "syrax").is_dir():
         out["notes"].append("no backend/syrax in this version")
         return out
+    from syrax import _confine
+
+    # 2026-10-29: the version under comparison is code SYRAX may have written; its tests and benchmark change files
+    # only in that worktree and a private TMPDIR (Landlock, applied by the running server's _confine.py)
+    tmp = tempfile.mkdtemp(prefix="syrax_versions_tmp_")
+    env["TMPDIR"] = tmp
     try:
-        proc = subprocess.run([sys.executable, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider"], cwd=str(backend), env=env,
+        proc = subprocess.run(_confine.wrap([sys.executable, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider"], [worktree, tmp]),
+                              cwd=str(backend), env=env,
                               capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
         out["tests"] = {**parse_pytest(proc.stdout + proc.stderr), "exit_code": proc.returncode}
         tail = (proc.stdout + proc.stderr).strip().splitlines()
@@ -94,7 +101,8 @@ def measure_worktree(worktree: Path, timeout: float = TEST_TIMEOUT_S) -> dict:
         out["notes"].append(f"tests timed out after {timeout}s")
     if (backend / "syrax" / "bench.py").is_file():
         try:
-            proc = subprocess.run([sys.executable, "-m", "syrax.bench", "--json"], cwd=str(backend), env=env, capture_output=True,
+            proc = subprocess.run(_confine.wrap([sys.executable, "-m", "syrax.bench", "--json"], [worktree, tmp]), cwd=str(backend),
+                                  env=env, capture_output=True,
                                   text=True, encoding="utf-8", errors="replace", timeout=600)
             if proc.returncode in (0, 1):
                 data = json.loads(proc.stdout)
@@ -107,6 +115,7 @@ def measure_worktree(worktree: Path, timeout: float = TEST_TIMEOUT_S) -> dict:
             out["notes"].append("bench produced no JSON: " + proc.stderr.strip()[-160:])
     else:
         out["notes"].append("no benchmark suite in this version")
+    shutil.rmtree(tmp, ignore_errors=True)
     return out
 
 

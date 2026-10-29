@@ -90,6 +90,41 @@ WRITE_ROOTS: tuple = ()  # extra writable roots for the running task (its isolat
 CONFINED_KINDS = ("autonomous",)
 
 
+SYSTEM_READ = ("/usr", "/lib", "/lib64", "/lib32", "/bin", "/sbin", "/etc", "/proc", "/sys", "/dev", "/run", "/opt",
+               "/snap", "/var")
+HOME_READ = (".gitconfig", ".config/git")  # git refuses to run when it cannot read its config
+SEALED = ("backend/config",)  # the brain keys, the journal, the UI token, the backups' manifests
+
+
+def read_roots(repo: Optional[str] = None) -> list:
+    """What SYRAX's own code may read (2026-10-29): the system, the interpreter and venv, harmless git config, and
+    the live repository except backend/config. Landlock grants whole trees, so the repository is granted entry by
+    entry, and backend entry by entry, leaving the sealed folder out."""
+    from pathlib import Path
+
+    from syrax.journal import BACKEND_ROOT
+
+    root = Path(repo) if repo else BACKEND_ROOT.parent
+    out = [p for p in SYSTEM_READ if os.path.exists(p)]
+    out += sorted({sys.prefix, sys.base_prefix, os.path.dirname(os.path.dirname(os.path.realpath(sys.executable)))})
+    home = Path.home()
+    out += [str(home / h) for h in HOME_READ if (home / h).exists()]
+    sealed = {(root / s).resolve() for s in SEALED}
+
+    def walk(d: Path) -> None:
+        for entry in sorted(d.iterdir()):
+            r = entry.resolve()
+            if r in sealed:
+                continue
+            if any(s.is_relative_to(r) for s in sealed):
+                walk(entry)  # an ancestor of a sealed folder: grant its other entries one by one
+            else:
+                out.append(str(entry))
+
+    walk(root)
+    return out
+
+
 def confinement(kind: Optional[str], out_path: str, tmpdir: str, timeout: int) -> dict:
     """The OS confinement spec a python_execute worker applies before it runs (syrax._confine.apply)."""
     spec = {
@@ -102,6 +137,7 @@ def confinement(kind: Optional[str], out_path: str, tmpdir: str, timeout: int) -
         from app.config import config
 
         spec["writable"] = [str(config.workspace_root), *map(str, WRITE_ROOTS), tmpdir, out_path, "/dev/null", "/dev/shm"]
+        spec["readable"] = read_roots()
         spec["require_landlock"] = sys.platform.startswith("linux")  # fail closed where the kernel boundary exists
     return spec
 

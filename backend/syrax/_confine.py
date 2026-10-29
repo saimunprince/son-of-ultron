@@ -32,7 +32,9 @@ WRITE_FILE, REMOVE_DIR, REMOVE_FILE = 1 << 1, 1 << 4, 1 << 5
 MAKE_CHAR, MAKE_DIR, MAKE_REG, MAKE_SOCK, MAKE_FIFO, MAKE_BLOCK, MAKE_SYM = (1 << n for n in range(6, 13))
 REFER = 1 << 13  # ABI 2: renames and links across directories
 TRUNCATE = 1 << 14  # ABI 3
-_FILE_RIGHTS = WRITE_FILE | TRUNCATE  # the rights a rule on a single file may carry
+EXECUTE, READ_FILE, READ_DIR = 1 << 0, 1 << 2, 1 << 3
+READ_RIGHTS = EXECUTE | READ_FILE | READ_DIR
+_FILE_RIGHTS = EXECUTE | WRITE_FILE | READ_FILE | TRUNCATE  # the rights a rule on a single file may carry
 _SCOPE_ABSTRACT_UNIX_SOCKET, _SCOPE_SIGNAL = 1 << 0, 1 << 1  # ABI 6
 
 MB = 1024 * 1024
@@ -72,30 +74,32 @@ def write_rights(version: int) -> int:
     return rights
 
 
-def landlock(writable: Iterable[str]) -> List[str]:
-    """Allow file changes only beneath ``writable`` for this process and all it starts. Returns the paths that were
-    granted (a path that does not exist is skipped). Raises OSError when the kernel refuses: callers that require the
-    boundary must not run the code then."""
+def landlock(writable: Iterable[str], readable: Optional[Iterable[str]] = None) -> List[str]:
+    """Allow file changes only beneath ``writable`` for this process and all it starts. With ``readable``, reading,
+    listing and executing are limited too, to ``readable`` and ``writable`` (2026-10-29: own code could still read
+    the brain keys). Returns the paths that were granted (a path that does not exist is skipped). Raises OSError when
+    the kernel refuses: callers that require the boundary must not run the code then."""
     version = abi()
     if version < 1:
         raise OSError("Landlock is not available on this system")
     libc = _libc()
-    handled = write_rights(version)
+    handled = write_rights(version) | (READ_RIGHTS if readable is not None else 0)
     attr = _RulesetAttr(handled, 0, (_SCOPE_SIGNAL | _SCOPE_ABSTRACT_UNIX_SOCKET) if version >= 6 else 0)
     size = 24 if version >= 6 else 16 if version >= 4 else 8  # older kernels know only the first fields
     ruleset = libc.syscall(_SYS_CREATE_RULESET, ctypes.byref(attr), ctypes.c_size_t(size), ctypes.c_uint32(0))
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), f"landlock_create_ruleset: {os.strerror(ctypes.get_errno())}")
     granted = []
+    rules = [(p, handled) for p in writable] + [(p, READ_RIGHTS) for p in (readable or [])]
     try:
-        for path in writable:
+        for path, rights in rules:
             try:
                 fd = os.open(path, os.O_PATH | os.O_CLOEXEC)
             except OSError:
                 continue
             try:
                 is_dir = os.path.isdir(f"/proc/self/fd/{fd}")
-                rule = _PathBeneathAttr(handled if is_dir else (handled & _FILE_RIGHTS), fd)
+                rule = _PathBeneathAttr(rights if is_dir else (rights & _FILE_RIGHTS), fd)
                 if libc.syscall(_SYS_ADD_RULE, ctypes.c_int(ruleset), ctypes.c_int(_RULE_PATH_BENEATH),
                                 ctypes.byref(rule), ctypes.c_uint32(0)) < 0:
                     raise OSError(ctypes.get_errno(), f"landlock_add_rule {path}: {os.strerror(ctypes.get_errno())}")
@@ -160,7 +164,8 @@ def apply(spec: Optional[dict]) -> Optional[str]:
     if writable is None:
         return None
     try:
-        landlock(writable)
+        readable = spec.get("readable")
+        landlock(writable) if readable is None else landlock(writable, readable)
     except OSError as e:
         if spec.get("require_landlock"):
             return f"the write boundary for this task could not be set ({e}); nothing ran"
