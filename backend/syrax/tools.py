@@ -182,8 +182,13 @@ HUMAN_TMP = ("/tmp",)  # read and written whole: a human asks for /tmp/x.png
 
 def _grant(root, sealed: set) -> list:
     """The entries under `root` minus the `sealed` real paths: an ancestor of a sealed path is walked into, anything
-    else is granted whole; an entry that is, or resolves into, a sealed path is left out."""
+    else is granted whole; an entry that is, or resolves into, a sealed path is left out. Compared as strings: with
+    pathlib's is_relative_to one build took 0.9 s, paid by every python_execute call."""
     out = []
+    shut = [str(x) for x in sealed]
+
+    def inside(a: str, b: str) -> bool:
+        return a == b or a.startswith(b.rstrip("/") + "/")
 
     def walk(d) -> None:
         try:
@@ -192,12 +197,12 @@ def _grant(root, sealed: set) -> list:
             return
         for entry in entries:
             try:
-                real = entry.resolve()
+                real = str(entry.resolve())
             except OSError:
                 continue
-            if any(real == s or real.is_relative_to(s) for s in sealed):
+            if any(inside(real, x) for x in shut):
                 continue
-            if any(s.is_relative_to(real) for s in sealed):
+            if any(inside(x, real) for x in shut):
                 walk(entry)
             else:
                 out.append(str(entry))
