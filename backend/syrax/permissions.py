@@ -367,6 +367,13 @@ def classify(name: str, args: Any) -> Decision:
         code = str(a.get("code") or "")
         level, reason, harm = level_of_source(code)
         return Decision(name, level, reason, code_targets(code), harm)
+    if name == "skill_test" and str(a.get("action") or "test").lower() == "remove":
+        # Live 2026-10-29 14:24: an autonomous task asked to improve flight_search removed it instead (skill_test was
+        # an ordinary WRITE). DISABLED sticks until the human turns it back on, and the boot record then said "disabled
+        # by the human". Taking a capability away is destructive: own work never does it, a human request names it
+        # or is asked first.
+        skill = str(a.get("name") or "")
+        return Decision(name, DESTRUCTIVE, f"removes the skill {skill or '?'}", [skill] if skill else [])
     if name == "skill_create":
         src = f"{a.get('code') or ''}\n{a.get('test_code') or ''}"
         level, reason, harm = level_of_source(src)
