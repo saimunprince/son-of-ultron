@@ -18,6 +18,7 @@ changes what confines SYRAX's own code.
 
 import ctypes
 import os
+import re
 import sys
 from typing import Iterable, List, Optional
 
@@ -38,6 +39,27 @@ _FILE_RIGHTS = EXECUTE | WRITE_FILE | READ_FILE | TRUNCATE  # the rights a rule 
 _SCOPE_ABSTRACT_UNIX_SOCKET, _SCOPE_SIGNAL = 1 << 0, 1 << 1  # ABI 6
 
 MB = 1024 * 1024
+
+# 2026-10-29: environment a confined worker must not hand to the code it runs: credentials by name, the ssh and gpg
+# agents (a push to GitHub as the owner), the session bus (the desktop keyring's passwords) and the runtime folder
+# that names its socket, and the variables of the Claude Code session that may have started SYRAX.
+SECRET_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSW|CREDENTIAL|COOKIE|AUTH)", re.I)
+SECRET_EXACT = ("SSH_AUTH_SOCK", "SSH_AGENT_PID", "GPG_AGENT_INFO", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR")
+SECRET_PREFIX = ("CLAUDE_CODE_", "AWS_", "AZURE_", "GOOGLE_APPLICATION")
+KEEP = ("SYRAX_GUARD_PATHS",)  # the guard's own list of protected paths, not a secret
+
+
+def is_secret_env(name: str) -> bool:
+    return name not in KEEP and (name in SECRET_EXACT or name.startswith(SECRET_PREFIX) or bool(SECRET_NAME.search(name)))
+
+
+def scrub_env(environ=None) -> List[str]:
+    """Remove secret-looking variables from ``environ`` (os.environ by default); returns their names, never values."""
+    env = os.environ if environ is None else environ
+    gone = sorted(k for k in list(env) if is_secret_env(k))
+    for k in gone:
+        env.pop(k, None)
+    return gone
 
 
 class _RulesetAttr(ctypes.Structure):
@@ -157,6 +179,8 @@ def apply(spec: Optional[dict]) -> Optional[str]:
     if not spec:
         return None
     limits(spec.get("cpu_s"), spec.get("memory_mb"), spec.get("file_mb"))
+    if spec.get("scrub_env"):
+        scrub_env()  # what this code and everything it starts may see in the environment
     if spec.get("tmpdir"):
         os.environ["TMPDIR"] = spec["tmpdir"]
         import tempfile
@@ -200,7 +224,9 @@ def _main(argv: List[str]) -> int:
     except OSError as e:
         sys.stderr.write(f"confinement failed, nothing ran: {e}\n")
         return 126
-    os.execvp(cmd[0], cmd)
+    env = dict(os.environ)
+    scrub_env(env)  # tests need no credentials (2026-10-29)
+    os.execvpe(cmd[0], cmd, env)
     return 127  # not reached
 
 

@@ -157,6 +157,7 @@ def confinement(kind: Optional[str], out_path: str, tmpdir: str, timeout: int) -
 
         spec["writable"] = [str(config.workspace_root), *map(str, WRITE_ROOTS), tmpdir, out_path, "/dev/null", "/dev/shm"]
         spec["readable"], spec["listable"] = read_roots(), list_roots()
+        spec["scrub_env"] = True  # no credentials, agents or session bus for own code (2026-10-29)
         spec["require_landlock"] = sys.platform.startswith("linux")  # fail closed where the kernel boundary exists
     return spec
 

@@ -882,7 +882,22 @@ def service_status() -> int:
 
 # ——— main ———
 
+# 2026-10-29: started from a Claude Code shell, SYRAX inherited that session's token (CLAUDE_CODE_MESSAGING_TOKEN) and
+# passed it to everything it ran. Nothing SYRAX starts needs the editor session's variables.
+FOREIGN_SESSION_PREFIXES = ("CLAUDE_CODE_",)
+FOREIGN_SESSION_NAMES = ("CLAUDECODE",)
+
+
+def drop_foreign_session_env(environ=None) -> List[str]:
+    env = os.environ if environ is None else environ
+    gone = sorted(k for k in list(env) if k.startswith(FOREIGN_SESSION_PREFIXES) or k in FOREIGN_SESSION_NAMES)
+    for k in gone:
+        env.pop(k, None)
+    return gone
+
+
 def main(argv: Optional[List[str]] = None) -> int:
+    drop_foreign_session_env()
     ap = argparse.ArgumentParser(description="Run SYRAX (core + orb UI) on any OS.", formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dev", action="store_true", help="hot-reloading dev UI")
     ap.add_argument("--setup", action="store_true", help="install what is missing and exit")
