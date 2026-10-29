@@ -248,6 +248,18 @@ export interface AutonomyStatus {
   resources: ResourceSnapshot;
   pressure: string | null;
   last_maintenance: string | null;
+  /** the operator's emergency stop (backend syrax/estop.py); null when it is off */
+  estop?: EstopState | null;
+  /** the controller's last state (autonomy.py _state): OBSERVING, SELECTING, WORKING, VERIFYING, WAITING, STOPPED, DISABLED */
+  state?: { state?: string; at?: number; objective_id?: number; last_outcome?: string; reason?: string | null };
+  autonomous_today?: number;
+  daily_tasks?: number;
+}
+
+export interface EstopState {
+  at: number | null;
+  note: string;
+  by: string | null;
 }
 
 export interface CheckpointSummary {
@@ -564,6 +576,7 @@ export type ClientMessage =
   | { type: "briefing"; hours?: number }
   | { type: "proposals"; limit?: number }
   | { type: "autonomy"; enabled?: boolean }
+  | { type: "estop"; on: boolean; note?: string }
   | { type: "startup"; enabled?: boolean }
   | { type: "memories" }
   | { type: "memory_forget"; id: string }

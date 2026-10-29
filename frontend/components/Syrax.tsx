@@ -32,6 +32,7 @@ import SelfPanel from "@/components/SelfPanel";
 import MindPanel, { mindRequest, type MindData, type MindTab } from "@/components/MindPanel";
 import { DISMISS_INTERRUPTED, HistoryList, ReplayView, UNCERTAIN_RESUME, WhyView } from "@/components/HistoryView";
 import Stage from "@/components/Stage";
+import { estopLabel, estopMessage, estopOn, estopTitle } from "@/lib/estop";
 import BootSequence from "@/components/BootSequence";
 import UltronEyes from "@/components/UltronEyes";
 import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
@@ -1499,7 +1500,18 @@ export default function Syrax() {
           <button
             type="button"
             className="hud-btn"
+            aria-pressed={estopOn(autonomy)}
+            onClick={() => clientRef.current?.send(estopMessage(autonomy))}
+            title={estopTitle(autonomy)}
+            style={{ color: "#ff4d4d", borderColor: "#ff4d4d" }}
+          >
+            {estopLabel(autonomy)}
+          </button>
+          <button
+            type="button"
+            className="hud-btn"
             aria-pressed={!!autonomy?.enabled}
+            disabled={estopOn(autonomy)}
             onClick={() => clientRef.current?.send({ type: "autonomy", enabled: !autonomy?.enabled })}
             title={autonomy?.pressure ? `Paused: ${autonomy.pressure}` : "Let SYRAX pursue its own objectives when idle"}
           >
