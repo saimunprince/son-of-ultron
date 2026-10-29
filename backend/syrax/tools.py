@@ -75,6 +75,20 @@ import threading  # noqa: E402
 # in memory, none of which the guard (which wraps new opens) could see. Windows always spawned; now every OS does.
 
 
+def ensure_venv_on_path() -> None:
+    """Put the interpreter's own bin folder first on PATH, for every program this process starts. Live 2026-10-29 (first
+    Linux quality runs): code the brain wrote called `python` and `pytest` by name eight times and got "No such file
+    or directory": Ubuntu has only python3, and the launcher runs the venv's python without activating the venv (on
+    Windows `python` was on PATH). The venv's bin holds python, pytest and the rest of SYRAX's tools."""
+    bindir = os.path.dirname(os.path.abspath(sys.executable))
+    parts = os.environ.get("PATH", "").split(os.pathsep)
+    if bindir not in parts:
+        os.environ["PATH"] = os.pathsep.join([bindir, *[p for p in parts if p]])
+
+
+ensure_venv_on_path()
+
+
 def ensure_spawn() -> None:
     """Make spawn the start method of this process (checked before every worker start: nothing may switch it back)."""
     if multiprocessing.get_start_method(allow_none=True) != "spawn":
@@ -95,6 +109,10 @@ SYSTEM_READ = ("/usr", "/lib", "/lib64", "/lib32", "/bin", "/sbin", "/etc", "/pr
                "/snap", "/var")
 HOME_READ = (".gitconfig", ".config/git")  # git refuses to run when it cannot read its config
 SEALED = ("backend/config",)  # the brain keys, the journal, the UI token, the backups' manifests
+# Files in a sealed folder own code may still read. Live 2026-10-29 (autonomy, level 3): the flight_search skill loads
+# app.config, which reads config.toml, and failed "Permission denied"; the file holds OpenManus' boot settings with a
+# placeholder key ("managed-by-syrax"; the brains' keys are in brains.json), and writing it stays refused.
+UNSEALED = ("backend/config/config.toml",)
 
 
 def read_roots(repo: Optional[str] = None) -> list:
@@ -123,6 +141,7 @@ def read_roots(repo: Optional[str] = None) -> list:
                 out.append(str(entry))
 
     walk(root)
+    out += [str(root / f) for f in UNSEALED if (root / f).is_file()]
     return out
 
 

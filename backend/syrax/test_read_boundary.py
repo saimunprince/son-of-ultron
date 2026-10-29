@@ -26,13 +26,16 @@ def own_work(monkeypatch):
 def test_the_sealed_folder_is_left_out_of_what_own_code_may_read():
     roots = tools.read_roots()
     config = str(BACKEND_ROOT / "config")
-    assert not any(r == config or r.startswith(config + "/") for r in roots)
+    opened = {str(BACKEND_ROOT.parent / f) for f in tools.UNSEALED}
+    assert not any(r == config or (r.startswith(config + "/") and r not in opened) for r in roots)
     assert str(BACKEND_ROOT / "syrax") in roots and "/usr" in roots
 
 
 @needs_landlock
 def test_own_code_cannot_read_the_keys_folder(own_work):
-    target = BACKEND_ROOT / "config" / "config.toml"  # always present; brains.json and the journal sit beside it
+    # a sealed file that is always present (brains.json and the journal sit beside it); config.toml is readable since
+    # 2026-10-29 (tools.UNSEALED: app.config loads it, and it holds no key)
+    target = BACKEND_ROOT / "config" / "config.syrax.example.toml"
     assert target.exists()
     out = run(f"""
 for label, fn in (("open", lambda: open({str(target)!r}).read()),
@@ -57,3 +60,11 @@ p = subprocess.run([sys.executable, "-c", "import json; print('child ok')"], cap
 print(open(os.path.join(os.path.dirname(json.__file__), "__init__.py")).read()[:1] != "", r.returncode, p.stdout.strip())
 """)
     assert "True 0 child ok" in out["observation"], out
+
+
+@needs_landlock
+def test_config_toml_is_readable_but_nothing_else_in_the_folder(own_work):
+    toml, other = BACKEND_ROOT / "config" / "config.toml", BACKEND_ROOT / "config" / "config.example.toml"
+    out = run(f"print(len(open({str(toml)!r}).read()) > 0)\ntry:\n    open({str(other)!r}).read(); print('OTHER READ')\n"
+              "except PermissionError:\n    print('other refused')")
+    assert "True" in out["observation"] and "other refused" in out["observation"], out
