@@ -31,7 +31,8 @@ interface Props {
   tab: MindTab;
   data: MindData;
   onTab: (tab: MindTab) => void;
-  send: (msg: ClientMessage) => void;
+  /** false when nothing was sent (the link is down): the forms keep what was typed */
+  send: (msg: ClientMessage) => boolean;
   onClose: () => void;
 }
 
@@ -100,7 +101,7 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
 
   const decide = () => {
     if (!pending || !note.trim()) return;
-    send({ type: "objective_update", id: pending.id, status: pending.status, note: note.trim() });
+    if (!send({ type: "objective_update", id: pending.id, status: pending.status, note: note.trim() })) return;
     setPending(null);
     setNote("");
     setTimeout(refresh, 400);
@@ -109,7 +110,7 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
   const addObjective = () => {
     if (!ready) return;
     const spec: ObjectiveCheck = check.field ? { kind: check.kind, [check.field]: checkArg.trim() } : { kind: check.kind };
-    send({ type: "objective_add", goal: goal.trim(), priority, check: spec });
+    if (!send({ type: "objective_add", goal: goal.trim(), priority, check: spec })) return;
     setGoal("");
     setCheckArg("");
     setTimeout(refresh, 400);

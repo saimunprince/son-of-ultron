@@ -7,7 +7,8 @@ interface Props {
   state: BrainsState | null;
   models: Record<string, { list: string[]; error?: string; loading: boolean }>;
   tests: Record<string, BrainTestResult | "running">;
-  onSave: (changes: Record<string, BrainChange>, order: string[], selfChangeBrain?: string | null) => void;
+  /** false when nothing was sent (the link is down): the drafts, typed keys included, are kept */
+  onSave: (changes: Record<string, BrainChange>, order: string[], selfChangeBrain?: string | null) => boolean;
   onModels: (id: string, apiKey?: string) => void;
   onTest: (id: string) => void;
   onClose: () => void;
@@ -78,7 +79,7 @@ export default function BrainPanel({ state, models, tests, onSave, onModels, onT
     for (const [id, v] of Object.entries(keys)) if (v.trim()) (changes[id] ??= {}).api_key = v.trim();
     for (const [id, v] of Object.entries(modelDraft)) (changes[id] ??= {}).model = v.trim();
     for (const [id, v] of Object.entries(enabledDraft)) (changes[id] ??= {}).enabled = v;
-    onSave(changes, order, selfChange || null);
+    if (!onSave(changes, order, selfChange || null)) return;
     setKeys({});
     setModelDraft({});
     setEnabledDraft({});

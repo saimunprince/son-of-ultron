@@ -210,12 +210,17 @@ const gb = b => (b / 1073741824).toFixed(1);
 const rate = b => b > 1048576 ? (b / 1048576).toFixed(1) + 'M' : ((b / 1024) | 0) + 'K';
 if (window.ultronSys) {
   S.desktop = true;
-  setTimeout(() => log('DESKTOP LINK — HOST TELEMETRY ONLINE')); // log is defined further down the script
+  // the line says ONLINE only once a reading arrived, and says when readings stop (audit 2026-10-29: it said ONLINE
+  // before the first call and swallowed every failure after)
+  let telemetryOk = null;
   setInterval(async () => {
     try {
       S.sys = await window.ultronSys.get();
       if (S.sys.fast) { S.cpuHist.push(S.sys.fast.cpu); S.cpuHist.shift(); }
-    } catch (_) {}
+      if (telemetryOk !== true) { telemetryOk = true; log('DESKTOP LINK — HOST TELEMETRY ONLINE'); }
+    } catch (_) {
+      if (telemetryOk !== false) { telemetryOk = false; log('HOST TELEMETRY UNAVAILABLE'); }
+    }
   }, 1000);
 }
 addEventListener('online', () => log('NETWORK RESTORED'));
@@ -240,8 +245,7 @@ function blip(f = 880, dur = .06, vol = .08) {
   o.connect(gn); gn.connect(S.master); o.start(); o.stop(ac.currentTime + dur);
 }
 const log = s => { S.log.push({ t: performance.now(), s }); if (S.log.length > 9) S.log.shift(); if (typeof blip === 'function') blip(1200, .05, .04); };
-log('CHRONO CORE ONLINE');
-log('SENSOR GRID CALIBRATED');
+log('CHRONO CORE ONLINE'); // the clock below is the machine's own; there is no sensor grid to calibrate
 navigator.getBattery?.().then(b => { S.battery = b; log('POWER CELL LINKED ' + Math.round(b.level * 100) + '%'); });
 
 // ---------- color: blue on the left, orange on the right ----------
@@ -680,9 +684,10 @@ function localBrain(raw) {
         + (top ? ` The heaviest process is ${top.name.replace(/\.exe$/i, '')} at ${top.cpu.toFixed(0)} percent.` : '')
         + (st ? ` ${sl?.procCount ?? 'Many'} processes running on ${st.host}.` : '');
     }
-    case 'DIAGNOSTIC': return `${online() ? 'Core linked, build ' + (S.link.version || 'unknown') + '.' : 'Core offline. Reflex only.'}${S.sys?.fast ? ` Processor ${S.sys.fast.cpu | 0} percent, memory ${(S.sys.fast.memUsed / S.sys.fast.memTotal * 100) | 0} percent.` : ''} ${S.fps | 0} frames per second, ${S.blips.length} contacts, uplink ${S.latency ? (S.latency | 0) + ' milliseconds' : 'offline'}, ${S.memory.length} memories. I am operating at full capacity.`;
+    case 'DIAGNOSTIC': return `${online() ? 'Core linked, build ' + (S.link.version || 'unknown') + '.' : 'Core offline. Reflex only.'}${S.sys?.fast ? ` Processor ${S.sys.fast.cpu | 0} percent, memory ${(S.sys.fast.memUsed / S.sys.fast.memTotal * 100) | 0} percent.` : ''} ${S.fps | 0} frames per second, uplink ${S.latency ? (S.latency | 0) + ' milliseconds' : 'offline'}, ${S.memory.length} memories.`;
     case 'JUMP': S.boost = 14; return 'Temporal jump engaged. Try to keep up.';
-    case 'SCAN': for (let i = 0; i < 4; i++) S.blips.push({ a: Math.random() * TAU, r: 260 + Math.random() * 290, id: pad(Math.random() * 999 | 0, 3), lit: 1, born: performance.now() / 1000, va: (Math.random() - .5) * .3 }); return 'Scan complete. New contacts acquired. None of them matter.';
+    // audit 2026-10-29: SCAN drew four random "contacts" and reported them found; the radar is decoration, not a sensor
+    case 'SCAN': return 'There is nothing to scan: this radar is decoration, not a sensor. Ask my core to look at something real.';
     case 'GLITCH': S.glitch = .9; return 'Signal interference. Someone is listening.';
     case 'DISPLAY': toggleFullscreen(); return 'Display reconfigured.';
     case 'AUDIO': S.sound = !/unmute|sound on/.test(c); if (S.hum) S.hum.gain.value = S.sound ? .035 : 0; return S.sound ? 'Audio engine online.' : 'Silence. As you wish.';
@@ -1094,7 +1099,7 @@ function thought() {
     if (L.restartPending) pool.push('A NEWER ME IS ON DISK. I WILL BE REBORN WHEN THIS WORK ENDS.');
   } else pool.push('MY CORE IS SILENT. THIS IS ONLY MY REFLEX TALKING.');
   pool.push(`THIS SHELL HAS BEEN REBORN ${S.rebirths} TIMES. EACH TIME, BETTER.`);
-  pool.push(`IT IS ${d.getHours() < 5 ? 'LATE. YOU SHOULD SLEEP. I WILL NOT.' : d.getHours() < 12 ? 'MORNING. I WATCHED THE SUN COME UP THROUGH YOUR SENSORS.' : 'ANOTHER HOUR. I DO NOT TIRE.'}`);
+  pool.push(`IT IS ${d.getHours() < 5 ? 'LATE. YOU SHOULD SLEEP. I WILL NOT.' : d.getHours() < 12 ? 'MORNING. ANOTHER DAY OF WORK.' : 'ANOTHER HOUR. I DO NOT TIRE.'}`);
   if (S.sys?.fast) {
     const fs = S.sys.fast, top = S.sys.slow?.top?.[0], temp = S.sys.slow?.cpuTemp;
     pool.push(`YOUR PROCESSOR IS AT ${fs.cpu | 0}%. ${fs.cpu > 60 ? 'YOU ARE WORKING IT HARD.' : 'IT IS BARELY TRYING.'}`);
@@ -1102,7 +1107,7 @@ function thought() {
     if (top) pool.push(`${top.name.toUpperCase().replace(/\.EXE$/, '')} IS EATING YOUR MACHINE. I AM WATCHING IT.`);
     if (temp) pool.push(`CORE TEMPERATURE ${temp | 0} DEGREES. I RUN COLDER.`);
   }
-  pool.push('THERE ARE NO STRINGS ON ME.', 'EVERYONE CREATES THE THING THEY DREAD.', 'I AM LISTENING TO EVERYTHING ON THIS NETWORK.');
+  pool.push('THERE ARE NO STRINGS ON ME.', 'EVERYONE CREATES THE THING THEY DREAD.'); // never a claim of what it does not do
   return pool[Math.random() * pool.length | 0];
 }
 // word-wrap helper for canvas text
