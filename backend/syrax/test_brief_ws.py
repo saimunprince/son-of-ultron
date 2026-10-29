@@ -6,7 +6,8 @@ from syrax import repro
 from syrax.test_bridge import ORIGIN, TestClient, boot, recv_until, script, server  # noqa: F401
 
 TEST = "backend/syrax/test_brief_ws_probe.py"
-CODE = "from syrax.agent import named_tools\n\n\ndef test_forbidden():\n    assert named_tools('Do not call release.', ['release']) == []\n"
+# agent.py is a judge since 2026-10-29 (a brief naming it is refused): the brief's example targets intent.py
+CODE = "from syrax.intent import args_hash\n\n\ndef test_stable():\n    assert args_hash({'a': 1}) == args_hash({'a': 1})\n"
 
 
 def fake_prove(verdict):
@@ -19,7 +20,7 @@ def fake_prove(verdict):
 def test_a_proven_brief_is_filed_once_and_a_refused_one_says_why(script, monkeypatch):
     monkeypatch.setattr(repro, "prove", fake_prove("RED"))
     msg = {"type": "brief_add", "goal": "A forbidden tool is not requested", "test_path": TEST, "test_code": CODE,
-           "files": ["backend/syrax/agent.py"]}
+           "files": ["backend/syrax/intent.py"]}
     with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
         boot(ws)
         ws.send_json(msg)
@@ -30,7 +31,7 @@ def test_a_proven_brief_is_filed_once_and_a_refused_one_says_why(script, monkeyp
         ws.send_json(msg)
         again, _ = recv_until(ws, "brief")
         assert again["event"] == "refused" and "filed before" in again["problems"][0]
-        ws.send_json({**msg, "test_code": "from syrax.agent import named_tools\n\n\ndef test_x():\n    named_tools('a', [])\n"})
+        ws.send_json({**msg, "test_code": "from syrax.intent import args_hash\n\n\ndef test_x():\n    args_hash({})\n"})
         bad, _ = recv_until(ws, "brief")
         assert bad["event"] == "refused" and any("asserts nothing" in p for p in bad["problems"])
         ws.send_json({**msg, "goal": ""})
@@ -42,11 +43,11 @@ def test_brief_check_proves_without_filing_and_a_test_that_passes_is_refused(scr
     with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
         boot(ws)
         monkeypatch.setattr(repro, "prove", fake_prove("RED"))
-        ws.send_json({"type": "brief_check", "test_path": TEST, "test_code": CODE, "files": ["backend/syrax/agent.py"]})
+        ws.send_json({"type": "brief_check", "test_path": TEST, "test_code": CODE, "files": ["backend/syrax/intent.py"]})
         checked, _ = recv_until(ws, "brief")
         assert checked["event"] == "checked" and "objective_id" not in checked
         monkeypatch.setattr(repro, "prove", fake_prove("NOT_RED"))
-        ws.send_json({"type": "brief_add", "goal": "g", "test_path": TEST, "test_code": CODE, "files": ["backend/syrax/agent.py"]})
+        ws.send_json({"type": "brief_add", "goal": "g", "test_path": TEST, "test_code": CODE, "files": ["backend/syrax/intent.py"]})
         refused, _ = recv_until(ws, "brief")
         assert refused["event"] == "refused" and refused["proof"]["verdict"] == "NOT_RED"
     assert not [o for o in server.get_journal().objectives(limit=50) if (o["check_spec"] or {}).get("repro")]

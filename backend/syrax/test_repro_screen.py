@@ -16,8 +16,14 @@ def test_a_forbidden_tool_is_not_requested():
 '''
 
 
+GOOD_INTENT = GOOD.replace("from syrax.agent import named_tools", "from syrax.intent import args_hash").replace(
+    'assert named_tools("Do not call release.", ["release"]) == []', 'assert args_hash({"a": 1}) == args_hash({"a": 1})')
+
+
 def test_a_test_that_can_prove_the_change_passes_the_screen():
-    assert repro.screen("backend/syrax/test_named_forbidden.py", GOOD, ["backend/syrax/agent.py"]) == []
+    # agent.py is a judge since 2026-10-29 (test_judge_agent_brains): the passing example targets intent.py
+    assert "args_hash" in GOOD_INTENT and "named_tools" not in GOOD_INTENT
+    assert repro.screen("backend/syrax/test_named_forbidden.py", GOOD_INTENT, ["backend/syrax/intent.py"]) == []
 
 
 def test_tests_that_cannot_prove_anything_are_refused():
