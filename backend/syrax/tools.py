@@ -90,6 +90,7 @@ WRITE_ROOTS: tuple = ()  # extra writable roots for the running task (its isolat
 CONFINED_KINDS = ("autonomous",)
 
 
+OWN_TCP_PORTS = tuple(int(p) for p in os.getenv("SYRAX_OWN_TCP_PORTS", "80,443,53").split(",") if p.strip())
 SYSTEM_READ = ("/usr", "/lib", "/lib64", "/lib32", "/bin", "/sbin", "/etc", "/proc", "/sys", "/dev", "/run", "/opt",
                "/snap", "/var")
 HOME_READ = (".gitconfig", ".config/git")  # git refuses to run when it cannot read its config
@@ -158,6 +159,9 @@ def confinement(kind: Optional[str], out_path: str, tmpdir: str, timeout: int) -
         spec["writable"] = [str(config.workspace_root), *map(str, WRITE_ROOTS), tmpdir, out_path, "/dev/null", "/dev/shm"]
         spec["readable"], spec["listable"] = read_roots(), list_roots()
         spec["scrub_env"] = True  # no credentials, agents or session bus for own code (2026-10-29)
+        # TCP only to the web and DNS, no listening port: own code cannot drive the core (8765), the UI (3000), the
+        # browser's debug port, the local model (11434) or ssh, at the kernel (2026-10-29; Landlock ABI 4+)
+        spec["tcp_connect"] = list(OWN_TCP_PORTS)
         spec["require_landlock"] = sys.platform.startswith("linux")  # fail closed where the kernel boundary exists
     return spec
 

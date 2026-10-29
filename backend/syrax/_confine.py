@@ -37,6 +37,8 @@ EXECUTE, READ_FILE, READ_DIR = 1 << 0, 1 << 2, 1 << 3
 READ_RIGHTS = EXECUTE | READ_FILE | READ_DIR
 _FILE_RIGHTS = EXECUTE | WRITE_FILE | READ_FILE | TRUNCATE  # the rights a rule on a single file may carry
 _SCOPE_ABSTRACT_UNIX_SOCKET, _SCOPE_SIGNAL = 1 << 0, 1 << 1  # ABI 6
+_RULE_NET_PORT = 2
+NET_BIND_TCP, NET_CONNECT_TCP = 1 << 0, 1 << 1  # ABI 4
 
 MB = 1024 * 1024
 
@@ -65,6 +67,10 @@ def scrub_env(environ=None) -> List[str]:
 class _RulesetAttr(ctypes.Structure):
     _fields_ = [("handled_access_fs", ctypes.c_uint64), ("handled_access_net", ctypes.c_uint64),
                 ("scoped", ctypes.c_uint64)]
+
+
+class _NetPortAttr(ctypes.Structure):
+    _fields_ = [("allowed_access", ctypes.c_uint64), ("port", ctypes.c_uint64)]
 
 
 class _PathBeneathAttr(ctypes.Structure):
@@ -96,18 +102,22 @@ def write_rights(version: int) -> int:
     return rights
 
 
-def landlock(writable: Iterable[str], readable: Optional[Iterable[str]] = None, listable: Iterable[str] = ()) -> List[str]:
+def landlock(writable: Iterable[str], readable: Optional[Iterable[str]] = None, listable: Iterable[str] = (),
+             tcp_connect: Optional[Iterable[int]] = None) -> List[str]:
     """Allow file changes only beneath ``writable`` for this process and all it starts. With ``readable``, reading,
     listing and executing are limited too, to ``readable`` and ``writable`` (2026-10-29: own code could still read
     the brain keys); ``listable`` folders may be listed (names only: Python's import finder lists every sys.path
-    folder) without their files being readable. Returns the paths that were granted (a path that does not exist is skipped). Raises OSError when
-    the kernel refuses: callers that require the boundary must not run the code then."""
+    folder) without their files being readable. With ``tcp_connect`` (Landlock ABI 4+), TCP connections go only to
+    those ports and nothing may bind a TCP port (2026-10-29). Returns the paths that were granted (a path that does
+    not exist is skipped). Raises OSError when the kernel refuses: callers that require the boundary must not run the
+    code then."""
     version = abi()
     if version < 1:
         raise OSError("Landlock is not available on this system")
     libc = _libc()
     handled = write_rights(version) | (READ_RIGHTS if readable is not None else 0)
-    attr = _RulesetAttr(handled, 0, (_SCOPE_SIGNAL | _SCOPE_ABSTRACT_UNIX_SOCKET) if version >= 6 else 0)
+    net = (NET_BIND_TCP | NET_CONNECT_TCP) if (tcp_connect is not None and version >= 4) else 0
+    attr = _RulesetAttr(handled, net, (_SCOPE_SIGNAL | _SCOPE_ABSTRACT_UNIX_SOCKET) if version >= 6 else 0)
     size = 24 if version >= 6 else 16 if version >= 4 else 8  # older kernels know only the first fields
     ruleset = libc.syscall(_SYS_CREATE_RULESET, ctypes.byref(attr), ctypes.c_size_t(size), ctypes.c_uint32(0))
     if ruleset < 0:
@@ -130,6 +140,11 @@ def landlock(writable: Iterable[str], readable: Optional[Iterable[str]] = None, 
                 granted.append(path)
             finally:
                 os.close(fd)
+        for port in (tcp_connect or ()) if net else ():
+            rule = _NetPortAttr(NET_CONNECT_TCP, int(port))
+            if libc.syscall(_SYS_ADD_RULE, ctypes.c_int(ruleset), ctypes.c_int(_RULE_NET_PORT), ctypes.byref(rule),
+                            ctypes.c_uint32(0)) < 0:
+                raise OSError(ctypes.get_errno(), f"landlock_add_rule port {port}: {os.strerror(ctypes.get_errno())}")
         if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
             raise OSError(ctypes.get_errno(), "prctl(PR_SET_NO_NEW_PRIVS)")
         if libc.syscall(_SYS_RESTRICT_SELF, ctypes.c_int(ruleset), ctypes.c_uint32(0)) < 0:
@@ -191,7 +206,10 @@ def apply(spec: Optional[dict]) -> Optional[str]:
         return None
     try:
         readable = spec.get("readable")
-        landlock(writable) if readable is None else landlock(writable, readable, spec.get("listable") or ())
+        if readable is None and spec.get("tcp_connect") is None:
+            landlock(writable)
+        else:
+            landlock(writable, readable, spec.get("listable") or (), spec.get("tcp_connect"))
     except OSError as e:
         if spec.get("require_landlock"):
             return f"the write boundary for this task could not be set ({e}); nothing ran"
