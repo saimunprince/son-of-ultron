@@ -125,6 +125,25 @@ def read_roots(repo: Optional[str] = None) -> list:
     return out
 
 
+def list_roots(repo: Optional[str] = None) -> list:
+    """Folders own code may list but not read inside: the repository root and every folder down to a sealed one
+    (import finders list each sys.path folder, backend among them; names in backend/config show, contents do not)."""
+    from pathlib import Path
+
+    from syrax.journal import BACKEND_ROOT
+
+    root = Path(repo) if repo else BACKEND_ROOT.parent
+    out = []
+    for s in SEALED:
+        d = root / s
+        while True:
+            out.append(str(d))
+            if d == root:
+                break
+            d = d.parent
+    return sorted(set(out))
+
+
 def confinement(kind: Optional[str], out_path: str, tmpdir: str, timeout: int) -> dict:
     """The OS confinement spec a python_execute worker applies before it runs (syrax._confine.apply)."""
     spec = {
@@ -137,7 +156,7 @@ def confinement(kind: Optional[str], out_path: str, tmpdir: str, timeout: int) -
         from app.config import config
 
         spec["writable"] = [str(config.workspace_root), *map(str, WRITE_ROOTS), tmpdir, out_path, "/dev/null", "/dev/shm"]
-        spec["readable"] = read_roots()
+        spec["readable"], spec["listable"] = read_roots(), list_roots()
         spec["require_landlock"] = sys.platform.startswith("linux")  # fail closed where the kernel boundary exists
     return spec
 

@@ -74,10 +74,11 @@ def write_rights(version: int) -> int:
     return rights
 
 
-def landlock(writable: Iterable[str], readable: Optional[Iterable[str]] = None) -> List[str]:
+def landlock(writable: Iterable[str], readable: Optional[Iterable[str]] = None, listable: Iterable[str] = ()) -> List[str]:
     """Allow file changes only beneath ``writable`` for this process and all it starts. With ``readable``, reading,
     listing and executing are limited too, to ``readable`` and ``writable`` (2026-10-29: own code could still read
-    the brain keys). Returns the paths that were granted (a path that does not exist is skipped). Raises OSError when
+    the brain keys); ``listable`` folders may be listed (names only: Python's import finder lists every sys.path
+    folder) without their files being readable. Returns the paths that were granted (a path that does not exist is skipped). Raises OSError when
     the kernel refuses: callers that require the boundary must not run the code then."""
     version = abi()
     if version < 1:
@@ -90,7 +91,8 @@ def landlock(writable: Iterable[str], readable: Optional[Iterable[str]] = None) 
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), f"landlock_create_ruleset: {os.strerror(ctypes.get_errno())}")
     granted = []
-    rules = [(p, handled) for p in writable] + [(p, READ_RIGHTS) for p in (readable or [])]
+    rules = ([(p, handled) for p in writable] + [(p, READ_RIGHTS) for p in (readable or [])]
+             + [(p, READ_DIR) for p in (listable if readable is not None else ())])
     try:
         for path, rights in rules:
             try:
@@ -165,7 +167,7 @@ def apply(spec: Optional[dict]) -> Optional[str]:
         return None
     try:
         readable = spec.get("readable")
-        landlock(writable) if readable is None else landlock(writable, readable)
+        landlock(writable) if readable is None else landlock(writable, readable, spec.get("listable") or ())
     except OSError as e:
         if spec.get("require_landlock"):
             return f"the write boundary for this task could not be set ({e}); nothing ran"

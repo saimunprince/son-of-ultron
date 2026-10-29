@@ -1,6 +1,7 @@
 """2026-10-29: the kernel boundary around SYRAX's own code limited writes only, so its python_execute could still read
 backend/config: the brain keys (brains.json), the journal and the UI token. Now own work reads only the system, the
-interpreter and venv, harmless git config and the repository except backend/config; ordinary work still runs."""
+interpreter and venv, harmless git config and the repository except backend/config (whose file names may show, not
+their contents); ordinary work, imports of SYRAX's own modules included, still runs."""
 
 import asyncio
 
@@ -35,20 +36,22 @@ def test_own_code_cannot_read_the_keys_folder(own_work):
     assert target.exists()
     out = run(f"""
 for label, fn in (("open", lambda: open({str(target)!r}).read()),
-                  ("listdir", lambda: os.listdir({str(target.parent)!r})),
                   ("shell", lambda: subprocess.run(["cat", {str(target)!r}], capture_output=True, check=True))):
     try:
         fn(); print(label, "READ")
     except Exception as e:
         print(label, "refused")
 """)
-    assert "READ" not in out["observation"] and out["observation"].count("refused") == 3, out
+    # names in the folder may show (import finders list every sys.path folder, and Landlock grants listing by tree);
+    # what is in its files does not
+    assert "READ" not in out["observation"] and out["observation"].count("refused") == 2, out
 
 
 @needs_landlock
 def test_ordinary_work_still_runs(own_work):
     out = run("""
 import json, sqlite3, numpy
+import syrax.estop, app.schema  # modules the worker had not loaded: the import finder lists backend
 r = subprocess.run(["git", "--version"], capture_output=True, text=True)
 p = subprocess.run([sys.executable, "-c", "import json; print('child ok')"], capture_output=True, text=True)
 print(open(os.path.join(os.path.dirname(json.__file__), "__init__.py")).read()[:1] != "", r.returncode, p.stdout.strip())
