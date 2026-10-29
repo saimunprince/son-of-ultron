@@ -141,6 +141,51 @@ def fit_request(messages: List[dict], tools: Optional[List[dict]], budget: int, 
     return system + rest, completion
 
 
+_FIRST_SENTENCE = re.compile(r"^(.{20,200}?[.!?])(?:\s|$)", re.S)
+
+
+def _first_sentence(text: str, limit: int = 200) -> str:
+    text = " ".join(str(text or "").split())
+    m = _FIRST_SENTENCE.match(text)
+    return (m.group(1) if m else text)[:limit]
+
+
+def compact_tools(tools: List[dict]) -> List[dict]:
+    """The tool list for a brain whose request budget the full manual does not fit (live 2026-10-29: Groq's 8k free
+    tier refused every SYRAX request, ~5.2k of it tool descriptions, so a Gemini outage left only Pollinations). Each
+    tool keeps its name, its description's first sentence and its parameter schema without prose: names, types, enums,
+    required and nesting stay, so a call made from it is the same call."""
+    import copy
+
+    def strip(node: Any) -> Any:
+        """A schema without its prose. Under "properties" the keys are parameter NAMES (skill_create has one called
+        description): every name stays, only each parameter's own schema is stripped."""
+        if isinstance(node, dict):
+            out = {}
+            for k, v in node.items():
+                if k == "properties" and isinstance(v, dict):
+                    out[k] = {name: strip(sub) for name, sub in v.items()}
+                elif k in ("description", "examples", "title") and not isinstance(v, (dict, list)):
+                    continue
+                else:
+                    out[k] = strip(v)
+            return out
+        if isinstance(node, list):
+            return [strip(x) for x in node]
+        return node
+
+    out = []
+    for t in tools or []:
+        t = copy.deepcopy(t)
+        fn = t.get("function") if isinstance(t.get("function"), dict) else None
+        if fn is not None:
+            fn["description"] = _first_sentence(fn.get("description", ""))
+            if isinstance(fn.get("parameters"), dict):
+                fn["parameters"] = strip(fn["parameters"])
+        out.append(t)
+    return out
+
+
 def _malformed_generation(e: Exception) -> bool:
     text = str(e).lower()
     return "parsing failed" in text or "failed_generation" in text or "tool_use_failed" in text
@@ -890,7 +935,17 @@ class BrainRouter(LLM):
             params["tool_choice"] = tool_choice.value if hasattr(tool_choice, "value") else tool_choice
         if p.max_request_tokens:
             before = len(messages)
-            params["messages"], params["max_tokens"] = fit_request(messages, tools, p.max_request_tokens, self.max_tokens)
+            try:
+                params["messages"], params["max_tokens"] = fit_request(messages, tools, p.max_request_tokens, self.max_tokens)
+            except BrainError:
+                if not tools:
+                    raise
+                # the full tool manual does not fit this brain: the same tools, their first sentences and their
+                # parameters without prose (names, types, enums, required stay, so calls stay exact)
+                small = compact_tools(tools)
+                params["messages"], params["max_tokens"] = fit_request(messages, small, p.max_request_tokens, self.max_tokens)
+                params["tools"] = small
+                logger.info(f"brain {pid}: compact tool descriptions ({count_tokens(tools)} -> {count_tokens(small)} tokens)")
             if len(params["messages"]) < before:
                 logger.info(f"brain {pid}: trimmed {before - len(params['messages'])} old messages to fit {p.max_request_tokens} tokens")
         client = self._client(pid)

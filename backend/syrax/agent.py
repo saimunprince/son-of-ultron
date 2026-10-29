@@ -35,7 +35,7 @@ from syrax.claims import (  # noqa: F401
     CLAIM_FALLBACK, NOT_RELEASED_NOTE, UNPROVEN_SOFT, NUMBER, FORM_ASK, FORM_FINAL_ASK, exact_form, meets_form,
     GIVEN_PATCH_REFUSED, diff_changed_lines, given_patch, CLAIM, OWN_WORK_CLAIM, WORLD_CLAIM, CHANGE_ASKED,
     WORLD_NUDGE, SEND_CLAIM, DESKTOP_CLAIM, BROWSER_CLAIM, PLAYING_CLAIM, PLAYING_READ, PLAYING_NOTE, OUTCOME_CLAIMS,
-    BOAST, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
+    BOAST, SELF_ASKED, without_boasts, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
     OUTCOME_NUDGE, OUTCOME_NOTE, DISPUTE_MAX, DISPUTE_NO, DISPUTE, DISPUTE_NUDGE, DISPUTE_NOTE, DISPUTE_ACTS,
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
     _OBSERVED, _body, _level_known,
@@ -217,13 +217,16 @@ ECHO = re.compile(r"\[SYRAX (?:step )?check, not a new request\]|^\s*the user sa
 # satisfied. Terminating.]" on its own line; ECHO did not match it (not the nudge's words), so the human got it and
 # the 60-character answer was 65. Such a note stands on its own line or at either end of the answer and is never
 # for the human. The nudge's own marker ("not a new request") is left for ECHO, which asks again.
-_NOTE = r"\[SYRAX\b(?![^\]\n]*not a new request)[^\[\]\n]{0,300}\]"
+# Live 2026-10-29 (quality deep_log_triage, deep_rename_api): "[terminate status=success]" and
+# "terminate(status='success')", a tool call written as text, ended the answer.
+_NOTE = (r"(?:\[SYRAX\b(?![^\]\n]*not a new request)[^\[\]\n]{0,300}\]|\[terminate\b[^\[\]\n]{0,80}\]"
+         r"|\bterminate\(\s*status\s*=\s*['\"]?\w+['\"]?\s*\))")
 CONSOLE_NOTE = re.compile(rf"(?m)^[ \t]*{_NOTE}[ \t]*(?:\n|\Z)|[ \t]*{_NOTE}[ \t]*\Z|\A[ \t]*{_NOTE}[ \t]*")
 
 
 def without_console_notes(text: str) -> str:
     """`text` without the console-style notes the brain wrote into it (CONSOLE_NOTE), trimmed; unchanged otherwise."""
-    if not text or "[SYRAX" not in text:
+    if not text or ("[SYRAX" not in text and "terminate" not in text):
         return text
     cleaned = CONSOLE_NOTE.sub("", text).strip()
     return cleaned if cleaned != text.strip() else text
@@ -612,6 +615,14 @@ class SyraxAgent(Manus):
                 self.last_reply = self.last_reply.rstrip() + (PLAYING_NOTE if claimed == "playing" else OUTCOME_NOTE.format(tool=tool))
                 self.unproven = self.unproven or ("playing" if claimed == "playing" else f"outcome:{claimed}")
         boast = BOAST.search(self.last_reply or "")
+        if boast and not SELF_ASKED.search(self.task_goal or ""):
+            # a flourish in the answer to a task about something else: cut that sentence, keep the answer (2026-10-29)
+            trimmed = without_boasts(self.last_reply)
+            if trimmed != self.last_reply:
+                await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+                await self._send({"type": "notice", "text": "The answer held a claim about SYRAX itself the task did not ask about: that sentence was cut."})
+                self.last_reply = trimmed
+            boast = None
         if (boast and self.task_kind != "autonomous" and "self_inspect" not in self.called
                 and "self_inspect" in self.available_tools.tool_map and not self.step_limit_hit and not self.loop_stopped):
             # a claim about SYRAX's own abilities: once to read the self-model and answer from it, then the note

@@ -450,6 +450,10 @@ def numstat(part: str, opts: List[str], root: Path) -> Optional[Tuple[int, int]]
 
 _HUNK_HEAD = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
 _NUMBERED = re.compile(r"^\s*\d+\t")  # a `cat -n` line pasted into the diff
+# Live 2026-10-29 (quality self_patch_edit): the brain headed its hunk with a bare "@@", as many models write diffs; git
+# found "No valid patches" and this plan found "no @@ hunks", though it never uses the numbers. A bare "@@" (or one with
+# only a section title) starts a hunk here too.
+_BARE_HEAD = re.compile(r"^@@(?:\s+[^-+@\s].*)?\s*$")
 
 
 def parse_hunks(section: str) -> List[List[Tuple[str, str]]]:
@@ -462,7 +466,7 @@ def parse_hunks(section: str) -> List[List[Tuple[str, str]]]:
     if lines and lines[-1] == "":
         lines.pop()
     for line in lines:
-        if _HUNK_HEAD.match(line):
+        if _HUNK_HEAD.match(line) or _BARE_HEAD.match(line):
             hunks.append([])
             continue
         if not hunks or line.startswith("\\"):
@@ -516,6 +520,24 @@ def locate_hunks(lines: List[str], hunks: List[List[Tuple[str, str]]]) -> Union[
     return out
 
 
+def _indent_shift(lines: List[str], pos: int, hunk: List[Tuple[str, str]]) -> int:
+    """How many spaces the file's lines are indented beyond the diff's (negative: fewer), when every non-blank old line
+    of the hunk differs by the same amount; 0 otherwise. Live 2026-10-29 (quality self_patch_edit): the brain wrote
+    "-    MAX_TEXT = 300" for a module-level line; placed by stripped content, its "+" line kept the four spaces, which
+    is an IndentationError at the top of a module."""
+    deltas = set()
+    at = pos
+    for tag, t in hunk:
+        if tag == "+":
+            continue
+        have = lines[at] if at < len(lines) else ""
+        at += 1
+        if not t.strip() or not have.strip():
+            continue
+        deltas.add((len(have) - len(have.lstrip(" "))) - (len(t) - len(t.lstrip(" "))))
+    return deltas.pop() if len(deltas) == 1 else 0
+
+
 def apply_by_content(section_diff: str, path: Path) -> Union[Tuple[str, int], str]:
     """One file's diff applied by finding each hunk's old side in the file (locate_hunks). Returns (new text, hunks
     placed) or the reason it refused. The file's newline style (CRLF or LF) and its final newline stay as they are;
@@ -537,8 +559,11 @@ def apply_by_content(section_diff: str, path: Path) -> Union[Tuple[str, int], st
     if isinstance(placed, str):
         return placed
     for pos, n_old, h in reversed(placed):  # from the bottom, so the earlier positions stay valid
+        shift = _indent_shift(lines, pos, h)
         block, at = [], pos
         for tag, t in h:
+            if tag == "+" and shift and t.strip():
+                t = (" " * shift + t) if shift > 0 else (t[-shift:] if t[:-shift].strip() == "" else t.lstrip())
             if tag == " ":
                 block.append(lines[at])
                 at += 1

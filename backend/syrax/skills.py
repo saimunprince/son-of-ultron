@@ -38,6 +38,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -270,15 +271,24 @@ def run_skill_tests(skill_dir: Path, timeout: float = TEST_TIMEOUT_S) -> dict:
         "PYTHONDONTWRITEBYTECODE": "1",
     }
     _clean_bytecode(skill_dir)  # py_compile above wrote a .pyc
+    from syrax import _confine
+
+    # 2026-10-29: a skill's tests are code SYRAX may have written; they change files only in the skill's folder and a
+    # private TMPDIR (Linux Landlock via the running server's _confine.py, like the release gate)
+    tmp = tempfile.mkdtemp(prefix="syrax_skilltest_tmp_")
+    env["TMPDIR"] = tmp
     try:
         proc = subprocess.run(
             # --rootdir: pytest lists every folder between its rootdir and the test; under %TEMP% that
             # once tripped over a Chrome temp folder vanishing mid-listing (2026-10-12) and failed good skills
-            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--rootdir", str(skill_dir), str(skill_dir / "test_skill.py")],
+            _confine.wrap([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--rootdir", str(skill_dir),
+                           str(skill_dir / "test_skill.py")], [skill_dir, tmp]),
             cwd=str(BACKEND_ROOT), capture_output=True, text=True, timeout=timeout, env=env,
         )
     except subprocess.TimeoutExpired:
+        shutil.rmtree(tmp, ignore_errors=True)
         return {"status": "FAILED", "stage": "test", "evidence": f"tests timed out after {timeout}s", "passed": 0, "failed": 0, "ms": int((time.monotonic() - started) * 1000)}
+    shutil.rmtree(tmp, ignore_errors=True)
     out = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
     passed, failed = _summary(out)
     ok = proc.returncode == 0 and passed > 0 and failed == 0
@@ -378,7 +388,22 @@ def _timed_out(name: str, timeout: float) -> ToolResult:
 
 
 async def run_skill_call(tool: BaseTool, kwargs: dict, name: Optional[str] = None) -> Any:
-    """One call of `tool` in a guarded child process; a call past SKILL_CALL_TIMEOUT_S kills the child's tree."""
+    """One call of `tool` in a guarded, OS-confined child process (tools.confinement: rlimits for every call, the
+    Landlock boundary for SYRAX's own work); a call past SKILL_CALL_TIMEOUT_S kills the child's tree."""
+    import shutil
+    import tempfile
+
+    from syrax import tools as _tools
+
+    tmp = tempfile.mkdtemp(prefix="syrax_skill_tmp_")
+    try:
+        spec = _tools.confinement(_tools.TASK_KIND, os.devnull, tmp, int(SKILL_CALL_TIMEOUT_S))
+        return await _run_skill_call(tool, kwargs, name, spec)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+async def _run_skill_call(tool: BaseTool, kwargs: dict, name: Optional[str], confine: dict) -> Any:
     import multiprocessing
 
     from syrax import _skill_child
@@ -388,10 +413,14 @@ async def run_skill_call(tool: BaseTool, kwargs: dict, name: Optional[str] = Non
     timeout = float(SKILL_CALL_TIMEOUT_S)
     module, file, qualname = _skill_source(tool)
     extra = [str(Path(file).resolve().parent.parent.parent), str(BACKEND_ROOT)] if file else []  # `from skills.<other>.skill import`
+    if file and confine.get("readable") is not None:  # under the read boundary: its own skills folder is readable
+        skills_dir = Path(file).resolve().parent.parent
+        confine = {**confine, "readable": [*confine["readable"], str(skills_dir)],
+                   "listable": [*(confine.get("listable") or []), str(skills_dir.parent)]}
     deadline = time.monotonic() + timeout
     ensure_spawn()  # spawned, never forked: a fork carries the server's open journal and keys (2026-10-28)
     recv, send = multiprocessing.Pipe(duplex=False)
-    proc = multiprocessing.Process(target=_skill_child.run, args=(module, file, qualname, dict(kwargs), send, guard.protected_paths(), extra),
+    proc = multiprocessing.Process(target=_skill_child.run, args=(module, file, qualname, dict(kwargs), send, guard.protected_paths(), extra, confine),
                                    daemon=True, name=f"syrax-skill-{name}")
     starter = asyncio.ensure_future(asyncio.to_thread(start_without_main, proc))
     try:

@@ -25,6 +25,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import hashlib
+import hmac
 import os
 import re
 import sqlite3
@@ -576,6 +578,8 @@ _ADDED_COLUMNS = (
     ("knowledge", "status", "TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','DISPUTED','SUPERSEDED'))"),
     ("knowledge", "verified_at", "REAL"),
     ("knowledge", "superseded_by", "INTEGER"),
+    # integrity chain (2026-10-29): HMAC over each kept event and the one before it (Journal.verify_chain)
+    ("events", "chain", "TEXT"),
 )
 # run once, in the transaction that adds the column
 _BACKFILL = {
@@ -592,6 +596,11 @@ KNOWLEDGE_TRANSITIONS: Dict[str, frozenset] = {
 }
 
 SKILL_STATUSES = ("NOT_TESTED", "VERIFIED", "FAILED", "DISABLED")
+
+# Events maintenance prunes from finished tasks (Journal.maintain): kept out of the integrity chain, so pruning them never
+# reads as tampering. Every other event is chained.
+UNCHAINED = ("think", "brain.failover", "brain.answered", "presentation.created", "presentation.dismissed")
+GENESIS = "syrax-journal-chain-v1"
 
 KNOWLEDGE_KINDS = ("web", "local", "experiment", "human", "conclusion")
 # Confidence policy: evidence decides, never the author.
@@ -761,10 +770,66 @@ class Journal:
                 (ts, task_id, type_, _dumps(payload), seq),
             )
         ev_id = int(cur.lastrowid)
+        if type_ not in UNCHAINED:
+            # the integrity chain: this event's HMAC covers its own fields and the previous chained event's HMAC
+            row = cur.execute("SELECT chain FROM events WHERE chain IS NOT NULL AND id<? ORDER BY id DESC LIMIT 1", (ev_id,)).fetchone()
+            prev = row[0] if row else GENESIS
+            cur.execute("UPDATE events SET chain=? WHERE id=?",
+                        (self._chain_mac(prev, ev_id, ts, task_id, type_, _dumps(payload), seq), ev_id))
         mine = getattr(self._mine, "ids", None)
         if mine is not None:
             mine.append(ev_id)
         return ev_id
+
+    # ——— integrity chain (2026-10-29, AUDIT_2026-10-28 open item) ———
+
+    def _chain_key(self) -> bytes:
+        """The HMAC key: a file beside the journal (mode 600), made on first use. It lies in backend/config, which
+        SYRAX's own code may neither read nor write (Landlock, guard), so its code cannot forge a chain."""
+        key = getattr(self, "_key_cache", None)
+        if key is None:
+            path = Path(f"{self.path}.key")
+            try:
+                key = path.read_bytes()
+            except FileNotFoundError:
+                key = os.urandom(32)
+                fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                with os.fdopen(fd, "wb") as f:
+                    f.write(key)
+            self._key_cache = key
+        return key
+
+    def _chain_mac(self, prev: str, ev_id: int, ts: float, task_id: Optional[str], type_: str, payload_text: str, seq: int) -> str:
+        msg = "\x1f".join((prev, str(ev_id), repr(float(ts)), task_id or "", type_, payload_text, str(seq)))
+        return hmac.new(self._chain_key(), msg.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    def verify_chain(self, limit: Optional[int] = None) -> dict:
+        """Recompute the chain over the kept events (the last ``limit`` chained ones, or all). The first chained event
+        in the window is the anchor. Returns {ok, checked, first_bad, reason}: a changed field, an inserted or deleted
+        chained event, or a missing chain value on an event type that is always chained."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, ts, task_id, type, payload, seq, chain FROM events WHERE chain IS NOT NULL ORDER BY id"
+                + ("" if limit is None else " LIMIT -1 OFFSET (SELECT MAX(0, COUNT(*) - ?) FROM events WHERE chain IS NOT NULL)"),
+                (() if limit is None else (int(limit),)),
+            ).fetchall()
+            first_chained = self._db.execute("SELECT MIN(id) FROM events WHERE chain IS NOT NULL").fetchone()[0]
+            gaps = [] if first_chained is None else self._db.execute(
+                "SELECT id, type FROM events WHERE chain IS NULL AND id>? AND type NOT IN (%s) ORDER BY id LIMIT 1"
+                % ",".join("?" * len(UNCHAINED)), (first_chained, *UNCHAINED)).fetchall()
+        if gaps:
+            return {"ok": False, "checked": len(rows), "first_bad": gaps[0][0], "reason": f"{gaps[0][1]} event has no chain value"}
+        prev: Optional[str] = None
+        for i, r in enumerate(rows):
+            if i == 0 and r["id"] != first_chained:
+                prev = r["chain"]  # a window that starts mid-chain trusts its first event as the anchor
+                continue
+            expect = self._chain_mac(GENESIS if i == 0 else prev, r["id"], r["ts"], r["task_id"], r["type"], r["payload"], r["seq"])
+            if r["chain"] != expect:
+                return {"ok": False, "checked": len(rows), "first_bad": r["id"],
+                        "reason": "the event or the one chained before it was changed, added or removed"}
+            prev = r["chain"]
+        return {"ok": True, "checked": len(rows), "first_bad": None, "reason": None}
 
     def _apply(self, cur: sqlite3.Cursor, row: sqlite3.Row, type_: str, payload: dict, ev_id: int, ts: float) -> None:
         """Derive the task-row change implied by an event. Same transaction."""

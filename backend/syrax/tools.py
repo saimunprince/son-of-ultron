@@ -75,6 +75,20 @@ import threading  # noqa: E402
 # in memory, none of which the guard (which wraps new opens) could see. Windows always spawned; now every OS does.
 
 
+def ensure_venv_on_path() -> None:
+    """Put the interpreter's own bin folder first on PATH, for every program this process starts. Live 2026-10-29 (first
+    Linux quality runs): code the brain wrote called `python` and `pytest` by name eight times and got "No such file
+    or directory": Ubuntu has only python3, and the launcher runs the venv's python without activating the venv (on
+    Windows `python` was on PATH). The venv's bin holds python, pytest and the rest of SYRAX's tools."""
+    bindir = os.path.dirname(os.path.abspath(sys.executable))
+    parts = os.environ.get("PATH", "").split(os.pathsep)
+    if bindir not in parts:
+        os.environ["PATH"] = os.pathsep.join([bindir, *[p for p in parts if p]])
+
+
+ensure_venv_on_path()
+
+
 def ensure_spawn() -> None:
     """Make spawn the start method of this process (checked before every worker start: nothing may switch it back)."""
     if multiprocessing.get_start_method(allow_none=True) != "spawn":
@@ -90,6 +104,66 @@ WRITE_ROOTS: tuple = ()  # extra writable roots for the running task (its isolat
 CONFINED_KINDS = ("autonomous",)
 
 
+OWN_TCP_PORTS = tuple(int(p) for p in os.getenv("SYRAX_OWN_TCP_PORTS", "80,443,53").split(",") if p.strip())
+SYSTEM_READ = ("/usr", "/lib", "/lib64", "/lib32", "/bin", "/sbin", "/etc", "/proc", "/sys", "/dev", "/run", "/opt",
+               "/snap", "/var")
+HOME_READ = (".gitconfig", ".config/git")  # git refuses to run when it cannot read its config
+SEALED = ("backend/config",)  # the brain keys, the journal, the UI token, the backups' manifests
+# Files in a sealed folder own code may still read. Live 2026-10-29 (autonomy, level 3): the flight_search skill loads
+# app.config, which reads config.toml, and failed "Permission denied"; the file holds OpenManus' boot settings with a
+# placeholder key ("managed-by-syrax"; the brains' keys are in brains.json), and writing it stays refused.
+UNSEALED = ("backend/config/config.toml",)
+
+
+def read_roots(repo: Optional[str] = None) -> list:
+    """What SYRAX's own code may read (2026-10-29): the system, the interpreter and venv, harmless git config, and
+    the live repository except backend/config. Landlock grants whole trees, so the repository is granted entry by
+    entry, and backend entry by entry, leaving the sealed folder out."""
+    from pathlib import Path
+
+    from syrax.journal import BACKEND_ROOT
+
+    root = Path(repo) if repo else BACKEND_ROOT.parent
+    out = [p for p in SYSTEM_READ if os.path.exists(p)]
+    out += sorted({sys.prefix, sys.base_prefix, os.path.dirname(os.path.dirname(os.path.realpath(sys.executable)))})
+    home = Path.home()
+    out += [str(home / h) for h in HOME_READ if (home / h).exists()]
+    sealed = {(root / s).resolve() for s in SEALED}
+
+    def walk(d: Path) -> None:
+        for entry in sorted(d.iterdir()):
+            r = entry.resolve()
+            if r in sealed:
+                continue
+            if any(s.is_relative_to(r) for s in sealed):
+                walk(entry)  # an ancestor of a sealed folder: grant its other entries one by one
+            else:
+                out.append(str(entry))
+
+    walk(root)
+    out += [str(root / f) for f in UNSEALED if (root / f).is_file()]
+    return out
+
+
+def list_roots(repo: Optional[str] = None) -> list:
+    """Folders own code may list but not read inside: the repository root and every folder down to a sealed one
+    (import finders list each sys.path folder, backend among them; names in backend/config show, contents do not)."""
+    from pathlib import Path
+
+    from syrax.journal import BACKEND_ROOT
+
+    root = Path(repo) if repo else BACKEND_ROOT.parent
+    out = []
+    for s in SEALED:
+        d = root / s
+        while True:
+            out.append(str(d))
+            if d == root:
+                break
+            d = d.parent
+    return sorted(set(out))
+
+
 def confinement(kind: Optional[str], out_path: str, tmpdir: str, timeout: int) -> dict:
     """The OS confinement spec a python_execute worker applies before it runs (syrax._confine.apply)."""
     spec = {
@@ -102,6 +176,11 @@ def confinement(kind: Optional[str], out_path: str, tmpdir: str, timeout: int) -
         from app.config import config
 
         spec["writable"] = [str(config.workspace_root), *map(str, WRITE_ROOTS), tmpdir, out_path, "/dev/null", "/dev/shm"]
+        spec["readable"], spec["listable"] = read_roots(), list_roots()
+        spec["scrub_env"] = True  # no credentials, agents or session bus for own code (2026-10-29)
+        # TCP only to the web and DNS, no listening port: own code cannot drive the core (8765), the UI (3000), the
+        # browser's debug port, the local model (11434) or ssh, at the kernel (2026-10-29; Landlock ABI 4+)
+        spec["tcp_connect"] = list(OWN_TCP_PORTS)
         spec["require_landlock"] = sys.platform.startswith("linux")  # fail closed where the kernel boundary exists
     return spec
 

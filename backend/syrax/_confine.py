@@ -6,7 +6,7 @@ or a subprocess with a clean environment walks past it (audit 2026-10-28). This 
 - ``own_group()``: the worker leads a process group of its own, so a timeout or a cancel kills everything it started
   with one ``killpg`` (before, the tree was found through psutil, which this machine did not have: nothing but the
   worker died on Linux).
-- ``limits()``: CPU seconds, address space, file size and core dumps are capped with setrlimit.
+- ``limits()``: CPU seconds, writable memory (RLIMIT_DATA), file size and core dumps are capped with setrlimit.
 - ``landlock(writable)``: Linux Landlock (kernel 5.13+, no package): from here on this process and everything it
   starts can create, change, rename or delete files only beneath the given paths, whatever path, symlink, hard link
   or subprocess it uses; reading is not restricted. With Landlock ABI 6+ it also may not signal processes outside
@@ -18,6 +18,7 @@ changes what confines SYRAX's own code.
 
 import ctypes
 import os
+import re
 import sys
 from typing import Iterable, List, Optional
 
@@ -32,15 +33,44 @@ WRITE_FILE, REMOVE_DIR, REMOVE_FILE = 1 << 1, 1 << 4, 1 << 5
 MAKE_CHAR, MAKE_DIR, MAKE_REG, MAKE_SOCK, MAKE_FIFO, MAKE_BLOCK, MAKE_SYM = (1 << n for n in range(6, 13))
 REFER = 1 << 13  # ABI 2: renames and links across directories
 TRUNCATE = 1 << 14  # ABI 3
-_FILE_RIGHTS = WRITE_FILE | TRUNCATE  # the rights a rule on a single file may carry
+EXECUTE, READ_FILE, READ_DIR = 1 << 0, 1 << 2, 1 << 3
+READ_RIGHTS = EXECUTE | READ_FILE | READ_DIR
+_FILE_RIGHTS = EXECUTE | WRITE_FILE | READ_FILE | TRUNCATE  # the rights a rule on a single file may carry
 _SCOPE_ABSTRACT_UNIX_SOCKET, _SCOPE_SIGNAL = 1 << 0, 1 << 1  # ABI 6
+_RULE_NET_PORT = 2
+NET_BIND_TCP, NET_CONNECT_TCP = 1 << 0, 1 << 1  # ABI 4
 
 MB = 1024 * 1024
+
+# 2026-10-29: environment a confined worker must not hand to the code it runs: credentials by name, the ssh and gpg
+# agents (a push to GitHub as the owner), the session bus (the desktop keyring's passwords) and the runtime folder
+# that names its socket, and the variables of the Claude Code session that may have started SYRAX.
+SECRET_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSW|CREDENTIAL|COOKIE|AUTH)", re.I)
+SECRET_EXACT = ("SSH_AUTH_SOCK", "SSH_AGENT_PID", "GPG_AGENT_INFO", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR")
+SECRET_PREFIX = ("CLAUDE_CODE_", "AWS_", "AZURE_", "GOOGLE_APPLICATION")
+KEEP = ("SYRAX_GUARD_PATHS",)  # the guard's own list of protected paths, not a secret
+
+
+def is_secret_env(name: str) -> bool:
+    return name not in KEEP and (name in SECRET_EXACT or name.startswith(SECRET_PREFIX) or bool(SECRET_NAME.search(name)))
+
+
+def scrub_env(environ=None) -> List[str]:
+    """Remove secret-looking variables from ``environ`` (os.environ by default); returns their names, never values."""
+    env = os.environ if environ is None else environ
+    gone = sorted(k for k in list(env) if is_secret_env(k))
+    for k in gone:
+        env.pop(k, None)
+    return gone
 
 
 class _RulesetAttr(ctypes.Structure):
     _fields_ = [("handled_access_fs", ctypes.c_uint64), ("handled_access_net", ctypes.c_uint64),
                 ("scoped", ctypes.c_uint64)]
+
+
+class _NetPortAttr(ctypes.Structure):
+    _fields_ = [("allowed_access", ctypes.c_uint64), ("port", ctypes.c_uint64)]
 
 
 class _PathBeneathAttr(ctypes.Structure):
@@ -72,36 +102,49 @@ def write_rights(version: int) -> int:
     return rights
 
 
-def landlock(writable: Iterable[str]) -> List[str]:
-    """Allow file changes only beneath ``writable`` for this process and all it starts. Returns the paths that were
-    granted (a path that does not exist is skipped). Raises OSError when the kernel refuses: callers that require the
-    boundary must not run the code then."""
+def landlock(writable: Iterable[str], readable: Optional[Iterable[str]] = None, listable: Iterable[str] = (),
+             tcp_connect: Optional[Iterable[int]] = None) -> List[str]:
+    """Allow file changes only beneath ``writable`` for this process and all it starts. With ``readable``, reading,
+    listing and executing are limited too, to ``readable`` and ``writable`` (2026-10-29: own code could still read
+    the brain keys); ``listable`` folders may be listed (names only: Python's import finder lists every sys.path
+    folder) without their files being readable. With ``tcp_connect`` (Landlock ABI 4+), TCP connections go only to
+    those ports and nothing may bind a TCP port (2026-10-29). Returns the paths that were granted (a path that does
+    not exist is skipped). Raises OSError when the kernel refuses: callers that require the boundary must not run the
+    code then."""
     version = abi()
     if version < 1:
         raise OSError("Landlock is not available on this system")
     libc = _libc()
-    handled = write_rights(version)
-    attr = _RulesetAttr(handled, 0, (_SCOPE_SIGNAL | _SCOPE_ABSTRACT_UNIX_SOCKET) if version >= 6 else 0)
+    handled = write_rights(version) | (READ_RIGHTS if readable is not None else 0)
+    net = (NET_BIND_TCP | NET_CONNECT_TCP) if (tcp_connect is not None and version >= 4) else 0
+    attr = _RulesetAttr(handled, net, (_SCOPE_SIGNAL | _SCOPE_ABSTRACT_UNIX_SOCKET) if version >= 6 else 0)
     size = 24 if version >= 6 else 16 if version >= 4 else 8  # older kernels know only the first fields
     ruleset = libc.syscall(_SYS_CREATE_RULESET, ctypes.byref(attr), ctypes.c_size_t(size), ctypes.c_uint32(0))
     if ruleset < 0:
         raise OSError(ctypes.get_errno(), f"landlock_create_ruleset: {os.strerror(ctypes.get_errno())}")
     granted = []
+    rules = ([(p, handled) for p in writable] + [(p, READ_RIGHTS) for p in (readable or [])]
+             + [(p, READ_DIR) for p in (listable if readable is not None else ())])
     try:
-        for path in writable:
+        for path, rights in rules:
             try:
                 fd = os.open(path, os.O_PATH | os.O_CLOEXEC)
             except OSError:
                 continue
             try:
                 is_dir = os.path.isdir(f"/proc/self/fd/{fd}")
-                rule = _PathBeneathAttr(handled if is_dir else (handled & _FILE_RIGHTS), fd)
+                rule = _PathBeneathAttr(rights if is_dir else (rights & _FILE_RIGHTS), fd)
                 if libc.syscall(_SYS_ADD_RULE, ctypes.c_int(ruleset), ctypes.c_int(_RULE_PATH_BENEATH),
                                 ctypes.byref(rule), ctypes.c_uint32(0)) < 0:
                     raise OSError(ctypes.get_errno(), f"landlock_add_rule {path}: {os.strerror(ctypes.get_errno())}")
                 granted.append(path)
             finally:
                 os.close(fd)
+        for port in (tcp_connect or ()) if net else ():
+            rule = _NetPortAttr(NET_CONNECT_TCP, int(port))
+            if libc.syscall(_SYS_ADD_RULE, ctypes.c_int(ruleset), ctypes.c_int(_RULE_NET_PORT), ctypes.byref(rule),
+                            ctypes.c_uint32(0)) < 0:
+                raise OSError(ctypes.get_errno(), f"landlock_add_rule port {port}: {os.strerror(ctypes.get_errno())}")
         if libc.prctl(_PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0:
             raise OSError(ctypes.get_errno(), "prctl(PR_SET_NO_NEW_PRIVS)")
         if libc.syscall(_SYS_RESTRICT_SELF, ctypes.c_int(ruleset), ctypes.c_uint32(0)) < 0:
@@ -127,7 +170,10 @@ def limits(cpu_s: Optional[int] = None, memory_mb: Optional[int] = None, file_mb
     except ImportError:
         return {}
     applied = {}
-    for name, value in (("RLIMIT_CPU", cpu_s), ("RLIMIT_AS", memory_mb and memory_mb * MB),
+    # memory is capped with RLIMIT_DATA, not RLIMIT_AS (live 2026-10-29): Chrome, Node and other JITs reserve hundreds
+    # of GB of address space they never touch, so an 8 GB AS cap killed headless Chrome at launch (SIGTRAP; the
+    # flight_search skill in own work). DATA counts the writable memory a process really takes.
+    for name, value in (("RLIMIT_CPU", cpu_s), ("RLIMIT_DATA", memory_mb and memory_mb * MB),
                         ("RLIMIT_FSIZE", file_mb and file_mb * MB), ("RLIMIT_CORE", 0)):
         if value is None or not hasattr(resource, name):
             continue
@@ -151,6 +197,8 @@ def apply(spec: Optional[dict]) -> Optional[str]:
     if not spec:
         return None
     limits(spec.get("cpu_s"), spec.get("memory_mb"), spec.get("file_mb"))
+    if spec.get("scrub_env"):
+        scrub_env()  # what this code and everything it starts may see in the environment
     if spec.get("tmpdir"):
         os.environ["TMPDIR"] = spec["tmpdir"]
         import tempfile
@@ -160,7 +208,11 @@ def apply(spec: Optional[dict]) -> Optional[str]:
     if writable is None:
         return None
     try:
-        landlock(writable)
+        readable = spec.get("readable")
+        if readable is None and spec.get("tcp_connect") is None:
+            landlock(writable)
+        else:
+            landlock(writable, readable, spec.get("listable") or (), spec.get("tcp_connect"))
     except OSError as e:
         if spec.get("require_landlock"):
             return f"the write boundary for this task could not be set ({e}); nothing ran"
@@ -193,7 +245,9 @@ def _main(argv: List[str]) -> int:
     except OSError as e:
         sys.stderr.write(f"confinement failed, nothing ran: {e}\n")
         return 126
-    os.execvp(cmd[0], cmd)
+    env = dict(os.environ)
+    scrub_env(env)  # tests need no credentials (2026-10-29)
+    os.execvpe(cmd[0], cmd, env)
     return 127  # not reached
 
 

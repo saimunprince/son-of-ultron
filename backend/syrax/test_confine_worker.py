@@ -110,9 +110,10 @@ def test_a_timeout_kills_the_grandchildren_too(tmp_path, kind):
 
 def test_workers_run_under_rlimits(kind):
     kind("conversation")
-    out = run("import resource; print('AS', resource.getrlimit(resource.RLIMIT_AS)[0] // 2**20, "
+    # RLIMIT_DATA since 2026-10-29 (an AS cap killed headless Chrome: JITs reserve address space they never use)
+    out = run("import resource; print('DATA', resource.getrlimit(resource.RLIMIT_DATA)[0] // 2**20, "
               "'CORE', resource.getrlimit(resource.RLIMIT_CORE)[0])")
-    assert f"AS {int(os.getenv('SYRAX_PYEXEC_MEMORY_MB', '8192'))} CORE 0" in out["observation"], out
+    assert f"DATA {int(os.getenv('SYRAX_PYEXEC_MEMORY_MB', '8192'))} CORE 0" in out["observation"], out
 
 
 def test_a_required_boundary_that_cannot_be_set_means_nothing_runs(monkeypatch):

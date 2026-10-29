@@ -167,6 +167,13 @@ async def lifespan(_: FastAPI):
     from syrax.devloop import install_git_safety
 
     install_git_safety()  # every git this process starts runs with hooks and fsmonitor off (audit 2026-10-28)
+    try:  # the journal's integrity chain (journal.verify_chain): checked at every boot, the result is on record
+        check = await asyncio.to_thread(journal.verify_chain, 5000)
+        await journal.record("integrity.checked", check)
+        if not check["ok"]:
+            logger.warning(f"journal integrity chain broken at event {check['first_bad']}: {check['reason']}")
+    except Exception as e:
+        logger.warning(f"could not check the journal's integrity chain: {e}")
     if core.autonomy.enabled:
         core.autonomy.start()
         logger.info("autonomy loop started")
@@ -792,23 +799,39 @@ class Session:
             note = str(msg.get("note") or "")[:300]
             who = f"ws session {self.id} ({self.ws.headers.get('origin') or 'no origin'})"
             if msg.get("on", True):
-                await asyncio.to_thread(estop.set_stop, self.core.journal, note, who)
-                await self.core.autonomy.stop()
-                running = self.core.current
-                if running is not None and self.core.busy:
+                # the running task is named first: stopping the autonomy loop cancels its task, and afterwards nothing
+                # would say the emergency stop ended it (live 2026-10-29: the record said only "aborted by human")
+                running = self.core.current if self.core.busy else None
+                if running is not None:
                     await self.core.journal.record("task.stop_requested", {
                         "session": self.id, "origin": self.ws.headers.get("origin"), "reason": "emergency stop"},
                         task_id=running.task_id)
+                await asyncio.to_thread(estop.set_stop, self.core.journal, note, who)
+                await self.core.autonomy.stop()
+                if running is not None and self.core.busy:
                     await self.core.cancel()
             else:
                 await asyncio.to_thread(estop.clear_stop, self.core.journal, note, who)  # autonomy stays as it was set
                 if self.core.autonomy.enabled:
                     self.core.autonomy.start()
             await self.core.broadcast({"type": "autonomy_status", **await asyncio.to_thread(self.core.autonomy.status)})
+        elif kind == "autonomy_level":
+            # the operator's ceiling for SYRAX's own work (1 observe/research ... 5 continuous); only a human sets it:
+            # own code may neither write the journal nor drive this socket
+            try:
+                level = int(msg.get("level"))
+            except (TypeError, ValueError):
+                await self.send({"type": "notice", "text": "autonomy_level needs a level from 1 to 5."})
+                return
+            who = f"ws session {self.id} ({self.ws.headers.get('origin') or 'no origin'})"
+            await asyncio.to_thread(self.core.autonomy.set_level, level, who)
+            await self.core.broadcast({"type": "autonomy_status", **await asyncio.to_thread(self.core.autonomy.status)})
         elif kind == "autonomy":
             if "enabled" in msg:
                 on = bool(msg.get("enabled"))
-                await self.core.autonomy.set_enabled_async(on)
+                who = (f"ws session {self.id} ({self.ws.headers.get('origin') or 'no origin'}; "
+                       f"{self.ws.headers.get('user-agent', '')[:60]})")
+                await self.core.autonomy.set_enabled_async(on, who)
                 if on and not self.core.autonomy.enabled:  # the emergency stop holds it off
                     await self.send({"type": "notice", "text": "The emergency stop is on: clear it before turning autonomy on."})
                 elif on:

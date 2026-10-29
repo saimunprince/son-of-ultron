@@ -62,7 +62,17 @@ async def run_arm(collection: ToolCollection, arm: dict, metric: str, repeats: i
             "successes": successes, "last_output": outputs[-1]}
 
 
-def judge(metric: str, base: dict, cand: dict) -> tuple[str, str]:
+def _overlap(base: dict, cand: dict) -> bool:
+    """The arms' samples overlap: each arm ran at least twice and neither arm's range lies wholly beyond the other's."""
+    b, c = base.get("samples") or [], cand.get("samples") or []
+    return len(b) >= 2 and len(c) >= 2 and min(b) <= max(c) and min(c) <= max(b)
+
+
+def judge(metric: str, base: dict, cand: dict, min_effect_pct: Optional[float] = None) -> tuple[str, str]:
+    """The verdict from the numbers. ``min_effect_pct`` is the smallest change that counts, declared before the run
+    (never below NOISE_PCT). 2026-10-29: when both arms ran at least twice and their samples overlap, the difference
+    of the means is within the arms' own spread: NO_DIFFERENCE, whatever the means say."""
+    threshold = max(NOISE_PCT, float(min_effect_pct or 0))
     if base["successes"] == 0 and cand["successes"] == 0:
         return "INCONCLUSIVE", "both arms failed on every run; nothing measured is comparable"
     if metric == "success":
@@ -78,8 +88,11 @@ def judge(metric: str, base: dict, cand: dict) -> tuple[str, str]:
     if b == 0 and c == 0:
         return "NO_DIFFERENCE", f"both measured 0 {metric}"
     pct = (c - b) / b * 100 if b else float("inf")
-    if abs(pct) <= NOISE_PCT:
-        return "NO_DIFFERENCE", f"{metric} within {NOISE_PCT:.0f}% ({b:.3f} vs {c:.3f})"
+    if abs(pct) <= threshold:
+        return "NO_DIFFERENCE", f"{metric} within {threshold:.0f}% ({b:.3f} vs {c:.3f})"
+    if _overlap(base, cand):
+        return "NO_DIFFERENCE", (f"{metric}: means {b:.3f} vs {c:.3f} ({pct:+.1f}%), but the samples overlap "
+                                 f"({min(base['samples'])}-{max(base['samples'])} vs {min(cand['samples'])}-{max(cand['samples'])})")
     lower_better = metric == "ms"
     cand_better = (c < b) if lower_better else (c > b)
     return ("CANDIDATE_BETTER" if cand_better else "BASELINE_BETTER"), f"{metric}: baseline {b:.3f}, candidate {c:.3f} ({pct:+.1f}%)"
@@ -93,7 +106,7 @@ class ExperimentEngine:
         self.task_id_provider = task_id_provider or (lambda: None)
 
     async def run(self, hypothesis: str, baseline: dict, candidate: dict, metric: str = "ms", repeats: int = 3,
-                  objective: Optional[str] = None) -> dict:
+                  objective: Optional[str] = None, min_effect_pct: Optional[float] = None) -> dict:
         if not (hypothesis or "").strip():
             raise ValueError("hypothesis required")
         if metric not in METRICS:
@@ -103,10 +116,13 @@ class ExperimentEngine:
         if collection is None:
             raise ValueError("no tools available")
         task_id = self.task_id_provider()
-        await self.journal.record("experiment.started", {"hypothesis": hypothesis[:160], "metric": metric, "repeats": repeats}, task_id=task_id)
+        threshold = max(NOISE_PCT, float(min_effect_pct or 0))
+        # the success criterion is on record before either arm runs: it cannot be chosen after seeing the numbers
+        await self.journal.record("experiment.started", {"hypothesis": hypothesis[:160], "metric": metric, "repeats": repeats,
+                                                         "min_effect_pct": threshold}, task_id=task_id)
         base = await run_arm(collection, baseline, metric, repeats)
         cand = await run_arm(collection, candidate, metric, repeats)
-        verdict, conclusion = judge(metric, base, cand)
+        verdict, conclusion = judge(metric, base, cand, threshold)
         next_action = {
             "CANDIDATE_BETTER": "adopt the candidate where it applies; keep the record as evidence",
             "BASELINE_BETTER": "keep the baseline; the hypothesis is not supported",
@@ -115,7 +131,7 @@ class ExperimentEngine:
         }[verdict]
         row = await self.journal.run(
             self.journal.add_experiment_sync, hypothesis, base, cand, metric,
-            {"baseline": base["value"], "candidate": cand["value"], "unit": metric, "repeats": repeats},
+            {"baseline": base["value"], "candidate": cand["value"], "unit": metric, "repeats": repeats, "min_effect_pct": threshold},
             conclusion, verdict, objective, next_action, task_id,
         )
         return row
@@ -147,7 +163,9 @@ class ExperimentTool(BaseTool):
             "baseline": {"type": "object", "properties": {"tool": {"type": "string"}, "args": {"type": "object"}}, "required": ["tool"]},
             "candidate": {"type": "object", "properties": {"tool": {"type": "string"}, "args": {"type": "object"}}, "required": ["tool"]},
             "metric": {"type": "string", "enum": list(METRICS), "description": "default ms"},
-            "repeats": {"type": "integer", "description": "1-5, default 3"},
+            "repeats": {"type": "integer", "description": "1-5, default 3; 2+ lets the verdict see the noise"},
+            "min_effect_pct": {"type": "number", "description": "the smallest change (percent) that counts as better, "
+                               "declared before the run; never below 10"},
             "objective": {"type": "string", "description": "what decision this informs"},
         },
         "required": ["hypothesis", "baseline", "candidate"],
@@ -155,11 +173,11 @@ class ExperimentTool(BaseTool):
     engine: Optional[Any] = Field(default=None, exclude=True)
 
     async def execute(self, hypothesis: str, baseline: dict, candidate: dict, metric: str = "ms", repeats: int = 3,
-                      objective: Optional[str] = None) -> ToolResult:
+                      objective: Optional[str] = None, min_effect_pct: Optional[float] = None) -> ToolResult:
         if self.engine is None:
             return ToolResult(error="experiment engine unavailable")
         try:
-            row = await self.engine.run(hypothesis, baseline, candidate, metric, repeats, objective)
+            row = await self.engine.run(hypothesis, baseline, candidate, metric, repeats, objective, min_effect_pct)
         except (ValueError, JournalError) as e:
             return ToolResult(error=f"experiment refused: {e}")
         return ToolResult(output=render(row))

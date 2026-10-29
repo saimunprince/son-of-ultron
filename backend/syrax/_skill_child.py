@@ -90,7 +90,8 @@ def pack_error(e: BaseException, stage: str) -> dict:
             "trace": "".join(traceback.format_exception(type(e), e, e.__traceback__))[-3000:]}
 
 
-def run(module: str, file: Optional[str], qualname: str, kwargs: dict, conn, paths: List[str], extra_path: List[str]) -> None:
+def run(module: str, file: Optional[str], qualname: str, kwargs: dict, conn, paths: List[str], extra_path: List[str],
+        confine: Optional[dict] = None) -> None:
     """Runs in the child: guard this process and every Python it starts, import the skill, run one call, send the
     result back. The result is sent even when the skill raises, calls sys.exit, or the guard cannot be installed
     (then the skill never runs)."""
@@ -99,7 +100,11 @@ def run(module: str, file: Optional[str], qualname: str, kwargs: dict, conn, pat
     try:
         from syrax import _confine
 
-        _confine.own_group()  # a timeout or a cancel kills the whole tree with one killpg (2026-10-28, Linux)
+        # its own process group (killpg takes the tree), rlimits, and for SYRAX's own work the Landlock boundary
+        # python_execute has (2026-10-29); a required boundary that cannot be set means the skill does not run
+        refused = _confine.apply(confine)
+        if refused:
+            raise RuntimeError(refused)
         if not paths:
             raise RuntimeError("no protected paths were given; a skill does not run unguarded")
         from syrax import guard

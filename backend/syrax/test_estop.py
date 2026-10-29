@@ -120,3 +120,37 @@ def test_own_code_cannot_clear_the_stop_through_the_journal(tmp_path):
 def test_the_controls_are_judges():
     for path in ("estop.py", "server.py", "core.py", "resources.py", "editor.py", "redact.py", "knowngood.py"):
         assert f"backend/syrax/{path}" in JUDGES
+
+
+def test_an_autonomy_toggle_records_who_sent_it(script):
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "autonomy", "enabled": False})
+        recv_until(ws, "autonomy_status")
+    last = [e["payload"] for e in get_journal().recent_events() if e["type"] == "autonomy.toggled"][-1]
+    assert last["enabled"] is False and last["by"].startswith("ws session") and "http://localhost:3000" in last["by"]
+
+
+
+def test_the_stop_names_a_task_the_loop_s_stop_ends(script, monkeypatch):
+    """Live 2026-10-29: stopping the autonomy loop cancels the own task it runs; the stop then found no running task and
+    the record said only "aborted by human". The task is named before the loop stops."""
+    core = core_mod.get_core()
+    real_stop = core.autonomy.stop
+
+    async def stop_that_cancels():  # what the live loop's stop does to the own task it is running
+        await core.cancel()
+        await real_stop()
+
+    monkeypatch.setattr(core.autonomy, "stop", stop_that_cancels)
+    script.queue = [call("slow", {}, cid="call_slow_loop")]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "wait"})
+        recv_until(ws, "tool_start")
+        ws.send_json({"type": "estop", "on": True, "note": "loop stop"})
+        recv_until(ws, "autonomy_status", limit=200)
+        ws.send_json({"type": "estop", "on": False})
+        recv_until(ws, "autonomy_status", limit=200)
+    stops = [e for e in get_journal().recent_events() if e["type"] == "task.stop_requested"]
+    assert stops and stops[-1]["payload"]["reason"] == "emergency stop"

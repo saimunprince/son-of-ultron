@@ -71,6 +71,13 @@ AUTONOMOUS_BRIEF = (
     "limits, journal, guard, tools, permissions) and existing tests are changed only by a human; `release` refuses them here.\n"
     "Permission levels: in autonomous work a call that deletes, acts on the host (launch, volume, shell), sends, or writes outside "
     "the repository and workspace is refused with `Error: refused`; that is final, so do not plan such steps: do the rest and name what a human would have to do.\n"
+    # live 2026-10-29 (level 3): asked to verify organize_folder, the brain pointed it at ~/Desktop and the kernel
+    # refused; the brief now says where own work's code may reach, so the first attempt picks a place it can
+    "Your code (python_execute, skills) runs inside a kernel boundary: it writes only in the workspace {workspace} "
+    "(and your task worktree), reads the system, the venv and the repository (not backend/config), reaches only web "
+    "ports 80/443, and sees no credentials. The owner's home folders (Desktop, Documents, Downloads) are out of reach: "
+    "when a tool needs a folder or file, make one inside the workspace. The operator set your autonomy level to {level} "
+    "({level_name}); a call above it is refused, and only the operator raises it.\n"
     "You cannot run the quality suite or start another SYRAX core from a task (the core is busy with you, "
     "and the journal refuses a second core): fix, `release`, and finish; the next cycle runs the quality suite. "
     "`release` is for repository changes only: a skill made with `skill_create` is live once VERIFIED and needs no release.\n"
@@ -97,7 +104,8 @@ BRIEF_HINTS = {
                         "A test imports modules as `from syrax.<module> import ...` and uses tmp_path stores and journals the way the "
                         "module's existing test file does; a test that opens the running journal fails (read-only to other processes)."),
     "skill_verified": " Build it with `skill_create` (code + pytest tests, dependencies listed); the objective closes only when the skill `{name}` is VERIFIED by its own tests. Write files only inside the workspace. Do not call `release`: a skill is not in the repository.",
-    "tool_verified": " For this objective one call of the `{tool}` tool with a harmless read-only action is enough; report its output and finish.",
+    "tool_verified": (" For this objective one call of the `{tool}` tool with a harmless read-only action is enough; if it takes a "
+                      "path, use a folder or file you make inside the workspace; report its output and finish."),
     "knowledge_stored": " Use `research` once on the stated topic, then `learn` one verified conclusion citing the knowledge_ids, then finish.",
     # Brief Factory phase 2 (repro.py): a hunt finds the code cause of a measured failure and proves it; it never
     # releases. Its own words override the brief's "fix, release" and the worktree note's "only release moves it in".
@@ -880,12 +888,28 @@ class Autonomy:
             return saved == "1"
         return env == "1"
 
-    def set_enabled(self, on: bool) -> None:
-        self.journal.set_meta("autonomy_enabled", "1" if on else "0")
-        self.journal.record_sync("autonomy.toggled", {"enabled": on})
+    @property
+    def level(self) -> int:
+        """The operator's autonomy level, 1-5 (permissions.LEVEL_NAMES); 5 when never set (before levels existed)."""
+        try:
+            return max(1, min(5, int(self.journal.get_meta("autonomy_level") or 5)))
+        except ValueError:
+            return 1  # an unreadable level is the most careful one
 
-    async def set_enabled_async(self, on: bool) -> None:
-        await self.journal.run(self.set_enabled, on)
+    def set_level(self, level: int, by: str = "operator") -> int:
+        level = max(1, min(5, int(level)))
+        self.journal.set_meta("autonomy_level", str(level))
+        self.journal.record_sync("autonomy.level_set", {"level": level, "by": by[:120]})
+        return level
+
+    def set_enabled(self, on: bool, by: Optional[str] = None) -> None:
+        self.journal.set_meta("autonomy_enabled", "1" if on else "0")
+        # who turned it on or off (2026-10-29: autonomy came back on 35 s after an operator's "off" and the record could
+        # not say from where)
+        self.journal.record_sync("autonomy.toggled", {"enabled": on, **({"by": by[:160]} if by else {})})
+
+    async def set_enabled_async(self, on: bool, by: Optional[str] = None) -> None:
+        await self.journal.run(self.set_enabled, on, by)
 
     def _saved_state(self) -> dict:
         try:
@@ -902,6 +926,7 @@ class Autonomy:
         return {
             "enabled": self.enabled,
             "estop": estop.state(self.journal),
+            "level": self.level,
             "state": self.state or self._saved_state(),
             "autonomous_today": self.autonomous_today(),
             "daily_tasks": DAILY_TASKS,
@@ -1158,7 +1183,11 @@ class Autonomy:
         from syrax.devloop import REPO_ROOT
 
         steps_before = await asyncio.to_thread(plan.status, self.journal, objective, plan.task_ids_of(objective))
+        from syrax.permissions import LEVEL_NAMES, WORKSPACE
+
+        level = await asyncio.to_thread(lambda: self.level)
         brief = AUTONOMOUS_BRIEF.format(goal=objective["goal"], reason=objective.get("reason") or "-", hint=hint, repo_root=REPO_ROOT,
+                                        workspace=WORKSPACE, level=level, level_name=LEVEL_NAMES.get(level, "?"),
                                         evidence=plan.render(steps_before) + followup.learned_brief(self.journal, objective)
                                         + brief_evidence(objective) + past_experience(self.journal, objective)
                                         + archive_brief(self.journal, objective))
@@ -1285,6 +1314,8 @@ class Autonomy:
         the running process still runs the old one until a restart. When idle
         and launched by syrax.py, restart cleanly into the new commit."""
         if os.getenv("SYRAX_SELF_RESTART", "1") == "0" or getattr(self.core, "busy", False):
+            return False
+        if self.level < 5:  # restarting into its own released code is level 5 (continuous) only
             return False
         if getattr(getattr(self.core, "quality", None), "running", False):
             return False  # never restart in the middle of a quality run
