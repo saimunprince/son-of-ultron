@@ -190,7 +190,8 @@ def protected_paths() -> List[str]:
     if os.getenv("SYRAX_BRAINS_FILE"):
         keys.add(str(Path(os.environ["SYRAX_BRAINS_FILE"]).resolve()))
     sealed = f"{(journal.parent / 'backups').resolve()}{os.sep}"
-    return [str(journal), f"{journal}-wal", f"{journal}-shm", f"{journal}.owner", *sorted(keys), sealed, *isolation_rules()]
+    return [str(journal), f"{journal}-wal", f"{journal}-shm", f"{journal}.owner", f"{journal}.key", *sorted(keys), sealed,
+            *isolation_rules()]
 
 
 def isolation_rules() -> List[str]:

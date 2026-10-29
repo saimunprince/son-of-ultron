@@ -74,7 +74,8 @@ EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 # only a human changes them, by hand. The owner's settings and memory are closed to SYRAX's own work
 # (autonomous, eval) only: in conversation the human may ask for them to be changed.
 PROTECTED_DATA = ("backend/config/brains.json", "backend/config/brains.tmp", "backend/config/ws.token",
-                  "backend/config/journal.db", "backend/config/journal.db-wal", "backend/config/journal.db-shm")
+                  "backend/config/journal.db", "backend/config/journal.db-wal", "backend/config/journal.db-shm",
+                  "backend/config/journal.db.key")
 OWNER_DATA = ("backend/config/config.toml", "backend/config/memory.json", "backend/config/mcp.json")
 # Audit 2026-10-27: the verified snapshots (backup.py) are evidence too: a tool that rewrote a snapshot together
 # with its manifest.json made a forged copy that verify() accepted. Nothing under these folders is written through
