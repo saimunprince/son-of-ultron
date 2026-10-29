@@ -217,13 +217,14 @@ ECHO = re.compile(r"\[SYRAX (?:step )?check, not a new request\]|^\s*the user sa
 # satisfied. Terminating.]" on its own line; ECHO did not match it (not the nudge's words), so the human got it and
 # the 60-character answer was 65. Such a note stands on its own line or at either end of the answer and is never
 # for the human. The nudge's own marker ("not a new request") is left for ECHO, which asks again.
-_NOTE = r"\[SYRAX\b(?![^\]\n]*not a new request)[^\[\]\n]{0,300}\]"
+# Live 2026-10-29 (quality deep_log_triage): "[terminate status=success]", a tool call written as text, ended the answer.
+_NOTE = r"(?:\[SYRAX\b(?![^\]\n]*not a new request)[^\[\]\n]{0,300}\]|\[terminate\b[^\[\]\n]{0,80}\])"
 CONSOLE_NOTE = re.compile(rf"(?m)^[ \t]*{_NOTE}[ \t]*(?:\n|\Z)|[ \t]*{_NOTE}[ \t]*\Z|\A[ \t]*{_NOTE}[ \t]*")
 
 
 def without_console_notes(text: str) -> str:
     """`text` without the console-style notes the brain wrote into it (CONSOLE_NOTE), trimmed; unchanged otherwise."""
-    if not text or "[SYRAX" not in text:
+    if not text or ("[SYRAX" not in text and "[terminate" not in text):
         return text
     cleaned = CONSOLE_NOTE.sub("", text).strip()
     return cleaned if cleaned != text.strip() else text
