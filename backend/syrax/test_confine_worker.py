@@ -133,4 +133,8 @@ def test_the_spec_confines_own_work_only(tmp_path):
     own = tools.confinement("autonomous", "/tmp/o", "/tmp/t", 60)
     human = tools.confinement("conversation", "/tmp/o", "/tmp/t", 60)
     assert "/tmp/t" in own["writable"] and own["require_landlock"] == sys.platform.startswith("linux")
-    assert "writable" not in human and human["tmpdir"] == "/tmp/t"
+    # a human's request has its own, wider boundary since 2026-10-29 (Prince's call; test_human_boundary pins it):
+    # the human's home and /tmp, never own work's narrow one
+    assert human["tmpdir"] == "/tmp/t" and "tcp_connect" not in human
+    if sys.platform.startswith("linux"):
+        assert "/tmp" in human["writable"] and set(human["writable"]) != set(own["writable"])
