@@ -805,6 +805,17 @@ class Session:
                 if self.core.autonomy.enabled:
                     self.core.autonomy.start()
             await self.core.broadcast({"type": "autonomy_status", **await asyncio.to_thread(self.core.autonomy.status)})
+        elif kind == "autonomy_level":
+            # the operator's ceiling for SYRAX's own work (1 observe/research ... 5 continuous); only a human sets it:
+            # own code may neither write the journal nor drive this socket
+            try:
+                level = int(msg.get("level"))
+            except (TypeError, ValueError):
+                await self.send({"type": "notice", "text": "autonomy_level needs a level from 1 to 5."})
+                return
+            who = f"ws session {self.id} ({self.ws.headers.get('origin') or 'no origin'})"
+            await asyncio.to_thread(self.core.autonomy.set_level, level, who)
+            await self.core.broadcast({"type": "autonomy_status", **await asyncio.to_thread(self.core.autonomy.status)})
         elif kind == "autonomy":
             if "enabled" in msg:
                 on = bool(msg.get("enabled"))

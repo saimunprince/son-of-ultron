@@ -33,6 +33,7 @@ import MindPanel, { mindRequest, type MindData, type MindTab } from "@/component
 import { DISMISS_INTERRUPTED, HistoryList, ReplayView, UNCERTAIN_RESUME, WhyView } from "@/components/HistoryView";
 import Stage from "@/components/Stage";
 import { estopLabel, estopMessage, estopOn, estopTitle } from "@/lib/estop";
+import { levelOf, levelStep, levelTitle } from "@/lib/autonomyLevel";
 import BootSequence from "@/components/BootSequence";
 import UltronEyes from "@/components/UltronEyes";
 import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
@@ -1506,6 +1507,25 @@ export default function Syrax() {
             style={{ color: "#ff4d4d", borderColor: "#ff4d4d" }}
           >
             {estopLabel(autonomy)}
+          </button>
+          <button
+            type="button"
+            className="hud-btn"
+            onClick={() => clientRef.current?.send(levelStep(autonomy, -1))}
+            title={levelTitle(autonomy)}
+            disabled={levelOf(autonomy) <= 1}
+          >
+            L−
+          </button>
+          <span className="hud-btn" title={levelTitle(autonomy)}>{`L${levelOf(autonomy)}`}</span>
+          <button
+            type="button"
+            className="hud-btn"
+            onClick={() => clientRef.current?.send(levelStep(autonomy, 1))}
+            title={levelTitle(autonomy)}
+            disabled={levelOf(autonomy) >= 5}
+          >
+            L+
           </button>
           <button
             type="button"

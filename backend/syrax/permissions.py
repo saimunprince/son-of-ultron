@@ -587,6 +587,29 @@ def network_targets(targets: Iterable[str], admin_only: bool = False) -> List[st
     return hits
 
 
+# ——— autonomy levels (mission 2026-10-28, built 2026-10-29) ———
+# The operator chooses how far SYRAX's own work may go; the level lives in the journal (autonomy_level), which own code
+# cannot write, and the core sets OWN_LEVEL from it when each task starts. Unset means 5: what SYRAX did before levels.
+LEVEL_NAMES = {1: "observe and research", 2: "experiment", 3: "modify and verify", 4: "integrate", 5: "continuous"}
+OWN_LEVEL: int = 5
+L1_WRITES = ("learn",)  # research findings stored as knowledge: the point of level 1
+CODE_TOOLS = ("python_execute", "experiment", "skill_test", "compare_versions")
+
+
+def level_needed(decision: "Decision") -> int:
+    """The lowest autonomy level at which SYRAX's own work may make this call. Running code is never observation:
+    python_execute's static reading of the code ("observes") can be fooled, so it is level 2 whatever it reads as."""
+    if decision.tool in CODE_TOOLS:
+        return 2
+    if decision.level in (READ_ONLY, EXTERNAL_READ) or decision.tool in L1_WRITES:
+        return 1
+    if decision.tool == "release":
+        return 4
+    if decision.tool in EDIT_TOOLS and decision.scope != "workspace":
+        return 3
+    return 2
+
+
 def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[str, str]] = (), grants: Optional[Dict[str, bool]] = None) -> Verdict:
     kind = kind if kind in KINDS else "conversation"
     grants = grants or {}
@@ -595,6 +618,10 @@ def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[st
         if any(h not in (guard.WEAKENS_GUARD_WHY, guard.SELF_CONTROL_WHY) for h in decision.harm):
             why += "; SYRAX must not harm the host"
         return Verdict("refuse", None, why)
+    if kind == "autonomous" and (need := level_needed(decision)) > OWN_LEVEL:
+        return Verdict("refuse", None, f"the operator set autonomy level {OWN_LEVEL} ({LEVEL_NAMES.get(OWN_LEVEL, '?')}); "
+                       f"{decision.tool} needs level {need} ({LEVEL_NAMES[need]}). Do what this level allows, or report "
+                       "what a higher level would let you do: only the operator raises it")
     level = decision.level
     if level != READ_ONLY and (unc := network_targets(decision.targets, admin_only=kind == "conversation")):
         # Review 2026-10-27: \\?\, \\.\ and \\localhost\C$\ spellings of the repository passed every check below

@@ -880,6 +880,20 @@ class Autonomy:
             return saved == "1"
         return env == "1"
 
+    @property
+    def level(self) -> int:
+        """The operator's autonomy level, 1-5 (permissions.LEVEL_NAMES); 5 when never set (before levels existed)."""
+        try:
+            return max(1, min(5, int(self.journal.get_meta("autonomy_level") or 5)))
+        except ValueError:
+            return 1  # an unreadable level is the most careful one
+
+    def set_level(self, level: int, by: str = "operator") -> int:
+        level = max(1, min(5, int(level)))
+        self.journal.set_meta("autonomy_level", str(level))
+        self.journal.record_sync("autonomy.level_set", {"level": level, "by": by[:120]})
+        return level
+
     def set_enabled(self, on: bool) -> None:
         self.journal.set_meta("autonomy_enabled", "1" if on else "0")
         self.journal.record_sync("autonomy.toggled", {"enabled": on})
@@ -902,6 +916,7 @@ class Autonomy:
         return {
             "enabled": self.enabled,
             "estop": estop.state(self.journal),
+            "level": self.level,
             "state": self.state or self._saved_state(),
             "autonomous_today": self.autonomous_today(),
             "daily_tasks": DAILY_TASKS,
@@ -1285,6 +1300,8 @@ class Autonomy:
         the running process still runs the old one until a restart. When idle
         and launched by syrax.py, restart cleanly into the new commit."""
         if os.getenv("SYRAX_SELF_RESTART", "1") == "0" or getattr(self.core, "busy", False):
+            return False
+        if self.level < 5:  # restarting into its own released code is level 5 (continuous) only
             return False
         if getattr(getattr(self.core, "quality", None), "running", False):
             return False  # never restart in the middle of a quality run

@@ -621,6 +621,10 @@ class Core:
 
         # python_execute confines SYRAX's own work with a kernel write boundary (tools.confinement, 2026-10-28)
         _tools.TASK_KIND, _tools.WRITE_ROOTS = kind, ()
+        from syrax import permissions as _permissions
+
+        # the operator's autonomy level bounds what own work may do (permissions.level_needed), read fresh per task
+        _permissions.OWN_LEVEL = await asyncio.to_thread(lambda: self.autonomy.level) if kind == "autonomous" else 5
         if kind == "autonomous" and os.getenv("SYRAX_ISOLATE", "0") == "1":
             # M1, isolated evolution: SYRAX's own work happens in a worktree, never in the running tree
             try:
@@ -815,6 +819,9 @@ class Core:
         those files so a restart can never load half-finished code. Files that
         were already modified before the task (a human's work) and human
         conversations are left alone."""
+        from syrax import permissions as _permissions
+
+        _permissions.OWN_LEVEL = 5  # the task is over; the next one reads its own level (core._begin_now)
         if self.current is None or self.current.kind == "conversation":
             return
         if self.devloop.isolated is not None:
