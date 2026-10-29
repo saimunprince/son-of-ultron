@@ -39,7 +39,8 @@ def test_a_journal_restored_onto_a_pc_without_its_key_still_verifies(tmp_path, m
     monkeypatch.setattr(backup, "running", lambda config_dir=None: None)
     r = backup.restore(d, config_dir=cfg)
     assert r["ok"] and "journal.db.key" in r["restored"]
-    assert stat.S_IMODE(os.stat(cfg / "journal.db.key").st_mode) == 0o600
+    if os.name == "posix":  # Windows has no owner-only mode bits
+        assert stat.S_IMODE(os.stat(cfg / "journal.db.key").st_mode) == 0o600
     back = Journal(cfg / "journal.db", recover=False)
     v = back.verify_chain()
     assert v["ok"] and v["checked"] > 0, v

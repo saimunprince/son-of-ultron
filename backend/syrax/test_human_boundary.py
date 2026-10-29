@@ -4,6 +4,7 @@ in ~/.bashrc. A human's code now keeps the reach the human gave it (home folders
 loses the secret folders, the dotfiles and the repository's .git. Its environment stays whole (test_env_secrets)."""
 
 import asyncio
+import sys
 
 import pytest
 
@@ -28,13 +29,17 @@ def home(tmp_path, monkeypatch):
     (h / ".config" / "other" / "a.conf").write_text("fine", encoding="utf-8")
     (h / ".bashrc").write_text("# rc\n", encoding="utf-8")
     (h / "notes.txt").write_text("my notes", encoding="utf-8")
-    (h / "link_to_ssh").symlink_to(h / ".ssh")
+    try:
+        (h / "link_to_ssh").symlink_to(h / ".ssh")
+    except OSError as e:
+        pytest.skip(f"this system cannot make symlinks: {e}")
     monkeypatch.setenv("HOME", str(h))
     monkeypatch.setattr(tools, "TASK_KIND", "conversation")
     monkeypatch.setattr(tools, "WRITE_ROOTS", ())
     return h
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="the human boundary is Linux's (Landlock)")
 def test_the_spec_leaves_out_secrets_dotfiles_and_git(home):
     spec = tools.confinement("conversation", "/tmp/o", "/tmp/t", 60)
     readable, writable = set(spec["readable"]), set(spec["writable"])

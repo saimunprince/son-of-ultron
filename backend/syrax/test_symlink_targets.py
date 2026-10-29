@@ -16,8 +16,11 @@ JUDGE = BACKEND_ROOT / "syrax" / "guard.py"
 @pytest.fixture
 def links(tmp_path):
     k, j = tmp_path / "notes.txt", tmp_path / "helper.py"
-    k.symlink_to(KEYS)
-    j.symlink_to(JUDGE)
+    try:
+        k.symlink_to(KEYS)
+        j.symlink_to(JUDGE)
+    except OSError as e:  # Windows without Developer Mode may not make symlinks (Windows gate, 2026-10-29)
+        pytest.skip(f"this system cannot make symlinks: {e}")
     return k, j
 
 

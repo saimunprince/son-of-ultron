@@ -31,7 +31,7 @@ def test_a_clean_journal_verifies_and_its_key_is_private(tmp_path):
     v = j.verify_chain()
     assert v["ok"] and v["checked"] >= 3
     key = tmp_path / "j.db.key"
-    assert key.exists() and (os.stat(key).st_mode & 0o777) == 0o600
+    assert key.exists() and (os.name != "posix" or (os.stat(key).st_mode & 0o777) == 0o600)  # no mode bits on Windows
     assert "think" in UNCHAINED
 
 

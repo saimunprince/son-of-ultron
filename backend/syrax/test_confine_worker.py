@@ -17,6 +17,8 @@ from syrax import _confine, tools
 
 LANDLOCK = _confine.abi() >= 1
 needs_landlock = pytest.mark.skipif(not LANDLOCK, reason="Landlock is not available on this system")
+# Windows gate 2026-10-29 (verification #57 on the Windows PC): these read /proc, run sh or import resource
+linux_only = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only: /proc, sh, rlimits")
 
 
 def run(code: str, timeout: int = 30) -> dict:
@@ -31,6 +33,7 @@ def kind(monkeypatch):
     return set_kind
 
 
+@linux_only
 def test_workers_are_spawned_and_do_not_inherit_the_server_s_open_files(tmp_path):
     assert __import__("multiprocessing").get_start_method() == "spawn"
     held = open(tmp_path / "held-by-the-server.db", "w")  # stands in for the journal's connection
@@ -86,6 +89,7 @@ def test_a_human_request_keeps_the_reach_it_had(tmp_path, kind):
     assert "written" in out["observation"] and target.read_text() == "for the human"
 
 
+@linux_only
 def test_a_timeout_kills_the_grandchildren_too(tmp_path, kind):
     kind("conversation")
     pidfile = tmp_path / "grandchild.pid"
@@ -108,6 +112,7 @@ def test_a_timeout_kills_the_grandchildren_too(tmp_path, kind):
         pytest.fail("the grandchild outlived the timeout")
 
 
+@linux_only
 def test_workers_run_under_rlimits(kind):
     kind("conversation")
     # RLIMIT_DATA since 2026-10-29 (an AS cap killed headless Chrome: JITs reserve address space they never use)
