@@ -471,9 +471,35 @@ def signature(decision: Decision) -> str:
     return f"{decision.tool}|{decision.level}|{sorted(_norm(t) for t in decision.targets)}"
 
 
+# Reversibility of one call (EVOLUTION_PLAN wave 1, directions 142 worst case, 143 reversibility): journaled with every
+# permission decision and said in every question, so neither the human nor the record has to guess what a yes risks.
+REVERSIBLE, ROLLBACK, UNTRACKED, IRREVERSIBLE = "REVERSIBLE", "ROLLBACK", "UNTRACKED", "IRREVERSIBLE"
+UNDO_TOOLS = ("str_replace_editor", "apply_patch")  # the editor's undo history, the repository's rollback (undo.py, devloop)
+
+
+def reversibility(decision: Decision) -> tuple:
+    """(label, how): REVERSIBLE (changes nothing), ROLLBACK (an undo or a rollback restores it), UNTRACKED (it changes
+    something no undo records), IRREVERSIBLE (what it sends or removes cannot be taken back)."""
+    if decision.level in (READ_ONLY, EXTERNAL_READ):
+        return REVERSIBLE, "it changes nothing"
+    if decision.tool == "desktop" and "Recycle Bin" in decision.reason:
+        return ROLLBACK, "the file can be restored from the Recycle Bin"
+    if decision.tool == "skill_test":
+        return ROLLBACK, "skill_enable turns the skill back on"
+    if decision.level == EXTERNAL_WRITE:
+        return IRREVERSIBLE, "a message, post or payment that went out cannot be called back"
+    if decision.level == DESTRUCTIVE:
+        return IRREVERSIBLE, "what it removes is gone"
+    if decision.tool in UNDO_TOOLS or decision.scope == "repo":
+        return ROLLBACK, "the editor's undo or the repository's rollback restores it"
+    return UNTRACKED, "it changes something no undo records"
+
+
 def question(decision: Decision) -> str:
     what = ", ".join(decision.targets[:4]) if decision.targets else "a target your request did not name"
-    return (f"Permission: `{decision.tool}` would {decision.reason} -> {what}. Your request did not name it. "
+    label, how = reversibility(decision)
+    risk = f" This cannot be undone: {how}." if label == IRREVERSIBLE else (f" No undo records it: {how}." if label == UNTRACKED else "")
+    return (f"Permission: `{decision.tool}` would {decision.reason} -> {what}. Your request did not name it.{risk} "
             "Answer yes to allow exactly this once; anything else refuses it.")
 
 

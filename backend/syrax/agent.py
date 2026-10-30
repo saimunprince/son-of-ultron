@@ -1134,6 +1134,7 @@ class SyraxAgent(Manus):
                        "reason": verdict.reason, "targets": decision.targets[:6], "authorized_by": authorized_by, "step": self.current_step}
             if self.tainted:
                 payload["tainted_by"] = self.tainted
+            payload["reversibility"] = permissions.reversibility(decision)[0]  # what a yes would risk (wave 1)
             if decision.harm:
                 payload["harm"] = decision.harm
             if answer is not None:
