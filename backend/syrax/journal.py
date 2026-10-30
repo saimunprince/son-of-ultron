@@ -2093,6 +2093,23 @@ class Journal:
             ).fetchall()
         return [{**dict(r), "payload": _loads(r["payload"], {})} for r in reversed(rows)]
 
+    def skill_verifications(self, name: str) -> List[tuple]:
+        """(ts, code_version) of every skill.verified event of `name`, oldest first (skillevo.regressions)."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT ts, json_extract(payload, '$.code_version') FROM events WHERE type='skill.verified' "
+                "AND json_extract(payload, '$.skill')=? ORDER BY ts", (name,)).fetchall()
+        return [(r[0], r[1]) for r in rows]
+
+    def tool_results(self, name: str, ts_from: float, ts_to: Optional[float] = None) -> List[dict]:
+        """The tool.completed / tool.failed events of tool `name` in [ts_from, ts_to), oldest first."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, ts, task_id, type, payload FROM events WHERE type IN ('tool.completed','tool.failed') "
+                "AND json_extract(payload, '$.name')=? AND ts>=? AND ts<? ORDER BY ts",
+                (name, ts_from, ts_to if ts_to is not None else float("inf"))).fetchall()
+        return [{**dict(r), "payload": _loads(r["payload"], {})} for r in rows]
+
     def events_between(self, ts_from: float, ts_to: Optional[float] = None, limit: int = 2000) -> List[dict]:
         """All events (task-bound and task-less) in a time window, oldest first.
         This is what a daily replay is generated from; nothing is synthesised."""

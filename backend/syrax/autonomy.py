@@ -995,6 +995,28 @@ class Autonomy:
                 return o
         return None
 
+    async def _roll_back_regressions(self) -> None:
+        """A skill whose new version keeps failing in real use while the kept one before it worked goes back to that
+        version (skillevo.regressions; audit 2026-10-29). At level 3 and up only: it changes what SYRAX can do. The
+        replaced code is kept, so the human's skill_rollback undoes it. Journaled skill.regression, then the rollback's
+        own skill.rolled_back."""
+        factory = getattr(self.core, "skills", None)
+        if factory is None or self.level < 3:
+            return
+        from syrax import skillevo
+
+        try:
+            found = await self.journal.run(skillevo.regressions, self.journal, factory.kept_versions)
+        except Exception as e:  # measuring must never kill the cycle
+            logger.warning(f"skill regression check failed: {e}")
+            return
+        for r in found:
+            try:
+                await self.journal.record("skill.regression", {**r, "action": "rolled back to the kept version"})
+                await factory.rollback(r["skill"])
+            except Exception as e:
+                logger.warning(f"rolling back {r['skill']} failed: {e}")
+
     async def run_once(self, force: bool = False) -> CycleReport:
         """One bounded cycle. ``force`` ignores the enabled flag (manual `cycle_now`), never the emergency stop."""
         rep = CycleReport(started=time.time(), outcome="IDLE")
@@ -1054,6 +1076,7 @@ class Autonomy:
                 await self.journal.run(catalog.reopen_regressed, self.journal)
             except Exception as e:
                 logger.warning(f"re-checking catalog features failed: {e}")
+        await self._roll_back_regressions()
         await self._state("SELECTING")
         objective = self._pick()
         if objective is None and self.reflect:

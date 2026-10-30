@@ -140,3 +140,45 @@ def annotate(rows: List[dict], journal: Journal) -> List[dict]:
     """skills.list rows with their real-use record."""
     use = real_use(journal)
     return [{**r, "real_use": {k: v for k, v in use[r["name"]].items() if k != "recent_failures"}} if r["name"] in use else r for r in rows]
+
+
+# Audit 2026-10-29 (capability acquisition, "no automatic rollback"): a skill whose new version keeps failing in real
+# use waited for a human's skill_rollback even when the version before it had worked. A regression is that pattern
+# measured from the journal alone: the current version failed at least REPAIR_MIN_RATE of at least REPAIR_MIN_USES real
+# calls since it was verified, and the newest kept version failed at most REGRESSION_PREVIOUS_RATE of at least
+# REPAIR_MIN_USES real calls while it was the live one. Rolling back is reversible (the replaced code is kept).
+REGRESSION_PREVIOUS_RATE = 0.15
+
+
+def _use_counts(journal: Journal, name: str, start: float, end: Optional[float]) -> Dict[str, int]:
+    """Real calls of `name` and their failures in [start, end): refused calls and misuse do not count (as real_use)."""
+    uses = failures = 0
+    for e in journal.tool_results(name, start, end):
+        if e["payload"].get("refused") or (e["type"] == "tool.failed" and misuse(name, e["payload"].get("output"))):
+            continue
+        uses += 1
+        if e["type"] == "tool.failed" or not e["payload"].get("ok", True):
+            failures += 1
+    return {"uses": uses, "failures": failures}
+
+
+def regressions(journal: Journal, kept_versions) -> List[dict]:
+    """VERIFIED skills whose current version regressed against the newest kept one (see REGRESSION_PREVIOUS_RATE).
+    `kept_versions(name)` lists the code versions kept on disk, oldest first (SkillFactory.kept_versions)."""
+    out = []
+    for name, cur in real_use(journal).items():
+        kept = kept_versions(name)
+        if not kept or cur["uses"] < REPAIR_MIN_USES or cur["failures"] / cur["uses"] < REPAIR_MIN_RATE:
+            continue
+        prev_cv = kept[-1]
+        marks = journal.skill_verifications(name)
+        start = next((ts for ts, cv in marks if cv == prev_cv), None)
+        if start is None:
+            continue
+        end = next((ts for ts, cv in marks if ts > start and cv != prev_cv), None)
+        prev = _use_counts(journal, name, start, end)
+        if prev["uses"] < REPAIR_MIN_USES or prev["failures"] / prev["uses"] > REGRESSION_PREVIOUS_RATE:
+            continue
+        out.append({"skill": name, "current": {k: cur[k] for k in ("uses", "failures", "version")},
+                    "previous": {**prev, "code_version": prev_cv}, "recent_failures": cur["recent_failures"]})
+    return out
