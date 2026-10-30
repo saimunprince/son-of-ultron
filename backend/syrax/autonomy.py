@@ -103,7 +103,11 @@ BRIEF_HINTS = {
                         "it compiles them and runs the covering tests and shows the result); fix forward with another patch; then `release`. "
                         "A test imports modules as `from syrax.<module> import ...` and uses tmp_path stores and journals the way the "
                         "module's existing test file does; a test that opens the running journal fails (read-only to other processes)."),
-    "skill_verified": " Build it with `skill_create` (code + pytest tests, dependencies listed); the objective closes only when the skill `{name}` is VERIFIED by its own tests. Write files only inside the workspace. Do not call `release`: a skill is not in the repository.",
+    "skill_verified": (" First `skill_list`: reuse or adapt a skill that already does this. Then `know`, `research` or `github_search` for"
+                       " how it is done (an official API or a maintained library beats guessing). Build it with `skill_create`"
+                       " (code + pytest tests, dependencies listed). The objective closes only when the skill `{name}` is VERIFIED"
+                       " by its tests AND one real call of `{name}` afterwards succeeds: call it once with a realistic input."
+                       " Write files only inside the workspace. Do not call `release`: a skill is not in the repository."),
     "tool_verified": (" For this objective one call of the `{tool}` tool with a harmless read-only action is enough; if it takes a "
                       "path, use a folder or file you make inside the workspace; report its output and finish."),
     "knowledge_stored": " Use `research` once on the stated topic, then `learn` one verified conclusion citing the knowledge_ids, then finish.",
@@ -725,11 +729,20 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
     if kind == "skill_verified":
         # Phase 3: a capability SYRAX built for itself counts only when its own
         # tests made it a VERIFIED tool after the objective was set
-        sk = journal.skill(str(spec.get("name") or ""))
+        name = str(spec.get("name") or "")
+        sk = journal.skill(name)
         present = bool(sk and sk.get("path") and (Path(sk["path"]) / "skill.py").exists())  # live: VERIFIED in the registry, files deleted
-        ok = bool(sk and sk.get("status") == "VERIFIED" and present and (sk.get("last_verified") or 0) >= objective["created"])
-        return ("DONE" if ok else "RETRY"), {"skill": spec.get("name"), "status": (sk or {}).get("status"), "files_present": present,
-                                            "last_verified": (sk or {}).get("last_verified")}
+        verified = bool(sk and sk.get("status") == "VERIFIED" and present and (sk.get("last_verified") or 0) >= objective["created"])
+        # Audit 2026-10-29 (capability acquisition): VERIFIED meant only that the skill passed tests the same brain wrote
+        # for it. The objective now also needs one real call of the skill, after that verification, that succeeded:
+        # the capability did its job once outside its own tests. {"real_use": false} in the spec waives it.
+        st = journal.tool_stats().get(name) if spec.get("real_use", True) else None
+        used = (not spec.get("real_use", True)) or bool(
+            st and st["last_used"] and st["last_used"] >= ((sk or {}).get("last_verified") or 0) and st["last_outcome"] == "ok")
+        return ("DONE" if verified and used else "RETRY"), {
+            "skill": name, "status": (sk or {}).get("status"), "files_present": present,
+            "last_verified": (sk or {}).get("last_verified"), "real_use_ok": used,
+            **({} if used else {"missing": "one real, successful call of the skill after it was verified"})}
     if kind == "tool_reliability":
         from syrax.limits import judge_tool_reliability
         return judge_tool_reliability(journal, objective)

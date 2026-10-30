@@ -595,7 +595,13 @@ def test_skill_objective_closes_only_when_its_skill_is_verified(tmp_path):
     skill_dir.mkdir(parents=True)
     (skill_dir / "skill.py").write_text("x")
     verdict, ev = judge(j, o, None)
-    assert verdict == "DONE" and ev["status"] == "VERIFIED" and ev["files_present"]
+    # since 2026-10-29 its own tests are not enough: one real call after it was verified must succeed
+    assert verdict == "RETRY" and ev["status"] == "VERIFIED" and ev["files_present"] and not ev["real_use_ok"]
+    t = j.start_task_sync("write the report as a Word file")
+    j.record_sync("tool.started", {"id": "c1", "name": "make_docx", "args": {}}, task_id=t)
+    j.record_sync("tool.completed", {"id": "c1", "name": "make_docx", "ok": True, "output": "report.docx written"}, task_id=t)
+    verdict, ev = judge(j, o, None)
+    assert verdict == "DONE" and ev["status"] == "VERIFIED" and ev["files_present"] and ev["real_use_ok"]
     j.set_skill_status_sync("make_docx", "FAILED")
     assert judge(j, o, None)[0] == "RETRY"
 
