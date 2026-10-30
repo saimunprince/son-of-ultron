@@ -184,16 +184,27 @@ def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[
             "plan_checks": [{"kind": "tool_ok", "tools": ["research"]}, {"kind": "learned"}, None],
         })
     stats = kind_stats(journal)
+    tried = sum(st["total"] for st in stats.values())
     for x in out:
         st = stats.get(x["kind"], {"done": 0, "total": 0, "calls": None})
-        x["confidence"] = round((st["done"] + 1) / (st["total"] + 2), 2)  # Laplace: a new kind starts at 0.5
-        x["cost"] = st["calls"] if st["calls"] is not None else DEFAULT_COST
-        x["value"] = round(x["score"] * x["confidence"] / (1 + x["cost"] / 20), 4)
+        x["confidence"], x["explore_bonus"], x["cost"], x["value"] = value_of(x["score"], st, tried)
     out.sort(key=lambda x: (-x["value"], -x["score"]))
     return out
 
 
+def value_of(score: float, st: dict, tried: int) -> tuple:
+    """(confidence, explore_bonus, cost, value) of a limitation whose kind has stats `st`, `tried` attempts over all
+    kinds. Confidence is Laplace (a new kind starts at 0.5). EVOLUTION_PLAN wave 4 (directions 184, 185, 187, 188): an
+    exploration bonus (UCB) for kinds tried rarely, so the ranking does not keep choosing the kinds it already knows;
+    it shrinks as a kind gathers attempts."""
+    confidence = round((st["done"] + 1) / (st["total"] + 2), 2)
+    bonus = round(EXPLORE_C * math.sqrt(math.log(tried + 1) / (st["total"] + 1)), 3)
+    cost = st["calls"] if st.get("calls") is not None else DEFAULT_COST
+    return confidence, bonus, cost, round(score * min(1.0, confidence + bonus) / (1 + cost / 20), 4)
+
+
 DEFAULT_COST = 10.0  # brain calls, until a kind has history
+EXPLORE_C = 0.3  # weight of the exploration bonus: optimistic success = confidence + C * sqrt(ln N / (n + 1)), at most 1
 
 
 def kind_stats(journal: Journal) -> Dict[str, dict]:
@@ -297,7 +308,7 @@ def choose(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> Opt
             chosen = {**lim, "objective_id": obj["id"], "key": key}
             break
     journal.record_sync("limitation.ranked", {
-        "ranked": [{k: x.get(k) for k in ("kind", "subject", "score", "confidence", "cost", "value", "detail")} for x in ranked[:8]],
+        "ranked": [{k: x.get(k) for k in ("kind", "subject", "score", "confidence", "explore_bonus", "cost", "value", "detail")} for x in ranked[:8]],
         "chosen": {k: chosen[k] for k in ("kind", "subject", "score", "objective_id")} if chosen else None,
     })
     return chosen
