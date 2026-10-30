@@ -216,6 +216,20 @@ pushed (each with a red test and a GREEN gate):
 - **Emotion estimation:** not built. Guessing a mood from typed text is unreliable, and SYRAX must not claim
   feelings it cannot show. The reasons are in EVOLUTION_PLAN.
 
+### 2026-10-30, night: new capabilities from the plan
+
+- **`data_query`:** asks a CSV/TSV or SQLite file one read-only SQL question, or profiles its data quality (column
+  types, empty cells, duplicates). SYRAX's own config is never readable through it.
+- **`logic_check`:** proves whether premises really entail a conclusion, by truth table, and gives the
+  counterexample when they do not.
+- **`paper_search`:** finds research papers on arXiv (no key needed) and keeps each one as sourced knowledge.
+- **Heat alert:** CPU, disk and GPU temperatures are read from `/sys` without root. A sensor near its critical
+  limit, or a CPU at 90 °C, raises an alert.
+- **Contradictions:** two facts that give different answers to a single-answer relation ("X was released in …",
+  "X is written in …") are now flagged, however they are worded.
+- **Plan status:** 142 EXISTS, 108 PARTIAL, 20 MISSING, 22 out of
+  scope, 8 decided against.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work

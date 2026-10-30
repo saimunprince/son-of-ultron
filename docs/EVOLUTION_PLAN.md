@@ -23,8 +23,8 @@ Paths are under `backend/syrax/` unless shown otherwise. Tests sit beside the mo
 | VI–VII Perception, infrastructure, future (201–300) | 34 | 38 | 11 | 17 |
 | **All 300** | **105** | **123** | **51** | **21** |
 
-The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After the build of 2026-10-30 (waves 1, 2, 4 and the no-owner part of 3):
-**137 EXISTS, 109 PARTIAL, 32 MISSING, 22 out of scope.**
+The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After the build of 2026-10-30 (all waves; owner decisions taken):
+**142 EXISTS, 108 PARTIAL, 20 MISSING, 22 out of scope, 8 decided against.**
 
 **What is strong:** the journal and recovery, the permissions and kernel boundary, honesty checks on answers,
 emergency stop and budgets, the release gate with red-test proof, skill versioning and rollback, and knowledge with
@@ -63,8 +63,8 @@ provenance and freshness.
 
 | # | Direction | Status | Evidence | Gap |
 |---|---|---|---|---|
-| 1 | Formal reasoning | MISSING | only python_execute arithmetic | no symbolic checker |
-| 2 | Deductive reasoning | PARTIAL | brain + python_execute; claims.py checks conclusions | no rule engine |
+| 1 | Formal reasoning | PARTIAL (logic_check: propositional entailment by truth table, test_logic_check; no first-order logic) | only python_execute arithmetic | no symbolic checker |
+| 2 | Deductive reasoning | EXISTS (logic_check verifies a deduction and names the counterexample, test_logic_check) | brain + python_execute; claims.py checks conclusions | no rule engine |
 | 3 | Inductive reasoning | PARTIAL | limits.rank, scorecard, routing.table (test_routing, test_limits_order) | counts only |
 | 4 | Abductive reasoning | PARTIAL | tool_error.py classes, followup.derive | no ranked explanations |
 | 5 | Causal reasoning | EXISTS (wave 2: autonomy.suspects, test_release_attribution) | experiments A/B, repro fail-before proof | score changes not attributed to commits (wave 2) |
@@ -72,7 +72,7 @@ provenance and freshness.
 | 7 | Probabilistic reasoning | PARTIAL | Laplace smoothing in routing/limits/scorecard | no probabilities on decisions |
 | 8 | Constraint reasoning | PARTIAL | claims.exact_form, permissions.decide | regex constraints only |
 | 9 | Analogical reasoning | PARTIAL | autonomy.past_experience | same subject only |
-| 10 | Contradiction detection | EXISTS | consolidate.compare, research._dispute (test_consolidate) | figures only |
+| 10 | Contradiction detection | EXISTS (figures, plus single-answer relations via knowledge links, test_link_contradictions) | consolidate.compare, research._dispute (test_consolidate) | figures only |
 | 11 | Goal decomposition | PARTIAL | limits plan templates, plan.steps_of (test_plan) | the brain's own breakdown not stored |
 | 12 | Hierarchical planning | PARTIAL | objective dependencies, followup MAX_DEPTH=2 | no goal tree |
 | 13 | Long-horizon planning | PARTIAL | persistent objectives, plan.next_step | no milestones |
@@ -293,28 +293,28 @@ evidence for. If the owner later asks for it, the design above stands.
 
 | # | Direction | Status | Evidence | Gap |
 |---|---|---|---|---|
-| 201 | Visual perception | PARTIAL | screenshots, camera.py, image brains (test_camera) | OCR is Windows-only |
+| 201 | Visual perception | PARTIAL (screenshots on Linux via the GNOME portal, test_linux_screenshot; no OCR without tesseract) | screenshots, camera.py, image brains (test_camera) | OCR is Windows-only |
 | 202 | Auditory perception | PARTIAL | voice.py transcribe (test_voice) | speech only |
 | 203 | Speech understanding | EXISTS | whisper/Groq transcribe, live.py (test_voice, test_live) | — |
 | 204 | Visual tracking | MISSING | — | — |
 | 205 | Scene understanding | PARTIAL | images to multimodal brains | — |
 | 206 | Sensor fusion | MISSING | — | — |
 | 207 | Temporal perception | EXISTS | clock, durations (test_clock_honesty) | — |
-| 208 | Spatial grounding | PARTIAL | sight.py (Windows) | **wave 3** |
+| 208 | Spatial grounding | PARTIAL (click at coordinates on Linux, test_linux_input; finding text on screen needs OCR) | sight.py (Windows) | **wave 3** |
 | 209 | Perception uncertainty | PARTIAL | sight candidates | — |
 | 210 | Active perception | PARTIAL | observe_window (Windows) | wave 3 |
 | 211–215, 217 | Locomotion, manipulation, motor control, touch, balance, sim-to-real | OUT OF SCOPE | — | no robot |
 | 216 | Human-robot interaction | OUT OF SCOPE | voice/HUD/ask_human cover the human side | — |
-| 218 | Hardware fault detection | PARTIAL | sysinfo, alerts, stallwatch (test_alerts) | no SMART/temperature |
+| 218 | Hardware fault detection | PARTIAL (heat alert from /sys hwmon sensors, test_temperatures; no SMART disk health without root) | sysinfo, alerts, stallwatch (test_alerts) | no SMART/temperature |
 | 219 | Energy-aware behavior | EXISTS | battery pressure, quiet hours (test_resources) | — |
 | 220 | Embodied adaptation | OUT OF SCOPE | — | — |
-| 221 | Computer-use planning | PARTIAL | phases, plan, desktop | Linux input missing — **wave 3** |
+| 221 | Computer-use planning | EXISTS (Linux keyboard and mouse via the RemoteDesktop portal, test_linux_input; live typed into Text Editor) | phases, plan, desktop | Linux input missing — **wave 3** |
 | 222 | Browser interaction | EXISTS | browser.py + browser-use (test_browser_confined) | — |
 | 223 | API-based action | PARTIAL | API skills, python_execute | — |
 | 224 | File-system reasoning | EXISTS | editor, repo_map (test_editor) | — |
-| 225 | Database reasoning | PARTIAL | journal_query (own journal only) | — |
-| 226 | Application-state awareness | PARTIAL | front_window is None on Linux | **wave 3** |
-| 227 | Action verification | EXISTS | in_front checks, claims (test_world_claims) | Linux check — wave 3 |
+| 225 | Database reasoning | EXISTS (data_query: read-only SQL over CSV/TSV/SQLite, test_data_query) | journal_query (own journal only) | — |
+| 226 | Application-state awareness | EXISTS (GNOME focus extension, owner-installed; test_gnome_focus) | front_window is None on Linux | **wave 3** |
+| 227 | Action verification | EXISTS (front window read after keys on Linux too, test_gnome_focus) | in_front checks, claims (test_world_claims) | Linux check — wave 3 |
 | 228 | Permission-aware interaction | EXISTS | permissions.decide (test_permissions) | — |
 | 229 | Workflow recovery | EXISTS | recovery, resume, intent ledger (test_resume_*) | — |
 | 230 | Human handoff | EXISTS | ask_human, UNCERTAIN wait (test_unattended_ask) | — |
@@ -330,12 +330,12 @@ evidence for. If the owner later asks for it, the design above stands.
 | 238 | Consensus mechanisms | PARTIAL | cross-brain review | — |
 | 239 | Privacy-aware computation | PARTIAL | redact | no "keep it local" routing |
 | 240 | Compute provenance | EXISTS | brain.answered provider/model | not stamped on finals |
-| 241 | Automated literature review | PARTIAL | research.py web only | no paper sources |
+| 241 | Automated literature review | PARTIAL (paper_search on arXiv, test_paper_search; other paper sources not yet) | research.py web only | no paper sources |
 | 242 | Scientific hypothesis generation | PARTIAL | prompt only | — |
 | 243 | Simulation-based discovery | MISSING | — | — |
 | 244 | Mathematical reasoning | PARTIAL | python_execute | no checked math tool |
 | 245 | Experimental protocol design | EXISTS | experiments baseline/candidate (test_experiments) | — |
-| 246 | Data-quality assessment | MISSING | — | — |
+| 246 | Data-quality assessment | EXISTS (data_query profile: types, empty cells, distinct, min/max, duplicates, test_data_query) | — | — |
 | 247 | Scientific replication | PARTIAL | repro, experiment repeats | — |
 | 248 | Cross-domain discovery | MISSING | — | — |
 | 249 | Research prioritization | PARTIAL | limits.rank | — |
