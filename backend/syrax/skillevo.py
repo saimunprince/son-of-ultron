@@ -136,6 +136,46 @@ def propose_candidates(journal: Journal, now: Optional[float] = None) -> int:
     return made
 
 
+DEPRECATE_MIN_USES, DEPRECATE_RATE, DEPRECATE_IDLE_DAYS = 5, 0.5, 60
+
+
+def deprecations(journal: Journal, now: Optional[float] = None) -> List[dict]:
+    """VERIFIED skills to propose for retirement (EVOLUTION_PLAN wave 4, direction 99 skill deprecation): failing at least
+    DEPRECATE_RATE of at least DEPRECATE_MIN_USES real calls since this version was verified, or verified more than
+    DEPRECATE_IDLE_DAYS ago and not called since. Proposing only: the human retires a skill (skill_test remove is
+    refused to SYRAX's own work since 2026-10-29)."""
+    now = now or time.time()
+    stats = journal.tool_stats()
+    out = []
+    for name, st in real_use(journal).items():
+        sk = journal.skill(name) or {}
+        since = sk.get("last_verified") or sk.get("updated") or now
+        last = (stats.get(name) or {}).get("last_used")
+        if st["uses"] >= DEPRECATE_MIN_USES and st["failures"] / st["uses"] >= DEPRECATE_RATE:
+            out.append({"skill": name, "version": st["version"], "why": f"failed {st['failures']} of {st['uses']} real calls since it was verified"})
+        elif now - since > DEPRECATE_IDLE_DAYS * 86400 and (last is None or last < now - DEPRECATE_IDLE_DAYS * 86400):
+            out.append({"skill": name, "version": st["version"], "why": f"not called in the {DEPRECATE_IDLE_DAYS} days since it was verified"})
+    return out
+
+
+def propose_deprecations(journal: Journal, now: Optional[float] = None) -> int:
+    """Journal each deprecation once per skill version as a proposal for the human (proposal.created)."""
+    made = 0
+    for d in deprecations(journal, now):
+        key = f"skill_deprecation:{d['skill']}:{d['version']}"
+        if journal.get_meta(key):
+            continue
+        journal.set_meta(key, str(now or time.time()))
+        journal.record_sync("proposal.created", {
+            "kind": "skill_deprecation", "limitation": f"skill `{d['skill']}` {d['why']}",
+            "proposal": (f"Retire skill `{d['skill']}` v{d['version']}: it {d['why']}. Removing it takes a dead option away from "
+                         "the brain; skill_enable brings it back. Say the word, or keep it."),
+            "sources": [], "skill": d["skill"],
+        })
+        made += 1
+    return made
+
+
 def annotate(rows: List[dict], journal: Journal) -> List[dict]:
     """skills.list rows with their real-use record."""
     use = real_use(journal)
