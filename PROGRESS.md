@@ -206,6 +206,13 @@ pushed (each with a red test and a GREEN gate):
   - Live check: SYRAX took a shot and described the screen correctly ("two Visual Studio Code windows side by side").
   - Reading text off the screen to click it (OCR) still needs tesseract, which takes sudo to install, or a new
     package. It is left out for now.
+- **Which window is in front (GNOME):**
+  - GNOME 50 refuses to tell ordinary programs which window has focus.
+  - SYRAX now ships a small read-only shell extension (`backend/gnome-extension/syrax-focus@son-of-ultron`) that
+    reports the focused window's title and app class.
+  - It is not installed: installing a shell extension is the owner's step. To turn it on, run
+    `cd backend && .venv/bin/python -m syrax.gnomefocus install`, then log out and in once.
+  - Until then the desktop tool works as before, without the front-window checks.
 - **Emotion estimation:** not built. Guessing a mood from typed text is unreliable, and SYRAX must not claim
   feelings it cannot show. The reasons are in EVOLUTION_PLAN.
 
