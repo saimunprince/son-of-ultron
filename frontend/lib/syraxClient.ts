@@ -256,6 +256,8 @@ export interface AutonomyStatus {
   daily_tasks?: number;
   /** the operator's autonomy level, 1 (observe and research) to 5 (continuous); backend permissions.LEVEL_NAMES */
   level?: number;
+  /** the level the last 14 days of own work support (autonomy.suggest_level); a recommendation only */
+  suggested_level?: { level: number; current: number; reasons: string[] };
 }
 
 export interface EstopState {

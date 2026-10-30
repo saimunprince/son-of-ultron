@@ -16,7 +16,10 @@ export function levelOf(a: AutonomyStatus | null | undefined): number {
 
 export function levelTitle(a: AutonomyStatus | null | undefined): string {
   const l = levelOf(a);
-  return `Autonomy level ${l} (${LEVEL_NAMES[l]}): how far SYRAX's own work may go. Only you change it.`;
+  const s = a?.suggested_level;
+  const hint =
+    s && s.level !== l ? ` The track record suggests level ${s.level} (${LEVEL_NAMES[s.level] ?? "?"}): ${s.reasons.join("; ")}.` : "";
+  return `Autonomy level ${l} (${LEVEL_NAMES[l]}): how far SYRAX's own work may go. Only you change it.${hint}`;
 }
 
 /** One step down (-1) or up (+1), never past 1..5. */

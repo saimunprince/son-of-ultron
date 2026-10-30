@@ -718,6 +718,45 @@ def check_path(raw: Any) -> Optional[Path]:
     return None
 
 
+SUGGEST_DAYS = 14
+SUGGEST_MIN_TASKS = 20
+
+
+def suggest_level(journal: Journal, current: int, now: Optional[float] = None) -> dict:
+    """The autonomy level the track record supports (EVOLUTION_PLAN wave 4, direction 130 autonomy calibration). Only a
+    recommendation: the operator alone changes the level (L-/L+), and 5 (self-restart) is never suggested. From this PC's
+    own work in the last SUGGEST_DAYS days: success rate of own tasks, emergency stops, skill regressions rolled back,
+    and own-work permission refusals per task."""
+    now = now or time.time()
+    since = now - SUGGEST_DAYS * 86400
+    tasks = [t for t in journal.tasks(limit=500, status=["SUCCESS", "PARTIAL", "FAILED", "CANCELLED"])
+             if t.get("kind") == "autonomous" and (t.get("created") or 0) >= since
+             and (t.get("last_event_id") is None or t["last_event_id"] >= 0)]
+    n = len(tasks)
+    ok = sum(1 for t in tasks if t["status"] == "SUCCESS")
+    stops = len(journal.events_of_type("estop.set", since=since))
+    regressions = len(journal.events_of_type("skill.regression", since=since))
+    refused = sum(1 for e in journal.events_of_type("permission.refused", since=since, limit=2000)
+                  if e["payload"].get("task_kind") == "autonomous")
+    ev = {"own_tasks": n, "succeeded": ok, "emergency_stops": stops, "skill_regressions": regressions, "own_refusals": refused,
+          "days": SUGGEST_DAYS}
+    rate = ok / n if n else 0.0
+    if n < SUGGEST_MIN_TASKS:
+        return {"level": current, "current": current, "reasons": [f"only {n} own tasks in {SUGGEST_DAYS} days: not enough to judge"], "evidence": ev}
+    down, up = [], []
+    if rate < 0.5:
+        down.append(f"own tasks succeeded {ok}/{n} ({rate:.0%})")
+    if stops:
+        down.append(f"the emergency stop was used {stops} time(s)")
+    if regressions >= 2:
+        down.append(f"{regressions} skill regressions were rolled back")
+    if not down and rate >= 0.8 and refused / n <= 0.05:
+        up.append(f"own tasks succeeded {ok}/{n} ({rate:.0%}), no emergency stop, refusals {refused}/{n} tasks")
+    level = max(1, current - 1) if down else (min(4, current + 1) if up and current < 4 else current)
+    reasons = down or up or [f"own tasks succeeded {ok}/{n} ({rate:.0%}): keep the level"]
+    return {"level": level, "current": current, "reasons": reasons, "evidence": ev}
+
+
 def suspects(journal: Journal, run: dict, previous: Optional[dict]) -> List[dict]:
     """The changes between two quality runs, newest first (EVOLUTION_PLAN wave 2, directions 5 causal reasoning, 6
     counterfactual reasoning, 90 self-improvement verification): SYRAX's own releases from the journal (commit.created
@@ -982,6 +1021,7 @@ class Autonomy:
             "resources": snap,
             "pressure": resources.pressure(snap),
             "last_maintenance": self.journal.get_meta("last_maintenance"),
+            "suggested_level": suggest_level(self.journal, self.level),
         }
 
     # ——— controller state and selection record (mission 2026-10-28) ———
