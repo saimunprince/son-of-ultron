@@ -229,6 +229,61 @@ def propose_deprecations(journal: Journal, now: Optional[float] = None) -> int:
     return made
 
 
+# EVOLUTION_PLAN direction 100 (skill generalization): duplicate_of refuses a new copy of a VERIFIED skill, but two
+# kept skills that serve one subject stayed two tools (live 2026-10-30: youtube_open and youtube_play, both {query}).
+# A pair is proposed for one general skill when the two share a name family (the word before the first "_") and the
+# same argument names, or when their purposes overlap by GENERALIZE_OVERLAP or more. Proposing only: the human decides.
+GENERALIZE_OVERLAP = 0.4
+
+
+def generalizations(journal: Journal, root=None) -> List[dict]:
+    """Pairs of VERIFIED skills, both with code under `root`, that one general skill could replace."""
+    from pathlib import Path
+
+    from syrax.skills import SKILLS_ROOT, purpose_overlap, schema_properties
+
+    root = Path(root or SKILLS_ROOT)
+    rows = []
+    for r in sorted(journal.skills(status="VERIFIED"), key=lambda r: r["name"]):
+        src = root / r["name"] / "skill.py"
+        if src.is_file():
+            rows.append((r, schema_properties(src.read_text(encoding="utf-8", errors="replace")) or set()))
+    out = []
+    for i, (a, pa) in enumerate(rows):
+        for b, pb in rows[i + 1:]:
+            fa, fb = a["name"].split("_")[0], b["name"].split("_")[0]
+            overlap = purpose_overlap(a.get("purpose") or "", b.get("purpose") or "")
+            if pa and pa == pb and "_" in a["name"] and "_" in b["name"] and fa == fb:
+                why = f"both are `{fa}` tools taking the same arguments ({', '.join(sorted(pa))})"
+            elif overlap >= GENERALIZE_OVERLAP:
+                why = f"their purposes overlap {overlap:.0%}"
+            else:
+                continue
+            out.append({"skills": [a["name"], b["name"]], "versions": [a.get("code_version"), b.get("code_version")],
+                        "arguments": sorted(pa | pb), "why": why})
+    return out
+
+
+def propose_generalizations(journal: Journal, now: Optional[float] = None, root=None) -> int:
+    """Journal each generalization once per pair of code versions as a proposal for the human (proposal.created)."""
+    made = 0
+    for g in generalizations(journal, root):
+        a, b = g["skills"]
+        key = f"skill_generalization:{a}:{b}:{g['versions'][0]}:{g['versions'][1]}"
+        if journal.get_meta(key):
+            continue
+        journal.set_meta(key, str(now or time.time()))
+        journal.record_sync("proposal.created", {
+            "kind": "skill_generalization", "limitation": f"skills `{a}` and `{b}`: {g['why']}",
+            "proposal": (f"Make one skill of `{a}` and `{b}`: {g['why']}. One skill taking ({', '.join(g['arguments'])}) and a "
+                         "`mode` argument for what differs gives the brain one choice instead of two; the other then retires "
+                         "(its code is kept). Say the word, or keep both."),
+            "sources": [], "skills": [a, b],
+        })
+        made += 1
+    return made
+
+
 def annotate(rows: List[dict], journal: Journal) -> List[dict]:
     """skills.list rows with their real-use record."""
     use = real_use(journal)

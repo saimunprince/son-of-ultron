@@ -94,6 +94,7 @@ async def scan(router: Any, journal: Journal, now: Optional[float] = None, max_t
 
         report["skill_candidates"] = skillevo.propose_candidates(journal, now)
         report["skill_deprecations"] = skillevo.propose_deprecations(journal, now)
+        report["skill_generalizations"] = skillevo.propose_generalizations(journal, now)
     except Exception:
         pass
     try:  # the daily pass also checks whether the brain order matches measured quality
