@@ -670,6 +670,16 @@ class DesktopControl(BaseTool):
             if code == 0 and path.exists() and path.stat().st_size > 0:
                 data = base64.b64encode(path.read_bytes()).decode()
                 return ToolResult(output=f"Screenshot saved to {path}", base64_image=data)
+        if not MACOS:
+            # GNOME on Wayland has no screenshot command for ordinary programs: its own Screenshot portal (wave 3,
+            # direction 201). The portal saves into ~/Pictures; the shot is moved here, so that folder does not fill
+            try:
+                got = await asyncio.to_thread(_portal_screenshot)
+                shutil.move(got, path)
+                data = base64.b64encode(path.read_bytes()).decode()
+                return ToolResult(output=f"Screenshot saved to {path}", base64_image=data)
+            except (RuntimeError, OSError, ValueError) as e:
+                return ToolResult(error=f"Could not take a screenshot: {e}")
         return ToolResult(error="Could not take a screenshot (no working screenshot tool).")
 
     async def _do_notify(self, value: str, target: str = "", **_) -> ToolResult:
@@ -972,3 +982,28 @@ def _hands_module():
     from syrax import linuxinput, wininput
 
     return wininput if WINDOWS else linuxinput  # the module's own platform flag, as every other desktop action
+
+
+def _portal_screenshot(runner=None) -> str:
+    """Path of a fresh screenshot from GNOME's Screenshot portal, through _portal_screenshot.py under the system
+    python3. `runner` (tests) returns the helper's JSON answer. Never in tests: SYRAX_NO_REAL_INPUT=1 refuses."""
+    import json as _json
+    import os as _os
+    import subprocess as _sp
+
+    from syrax import linuxinput
+
+    if runner is None:
+        if _os.getenv("SYRAX_NO_REAL_INPUT") == "1":
+            raise RuntimeError("reading the real screen is off here (SYRAX_NO_REAL_INPUT=1)")
+        r = _sp.run([linuxinput.SYSTEM_PY, str(Path(__file__).with_name("_portal_screenshot.py"))],
+                    capture_output=True, text=True, timeout=90)
+        answer = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else _json.dumps({"ok": False, "error": r.stderr[-200:]})
+    else:
+        answer = runner()
+    out = _json.loads(answer)
+    if not out.get("ok"):
+        raise RuntimeError(out.get("error") or "the screenshot portal failed")
+    if not Path(out["path"]).is_file():
+        raise RuntimeError(f"the portal named {out['path']}, which does not exist")
+    return out["path"]
