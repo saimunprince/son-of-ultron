@@ -5,6 +5,7 @@ backend/config/brains.tmp
 backend/config/mcp.json
 backend/config/ws.token
 backend/config/journal.db.key
+backend/config/portal.token
 .env
 .env.*
 

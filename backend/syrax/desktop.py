@@ -790,13 +790,13 @@ class DesktopControl(BaseTool):
         code, _, err = await _run("loginctl", "lock-session")
         return ToolResult(output="Screen locked.") if code == 0 else ToolResult(error=err or "lock failed")
 
-    # ——— hands (Windows, syrax/wininput.py): SYSTEM level, a human conversation only ———
+    # ——— hands (Windows: syrax/wininput.py; Linux GNOME: syrax/linuxinput.py): SYSTEM level, a human conversation only ———
     async def _hands(self, fn, *args) -> ToolResult:
-        from syrax import wininput
+        from syrax import linuxinput, wininput
 
         try:
             return ToolResult(output=await asyncio.to_thread(fn, *args))
-        except (ValueError, RuntimeError, wininput.Stopped) as e:
+        except (ValueError, RuntimeError, OSError, wininput.Stopped, linuxinput.Stopped) as e:
             return ToolResult(error=str(e))
 
     async def _with_front(self, done: ToolResult, before: Optional[str] = None) -> ToolResult:
@@ -818,7 +818,7 @@ class DesktopControl(BaseTool):
         before, own = await asyncio.to_thread(front_read)
         if own:
             return ToolResult(error=own_front_refusal(own))
-        return await self._with_front(await self._hands(wininput.type_text, value), before)
+        return await self._with_front(await self._hands(_hands_module().type_text, value), before)
 
     async def _do_hotkey(self, value: str, **_) -> ToolResult:
         from syrax import wininput
@@ -826,7 +826,7 @@ class DesktopControl(BaseTool):
         before, own = await asyncio.to_thread(front_read)
         if own:
             return ToolResult(error=own_front_refusal(own))
-        return await self._with_front(await self._hands(wininput.hotkey, value), before)
+        return await self._with_front(await self._hands(_hands_module().hotkey, value), before)
 
     async def _do_click(self, target: str, value: str = "", **_) -> ToolResult:
         from syrax import wininput
@@ -834,7 +834,7 @@ class DesktopControl(BaseTool):
         _, own = await asyncio.to_thread(front_read)
         if own:
             return ToolResult(error=own_front_refusal(own))
-        return await self._with_front(await self._hands(wininput.click, target, value or "left"))
+        return await self._with_front(await self._hands(_hands_module().click, target, value or "left"))
 
     async def _sight(self, target: str):
         """(the one best place, the places seen, the places dropped because they lie in SYRAX's own window)."""
@@ -902,7 +902,7 @@ class DesktopControl(BaseTool):
     async def _do_dark_mode(self, value: str, **_) -> ToolResult:
         from syrax import wininput
 
-        return await self._hands(wininput.dark_mode, value or "get")
+        return await self._hands(_hands_module().dark_mode, value or "get")
 
     async def _do_trash(self, target: str, **_) -> ToolResult:
         """Move a file or folder to the Recycle Bin (Send2Trash), so it can be restored."""
@@ -964,3 +964,11 @@ def _find(root: Path, needle: str, limit: int, budget_s: float) -> List[str]:
             out.append("(search stopped: time budget reached)")
             return out
     return out
+
+
+def _hands_module():
+    """The keyboard and mouse backend for this system: GNOME's RemoteDesktop portal on Linux (linuxinput, wave 3),
+    user32 on Windows (wininput)."""
+    from syrax import linuxinput, wininput
+
+    return wininput if WINDOWS else linuxinput  # the module's own platform flag, as every other desktop action

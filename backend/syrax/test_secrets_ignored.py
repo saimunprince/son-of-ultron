@@ -7,7 +7,7 @@ import subprocess
 from syrax.journal import BACKEND_ROOT
 
 SECRET_FILES = ("brains.json", "brains.tmp", "ws.token", "config.toml", "mcp.json", "memory.json", "journal.db",
-                "journal.db-wal", "journal.db-shm", "journal.db.key", "journal.db.owner", "backups/x/brains.json")
+                "journal.db-wal", "journal.db-shm", "journal.db.key", "journal.db.owner", "backups/x/brains.json", "portal.token")
 
 
 def test_every_secret_file_is_ignored_by_git():
