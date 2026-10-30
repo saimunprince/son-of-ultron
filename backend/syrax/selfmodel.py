@@ -555,6 +555,7 @@ def _implementation_of(tool: str) -> str:
         "compare_versions": "backend/syrax/versions.py",
         "journal_query": "backend/syrax/journal_query.py",
         "data_query": "backend/syrax/data_query.py",
+        "logic_check": "backend/syrax/logic_check.py",
         "remind": "backend/syrax/reminders.py",
         "undo": "backend/syrax/undo.py",
         "watch_topic": "backend/syrax/topics.py",
