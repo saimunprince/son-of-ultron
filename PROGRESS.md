@@ -126,7 +126,33 @@ pushed (each with a red test and a GREEN gate):
     decides. The conclusion says when there were too few runs to test.
   - **Drift monitor:** checked daily. A metric that gets worse two days in a row is journaled. Its first live read
     found tool failures at 5.4 → 10.5 → 14.1 %, mostly yesterday's fixed Chrome issue plus correct `learn` refusals.
-  - **Plan status:** 121 EXISTS, 112 PARTIAL, 46 MISSING, 21 out of scope (it was 105 / 123 / 51 / 21).
+  - **Plan status after this round:** 121 EXISTS, 112 PARTIAL, 46 MISSING, 21 out of scope (it was
+    105 / 123 / 51 / 21).
+
+### 2026-10-30, later: the rest of wave 2 and most of wave 4
+
+- **Honest reports:**
+  - RISE and the drift monitor count this PC's own rows only. Merged Windows history no longer mixes in.
+  - Guard refusals and the caller's own mistakes no longer count as tool failures. The live failure share is 3.4 %,
+    not 14 %.
+- **Assumptions are recorded:** a checkpoint says what the task took for granted (a claim no tool showed, fixed-text
+  output, untrusted input). A resumed task is told.
+- **Tool prediction:**
+  - Every tool call carries its predicted failure rate, and the predictions are scored.
+  - A tool that fails most of the time here is named after it fails, once per task.
+- **Release attribution:** a quality regression now names the changes made since the previous run, SYRAX's own and
+  the human's, and says how to test each one against its parent.
+- **Suggested autonomy level:** the status recommends a level from the last 14 days of own work. Only you change it,
+  and it never suggests 5.
+- **Conflicting objectives:** two objectives that would undo each other, or repeat each other, are not pursued
+  together.
+- **Skill retirement:** failing or idle skills are proposed to you. Only you retire them.
+- **Exploration:** rarely tried kinds of improvement get a fair chance (UCB bonus).
+- **Static checks:** every gate now fails on a bare `except:`, a mutable default argument, `shell=True` or
+  `os.system`.
+- **Soak test:** every gate runs 12 tasks with stops and an emergency stop, and checks that no worker is left behind,
+  every task finished, the chain is intact and memory stays bounded.
+- **Plan status now:** 134 EXISTS, 106 PARTIAL, 39 MISSING, 21 out of scope.
 
 ## Open
 
@@ -137,10 +163,6 @@ pushed (each with a red test and a GREEN gate):
 - **10 Windows skills have no code on this PC:** make_docx, make_xlsx, make_pptx, make_pdf, disk_usage, image_tools,
   json_tools, youtube_open, aircraft_nearby and system_optimizer. Copy their `backend/skills/<name>` folders, then
   rerun the import.
-- **The reports mix machines:** RISE and drift windows now include imported Windows events of the same days. They
-  should count this PC's own events, or label each machine.
-- **`learn` refusals count as tool failures:** the honesty guard refusing an unsupported claim is correct behaviour,
-  but it inflates the failure rate.
 - **From the audits, not fixed yet:**
   - **Journal write failures:** a failed write during a task is only counted, and the task can still end SUCCESS.
     If the write that failed was an `intent.recorded`, recovery cannot see that a send may have gone out.
@@ -153,10 +175,15 @@ pushed (each with a red test and a GREEN gate):
 directions to the code, one row each: 105 EXISTS, 123 PARTIAL, 51 MISSING and 21 out of scope (with reasons). The
 rest is scheduled in four waves.
 
-1. **Rest of wave 2:**
-   - tool-outcome prediction;
-   - release attribution;
-   - assumption tracking.
-2. **Fix the two report issues above:** machine mixing, and `learn` refusals counted as failures.
-3. **Waves 3 and 4,** as written in the plan. Three of their items need the owner: xdotool, the English-only
-   persona, and emotion estimation.
+1. **Rest of wave 4:**
+   - workflow synthesis (repeated tool sequences becoming skills);
+   - knowledge links;
+   - ablation.
+2. **Wave 3, the parts that need no owner decision:**
+   - quota-aware routing;
+   - inference cache;
+   - quantization-aware local model choice.
+3. **Owner decisions:**
+   - xdotool for Linux desktop control;
+   - the English-only persona (Bangla replies);
+   - emotion estimation.

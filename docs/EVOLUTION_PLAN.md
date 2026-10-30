@@ -23,8 +23,8 @@ Paths are under `backend/syrax/` unless shown otherwise. Tests sit beside the mo
 | VI–VII Perception, infrastructure, future (201–300) | 34 | 38 | 11 | 17 |
 | **All 300** | **105** | **123** | **51** | **21** |
 
-The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After waves 1 and 2 (built
-the same day, 17 rows changed): **121 EXISTS, 112 PARTIAL, 46 MISSING, 21 out of scope.**
+The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After the build of 2026-10-30 (waves 1, 2 and part of 4):
+**134 EXISTS, 106 PARTIAL, 39 MISSING, 21 out of scope.**
 
 **What is strong:** the journal and recovery, the permissions and kernel boundary, honesty checks on answers,
 emergency stop and budgets, the release gate with red-test proof, skill versioning and rollback, and knowledge with
@@ -67,8 +67,8 @@ provenance and freshness.
 | 2 | Deductive reasoning | PARTIAL | brain + python_execute; claims.py checks conclusions | no rule engine |
 | 3 | Inductive reasoning | PARTIAL | limits.rank, scorecard, routing.table (test_routing, test_limits_order) | counts only |
 | 4 | Abductive reasoning | PARTIAL | tool_error.py classes, followup.derive | no ranked explanations |
-| 5 | Causal reasoning | PARTIAL | experiments A/B, repro fail-before proof | score changes not attributed to commits (wave 2) |
-| 6 | Counterfactual reasoning | MISSING | — | "what if X had not been released" (wave 2, attribution) |
+| 5 | Causal reasoning | EXISTS (wave 2: autonomy.suspects, test_release_attribution) | experiments A/B, repro fail-before proof | score changes not attributed to commits (wave 2) |
+| 6 | Counterfactual reasoning | PARTIAL (wave 2: suspects named with a compare-to-parent test; no automatic counterfactual run) | — | "what if X had not been released" (wave 2, attribution) |
 | 7 | Probabilistic reasoning | PARTIAL | Laplace smoothing in routing/limits/scorecard | no probabilities on decisions |
 | 8 | Constraint reasoning | PARTIAL | claims.exact_form, permissions.decide | regex constraints only |
 | 9 | Analogical reasoning | PARTIAL | autonomy.past_experience | same subject only |
@@ -90,7 +90,7 @@ provenance and freshness.
 | 25 | Strategy selection | PARTIAL | routing.preferred, strategy_of | no strategy library |
 | 26 | Cognitive load management | PARTIAL | compact_tools, budgets (test_compact_tools) | no context summarizing |
 | 27 | Reasoning audit | EXISTS | think events, HMAC chain, journal_query (test_journal_chain) | not critiqued |
-| 28 | Assumption tracking | PARTIAL | checkpoints.assumptions column is never filled | **wave 2** |
+| 28 | Assumption tracking | EXISTS (wave 2: checkpoint assumptions, test_assumptions) | checkpoints.assumptions column is never filled | **wave 2** |
 | 29 | Blind-spot detection | PARTIAL | capmatrix UNVERIFIED rows | — |
 | 30 | Metacognitive calibration | EXISTS (wave 2: calibrate.py, test_calibration) | same as 22 | **wave 2** |
 | 31 | Object permanence | PARTIAL | presence.observe_window, intent ledger | no world-entity store |
@@ -99,7 +99,7 @@ provenance and freshness.
 | 34 | Physical intuition | OUT OF SCOPE | — | no body |
 | 35 | Social world modeling | PARTIAL | memory preference/rule types, disputes | no model of the human |
 | 36 | State transition modeling | PARTIAL | phases.py, controller states | own states only |
-| 37 | Environment prediction | MISSING | — | **wave 2** (tool-outcome prediction) |
+| 37 | Environment prediction | EXISTS (wave 2: predicted_failure per call, test_tool_prediction) | — | **wave 2** (tool-outcome prediction) |
 | 38 | Model uncertainty | PARTIAL | UNCERTAIN recovery, capmatrix | not quantified |
 | 39 | Model revision | EXISTS | knowledge supersede, memory.correct (test_knowledge_state) | — |
 | 40 | Reality grounding | EXISTS | claims.py world/outcome checks (test_world_claims) | — |
@@ -162,16 +162,16 @@ provenance and freshness.
 | 87 | Hyperparameter optimization | MISSING | constants are hand-set | — |
 | 88 | Fine-tuning pipeline | OUT OF SCOPE | trajectories.py exports only | no training access |
 | 89 | Weight evolution experiments | OUT OF SCOPE | — | no weights |
-| 90 | Self-improvement verification | EXISTS | repro proof, gate, contracts (test_repro_prove, test_verify) | per-release attribution (wave 2) |
+| 90 | Self-improvement verification | EXISTS (wave 2: release attribution, test_release_attribution) | repro proof, gate, contracts (test_repro_prove, test_verify) | per-release attribution (wave 2) |
 | 91 | Skill extraction | PARTIAL | skillevo.candidates proposes only | wave 4 (workflow synthesis) |
 | 92 | Workflow synthesis | MISSING | — | **wave 4** |
 | 93 | Tool discovery | PARTIAL | radar, github_search | — |
-| 94 | Tool selection | PARTIAL | brain chooses; tool hints | wave 2 (outcome prediction) |
+| 94 | Tool selection | EXISTS (wave 2: flaky-tool note, test_tool_prediction) | brain chooses; tool hints | wave 2 (outcome prediction) |
 | 95 | Tool composition | MISSING | — | wave 4 (workflow synthesis) |
 | 96 | Tool testing | EXISTS | run_skill_tests, tool_verified (test_skills) | — |
 | 97 | API integration | PARTIAL | API-wrapping skills | no OpenAPI → skill |
 | 98 | Skill versioning | EXISTS | keep_version, rollback, content_hash (test_skill_lifecycle) | — |
-| 99 | Skill deprecation | PARTIAL | auto-rollback on regression (2026-10-29, test_skill_auto_rollback) | wave 4 (deprecation proposals) |
+| 99 | Skill deprecation | EXISTS (auto-rollback + deprecation proposals, test_skill_deprecation) | auto-rollback on regression (2026-10-29, test_skill_auto_rollback) | wave 4 (deprecation proposals) |
 | 100 | Skill generalization | MISSING | duplicate_of refuses only | — |
 | 101 | Code comprehension | EXISTS | repo_map (test_selfedit) | no call graph |
 | 102 | Architecture analysis | PARTIAL | impact_of on hand-kept system_map.json | — |
@@ -179,7 +179,7 @@ provenance and freshness.
 | 104 | Test generation | EXISTS | repro.prove/screen (test_repro_prove) | — |
 | 105 | Bug localization | PARTIAL | repro.signals/trace_excerpt | LLM-driven |
 | 106 | Program synthesis | EXISTS | skill_create, apply_patch, codebench (test_codebench) | — |
-| 107 | Static analysis | PARTIAL | assertless_tests, level_of_source, staged_lines | wave 4 (gate) |
+| 107 | Static analysis | EXISTS (wave 4: test_static_checks) | assertless_tests, level_of_source, staged_lines | wave 4 (gate) |
 | 108 | Performance profiling | PARTIAL | bench.py timings (test_bench) | no hotspot profiler |
 | 109 | Dependency management | PARTIAL | radar osv/npm audit, missing_dependencies | — |
 | 110 | Reproducible builds | EXISTS (wave 1: test_declared_deps) | worktrees, package-lock | **wave 1** (pin check) |
@@ -200,14 +200,14 @@ provenance and freshness.
 |---|---|---|---|---|
 | 121 | Goal representation | EXISTS | objectives table, check_spec (test_objective_checks) | — |
 | 122 | Goal prioritization | EXISTS | priority, limits.rank (test_limits) | — |
-| 123 | Goal conflict detection | MISSING | — | **wave 4** |
+| 123 | Goal conflict detection | EXISTS (wave 4: goal_conflict, test_goal_conflicts) | — | **wave 4** |
 | 124 | Goal revision | EXISTS | reopen, rejudge_blocked, followup (test_followup_learn) | — |
 | 125 | Initiative selection | EXISTS | limits.choose, derive_objectives (test_limits) | — |
 | 126 | Opportunity detection | EXISTS | repro.signals, selfmodel.weaknesses (test_repro_hunt) | internal only |
 | 127 | Proactive monitoring | EXISTS | proactive, topics, radar, stallwatch (test_proactive) | — |
 | 128 | Task persistence | EXISTS | resume, plan.next_step (test_resume_fidelity) | — |
 | 129 | Stopping criteria | EXISTS | MAX_ATTEMPTS, daily budget, E-STOP (test_estop, test_own_daily_budget) | — |
-| 130 | Autonomy calibration | PARTIAL | levels set by the operator only | wave 4 (suggested level) |
+| 130 | Autonomy calibration | EXISTS (wave 4: suggest_level, test_suggest_level) | levels set by the operator only | wave 4 (suggested level) |
 | 131 | Checkpointing | EXISTS | checkpoint_sync (test_journal) | — |
 | 132 | Crash recovery | EXISTS | recover_interrupted (test_boot_policy) | — |
 | 133 | Power-loss recovery | EXISTS | WAL synchronous=FULL, atomic writes (test_backup) | no power-cut test |
@@ -259,11 +259,11 @@ provenance and freshness.
 | 181 | Knowledge curiosity | PARTIAL | topics, limitation research | — |
 | 182 | Information-seeking policy | PARTIAL | recall/know before research (prompt) | — |
 | 183 | Novelty detection | PARTIAL | dedupe (test_web_dedupe) | no novelty score |
-| 184 | Intrinsic-reward modeling | MISSING | — | wave 4 (UCB bonus) |
-| 185 | Exploration-exploitation balance | PARTIAL | archive.select_parent | ranking is greedy |
+| 184 | Intrinsic-reward modeling | EXISTS (wave 4: UCB bonus, test_explore_bonus) | — | wave 4 (UCB bonus) |
+| 185 | Exploration-exploitation balance | EXISTS (wave 4: UCB bonus, test_explore_bonus) | archive.select_parent | ranking is greedy |
 | 186 | Question generation | PARTIAL | from errors only | — |
-| 187 | Uncertainty-driven exploration | MISSING | — | **wave 4** |
-| 188 | Curiosity prioritization | MISSING | — | wave 4 |
+| 187 | Uncertainty-driven exploration | EXISTS (wave 4: UCB bonus, test_explore_bonus) | — | **wave 4** |
+| 188 | Curiosity prioritization | EXISTS (wave 4: UCB bonus, test_explore_bonus) | — | wave 4 |
 | 189 | Safe exploration | EXISTS | levels, worktrees, Landlock (test_isolated_evolution) | — |
 | 190 | Discovery logging | EXISTS | knowledge table, experiments (test_knowledge_state) | — |
 | 191 | Moral-reasoning models | MISSING | prompt only | — |
@@ -349,9 +349,9 @@ It is listed under wave 4 as optional.
 | 259 | Audit integrity | EXISTS | HMAC chain (test_journal_chain) | key on the same host |
 | 260 | Incident response | EXISTS | E-STOP, alerts (test_estop) | no postmortem record |
 | 261 | Regression testing | EXISTS | release gate (test_verify) | — |
-| 262 | Stress testing | MISSING | — | wave 4 (soak harness) |
+| 262 | Stress testing | EXISTS (wave 4: test_soak) | — | wave 4 (soak harness) |
 | 263 | Adversarial testing | EXISTS (wave 1: injection corpus, test_injection_taint) | guard-weakening, untrusted content tests | **wave 1** (injection corpus) |
-| 264 | Long-duration evaluation | PARTIAL | rise windows | wave 4 |
+| 264 | Long-duration evaluation | PARTIAL (wave 4: test_soak in every gate; no days-long run) | rise windows | wave 4 |
 | 265 | Drift detection | EXISTS (wave 2: rise.drift, test_drift) | rise.trend, no alerts | **wave 2** |
 | 266 | Memory-corruption detection | EXISTS | verify_chain, integrity_check (test_backup) | — |
 | 267 | Graceful degradation | EXISTS | no-brain outage, smaller model (test_pool_empty) | — |
