@@ -38,28 +38,85 @@ def _ok(result: Any) -> bool:
     return not err and not _ERR.search(text) and "'success': False" not in text
 
 
-async def run_arm(collection: ToolCollection, arm: dict, metric: str, repeats: int) -> dict:
+ALPHA = 0.10  # the permutation p-value a difference must reach; with 3 runs per arm the smallest possible p is 0.10
+
+
+def _check_arm(collection: ToolCollection, arm: dict) -> tuple:
     name = str(arm.get("tool") or "")
     args = arm.get("args") if isinstance(arm.get("args"), dict) else {}
     if name not in collection.tool_map:
         raise ValueError(f"unknown tool {name!r}")
     if name in ("release", "skill_create", "experiment", "compare_versions", "ask_human", "terminate"):
         raise ValueError(f"{name} cannot be an experiment arm")
-    samples: List[float] = []
-    successes = 0
-    outputs: List[str] = []
+    return name, args
+
+
+async def _one(collection: ToolCollection, name: str, args: dict, metric: str) -> tuple:
+    t0 = time.perf_counter()
+    res = await collection.execute(name=name, tool_input=args)
+    ms = (time.perf_counter() - t0) * 1000
+    ok = _ok(res)
+    text = str(res)
+    return (ms if metric == "ms" else float(len(text)) if metric == "output_len" else float(ok)), ok, text[:300]
+
+
+def _arm(name: str, args: dict, runs: List[tuple]) -> dict:
+    samples = [r[0] for r in runs]
+    return {"tool": name, "args": args, "repeats": len(runs), "samples": [round(x, 3) for x in samples],
+            "value": round(sum(samples) / len(samples), 3), "successes": sum(1 for r in runs if r[1]), "last_output": runs[-1][2]}
+
+
+async def run_arm(collection: ToolCollection, arm: dict, metric: str, repeats: int) -> dict:
+    name, args = _check_arm(collection, arm)
+    return _arm(name, args, [await _one(collection, name, args, metric) for _ in range(repeats)])
+
+
+async def run_arms(collection: ToolCollection, baseline: dict, candidate: dict, metric: str, repeats: int, seed: str) -> tuple:
+    """Both arms, interleaved: each repeat runs baseline and candidate once, in a seeded random order (EVOLUTION_PLAN
+    wave 2, direction 114). All baseline runs before all candidate runs let a warming cache or a busier machine pass
+    for an effect. The order is on record, and the same hypothesis gets the same order."""
+    import random
+
+    bn, ba = _check_arm(collection, baseline)
+    cn, ca = _check_arm(collection, candidate)
+    rng = random.Random(seed)
+    b_runs, c_runs, order = [], [], []
     for _ in range(repeats):
-        t0 = time.perf_counter()
-        res = await collection.execute(name=name, tool_input=args)
-        ms = (time.perf_counter() - t0) * 1000
-        ok = _ok(res)
-        successes += ok
-        text = str(res)
-        outputs.append(text[:300])
-        samples.append(ms if metric == "ms" else float(len(text)) if metric == "output_len" else float(ok))
-    value = sum(samples) / len(samples)
-    return {"tool": name, "args": args, "repeats": repeats, "samples": [round(s, 3) for s in samples], "value": round(value, 3),
-            "successes": successes, "last_output": outputs[-1]}
+        first_base = rng.random() < 0.5
+        order.append("BC" if first_base else "CB")
+        for which in ("B", "C") if first_base else ("C", "B"):
+            if which == "B":
+                b_runs.append(await _one(collection, bn, ba, metric))
+            else:
+                c_runs.append(await _one(collection, cn, ca, metric))
+    return _arm(bn, ba, b_runs), _arm(cn, ca, c_runs), order
+
+
+def permutation_p(a: List[float], b: List[float]) -> Optional[float]:
+    """Exact two-sided permutation p-value of the difference of means (EVOLUTION_PLAN wave 2, direction 116): the share
+    of all relabellings of the pooled samples whose mean difference is at least as large as the observed one. None when
+    an arm has fewer than 2 samples. At most 5 + 5 samples here (252 relabellings)."""
+    from itertools import combinations
+
+    if len(a) < 2 or len(b) < 2:
+        return None
+    pooled, n = list(a) + list(b), len(a)
+    observed = abs(sum(a) / len(a) - sum(b) / len(b))
+    total = hits = 0
+    for idx in combinations(range(len(pooled)), n):
+        chosen = set(idx)
+        x = [pooled[i] for i in idx]
+        y = [pooled[i] for i in range(len(pooled)) if i not in chosen]
+        total += 1
+        hits += abs(sum(x) / len(x) - sum(y) / len(y)) >= observed - 1e-12
+    return round(hits / total, 4)
+
+
+def can_reach_alpha(n_a: int, n_b: int) -> bool:
+    """Whether arms of these sizes can reach ALPHA at all: with 2 + 2 runs the smallest possible p is 0.33, so a
+    significance test there could never pass, and the overlap rule decides instead (said in the conclusion)."""
+    floor = permutation_p([float(i) for i in range(n_a)], [100.0 + i for i in range(n_b)])
+    return floor is not None and floor <= ALPHA
 
 
 def _overlap(base: dict, cand: dict) -> bool:
@@ -93,9 +150,16 @@ def judge(metric: str, base: dict, cand: dict, min_effect_pct: Optional[float] =
     if _overlap(base, cand):
         return "NO_DIFFERENCE", (f"{metric}: means {b:.3f} vs {c:.3f} ({pct:+.1f}%), but the samples overlap "
                                  f"({min(base['samples'])}-{max(base['samples'])} vs {min(cand['samples'])}-{max(cand['samples'])})")
+    bs, cs = base.get("samples") or [], cand.get("samples") or []
+    p = permutation_p(bs, cs)
+    tested = p is not None and can_reach_alpha(len(bs), len(cs))
+    if tested and p > ALPHA:
+        return "NO_DIFFERENCE", f"{metric}: means {b:.3f} vs {c:.3f} ({pct:+.1f}%), permutation p={p} > {ALPHA}"
     lower_better = metric == "ms"
     cand_better = (c < b) if lower_better else (c > b)
-    return ("CANDIDATE_BETTER" if cand_better else "BASELINE_BETTER"), f"{metric}: baseline {b:.3f}, candidate {c:.3f} ({pct:+.1f}%)"
+    note = (f", permutation p={p}" if tested else
+            f", too few runs per arm for a significance test (p could not reach {ALPHA}); decided by the separated samples")
+    return ("CANDIDATE_BETTER" if cand_better else "BASELINE_BETTER"), f"{metric}: baseline {b:.3f}, candidate {c:.3f} ({pct:+.1f}%){note}"
 
 
 class ExperimentEngine:
@@ -120,9 +184,9 @@ class ExperimentEngine:
         # the success criterion is on record before either arm runs: it cannot be chosen after seeing the numbers
         await self.journal.record("experiment.started", {"hypothesis": hypothesis[:160], "metric": metric, "repeats": repeats,
                                                          "min_effect_pct": threshold}, task_id=task_id)
-        base = await run_arm(collection, baseline, metric, repeats)
-        cand = await run_arm(collection, candidate, metric, repeats)
+        base, cand, order = await run_arms(collection, baseline, candidate, metric, repeats, seed=hypothesis)
         verdict, conclusion = judge(metric, base, cand, threshold)
+        p = permutation_p(base["samples"], cand["samples"])
         next_action = {
             "CANDIDATE_BETTER": "adopt the candidate where it applies; keep the record as evidence",
             "BASELINE_BETTER": "keep the baseline; the hypothesis is not supported",
@@ -131,7 +195,8 @@ class ExperimentEngine:
         }[verdict]
         row = await self.journal.run(
             self.journal.add_experiment_sync, hypothesis, base, cand, metric,
-            {"baseline": base["value"], "candidate": cand["value"], "unit": metric, "repeats": repeats, "min_effect_pct": threshold},
+            {"baseline": base["value"], "candidate": cand["value"], "unit": metric, "repeats": repeats, "min_effect_pct": threshold,
+             "order": order, "p_value": p, "alpha": ALPHA},
             conclusion, verdict, objective, next_action, task_id,
         )
         return row
