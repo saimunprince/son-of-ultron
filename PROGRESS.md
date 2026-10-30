@@ -152,7 +152,23 @@ pushed (each with a red test and a GREEN gate):
   `os.system`.
 - **Soak test:** every gate runs 12 tasks with stops and an emergency stop, and checks that no worker is left behind,
   every task finished, the chain is intact and memory stays bounded.
-- **Plan status now:** 134 EXISTS, 106 PARTIAL, 39 MISSING, 21 out of scope.
+- **Plan status then:** 134 EXISTS, 106 PARTIAL, 39 MISSING, 21 out of scope.
+
+### 2026-10-30, last round: wave 3 (no owner needed) and the rest of wave 4
+
+- **Daily quotas:**
+  - A brain whose daily free quota is spent rests until the quota resets. It is no longer retried every 15 seconds
+    all day.
+  - For Gemini, only the spent model rests; its other models stay in use.
+- **Workflows:** a skill proposal for a repeated request now lists the exact tool steps the tasks shared, with the
+  varying parts as parameters.
+- **Knowledge links:** facts of plain forms ("X uses Y", "X runs on Y") are linked by name. `know` shows related
+  facts one step away (28 links from 792 live facts, pronouns and sentence starts excluded).
+- **Decided not to build:**
+  - An inference cache: every brain call carries its own conversation, so identical requests do not repeat.
+  - Automatic local-model choice: you chose the model.
+  - Separate ablation: release attribution already compares each suspect commit with its parent.
+- **Plan status now:** 137 EXISTS, 109 PARTIAL, 32 MISSING, 22 out of scope.
 
 ## Open
 
@@ -171,19 +187,13 @@ pushed (each with a red test and a GREEN gate):
 
 ## Next
 
-**The long-term plan is [docs/EVOLUTION_PLAN.md](docs/EVOLUTION_PLAN.md).** It maps the owner's 300 research
-directions to the code, one row each: 105 EXISTS, 123 PARTIAL, 51 MISSING and 21 out of scope (with reasons). The
-rest is scheduled in four waves.
+Everything in the plan that needs no owner decision and fits this PC is built. What is left:
 
-1. **Rest of wave 4:**
-   - workflow synthesis (repeated tool sequences becoming skills);
-   - knowledge links;
-   - ablation.
-2. **Wave 3, the parts that need no owner decision:**
-   - quota-aware routing;
-   - inference cache;
-   - quantization-aware local model choice.
-3. **Owner decisions:**
-   - xdotool for Linux desktop control;
-   - the English-only persona (Bangla replies);
-   - emotion estimation.
+1. **Owner decisions:**
+   - **xdotool or ydotool** (a system package), so SYRAX can click and type on Linux.
+   - **The persona's English-only rule:** whether SYRAX answers in Bangla when you write in Bangla.
+   - **Emotion estimation:** whether you want it at all.
+2. **Watching:** the drift monitor, calibration and tool-prediction scores fill in as SYRAX works. The first
+   readings arrive within days.
+3. **The remaining PARTIAL and MISSING rows** are mostly research topics (formal logic, theory of mind, fairness,
+   simulation) or things this PC cannot do. Each needs its own design before code.

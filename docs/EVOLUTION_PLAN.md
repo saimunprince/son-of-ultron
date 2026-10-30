@@ -23,8 +23,8 @@ Paths are under `backend/syrax/` unless shown otherwise. Tests sit beside the mo
 | VI–VII Perception, infrastructure, future (201–300) | 34 | 38 | 11 | 17 |
 | **All 300** | **105** | **123** | **51** | **21** |
 
-The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After the build of 2026-10-30 (waves 1, 2 and part of 4):
-**134 EXISTS, 106 PARTIAL, 39 MISSING, 21 out of scope.**
+The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After the build of 2026-10-30 (waves 1, 2, 4 and the no-owner part of 3):
+**137 EXISTS, 109 PARTIAL, 32 MISSING, 22 out of scope.**
 
 **What is strong:** the journal and recovery, the permissions and kernel boundary, honesty checks on answers,
 emergency stop and budgets, the release gate with red-test proof, skill versioning and rollback, and knowledge with
@@ -123,12 +123,12 @@ provenance and freshness.
 | 53 | Semantic memory | EXISTS | knowledge table, memory facts (test_research, test_memory) | keyword recall |
 | 54 | Procedural memory | EXISTS | skills registry (test_skill_lifecycle) | — |
 | 55 | Autobiographical memory | EXISTS | selfmodel identity, RISE ledger (test_selfmodel) | — |
-| 56 | Associative retrieval | PARTIAL | word-overlap recall | wave 4 (knowledge links) |
+| 56 | Associative retrieval | EXISTS (wave 4: knowledge_links one-hop, test_knowledge_links) | word-overlap recall | wave 4 (knowledge links) |
 | 57 | Memory consolidation | EXISTS | consolidate duplicates (test_consolidate) | — |
 | 58 | Memory compression | PARTIAL | journal.maintain prunes chatty events | no episode summaries |
 | 59 | Forgetting policy | EXISTS | observation expiry, retention (test_memory_expiry) | — |
 | 60 | Memory integrity | EXISTS | HMAC chain, backup verify (test_journal_chain, test_backup) | — |
-| 61 | Knowledge graph | MISSING | — | wave 4 (knowledge links) |
+| 61 | Knowledge graph | PARTIAL (wave 4: subject-relation-object links from plain claims, test_knowledge_links) | — | wave 4 (knowledge links) |
 | 62 | Source provenance | EXISTS | source_url/excerpt, learn support check (test_learn_supports_claim) | — |
 | 63 | Temporal knowledge | PARTIAL | created/verified_at, ages | no valid-from/until |
 | 64 | Evidence weighting | PARTIAL | research.agreement, capped confidence | no per-source reliability |
@@ -136,7 +136,7 @@ provenance and freshness.
 | 66 | Knowledge freshness | EXISTS | STALE_DAYS, knowledge_age_days (test_research_engine) | — |
 | 67 | Uncertainty annotations | PARTIAL | `know` shows confidence/DISPUTED/stale | answers carry none |
 | 68 | Knowledge deduplication | EXISTS | consolidate, web dedupe (test_web_dedupe) | — |
-| 69 | Cross-domain integration | MISSING | — | wave 4 (knowledge links) |
+| 69 | Cross-domain integration | PARTIAL (wave 4: facts from different topics meet through a shared name) | — | wave 4 (knowledge links) |
 | 70 | Knowledge gap mapping | PARTIAL | known limitations, research topics | — |
 | 71 | Multilingual understanding | MISSING | catalog language_follow is TODO | **wave 3** |
 | 72 | Contextual interpretation | PARTIAL | exact_form, context isolation (test_context_isolation) | — |
@@ -163,11 +163,11 @@ provenance and freshness.
 | 88 | Fine-tuning pipeline | OUT OF SCOPE | trajectories.py exports only | no training access |
 | 89 | Weight evolution experiments | OUT OF SCOPE | — | no weights |
 | 90 | Self-improvement verification | EXISTS (wave 2: release attribution, test_release_attribution) | repro proof, gate, contracts (test_repro_prove, test_verify) | per-release attribution (wave 2) |
-| 91 | Skill extraction | PARTIAL | skillevo.candidates proposes only | wave 4 (workflow synthesis) |
-| 92 | Workflow synthesis | MISSING | — | **wave 4** |
+| 91 | Skill extraction | EXISTS (wave 4: candidates carry workflows, test_workflow_synthesis) | skillevo.candidates proposes only | wave 4 (workflow synthesis) |
+| 92 | Workflow synthesis | PARTIAL (wave 4: workflow extracted into skill proposals; a skill cannot call agent tools, so no one-call replay) | — | **wave 4** |
 | 93 | Tool discovery | PARTIAL | radar, github_search | — |
 | 94 | Tool selection | EXISTS (wave 2: flaky-tool note, test_tool_prediction) | brain chooses; tool hints | wave 2 (outcome prediction) |
-| 95 | Tool composition | MISSING | — | wave 4 (workflow synthesis) |
+| 95 | Tool composition | PARTIAL (wave 4: the tool sequence is recorded as a recipe, test_workflow_synthesis) | — | wave 4 (workflow synthesis) |
 | 96 | Tool testing | EXISTS | run_skill_tests, tool_verified (test_skills) | — |
 | 97 | API integration | PARTIAL | API-wrapping skills | no OpenAPI → skill |
 | 98 | Skill versioning | EXISTS | keep_version, rollback, content_hash (test_skill_lifecycle) | — |
@@ -187,7 +187,7 @@ provenance and freshness.
 | 112 | Literature synthesis | PARTIAL | research + consolidate | synthesis left to the LLM |
 | 113 | Hypothesis testing | EXISTS | experiments judge, success criterion declared first (test_experiment_rigor) | — |
 | 114 | Control-group design | EXISTS (wave 2: interleaved arms, test_experiment_stats) | baseline arm, run before the candidate (order bias) | **wave 2** |
-| 115 | Ablation studies | MISSING | — | wave 4 |
+| 115 | Ablation studies | PARTIAL (release attribution names each suspect commit to compare against its parent: ablation one change at a time) | — | wave 4 |
 | 116 | Statistical analysis | EXISTS (wave 2: permutation test, test_experiment_stats) | NOISE_PCT, overlap; no significance test | **wave 2** |
 | 117 | Reproducibility checks | EXISTS | repro.prove/replay (test_repro_release) | — |
 | 118 | Negative-result analysis | EXISTS | NO_DIFFERENCE verdicts, dead_ends (test_archive) | — |
@@ -323,7 +323,7 @@ It is listed under wave 4 as optional.
 |---|---|---|---|---|
 | 231–233, 237 | Distributed inference, federated learning, P2P, distributed memory | OUT OF SCOPE | one node | — |
 | 234 | Task scheduling | EXISTS | queue, reminders, cycle (test_task_queue) | — |
-| 235 | Load balancing | PARTIAL | failover, cooldowns | wave 3 (quota-aware) |
+| 235 | Load balancing | EXISTS (wave 3: daily-quota rest per provider or pooled model, test_daily_quota) | failover, cooldowns | wave 3 (quota-aware) |
 | 236 | Fault-tolerant networking | EXISTS | retry/failover (test_no_brain_outage) | — |
 | 238 | Consensus mechanisms | PARTIAL | cross-brain review | — |
 | 239 | Privacy-aware computation | PARTIAL | redact | no "keep it local" routing |
@@ -360,12 +360,12 @@ It is listed under wave 4 as optional.
 | 270 | Reliability metrics | EXISTS | rise.py (test_rise) | — |
 | 271 | Compute budgeting | EXISTS | daily/tool budgets (test_controller_budgets) | no quota ledger |
 | 272 | Memory optimization | PARTIAL | rlimits, smaller model on low RAM | — |
-| 273 | Model quantization | MISSING | largest model picked | **wave 3** |
-| 274 | Inference caching | MISSING | — | wave 3 |
+| 273 | Model quantization | PARTIAL (the local model is chosen by the owner; automatic choice only when none is set) | largest model picked | **wave 3** |
+| 274 | Inference caching | OUT OF SCOPE here (every brain call carries its own conversation, so identical requests do not repeat; a cache would only risk stale answers) | — | wave 3 |
 | 275 | Workload prioritization | EXISTS | human requests first (test_task_queue) | — |
 | 276 | Energy monitoring | PARTIAL | battery only | — |
 | 277 | Storage lifecycle management | EXISTS | maintain, backup.prune (test_backup) | — |
-| 278 | Cost-aware routing | PARTIAL | routing quality per kind | **wave 3** |
+| 278 | Cost-aware routing | PARTIAL (wave 3: daily quotas respected; no cost model) | routing quality per kind | **wave 3** |
 | 279 | Capacity planning | MISSING | — | — |
 | 280 | Sustainable operation | PARTIAL | quiet hours, pressure | — |
 | 281, 287, 289, 290 | Global workspace, consciousness theories, subjective experience, sentience ethics | OUT OF SCOPE | — | see above |
