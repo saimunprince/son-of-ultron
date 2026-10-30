@@ -998,6 +998,23 @@ class Autonomy:
                 return o
         return None
 
+    async def _check_drift(self) -> None:
+        """Once a day: metrics that got worse two days running are journaled drift.detected (rise.drift, wave 2), so a
+        slow decline is on record before it shows in a weekly report. Measuring never stops the cycle."""
+        last = float(self.journal.get_meta("last_drift_check") or 0)
+        if time.time() - last < 86400:
+            return
+        await self.journal.run(self.journal.set_meta, "last_drift_check", str(time.time()))
+        try:
+            from syrax import rise
+
+            found = await asyncio.to_thread(rise.drift, Path(self.journal.path))
+        except Exception as e:
+            logger.warning(f"drift check failed: {e}")
+            return
+        for d in found:
+            await self.journal.record("drift.detected", d)
+
     async def _roll_back_regressions(self) -> None:
         """A skill whose new version keeps failing in real use while the kept one before it worked goes back to that
         version (skillevo.regressions; audit 2026-10-29). At level 3 and up only: it changes what SYRAX can do. The
@@ -1080,6 +1097,7 @@ class Autonomy:
             except Exception as e:
                 logger.warning(f"re-checking catalog features failed: {e}")
         await self._roll_back_regressions()
+        await self._check_drift()
         await self._state("SELECTING")
         objective = self._pick()
         if objective is None and self.reflect:

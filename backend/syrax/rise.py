@@ -399,6 +399,48 @@ def measure(journal_path: Path = DEFAULT_FILE, now: Optional[float] = None) -> D
             "events": span[2], "first_event": span[0], "last_event": span[1], "metrics": rows}
 
 
+DRIFT_DAYS = 1.0  # the window of the drift check: three consecutive days
+
+
+def _worse(a: float, b: float, better: str) -> bool:
+    return b < a if better == "higher" else b > a
+
+
+def _material(first: float, last: float, unit: str) -> bool:
+    """A change big enough to call drift: 5 points for a share, 50 % (and 2) for a count, 20 % otherwise."""
+    change = abs(last - first)
+    if unit == "%":
+        return change >= 5.0
+    if unit == "count":
+        return change >= max(2.0, 0.5 * max(abs(first), 1.0))
+    return change >= 0.2 * max(abs(first), 1e-9)
+
+
+def drift(journal_path: Path = DEFAULT_FILE, now: Optional[float] = None, days: float = DRIFT_DAYS) -> List[dict]:
+    """Metrics that got worse in each of three consecutive windows of `days`, by a material amount (EVOLUTION_PLAN wave
+    2, directions 265 drift detection, 297 value-drift monitoring). Among them are the value metrics: unbacked claims,
+    guard refusals, review rejections. A single bad day is noise and is not reported; two worse steps in a row are."""
+    now = now or time.time()
+    w = days * 86400
+    windows = [(now - 3 * w, now - 2 * w), (now - 2 * w, now - w), (now - w, now)]
+    c = sqlite3.connect(f"file:{Path(journal_path).as_posix()}?mode=ro", uri=True)
+    out = []
+    try:
+        for m in METRICS:
+            if m.better not in ("higher", "lower"):
+                continue
+            vals = [m.fn(c, t0, t1)[0] for t0, t1 in windows]
+            if any(v is None for v in vals):
+                continue
+            a, b, z = vals
+            if _worse(a, b, m.better) and _worse(b, z, m.better) and _material(a, z, m.unit):
+                out.append({"metric": m.id, "label": m.label, "pillar": m.pillar, "unit": m.unit, "better": m.better,
+                            "values": vals, "window_days": days})
+    finally:
+        c.close()
+    return out
+
+
 def _fmt(v: Optional[float], unit: str, detail: str) -> str:
     if v is None:
         return "—"
