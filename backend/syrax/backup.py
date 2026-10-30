@@ -296,6 +296,35 @@ def verify(dir: Path | str) -> dict:
     return {"ok": not problems, "dir": str(d), "problems": problems, "journal": info, "created": manifest.get("created")}
 
 
+def rehearse(dir: Path | str, journal: Optional[Journal] = None) -> dict:
+    """A restore rehearsal (EVOLUTION_PLAN wave 1, direction 268): the snapshot's journal and chain key are copied into
+    a temporary folder, opened there as a journal, and its HMAC chain is verified with the key that came with it.
+    verify() proves the files are the ones the manifest names; this proves a restore would give a journal that opens
+    and proves itself (2026-10-29: snapshots had no key, and a restored journal would have failed every chained event).
+    The live journal is never touched; the result is journaled backup.rehearsed when `journal` is given."""
+    import tempfile
+
+    d = Path(dir)
+    v = verify(d)
+    out = {"dir": str(d), "verified": v["ok"], "problems": list(v["problems"]), "chain": None}
+    if v["ok"]:
+        with tempfile.TemporaryDirectory(prefix="syrax_rehearsal_") as tmp:
+            for name in (JOURNAL_NAME, JOURNAL_NAME + ".key"):
+                if (d / name).is_file():
+                    shutil.copy2(d / name, Path(tmp) / name)
+            j = Journal(Path(tmp) / JOURNAL_NAME, recover=False)
+            try:
+                out["chain"] = j.verify_chain()
+            finally:
+                j.close()
+        if not out["chain"]["ok"]:
+            out["problems"].append(f"the restored journal's chain does not verify: {out['chain']['reason']}")
+    out["ok"] = not out["problems"]
+    if journal is not None:
+        _journal_write(journal, "backup.rehearsed", out)
+    return out
+
+
 def snapshots(root: Path | str) -> List[Path]:
     """The snapshot folders under root, oldest first: named like a stamp and holding a manifest. Nothing else counts."""
     root = Path(root)

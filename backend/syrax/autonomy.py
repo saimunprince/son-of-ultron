@@ -1174,6 +1174,8 @@ class Autonomy:
                 # the evidence copies itself once a day (verified; backup.KEEP kept), before maintenance prunes anything
                 if await asyncio.to_thread(backup.due, self.journal):
                     m = await self.journal.run(backup.snapshot, self.journal)
+                    # and is restored once, aside, to prove it would come back whole (backup.rehearse, wave 1)
+                    await asyncio.to_thread(backup.rehearse, m["dir"], self.journal)
                     gone = await asyncio.to_thread(backup.prune, Path(m["dir"]).parent)
                     rep.reason = f"no open objective; backup: {Path(m['dir']).name}, {m['bytes']} bytes, {len(gone)} old pruned"
             except Exception as e:  # snapshot journaled backup.failed; the cycle goes on
