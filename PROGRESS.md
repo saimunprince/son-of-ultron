@@ -94,6 +94,16 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
   and asked first when a human request does not name it.
 - **An admitted non-answer ends PARTIAL,** not SUCCESS ("I could not put the result into a clean answer").
 - **`flight_search` is back on.** The operator re-enabled it; it re-ran its tests and is VERIFIED again.
+- **No send without its journal record.** A task whose journal writes failed now ends PARTIAL, and a send whose
+  intent record failed is never made.
+- **A built skill must do its job once for real.** Passing its own tests is no longer enough to close the objective.
+  The brief now says: reuse first, research, build, then call it once.
+- **Automatic skill rollback.** A new skill version that fails in real use, where the version before it worked, is
+  rolled back by the autonomy cycle at level 3 and up. The rollback is journaled and reversible.
+- **UI accessibility:**
+  - The log is announced to screen readers.
+  - Unknown server messages are logged instead of dropped.
+  - The orb and the HUD respect reduced motion.
 
 ## Open
 
@@ -107,16 +117,26 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 - **From the audits, not fixed yet:**
   - **Journal write failures:** a failed write during a task is only counted, and the task can still end SUCCESS.
     If the write that failed was an `intent.recorded`, recovery cannot see that a send may have gone out.
-  - **No acquisition pipeline:** skill creation is not linked to gap detection or to research. The brain must decide
-    by itself to build a skill, and a skill's tests are written by the same brain that wrote it.
-  - **No automatic rollback:** a skill that keeps failing in real use is not rolled back by itself.
-  - **The UI drops messages it does not know** (no default handler), and there is no `aria-live` region for new
-    entries.
-  - **The HUD orb ignores reduced motion.** The WebGL orb and the HUD canvas never check `prefers-reduced-motion`.
+  - **No acquisition pipeline:** skill creation is not linked to gap detection. The brain must decide by itself to
+    build a skill.
 
 ## Next
 
-1. Journal write failures must stop a task from claiming SUCCESS.
-2. Connect capability-gap detection to research and skill creation, and add a real-use check before a skill is
-   trusted.
-3. Watch tomorrow's autonomy cycles. Tune Ollama when the machine is free.
+**The long-term plan is [docs/EVOLUTION_PLAN.md](docs/EVOLUTION_PLAN.md).** It maps the owner's 300 research
+directions to the code, one row each: 105 EXISTS, 123 PARTIAL, 51 MISSING and 21 out of scope (with reasons). The
+rest is scheduled in four waves.
+
+1. **Wave 1, safety and honesty:**
+   - prompt-injection taint;
+   - reversibility per call;
+   - identity audit;
+   - dependency pins and restore rehearsal.
+2. **Wave 2, learning that measures itself:**
+   - confidence calibration;
+   - tool-outcome prediction;
+   - experiment statistics;
+   - release attribution;
+   - drift monitor;
+   - assumption tracking.
+3. Waves 3 and 4 follow, as written in the plan. Three of their items need the owner: xdotool, the English-only
+   persona, and emotion estimation.
