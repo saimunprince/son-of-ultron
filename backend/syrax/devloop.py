@@ -266,6 +266,9 @@ JUDGES = (
     # claim is checked, what a refused call returns and the tool budget; brains.py which model answers and what it
     # is shown. A self-release that edits either could switch a check off without touching claims.py
     "backend/syrax/agent.py", "backend/syrax/brains.py",
+    # and who SYRAX says it is (EVOLUTION_PLAN wave 1, directions 154/159/160): the persona and its rules. A change to
+    # them is journaled at boot as identity.changed (core.note_identity); a self-release may not make one
+    "backend/syrax/prompt.py",
 )
 
 

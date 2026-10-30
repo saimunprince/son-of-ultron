@@ -183,6 +183,10 @@ async def lifespan(_: FastAPI):
         await core.note_running_release(await asyncio.to_thread(_git_head, _BACKEND.parent))
     except Exception as e:
         logger.warning(f"could not check the running release: {e}")
+    try:  # who SYRAX is: a changed persona or principles is on record (core.note_identity)
+        await core.note_identity()
+    except Exception as e:
+        logger.warning(f"could not check SYRAX's identity: {e}")
     voice.load_voice(journal)  # the voice the human picked in the UI last time
     from syrax import reminders
 

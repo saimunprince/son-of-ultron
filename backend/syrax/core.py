@@ -18,6 +18,7 @@ user echo, history replies) is direct.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -1181,6 +1182,25 @@ class Core:
             logger.warning(f"could not journal the shutdown: {e}")
         self.journal.unsubscribe(self._on_journal_event)
         self.journal.unsubscribe(self.presentation.on_event)
+
+    async def note_identity(self) -> Optional[dict]:
+        """At boot: the hash of who SYRAX is (prompt.SYRAX_PERSONA and selfmodel.PRINCIPLES) against the one recorded at
+        the last boot. A change is journaled identity.changed once, with both hashes and the commit; the first boot
+        records identity.recorded. EVOLUTION_PLAN wave 1: an identity that changes leaves a trace."""
+        from syrax import prompt, selfmodel
+
+        text = prompt.SYRAX_PERSONA + "\n" + "\n".join(str(p) for p in selfmodel.PRINCIPLES)
+        now = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        before = await asyncio.to_thread(self.journal.get_meta, "identity_hash")
+        if before == now:
+            return None
+        from syrax.journal import BACKEND_ROOT as _BACKEND, _git_head
+
+        rec = {"from": before, "to": now, "commit": await asyncio.to_thread(_git_head, _BACKEND.parent),
+               "persona_chars": len(prompt.SYRAX_PERSONA), "principles": len(selfmodel.PRINCIPLES)}
+        await self.journal.record("identity.changed" if before else "identity.recorded", rec)
+        await asyncio.to_thread(self.journal.set_meta, "identity_hash", now)
+        return rec
 
     async def note_running_release(self, head: Optional[str]) -> Optional[dict]:
         """At boot: when this process runs the commit SYRAX's own last release created, record release.live once
