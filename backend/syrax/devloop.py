@@ -269,6 +269,8 @@ JUDGES = (
     # and who SYRAX says it is (EVOLUTION_PLAN wave 1, directions 154/159/160): the persona and its rules. A change to
     # them is journaled at boot as identity.changed (core.note_identity); a self-release may not make one
     "backend/syrax/prompt.py",
+    # and the scorer of SYRAX's own expectations against its outcomes (calibrate.py, wave 2)
+    "backend/syrax/calibrate.py",
 )
 
 

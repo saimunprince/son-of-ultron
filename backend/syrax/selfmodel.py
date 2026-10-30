@@ -372,6 +372,7 @@ class SelfModel:
                 if last else None
             ),
             "benchmarks": self.journal.count("benchmarks"),
+            "calibration": _calibration(self.journal),
             "presentation": self.journal.presentation_stats(),
             "last_quality": (
                 {"id": q[0]["id"], "ts": q[0]["ts"], "status": q[0]["status"], "pass_rate": q[0]["pass_rate"], "delta": q[0]["delta"],
@@ -635,3 +636,13 @@ def render_task(journal: Journal, task_id: str, max_events: int = 60) -> str:
 
 # capture the loaded commit at import (process start) for the real repository
 _LOADED_HEAD.setdefault(str(REPO_ROOT), _git(["rev-parse", "--short", "HEAD"], REPO_ROOT))
+
+
+def _calibration(journal) -> dict:
+    """How well SYRAX's stated expectations matched its outcomes (calibrate.summary); never fails the self-model."""
+    try:
+        from syrax import calibrate
+
+        return calibrate.summary(journal)
+    except Exception as e:
+        return {"error": str(e)[:120]}

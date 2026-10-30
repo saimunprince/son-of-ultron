@@ -35,7 +35,7 @@ from typing import Any, Dict, List, Optional
 from app.logger import logger
 
 from syrax import resources
-from syrax import backup, contracts, estop, followup, plan
+from syrax import backup, calibrate, contracts, estop, followup, plan
 from syrax.journal import ALL_OBJECTIVES, BACKEND_ROOT, Journal, JournalError
 
 REPO_ROOT_PATH = BACKEND_ROOT.parent
@@ -975,6 +975,9 @@ class Autonomy:
             "objective_id": objective["id"], "goal": str(objective.get("goal") or "")[:200],
             "priority": objective.get("priority"), "reason": str(objective.get("reason") or "")[:300],
             "attempts": objective.get("attempts"), "success_check": spec if isinstance(spec, (dict, str)) else None,
+            # what SYRAX expects before it tries, scored against the outcome later (calibrate.py, wave 2)
+            "predicted_success": calibrate.predicted_success(
+                self.journal, ((spec if isinstance(spec, dict) else {}) or {}).get("kind") or "task_success", exclude=objective["id"]),
             "rule": "highest priority, then oldest, among OPEN objectives whose dependencies are done",
             "alternatives": [{"id": o["id"], "priority": o.get("priority"), "goal": str(o.get("goal") or "")[:120]} for o in others],
         })
