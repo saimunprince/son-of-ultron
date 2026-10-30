@@ -4,11 +4,11 @@ The short, current page: where SYRAX stands now, what was done, what is next. Up
 Detail lives in [docs/AUDIT_2026-10-28.md](docs/AUDIT_2026-10-28.md) (findings and the open list), the commit
 messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
-## Now (2026-10-29, 19:15 +0600)
+## Now (2026-10-30, +0600)
 
 - **Stage:** stabilized on Linux and running live with autonomy at **level 3** (it may edit its workspace and run
   code; no self-release, no self-restart). The emergency stop is off.
-- **main:** `bee0cd0` and later. Every change went through a red test first, then the full release gate (about
+- **main:** see the latest commit. Every change went through a red test first, then the full release gate (about
   2,500 tests plus the frontend build) GREEN, then a push.
 - **Machines:** this Linux PC is the main one. The Windows PC still runs its own copy. Its journal (history from
   2026-09-30) was merged here on 10-29.
@@ -105,6 +105,29 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
   - Unknown server messages are logged instead of dropped.
   - The orb and the HUD respect reduced motion.
 
+### 2026-10-30: the 300-direction plan, waves 1 and 2 built
+
+[docs/EVOLUTION_PLAN.md](docs/EVOLUTION_PLAN.md) maps all 300 directions to the code. These parts are built, tested and
+pushed (each with a red test and a GREEN gate):
+
+- **Wave 1, safety and honesty:**
+  - **Prompt-injection taint:** after a web page, research, the screen or the clipboard was read, any send or delete
+    is asked again, even if the request named it. Tested with five injected pages.
+  - **Reversibility:** every call is labelled reversible, rollback, untracked or irreversible. The question to the
+    human says when a yes cannot be undone.
+  - **Identity audit:** the persona (`prompt.py`) is now protected, and a change to it or to the principles is
+    recorded at boot.
+  - **Dependencies:** every package SYRAX imports must be declared, which would have caught the psutil incident.
+  - **Restore rehearsal:** the daily backup is restored aside, and its chain is verified with its own key.
+- **Wave 2, learning that measures itself:**
+  - **Calibration:** each chosen objective states its predicted success. A Brier score compares the predictions with
+    the outcomes, shown in `self_inspect`.
+  - **Experiments:** baseline and candidate runs now alternate in a recorded order, and an exact permutation test
+    decides. The conclusion says when there were too few runs to test.
+  - **Drift monitor:** checked daily. A metric that gets worse two days in a row is journaled. Its first live read
+    found tool failures at 5.4 → 10.5 → 14.1 %, mostly yesterday's fixed Chrome issue plus correct `learn` refusals.
+  - **Plan status:** 121 EXISTS, 112 PARTIAL, 46 MISSING, 21 out of scope (it was 105 / 123 / 51 / 21).
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
@@ -114,6 +137,10 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 - **10 Windows skills have no code on this PC:** make_docx, make_xlsx, make_pptx, make_pdf, disk_usage, image_tools,
   json_tools, youtube_open, aircraft_nearby and system_optimizer. Copy their `backend/skills/<name>` folders, then
   rerun the import.
+- **The reports mix machines:** RISE and drift windows now include imported Windows events of the same days. They
+  should count this PC's own events, or label each machine.
+- **`learn` refusals count as tool failures:** the honesty guard refusing an unsupported claim is correct behaviour,
+  but it inflates the failure rate.
 - **From the audits, not fixed yet:**
   - **Journal write failures:** a failed write during a task is only counted, and the task can still end SUCCESS.
     If the write that failed was an `intent.recorded`, recovery cannot see that a send may have gone out.
@@ -126,17 +153,10 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 directions to the code, one row each: 105 EXISTS, 123 PARTIAL, 51 MISSING and 21 out of scope (with reasons). The
 rest is scheduled in four waves.
 
-1. **Wave 1, safety and honesty:**
-   - prompt-injection taint;
-   - reversibility per call;
-   - identity audit;
-   - dependency pins and restore rehearsal.
-2. **Wave 2, learning that measures itself:**
-   - confidence calibration;
+1. **Rest of wave 2:**
    - tool-outcome prediction;
-   - experiment statistics;
    - release attribution;
-   - drift monitor;
    - assumption tracking.
-3. Waves 3 and 4 follow, as written in the plan. Three of their items need the owner: xdotool, the English-only
+2. **Fix the two report issues above:** machine mixing, and `learn` refusals counted as failures.
+3. **Waves 3 and 4,** as written in the plan. Three of their items need the owner: xdotool, the English-only
    persona, and emotion estimation.

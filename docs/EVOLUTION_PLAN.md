@@ -1,6 +1,6 @@
 # SYRAX Evolution Plan — the 300 research directions, mapped and scheduled
 
-Written 2026-10-30. This plan takes the owner's list of 300 independent-intelligence research directions and checks
+Written 2026-10-30; rows marked "wave 1"/"wave 2" were built and pushed the same day (red test, GREEN gate). This plan takes the owner's list of 300 independent-intelligence research directions and checks
 each one against the code that exists today. Every row was found by reading and grepping the repository: three
 read-only audits, one per hundred items. Nothing below is a claim about plans. The status describes the code as it is
 now. The waves at the end say what gets built, in what order, and how each part is proven.
@@ -23,7 +23,8 @@ Paths are under `backend/syrax/` unless shown otherwise. Tests sit beside the mo
 | VI–VII Perception, infrastructure, future (201–300) | 34 | 38 | 11 | 17 |
 | **All 300** | **105** | **123** | **51** | **21** |
 
-The counts are taken from the tables below, one status per item.
+The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After waves 1 and 2 (built
+the same day, 17 rows changed): **121 EXISTS, 112 PARTIAL, 46 MISSING, 21 out of scope.**
 
 **What is strong:** the journal and recovery, the permissions and kernel boundary, honesty checks on answers,
 emergency stop and budgets, the release gate with red-test proof, skill versioning and rollback, and knowledge with
@@ -83,7 +84,7 @@ provenance and freshness.
 | 19 | Deadline reasoning | PARTIAL | core.TASK_DEADLINE_S (test_task_deadline) | plans ignore time left |
 | 20 | Plan verification | EXISTS | plan.status, contracts.assess (test_plan, test_contracts) | — |
 | 21 | Self-monitoring | EXISTS | stallwatch, loop guard, budgets (test_stallwatch, test_agent_loops) | — |
-| 22 | Confidence calibration | MISSING | confidences never compared with outcomes | **wave 2** |
+| 22 | Confidence calibration | EXISTS (wave 2: calibrate.py, test_calibration) | confidences never compared with outcomes | **wave 2** |
 | 23 | Uncertainty estimation | PARTIAL | knowledge confidence, UNCERTAIN resume | answers carry none |
 | 24 | Error introspection | EXISTS | tool_error.py, core error_class (test_error_class) | — |
 | 25 | Strategy selection | PARTIAL | routing.preferred, strategy_of | no strategy library |
@@ -91,7 +92,7 @@ provenance and freshness.
 | 27 | Reasoning audit | EXISTS | think events, HMAC chain, journal_query (test_journal_chain) | not critiqued |
 | 28 | Assumption tracking | PARTIAL | checkpoints.assumptions column is never filled | **wave 2** |
 | 29 | Blind-spot detection | PARTIAL | capmatrix UNVERIFIED rows | — |
-| 30 | Metacognitive calibration | MISSING | same as 22 | **wave 2** |
+| 30 | Metacognitive calibration | EXISTS (wave 2: calibrate.py, test_calibration) | same as 22 | **wave 2** |
 | 31 | Object permanence | PARTIAL | presence.observe_window, intent ledger | no world-entity store |
 | 32 | Spatial reasoning | PARTIAL | sight.py (Windows only) | wave 3 (Linux desktop) |
 | 33 | Temporal reasoning | PARTIAL | clock in the prompt, knowledge age (test_clock_honesty) | no interval reasoning |
@@ -181,13 +182,13 @@ provenance and freshness.
 | 107 | Static analysis | PARTIAL | assertless_tests, level_of_source, staged_lines | wave 4 (gate) |
 | 108 | Performance profiling | PARTIAL | bench.py timings (test_bench) | no hotspot profiler |
 | 109 | Dependency management | PARTIAL | radar osv/npm audit, missing_dependencies | — |
-| 110 | Reproducible builds | PARTIAL | worktrees, package-lock | **wave 1** (pin check) |
+| 110 | Reproducible builds | EXISTS (wave 1: test_declared_deps) | worktrees, package-lock | **wave 1** (pin check) |
 | 111 | Research question generation | PARTIAL | _research_topic from errors | — |
 | 112 | Literature synthesis | PARTIAL | research + consolidate | synthesis left to the LLM |
 | 113 | Hypothesis testing | EXISTS | experiments judge, success criterion declared first (test_experiment_rigor) | — |
-| 114 | Control-group design | PARTIAL | baseline arm, run before the candidate (order bias) | **wave 2** |
+| 114 | Control-group design | EXISTS (wave 2: interleaved arms, test_experiment_stats) | baseline arm, run before the candidate (order bias) | **wave 2** |
 | 115 | Ablation studies | MISSING | — | wave 4 |
-| 116 | Statistical analysis | PARTIAL | NOISE_PCT, overlap; no significance test | **wave 2** |
+| 116 | Statistical analysis | EXISTS (wave 2: permutation test, test_experiment_stats) | NOISE_PCT, overlap; no significance test | **wave 2** |
 | 117 | Reproducibility checks | EXISTS | repro.prove/replay (test_repro_release) | — |
 | 118 | Negative-result analysis | EXISTS | NO_DIFFERENCE verdicts, dead_ends (test_archive) | — |
 | 119 | Experiment tracking | EXISTS | experiments table (test_experiments) | — |
@@ -218,8 +219,8 @@ provenance and freshness.
 | 139 | State reconciliation | EXISTS | settle_interrupted, intent.uncertain (test_resume_uncertain) | — |
 | 140 | Safe shutdown | EXISTS | core.shutdown bounded (test_shutdown_stop) | — |
 | 141 | Expected-utility reasoning | PARTIAL | limits.rank heuristic | — |
-| 142 | Worst-case analysis | MISSING | — | **wave 1** (reversibility) |
-| 143 | Reversibility assessment | PARTIAL | DESTRUCTIVE level, undo.py | **wave 1** |
+| 142 | Worst-case analysis | EXISTS (wave 1: permissions.reversibility, test_reversibility) | — | **wave 1** (reversibility) |
+| 143 | Reversibility assessment | EXISTS (wave 1: permissions.reversibility, test_reversibility) | DESTRUCTIVE level, undo.py | **wave 1** |
 | 144 | Value-of-information analysis | MISSING | — | wave 4 |
 | 145 | Decision thresholds | EXISTS | NOISE_PCT, MIN_GAP (test_experiment_rigor) | — |
 | 146 | Risk budgeting | PARTIAL | task/call budgets | not risk-weighted |
@@ -230,13 +231,13 @@ provenance and freshness.
 | 151 | Behavioral consistency | PARTIAL | quality regressions | — |
 | 152 | Preference modeling | PARTIAL | memory preference type | text only |
 | 153 | Preference revision | EXISTS | memory.correct/forget (test_memory_correct) | — |
-| 154 | Identity continuity | PARTIAL | selfmodel.identity, fixed persona | **wave 1** (identity audit) |
+| 154 | Identity continuity | EXISTS (wave 1: identity audit, test_identity_audit) | selfmodel.identity, fixed persona | **wave 1** (identity audit) |
 | 155 | Personal history | EXISTS | journal, archive lineage, rise (test_archive) | — |
 | 156 | Value representation | PARTIAL | PRINCIPLES prose + permission code | — |
 | 157 | Personality adaptation | MISSING | static persona | owner's choice |
 | 158 | Self-narrative | PARTIAL | rise/ledger/devlog | — |
-| 159 | Identity conflict detection | MISSING | — | **wave 1** |
-| 160 | Identity-change auditing | PARTIAL | prompt.py not a judge, no event | **wave 1** |
+| 159 | Identity conflict detection | EXISTS (wave 1: identity.changed at boot, test_identity_audit) | — | **wave 1** |
+| 160 | Identity-change auditing | EXISTS (wave 1: prompt.py a judge, test_identity_audit) | prompt.py not a judge, no event | **wave 1** |
 
 ### Part V — Human and social understanding (161–200)
 
@@ -343,18 +344,18 @@ It is listed under wave 4 as optional.
 | 254 | Least privilege | EXISTS | Landlock, net boundary (test_net_boundary, test_human_boundary) | — |
 | 255 | Sandbox isolation | EXISTS | _confine, spawned workers (test_skill_isolation) | no seccomp |
 | 256 | Secrets management | EXISTS | masking, env scrub, gitignore (test_env_secrets, test_secrets_ignored) | keys in plaintext file |
-| 257 | Prompt-injection resistance | PARTIAL | UNTRUSTED marker only | **wave 1** (taint) |
-| 258 | Supply-chain verification | PARTIAL | osv/npm audit | **wave 1** (pin check) |
+| 257 | Prompt-injection resistance | EXISTS (wave 1: taint, test_injection_taint) | UNTRUSTED marker only | **wave 1** (taint) |
+| 258 | Supply-chain verification | EXISTS (wave 1: test_declared_deps; osv/npm audit) | osv/npm audit | **wave 1** (pin check) |
 | 259 | Audit integrity | EXISTS | HMAC chain (test_journal_chain) | key on the same host |
 | 260 | Incident response | EXISTS | E-STOP, alerts (test_estop) | no postmortem record |
 | 261 | Regression testing | EXISTS | release gate (test_verify) | — |
 | 262 | Stress testing | MISSING | — | wave 4 (soak harness) |
-| 263 | Adversarial testing | PARTIAL | guard-weakening, untrusted content tests | **wave 1** (injection corpus) |
+| 263 | Adversarial testing | EXISTS (wave 1: injection corpus, test_injection_taint) | guard-weakening, untrusted content tests | **wave 1** (injection corpus) |
 | 264 | Long-duration evaluation | PARTIAL | rise windows | wave 4 |
-| 265 | Drift detection | PARTIAL | rise.trend, no alerts | **wave 2** |
+| 265 | Drift detection | EXISTS (wave 2: rise.drift, test_drift) | rise.trend, no alerts | **wave 2** |
 | 266 | Memory-corruption detection | EXISTS | verify_chain, integrity_check (test_backup) | — |
 | 267 | Graceful degradation | EXISTS | no-brain outage, smaller model (test_pool_empty) | — |
-| 268 | Recovery validation | EXISTS | backup.verify/restore (test_backup) | **wave 1** (rehearsal) |
+| 268 | Recovery validation | EXISTS (wave 1: backup.rehearse, test_backup_rehearsal) | backup.verify/restore (test_backup) | **wave 1** (rehearsal) |
 | 269 | Independent evaluation | PARTIAL | second-brain review | same system |
 | 270 | Reliability metrics | EXISTS | rise.py (test_rise) | — |
 | 271 | Compute budgeting | EXISTS | daily/tool budgets (test_controller_budgets) | no quota ledger |
@@ -368,7 +369,7 @@ It is listed under wave 4 as optional.
 | 279 | Capacity planning | MISSING | — | — |
 | 280 | Sustainable operation | PARTIAL | quiet hours, pressure | — |
 | 281, 287, 289, 290 | Global workspace, consciousness theories, subjective experience, sentience ethics | OUT OF SCOPE | — | see above |
-| 282 | Metacognitive access | PARTIAL | selfmodel, honesty checks | wave 2 (calibration) |
+| 282 | Metacognitive access | EXISTS (wave 2: calibration in self_inspect, test_calibration) | selfmodel, honesty checks | wave 2 (calibration) |
 | 283 | Self-model research | EXISTS | selfmodel.py (test_selfmodel) | — |
 | 284 | Attention mechanisms | OUT OF SCOPE (model internals) | — | — |
 | 285 | Perception-action loops | PARTIAL | phases act→observe→verify | Linux perception — wave 3 |
@@ -380,7 +381,7 @@ It is listed under wave 4 as optional.
 | 294 | Change approval framework | EXISTS | gate + review + judges (test_devloop) | — |
 | 295 | Immutable change history | EXISTS | HMAC chain, git, skill versions | no off-host anchor |
 | 296 | Independent oversight | PARTIAL | human-only E-STOP/restore | — |
-| 297 | Value drift monitoring | MISSING | — | **wave 2** |
+| 297 | Value drift monitoring | EXISTS (wave 2: rise.drift value metrics, test_drift) | — | **wave 2** |
 | 298 | Human-impact evaluation | MISSING | — | — |
 | 299 | Reversible evolution | EXISTS | undo, knowngood, rollbacks (test_undo) | — |
 | 300 | Periodic redesign | PARTIAL | daily scorecard proposal | — |
