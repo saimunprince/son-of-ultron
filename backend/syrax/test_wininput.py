@@ -110,6 +110,11 @@ def test_the_desktop_tool_offers_them_at_system_level_only_to_a_conversation(mon
     assert d.level == permissions.SYSTEM
     assert permissions.decide(d, "autonomous", "type hello").action == "refuse"
     assert permissions.decide(d, "conversation", "type hello").action == "allow"
-    monkeypatch.setattr(wininput.sys, "platform", "linux")
+    # off Windows the hands go through GNOME's portal since 2026-10-30 (linuxinput); a test never reaches the real one
+    from syrax import desktop as D, linuxinput
+
+    monkeypatch.setattr(D, "WINDOWS", False)
+    sent = []
+    monkeypatch.setattr(linuxinput, "run", lambda actions, runner=None: sent.append(actions))
     out = asyncio.run(DesktopControl().execute(action="hotkey", value="ctrl+c"))
-    assert out.error and "Windows-only" in out.error
+    assert out.output.startswith("Pressed ctrl+c.") and sent and sent[0][0] == ["key", 0xFFE3, True]

@@ -75,6 +75,10 @@ def run(actions: List[list], runner: Optional[Callable[[str], str]] = None) -> N
         token = ""
     request = json.dumps({"token": token, "actions": actions})
     if runner is None:
+        if os.getenv("SYRAX_NO_REAL_INPUT") == "1":
+            # tests (conftest.py) never reach the real keyboard and mouse: live 2026-10-30, a gate run of an old
+            # test pressed a real ctrl+c through the portal once this backend existed
+            raise RuntimeError("real keyboard and mouse input is off here (SYRAX_NO_REAL_INPUT=1)")
         if not Path(SYSTEM_PY).exists():
             raise RuntimeError(f"no {SYSTEM_PY} with PyGObject to reach GNOME's RemoteDesktop portal")
         r = subprocess.run([SYSTEM_PY, str(HELPER)], input=request, capture_output=True, text=True, timeout=HELPER_TIMEOUT_S)
@@ -147,5 +151,7 @@ def dark_mode(value: str = "get", runner: Any = None) -> str:
         return "Dark mode is on." if "dark" in r.stdout else "Dark mode is off."
     if value not in ("on", "off"):
         raise ValueError("value must be get, on or off")
+    if os.getenv("SYRAX_NO_REAL_INPUT") == "1":
+        raise RuntimeError("changing the real desktop is off here (SYRAX_NO_REAL_INPUT=1)")
     subprocess.run(["gsettings", "set", *key, "prefer-dark" if value == "on" else "default"], check=True, timeout=10)
     return f"Dark mode turned {value}."

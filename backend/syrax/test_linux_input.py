@@ -67,3 +67,11 @@ def test_the_desktop_tool_uses_it_off_windows(monkeypatch):
     assert desktop._hands_module() is L
     monkeypatch.setattr(desktop, "WINDOWS", True)
     assert desktop._hands_module() is wininput
+
+
+def test_tests_never_reach_the_real_portal():
+    assert os.environ.get("SYRAX_NO_REAL_INPUT") == "1"
+    with pytest.raises(RuntimeError, match="real keyboard and mouse input is off"):
+        L.hotkey("ctrl+c")  # no runner: this would be the real portal
+    with pytest.raises(RuntimeError, match="off here"):
+        L.dark_mode("on")  # nor the real theme
