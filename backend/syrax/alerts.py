@@ -86,6 +86,11 @@ async def loop(journal: Journal, snapshot: Optional[Callable[[], Dict[str, Any]]
                 snap = await asyncio.to_thread(snapshot or resources.snapshot)
                 for a in watch.check(snap, time.time()):
                     await journal.record("alert.raised", a)  # fans out: the UI shows and speaks it
+                from syrax import capacity  # the disk's trend, not only its level (direction 279)
+
+                trend = await asyncio.to_thread(capacity.check, journal, (snap.get("disk") or {}).get("free_gb"))
+                if trend:
+                    await journal.record("alert.raised", trend)
         except asyncio.CancelledError:
             raise
         except Exception:
