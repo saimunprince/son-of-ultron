@@ -309,10 +309,11 @@ class Core:
         if isinstance(le, LearnTool):
             le.journal = self.journal
             le.task_id_provider = self.current_task_id
-        gh = tools.get_tool("github_search")
-        if gh is not None and hasattr(gh, "task_id_provider"):  # github_research.GitHubSearchTool
-            gh.journal = self.journal
-            gh.task_id_provider = self.current_task_id
+        for rname in ("github_search", "paper_search"):  # github_research / paper_research: they keep what they find
+            gh = tools.get_tool(rname)
+            if gh is not None and hasattr(gh, "task_id_provider"):
+                gh.journal = self.journal
+                gh.task_id_provider = self.current_task_id
         for tname in ("skill_create", "skill_list", "skill_test"):
             st = tools.get_tool(tname)
             if isinstance(st, (SkillCreateTool, SkillListTool, SkillTestTool)):
