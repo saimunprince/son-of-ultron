@@ -417,6 +417,22 @@ class Core:
             return
         await self.broadcast({"type": "phase", "event": "changed", **payload, "task_id": self.current.task_id})
 
+    def _assumptions(self) -> list:
+        """What the task stands on that nothing checked (EVOLUTION_PLAN wave 2, direction 28): a claim no tool showed,
+        lines the code printed as fixed text, untrusted text it read, steps the journal refused. The checkpoint keeps
+        them, and a resume is told them (the checkpoints.assumptions column was always empty before)."""
+        a, out = self.agent, []
+        if a is None:
+            return out
+        if getattr(a, "unproven", None):
+            out.append(f"a claim no tool showed ({a.unproven})")
+        out += [f"printed as fixed text, never observed: {x}" for x in (getattr(a, "staged", None) or [])[:5]]
+        if getattr(a, "tainted", None):
+            out.append(f"read untrusted text from `{a.tainted}`; it may have steered what followed")
+        if self.current is not None and self.current.unjournaled:
+            out.append(f"{self.current.unjournaled} step(s) the journal refused to record")
+        return out
+
     async def _checkpoint(self, stage: str, verified: Optional[dict] = None, next_action: Optional[str] = None) -> None:
         """A resume point: the agent's exported context goes to the journal, which stores a masked copy of it
         (journal.checkpoint_sync); the agent's live memory keeps the real text."""
@@ -431,6 +447,7 @@ class Core:
                 next_action=next_action,
                 context=self.agent.export_context(),
                 evidence_state="SUCCESS" if self.current.steps and self.current.steps[-1]["ok"] else "PARTIAL",
+                assumptions=self._assumptions(),
             )
         except (sqlite3.Error, JournalError) as e:
             self.current.unjournaled += 1
@@ -1023,6 +1040,8 @@ class Core:
             op=(f"{op.get('name')} {op.get('args')}" if op else "none"),
             op_state=recovery.get("operation_state", "UNKNOWN"),
         )
+        if cp and cp.get("assumptions"):  # what was unchecked when it stopped (wave 2): never taken as established
+            resume_note += " Unchecked when the task stopped: " + "; ".join(str(x) for x in cp["assumptions"][:6]) + "."
         if external:  # even with force: the model is told, and the agent's ledger refuses the same send again (HELD)
             resume_note += " " + intent.RESUME_NOTE.format(summary=external.get("summary") or external.get("tool") or "?")
         agent.memory.add_message(Message.system_message(resume_note))
