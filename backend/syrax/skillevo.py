@@ -114,8 +114,60 @@ def candidates(journal: Journal, now: Optional[float] = None) -> List[dict]:
             continue
         common = set.intersection(*(r["words"] for r in g))
         out.append({"key": " ".join(sorted(common or g[0]["words"]))[:80], "tasks": [r["task_id"] for r in g],
-                    "examples": [r["goal"][:120] for r in g[:3]], "tools": sorted(set.union(*(r["tools"] for r in g)))})
+                    "examples": [r["goal"][:120] for r in g[:3]], "tools": sorted(set.union(*(r["tools"] for r in g))),
+                    "workflow": workflow_of(journal, [r["task_id"] for r in g])})
     return out
+
+
+def _steps(journal: Journal, task_id: str) -> List[tuple]:
+    """The successful working tool calls of a task, in order: (tool, args). A call repeated with the same arguments
+    counts once."""
+    started = {}
+    out: List[tuple] = []
+    for e in journal.events(task_id):
+        p = e["payload"]
+        if e["type"] == "tool.started":
+            started[p.get("id")] = (p.get("name"), p.get("args") if isinstance(p.get("args"), dict) else {})
+        elif e["type"] == "tool.completed" and p.get("ok") and p.get("id") in started:
+            name, args = started.pop(p["id"])
+            if name and name not in BOOKKEEPING and (not out or out[-1] != (name, args)):
+                out.append((name, args))
+    return out
+
+
+def workflow_of(journal: Journal, task_ids: List[str]) -> Optional[dict]:
+    """The tool sequence a group of similar requests was solved with (EVOLUTION_PLAN wave 4, directions 91 skill
+    extraction, 92 workflow synthesis, 95 tool composition): the most common ordered sequence of tools, when at least
+    two thirds of the tasks share it; per step, an argument equal in every task is kept and one that differs becomes a
+    parameter {p1}, {p2}... A recipe for building the skill; it never runs anything itself."""
+    seqs = [s for s in (_steps(journal, t) for t in task_ids) if s]
+    if not seqs:
+        return None
+    from collections import Counter
+
+    shape, n = Counter(tuple(name for name, _ in s) for s in seqs).most_common(1)[0]
+    if n * 3 < len(seqs) * 2:
+        return None
+    same = [s for s in seqs if tuple(name for name, _ in s) == shape]
+    steps, params = [], []
+    for i, tool in enumerate(shape):
+        args: Dict[str, Any] = {}
+        for k in sorted(set().union(*(set(s[i][1]) for s in same))):
+            values = [s[i][1].get(k) for s in same]
+            if all(v == values[0] for v in values):
+                args[k] = values[0]
+            else:
+                params.append({"name": f"p{len(params) + 1}", "step": i + 1, "arg": k, "examples": [str(v)[:40] for v in values[:3]]})
+                args[k] = "{" + params[-1]["name"] + "}"
+        steps.append({"tool": tool, "args": args})
+    return {"steps": steps, "params": params, "support": n, "of": len(seqs)}
+
+
+def render_workflow(w: Optional[dict]) -> str:
+    """One line per step: `1. weather(city={p1})`."""
+    if not w:
+        return ""
+    return " ".join(f"{i}. {s['tool']}({', '.join(f'{k}={v}' for k, v in s['args'].items())})" for i, s in enumerate(w["steps"], 1))
 
 
 def propose_candidates(journal: Journal, now: Optional[float] = None) -> int:
@@ -129,8 +181,9 @@ def propose_candidates(journal: Journal, now: Optional[float] = None) -> int:
         journal.record_sync("proposal.created", {
             "kind": "skill_candidate", "limitation": f"the same request came {len(c['tasks'])} times and was solved by hand each time",
             "proposal": (f"Requests like \"{c['examples'][0]}\" came {len(c['tasks'])} times in {CANDIDATE_DAYS} days and were solved with "
-                         f"{', '.join(c['tools'])} each time. A skill would make it one reliable call. Say the word and SYRAX builds it."),
-            "sources": [], "tasks": c["tasks"],
+                         f"{', '.join(c['tools'])} each time. A skill would make it one reliable call. Say the word and SYRAX builds it."
+                         + (f" The steps it would wrap: {render_workflow(c.get('workflow'))}" if c.get("workflow") else "")),
+            "sources": [], "tasks": c["tasks"], "workflow": c.get("workflow"),
         })
         made += 1
     return made
