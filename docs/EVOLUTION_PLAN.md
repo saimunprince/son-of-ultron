@@ -138,7 +138,7 @@ provenance and freshness.
 | 68 | Knowledge deduplication | EXISTS | consolidate, web dedupe (test_web_dedupe) | — |
 | 69 | Cross-domain integration | PARTIAL (wave 4: facts from different topics meet through a shared name) | — | wave 4 (knowledge links) |
 | 70 | Knowledge gap mapping | PARTIAL | known limitations, research topics | — |
-| 71 | Multilingual understanding | MISSING | catalog language_follow is TODO | **wave 3** |
+| 71 | Multilingual understanding | PARTIAL (2026-10-30: replies in Bengali script when asked in it, test_language_follow; other languages not checked) | catalog language_follow is TODO | **wave 3** |
 | 72 | Contextual interpretation | PARTIAL | exact_form, context isolation (test_context_isolation) | — |
 | 73 | Pragmatic reasoning | PARTIAL | exact-form rules (test_exact_form_question) | — |
 | 74 | Ambiguity resolution | PARTIAL | ask_human | when to ask is prompt only |
@@ -252,8 +252,8 @@ provenance and freshness.
 | 167 | Trust calibration | EXISTS | research.agreement, capped confidence (test_research) | — |
 | 168 | Deception awareness | EXISTS | UNTRUSTED markers, boast checks (test_untrusted_content) | wave 1 (taint) |
 | 169 | Boundary recognition | EXISTS | permissions, _confine (test_human_boundary) | — |
-| 170 | Cross-cultural understanding | MISSING | English-only persona (owner's decision) | wave 3 (language follow) |
-| 171–175, 177, 179, 180 | Emotion recognition, emotion context, affective state, empathy, regulation, emotional uncertainty, affective memory, emotion-model evaluation | MISSING | no emotion code | see note below |
+| 170 | Cross-cultural understanding | PARTIAL (2026-10-30: replies in Bengali script when asked in it, test_language_follow; other languages not checked) | English-only persona (owner's decision) | wave 3 (language follow) |
+| 171–175, 177, 179, 180 | Emotion recognition, emotion context, affective state, empathy, regulation, emotional uncertainty, affective memory, emotion-model evaluation | NOT BUILT (owner delegated; decided 2026-10-30, see the note below) | no emotion code | see note below |
 | 176 | Socially appropriate response | PARTIAL | prompt only (tone rules) | — |
 | 178 | Mood-state consistency | PARTIAL | prompt only | — |
 | 181 | Knowledge curiosity | PARTIAL | topics, limitation research | — |
@@ -285,7 +285,9 @@ this, the honest version is a small `affect.py`:
 2. a reply-tone adjustment;
 3. a check that the persona never claims emotions as fact.
 
-It is listed under wave 4 as optional.
+**Decision, 2026-10-30 (the owner delegated it: "ja korar koro"): not built.** Guessing a person's mood from typed text
+is unreliable. A wrong guess steers the reply wrongly. And the persona must never claim feelings it cannot show
+evidence for. If the owner later asks for it, the design above stands.
 
 ### Part VI — Perception and embodiment (201–230)
 

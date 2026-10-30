@@ -38,7 +38,7 @@ from syrax.claims import (  # noqa: F401
     BOAST, SELF_ASKED, without_boasts, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
     OUTCOME_NUDGE, OUTCOME_NOTE, DISPUTE_MAX, DISPUTE_NO, DISPUTE, DISPUTE_NUDGE, DISPUTE_NOTE, DISPUTE_ACTS,
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
-    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines,
+    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, bengali,
 )
 
 # Replaces OpenManus' per-step prompt ("proactively select the most appropriate
@@ -610,6 +610,11 @@ class SyraxAgent(Manus):
             await self._final_answer()
             if ECHO.search(self.last_reply or ""):  # still an echo: never hand the human the console's own words
                 self.last_reply = ECHO_FALLBACK
+        if (self.last_reply and bengali(self.task_goal or "") and not bengali(self.last_reply, share=0.15)
+                and not self.exact_form and not self.step_limit_hit and not self.loop_stopped):
+            # language follow (claims.bengali): a request in Bengali script gets its answer in Bengali, asked once
+            await self._send({"type": "notice", "text": "The request was in Bengali script and the answer was not: asking once in Bengali."})
+            await self._final_answer(LANG_ASK)
         if self.exact_form and self.last_reply and not self.step_limit_hit and not self.loop_stopped:
             await self._hold_to_form()
         if (self.last_reply and not self.changed and self._change_claimed(WORLD_CLAIM, self.last_reply)

@@ -76,10 +76,9 @@ CATALOG: List[Feature] = [
     Feature("speech_interrupt", "Stop speaking on command", "Voice", HAVE, "Saying 'stop' cuts SYRAX's speech at once.",
             "frontend/lib/wake.ts: stop, quiet, chup, thamo (also in Bangla script) while SYRAX speaks stop the voice or the task",
             seen_in="Mark-X family, Mark-LV"),
-    Feature("language_follow", "Answers in the human's language", "Voice", TODO, "Replies in the language the human last used.",
-            "a persona rule plus remembering the language as a fact", risk="WRITE",
-            needs="the owner's decision: the persona he wrote (prompt.py) says 'Pure English only'",
-            check={"kind": "change_released"}, seen_in="Mark-LV"),
+    Feature("language_follow", "Answers in the human's language", "Voice", HAVE, "Replies in Bengali script when asked in it.",
+            "a persona rule (prompt.py) and a final-answer check (claims.bengali, agent LANG_ASK); the owner delegated "
+            "the decision on 2026-10-30", seen_in="Mark-LV"),
     Feature("lip_sync", "Lip-synced face", "Voice", REJECTED, "An animated face that moves its mouth.",
             "SYRAX's face is the orb; the orb already reacts to speech", seen_in="Mark-LV"),
     # ——— Brain ———

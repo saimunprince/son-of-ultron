@@ -655,3 +655,17 @@ def staged_lines(code: str) -> list:
 
     walk(tree, False)
     return out
+
+
+# Language follow (catalog language_follow; the owner delegated the decision on 2026-10-30, "ja korar koro"): a
+# request in Bengali script is answered in Bengali script. Latin-script Banglish stays English, as the persona was.
+_BENGALI = re.compile(r"[\u0980-\u09FF]")
+_LETTER = re.compile(r"[^\W\d_]", re.UNICODE)
+LANG_ASK = ("The human wrote in Bengali script. Give the same answer again in Bengali script: keep code, file names, "
+            "commands, numbers and technical terms as they are. Reply with that and nothing else.")
+
+
+def bengali(text: str, share: float = 0.3) -> bool:
+    """Whether at least `share` of the letters in `text` are Bengali script."""
+    letters = _LETTER.findall(text or "")
+    return bool(letters) and len(_BENGALI.findall(text or "")) / len(letters) >= share
