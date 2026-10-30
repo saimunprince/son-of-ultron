@@ -170,6 +170,20 @@ pushed (each with a red test and a GREEN gate):
   - Separate ablation: release attribution already compares each suspect commit with its parent.
 - **Plan status now:** 137 EXISTS, 109 PARTIAL, 32 MISSING, 22 out of scope.
 
+### 2026-10-31 (morning check): what the first full autonomy day showed
+
+- **What happened:** autonomy ran its 40 own tasks: 39 SUCCESS, 1 PARTIAL. It built `image_tools` and
+  `aircraft_nearby` on Linux by itself; both were among the 10 Windows skills that had no code here.
+- **Bug, fixed in b10c813:**
+  - **What went wrong:** objectives merged in from the Windows journal were reopened, because their skills were
+    missing here, and pursued beside this PC's own copies of the same features.
+  - **Fix:** merged objectives are now history only. They are never picked, reopened or re-judged here.
+- **Wording, fixed:**
+  - **What went wrong:** SYRAX ran each new skill once through `python_execute`, but the real-use rule counts only
+    direct tool calls, and the feature goal still said "closes when VERIFIED".
+  - **Fix:** the goal and the brief now both ask for a direct call. The operator reopened the two affected
+    objectives (#33, #35).
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
