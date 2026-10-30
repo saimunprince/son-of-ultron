@@ -34,6 +34,25 @@ RULES = {
 }
 
 
+CPU_HOT_C = 90.0  # a processor this hot throttles and can shut the machine down
+CRIT_MARGIN_C = 5.0
+
+
+def hot(snap: Dict[str, Any]) -> Optional[str]:
+    """A sensor within CRIT_MARGIN_C of its own critical temperature, or a processor sensor at CPU_HOT_C or more."""
+    from syrax.sysinfo import CPU_SENSORS
+
+    for t in snap.get("temperatures") or []:
+        if t.get("crit") and t["c"] >= t["crit"] - CRIT_MARGIN_C:
+            return f"{t['sensor']} is at {t['c']:g} °C, close to its critical {t['crit']:g} °C"
+        if t.get("sensor") in CPU_SENSORS and t["c"] >= CPU_HOT_C:
+            return f"the processor ({t['sensor']}) is at {t['c']:g} °C"
+    return None
+
+
+RULES["heat"] = (3, hot)  # EVOLUTION_PLAN direction 218: three readings in a row, as the others
+
+
 class Watch:
     """Counts consecutive readings per kind and remembers when each was last raised."""
 

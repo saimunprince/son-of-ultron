@@ -70,6 +70,7 @@ def snapshot(root: Path = BACKEND_ROOT) -> dict:
         "memory_mb": {"total_mb": total_mb, "available_mb": avail_mb},
         "disk": disk,
         "battery": battery(),
+        "temperatures": sysinfo.temperatures(),
         "quiet_hours": {"window": quiet_hours(), "active": in_quiet_hours()},
     }
 

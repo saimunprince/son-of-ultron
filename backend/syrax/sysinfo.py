@@ -276,3 +276,26 @@ def _win_cpu_percent(sample_s: float = 0.15) -> Optional[float]:
         return round(min(100.0, max(0.0, 100.0 * (1 - (i1 - i0) / total))), 1)
     except Exception:
         return None
+
+
+CPU_SENSORS = ("k10temp", "coretemp", "zenpower", "cpu_thermal", "acpitz")
+
+
+def temperatures(root: str = "/sys/class/hwmon") -> list:
+    """Linux hardware temperatures, no root (EVOLUTION_PLAN direction 218 hardware fault detection): one entry per
+    hwmon sensor, {"sensor", "c", "crit"} in degrees Celsius (crit None when the driver gives none). Empty elsewhere."""
+    import glob
+
+    out = []
+    for d in sorted(glob.glob(f"{root}/hwmon*")):
+        try:
+            name = open(f"{d}/name", encoding="utf-8").read().strip()
+            c = int(open(f"{d}/temp1_input", encoding="utf-8").read().strip()) / 1000
+        except (OSError, ValueError):
+            continue
+        try:
+            crit = int(open(f"{d}/temp1_crit", encoding="utf-8").read().strip()) / 1000
+        except (OSError, ValueError):
+            crit = None
+        out.append({"sensor": name, "c": round(c, 1), "crit": round(crit, 1) if crit else None})
+    return out
