@@ -342,6 +342,11 @@ class KnowTool(BaseTool):
                 warn = (f"\n    STALE: last checked {age} days ago. Re-research it before stating it as current.")
             checked = "" if age is None else f" · checked {age} d ago"
             lines.append(f"- id={k['id']} [{k['kind']} · confidence {k['confidence']:.2f}{checked}]{mark} {k['claim'][:300]}\n    source: {src}{warn}")
+        # one hop along a shared subject or object (journal.knowledge_links, wave 4): related facts the words missed
+        related = await asyncio.to_thread(self.journal.linked_knowledge, [k["id"] for k in rows])
+        if related:
+            lines.append(f"RELATED ({len(related)}, linked by a shared name):")
+            lines += [f"- id={k['id']} [{k['kind']} · confidence {k['confidence']:.2f}] {k['claim'][:200]}" for k in related]
         return ToolResult(output="\n".join(lines))
 
 

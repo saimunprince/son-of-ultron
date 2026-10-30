@@ -197,6 +197,43 @@ _MISUSE_ANY = re.compile(r"\bno file at\b|\bis not an? (?:PDF|image|video|audio|
 _OBSERVED_PREFIX = re.compile(r"^Observed output of cmd `[^`]*` executed:\s*")
 
 
+# Knowledge links (EVOLUTION_PLAN wave 4, directions 56 associative retrieval, 61 knowledge graph, 69 cross-domain
+# integration): facts were found only by shared words. A stored claim of the plain forms below also leaves
+# subject-relation-object rows, so `know` can follow a shared entity one hop to related facts. Conservative on purpose:
+# a subject is a capitalised name of up to four words, an object a short phrase; anything else leaves no link.
+_LINK = re.compile(
+    r"(?P<s>\b[A-Z][\w.+#-]*(?:\s+[A-Z0-9][\w.+#-]*){0,3})\s+"
+    r"(?P<r>is a|is an|is the|uses|requires|supports|runs on|depends on|was released in|was created by|is written in|is part of)\s+"
+    r"(?P<o>[^.;,()]{2,60})")
+
+
+_NOT_NAMES = {"this", "that", "these", "those", "it", "its", "they", "there", "here", "what", "which", "who", "whom",
+              "whose", "when", "where", "why", "how", "the", "a", "an", "he", "she", "we", "you", "i", "our", "their",
+              "his", "her", "my", "your", "each", "every", "some", "any", "all", "no", "one", "today", "now", "yes"}
+_NAME = re.compile(r"[A-Z][\w.+#-]*(?:\s+[A-Z0-9][\w.+#-]*){0,3}")
+
+
+def links_of(claim: str) -> List[tuple]:
+    """(subject, relation, object) triples in a claim, lower-cased, at most 5."""
+    out = []
+    for m in _LINK.finditer(claim or ""):
+        s_, r_ = m.group("s").strip().lower(), m.group("r").strip().lower()
+        raw = re.sub(r"^(?:the|a|an)\s+", "", m.group("o").strip())
+        name = _NAME.match(raw)  # an object that starts with a name links by the name ("SQLite as its store" -> sqlite)
+        o_ = (name.group(0) if name else raw).strip().lower()
+        if s_.split()[0] in _NOT_NAMES or any(w in _NOT_NAMES for w in s_.split()[1:]):
+            continue  # "This is a ...", "What is the ...", "France This is": a sentence start, not a name
+        if s_ and o_ and s_ != o_:
+            out.append((s_, r_, o_))
+    return out[:5]
+
+
+def _insert_links(cur: sqlite3.Cursor, knowledge_id: int, claim: str, ts: float) -> None:
+    for s_, r_, o_ in links_of(claim):
+        cur.execute("INSERT INTO knowledge_links(subject, relation, object, knowledge_id, created) VALUES (?,?,?,?,?)",
+                    (s_, r_, o_, knowledge_id, ts))
+
+
 def misuse(name: Optional[str], output: Optional[str]) -> bool:
     """True when a failed call of `name` was the caller's mistake, judged from the tool's own error (_MISUSE),
     or, for any tool, from an error that names input it cannot act on (_MISUSE_ANY)."""
@@ -546,6 +583,16 @@ CREATE TABLE IF NOT EXISTS archive (
   quality_run_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS archive_head ON archive(head);
+CREATE TABLE IF NOT EXISTS knowledge_links (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  subject      TEXT NOT NULL,
+  relation     TEXT NOT NULL,
+  object       TEXT NOT NULL,
+  knowledge_id INTEGER NOT NULL,
+  created      REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS knowledge_links_subject ON knowledge_links(subject);
+CREATE INDEX IF NOT EXISTS knowledge_links_object ON knowledge_links(object);
 CREATE TABLE IF NOT EXISTS skills (
   name              TEXT PRIMARY KEY,
   version           INTEGER NOT NULL DEFAULT 1,
@@ -679,6 +726,7 @@ class Journal:
         self._db.execute("PRAGMA foreign_keys=ON")
         self._db.executescript(_DDL)
         self._add_columns()
+        self._backfill_links()
         self._kstate = True
         self._db.execute(
             "INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', ?)",
@@ -1491,6 +1539,7 @@ class Journal:
                 ),
             )
             kid = int(cur.lastrowid)
+            _insert_links(cur, kid, claim, ts)
             self._insert_event(
                 cur, ts, task_id, "knowledge.stored",
                 {"knowledge_id": kid, "kind": kind, "confidence": conf, "claim": claim[:160], "source_url": source_url, "tags": sorted({t.lower() for t in (tags or []) if t})},
@@ -1711,6 +1760,42 @@ class Journal:
                 "SELECT * FROM knowledge WHERE status='DISPUTED' ORDER BY id ASC LIMIT ?", (max(1, min(int(limit), 5000)),)
             ).fetchall()
         return [self._knowledge_dict(r) for r in rows]
+
+    def _backfill_links(self) -> None:
+        """Once, for a journal that had knowledge before links existed: extract the links of every stored claim."""
+        if self._db.execute("SELECT 1 FROM knowledge_links LIMIT 1").fetchone():
+            return
+        rows = self._db.execute("SELECT id, claim, created FROM knowledge WHERE status != 'SUPERSEDED'").fetchall()
+        if not rows:
+            return
+        with self._lock:
+            self._db.execute("BEGIN")
+            try:
+                cur = self._db.cursor()
+                for r in rows:
+                    _insert_links(cur, r["id"], r["claim"], r["created"])
+                self._db.execute("COMMIT")
+            except Exception:
+                self._db.execute("ROLLBACK")
+                raise
+
+    def linked_knowledge(self, knowledge_ids: List[int], limit: int = 5) -> List[dict]:
+        """ACTIVE knowledge one hop from `knowledge_ids`: rows whose links share a subject or object with theirs."""
+        if not knowledge_ids:
+            return []
+        q = ",".join("?" * len(knowledge_ids))
+        with self._lock:
+            ents = {r[0] for r in self._db.execute(
+                f"SELECT subject FROM knowledge_links WHERE knowledge_id IN ({q}) UNION SELECT object FROM knowledge_links "
+                f"WHERE knowledge_id IN ({q})", (*knowledge_ids, *knowledge_ids))}
+            if not ents:
+                return []
+            e = ",".join("?" * len(ents))
+            ids = [r[0] for r in self._db.execute(
+                f"SELECT DISTINCT knowledge_id FROM knowledge_links WHERE (subject IN ({e}) OR object IN ({e})) "
+                f"AND knowledge_id NOT IN ({q}) ORDER BY knowledge_id DESC LIMIT ?", (*ents, *ents, *knowledge_ids, limit * 3))]
+        rows = [self.knowledge(i) for i in ids]
+        return [k for k in rows if k and k.get("status") == "ACTIVE"][:limit]
 
     def knowledge_search(self, query: str, limit: int = 8) -> List[dict]:
         """Keyword-overlap ranking over claim, excerpt, tags and question; SUPERSEDED rows are not retrieved."""
