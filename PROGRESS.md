@@ -259,6 +259,16 @@ pushed (each with a red test and a GREEN gate):
   - SYRAX chose a new limitation and predicted a 95 % chance of success.
   - It researched and learned a sourced conclusion, and the objective was DONE on the first attempt.
 
+### 2026-10-30, 20:00: choosing between goals of the same priority (plan direction 18)
+
+- Before, two open goals with the same priority were taken oldest first.
+- Now, among them, the one SYRAX expects to finish more often, for fewer brain calls, goes first.
+  - Its expected success comes from how often goals with the same kind of check finished before.
+  - Its cost comes from the brain calls spent on the same kind of limitation.
+- Priority still decides first, because it carries the owner's and safety's order. Equal value keeps the old age order.
+- The scores are on record in every `goal.selected` event.
+- Plan status: 145 EXISTS, 16 MISSING.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work

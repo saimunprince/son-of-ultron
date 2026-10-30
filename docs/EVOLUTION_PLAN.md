@@ -24,7 +24,7 @@ Paths are under `backend/syrax/` unless shown otherwise. Tests sit beside the mo
 | **All 300** | **105** | **123** | **51** | **21** |
 
 The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After the build of 2026-10-30 (all waves; owner decisions taken):
-**144 EXISTS, 109 PARTIAL, 17 MISSING, 22 out of scope, 8 decided against.**
+**145 EXISTS, 109 PARTIAL, 16 MISSING, 22 out of scope, 8 decided against.**
 
 **What is strong:** the journal and recovery, the permissions and kernel boundary, honesty checks on answers,
 emergency stop and budgets, the release gate with red-test proof, skill versioning and rollback, and knowledge with
@@ -80,7 +80,7 @@ provenance and freshness.
 | 15 | Resource-aware planning | EXISTS | resources.pressure, budgets (test_resources, test_controller_budgets) | no cost estimate per objective |
 | 16 | Dependency mapping | PARTIAL | devloop.impact_of (hand-kept system_map.json) | no import graph |
 | 17 | Risk-aware planning | EXISTS | permission and autonomy levels (test_autonomy_levels) | plan risk not scored |
-| 18 | Multi-objective optimization | MISSING | single priority integer | — |
+| 18 | Multi-objective optimization | EXISTS | priority, then expected value (success / cost), then age: autonomy.rank | — |
 | 19 | Deadline reasoning | PARTIAL | core.TASK_DEADLINE_S (test_task_deadline) | plans ignore time left |
 | 20 | Plan verification | EXISTS | plan.status, contracts.assess (test_plan, test_contracts) | — |
 | 21 | Self-monitoring | EXISTS | stallwatch, loop guard, budgets (test_stallwatch, test_agent_loops) | — |
