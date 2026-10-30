@@ -170,7 +170,7 @@ pushed (each with a red test and a GREEN gate):
   - Separate ablation: release attribution already compares each suspect commit with its parent.
 - **Plan status now:** 137 EXISTS, 109 PARTIAL, 32 MISSING, 22 out of scope.
 
-### 2026-10-31 (morning check): what the first full autonomy day showed
+### 2026-10-30 (afternoon check): what the first full autonomy day showed
 
 - **What happened:** autonomy ran its 40 own tasks: 39 SUCCESS, 1 PARTIAL. It built `image_tools` and
   `aircraft_nearby` on Linux by itself; both were among the 10 Windows skills that had no code here.
