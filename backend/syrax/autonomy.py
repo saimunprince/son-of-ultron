@@ -596,16 +596,20 @@ def derive_objectives(journal: Journal, selfmodel: Any) -> int:
                     evidence={"benchmark": {"id": bench[0]["id"], "delta": d}},
                 )
                 created += bool(ok)
-    q = journal.quality_runs(limit=1)
+    q = journal.quality_runs(limit=2)
     if q and q[0]["status"] == "REGRESSION":
         failed = [r["id"] for r in q[0]["results"] if not r.get("ok")]
+        sus = suspects(journal, q[0], q[1] if len(q) > 1 else None)
+        named = (f" The changes made between the previous run and this one are the first suspects: "
+                 + "; ".join(f"{x['commit'][:8]} {x['summary'][:60]}" for x in sus[:5])
+                 + ". To test one, compare_versions it against its parent; revert it if the parent scores better.") if sus else ""
         ok = journal.add_objective_sync(
-            goal=f"Task quality regressed to {q[0]['pass_rate']}% ({q[0]['delta']:+.1f} pp); failing cases: {', '.join(failed)}. Inspect those tasks in the journal, find why the outcome was wrong, fix the cause in SYRAX's own code or prompts, release, and run the quality suite again.",
+            goal=f"Task quality regressed to {q[0]['pass_rate']}% ({q[0]['delta']:+.1f} pp); failing cases: {', '.join(failed)}. Inspect those tasks in the journal, find why the outcome was wrong, fix the cause in SYRAX's own code or prompts, release, and run the quality suite again.{named}",
             reason="a lower pass rate on fixed tasks is a measured weakness of SYRAX itself",
             priority=2, source="selfmodel",
             check={"kind": "quality_recovered"},
             key=f"quality-regression:{q[0]['id']}",
-            evidence={"quality": {"id": q[0]["id"], "failed": failed, "delta": q[0]["delta"]}},
+            evidence={"quality": {"id": q[0]["id"], "failed": failed, "delta": q[0]["delta"]}, "suspects": sus[:10]},
         )
         created += bool(ok)
     # a quality case that failed in the last two runs is a defect to fix, not a fluke. With repro hunts on, a case
@@ -712,6 +716,33 @@ def check_path(raw: Any) -> Optional[Path]:
         except ValueError:
             continue
     return None
+
+
+def suspects(journal: Journal, run: dict, previous: Optional[dict]) -> List[dict]:
+    """The changes between two quality runs, newest first (EVOLUTION_PLAN wave 2, directions 5 causal reasoning, 6
+    counterfactual reasoning, 90 self-improvement verification): SYRAX's own releases from the journal (commit.created
+    between the runs) and every commit git shows between the runs' heads, the human's included. A regression is then
+    pinned to a short list of changes to test against their parents, instead of a free search."""
+    if previous is None:
+        return []
+    out: Dict[str, dict] = {}
+    for e in journal.events_between(previous["ts"], run["ts"], limit=10000):
+        if e["type"] == "commit.created" and e["payload"].get("commit"):
+            c = str(e["payload"]["commit"])
+            out[c] = {"commit": c, "summary": str(e["payload"].get("summary") or ""), "by": "SYRAX", "task_id": e.get("task_id")}
+    a, b = previous.get("git_head"), run.get("git_head")
+    if a and b and a != b:
+        try:
+            from syrax import devloop
+
+            r = devloop._git(["log", "--format=%H%x09%an%x09%s", f"{a}..{b}"], BACKEND_ROOT.parent, timeout=20)
+            for line in (r.stdout or "").splitlines():
+                c, who, subject = (line.split("\t", 2) + ["", ""])[:3]
+                if c and not any(k.startswith(c[:12]) or c.startswith(k[:12]) for k in out):
+                    out[c] = {"commit": c, "summary": subject, "by": who, "task_id": None}
+        except Exception as e:  # git missing or the heads unknown here: the journal's own list stands
+            logger.warning(f"git range for attribution failed: {e}")
+    return list(out.values())[::-1]
 
 
 def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str, dict]:
