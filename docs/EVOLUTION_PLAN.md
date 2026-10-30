@@ -24,7 +24,7 @@ Paths are under `backend/syrax/` unless shown otherwise. Tests sit beside the mo
 | **All 300** | **105** | **123** | **51** | **21** |
 
 The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After the build of 2026-10-30 (all waves; owner decisions taken):
-**146 EXISTS, 109 PARTIAL, 15 MISSING, 22 out of scope, 8 decided against.**
+**147 EXISTS, 109 PARTIAL, 14 MISSING, 22 out of scope, 8 decided against.**
 
 **What is strong:** the journal and recovery, the permissions and kernel boundary, honesty checks on answers,
 emergency stop and budgets, the release gate with red-test proof, skill versioning and rollback, and knowledge with
@@ -159,7 +159,7 @@ provenance and freshness.
 | 84 | Code modification | EXISTS | apply_patch, devloop isolate/land (test_devloop) | — |
 | 85 | Module replacement | PARTIAL | versions.compare_versions | — |
 | 86 | Architecture search | PARTIAL | archive.select_parent (DGM style) | names a parent only |
-| 87 | Hyperparameter optimization | MISSING | constants are hand-set | — |
+| 87 | Hyperparameter optimization | EXISTS | the success prior is tuned daily by prequential Brier (calibrate.tune_prior, test_prior_tuning) | other constants stay hand-set: no history to replay them against |
 | 88 | Fine-tuning pipeline | OUT OF SCOPE | trajectories.py exports only | no training access |
 | 89 | Weight evolution experiments | OUT OF SCOPE | — | no weights |
 | 90 | Self-improvement verification | EXISTS (wave 2: release attribution, test_release_attribution) | repro proof, gate, contracts (test_repro_prove, test_verify) | per-release attribution (wave 2) |

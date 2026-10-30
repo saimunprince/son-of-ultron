@@ -279,6 +279,20 @@ pushed (each with a red test and a GREEN gate):
 - On this PC's journal it finds exactly one pair: `youtube_open` and `youtube_play`, both taking a search query.
 - Plan status: 146 EXISTS, 15 MISSING.
 
+### 2026-10-30, 21:30: a setting tuned from SYRAX's own history (plan direction 87)
+
+- How likely SYRAX thinks a goal is to succeed used a fixed, hand-set starting assumption.
+- Now, once a day, SYRAX tries several values of that setting against its own past goals and keeps the one that
+  predicted best.
+  - Each past goal is predicted only from goals that had finished before it began, so the test never sees the future.
+  - A new value is taken only with 30+ finished goals behind it and a clear gain. The change is journaled
+    (`hyperparameter.tuned`) with the scores.
+- On this PC's 370 finished goals the error drops from 0.1565 to 0.1499 (Brier score; lower is better). The old
+  setting was a little overconfident.
+- Settings with no past to replay against, such as how much to explore, stay hand-set; tuning them honestly needs
+  experiments, not history.
+- Plan status: 147 EXISTS, 14 MISSING.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
