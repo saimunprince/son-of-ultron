@@ -1049,7 +1049,7 @@ class BrainRouter(LLM):
         provider's other chat models (at most POOL_TRIES) before the provider fails over."""
         tried_model = self.last_model.get(pid) or self.store.model(pid)
         empty = isinstance(original, BrainError)
-        self.model_cooldown[(pid, tried_model)] = time.time() + (EMPTY_MODEL_COOLDOWN_S if empty else _retry_after(original) or POOL_MODEL_COOLDOWN_S)
+        self.model_cooldown[(pid, tried_model)] = time.time() + _model_rest(pid, original, empty)
         tries = 0
         for candidate in sorted(await self.pool_models(pid), key=lambda m: (-kinship(m, tried_model), m)):
             if tries >= POOL_TRIES:
@@ -1060,7 +1060,7 @@ class BrainRouter(LLM):
             try:
                 msg = await self._call(pid, formatted, tools, tool_choice, images=True, model=candidate)
             except RateLimitError as e:
-                self.model_cooldown[(pid, candidate)] = time.time() + (_retry_after(e) or POOL_MODEL_COOLDOWN_S)
+                self.model_cooldown[(pid, candidate)] = time.time() + _model_rest(pid, e, False)
                 continue
             except (NotFoundError, BadRequestError):
                 self.model_cooldown[(pid, candidate)] = time.time() + 3600.0
@@ -1102,6 +1102,12 @@ class BrainRouter(LLM):
             cooldown = 3600.0
         elif isinstance(e, NotFoundError):
             cooldown = 900.0
+        elif isinstance(e, RateLimitError) and _daily_quota(e) and not PROVIDERS.get(pid, Provider).pool:
+            # EVOLUTION_PLAN wave 3 (directions 235, 278): a spent daily quota does not come back in 15 s. Retrying it
+            # on every request until midnight cost each one a round trip and a failover; it rests until its reset. A
+            # pooled provider's quota is per model: those models rest one by one (_pool_model), not the provider
+            cooldown = _until_quota_reset(pid)
+            reason = f"{reason} (daily quota spent: resting until it resets)"
         elif isinstance(e, RateLimitError):
             # free tiers usually free up within seconds; keep it short so the
             # "wait and retry" round can use it again
@@ -1151,6 +1157,38 @@ def _strip_images(content):
         texts = [p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text"]
         return "\n".join(t for t in texts if t) or "(image omitted)"
     return content
+
+
+_DAILY = re.compile(r"per[ _-]?day|perday|daily|requests per day|RPD", re.I)
+
+
+def _daily_quota(e: Exception) -> bool:
+    """A 429 that says a per-day quota is spent (Gemini: "GenerateRequestsPerDayPerProjectPerModel"; Groq: "requests
+    per day (RPD)"), as opposed to a per-minute burst."""
+    text = f"{e} {getattr(e, 'body', '')}"
+    return bool(_DAILY.search(text))
+
+
+def _until_quota_reset(pid: str, now: Optional[float] = None) -> float:
+    """Seconds until a provider's daily quota resets: Google resets at midnight Pacific time, the others at midnight
+    UTC. At least 60 s, at most a day."""
+    import datetime
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("America/Los_Angeles") if pid == "gemini" else datetime.timezone.utc
+    t = datetime.datetime.fromtimestamp(now if now is not None else time.time(), tz)
+    nxt = (t + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(60.0, min(86400.0, (nxt - t).total_seconds()))
+
+
+def _model_rest(pid: str, e: Exception, empty: bool) -> float:
+    """How long one pooled model rests: an empty answer a short while, a spent daily quota until it resets (wave 3),
+    a per-minute limit what the server asks or POOL_MODEL_COOLDOWN_S."""
+    if empty:
+        return EMPTY_MODEL_COOLDOWN_S
+    if isinstance(e, RateLimitError) and _daily_quota(e):
+        return _until_quota_reset(pid)
+    return (_retry_after(e) if isinstance(e, APIStatusError) else None) or POOL_MODEL_COOLDOWN_S
 
 
 def _retry_after(e: APIStatusError) -> Optional[float]:
