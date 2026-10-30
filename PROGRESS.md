@@ -200,6 +200,12 @@ pushed (each with a red test and a GREEN gate):
 - **Incident during its first gate:**
   - An old test reached the real portal and pressed one real ctrl+c on the desktop.
   - Tests can no longer touch the real keyboard, mouse or theme, and that block is itself tested.
+- **Screenshots on Linux:**
+  - No screenshot command exists on this PC, and Wayland lets no ordinary program read the screen.
+  - SYRAX now uses GNOME's Screenshot portal, with no dialog needed.
+  - Live check: SYRAX took a shot and described the screen correctly ("two Visual Studio Code windows side by side").
+  - Reading text off the screen to click it (OCR) still needs tesseract, which takes sudo to install, or a new
+    package. It is left out for now.
 - **Emotion estimation:** not built. Guessing a mood from typed text is unreliable, and SYRAX must not claim
   feelings it cannot show. The reasons are in EVOLUTION_PLAN.
 
