@@ -230,6 +230,15 @@ pushed (each with a red test and a GREEN gate):
 - **Plan status:** 142 EXISTS, 108 PARTIAL, 20 MISSING, 22 out of
   scope, 8 decided against.
 
+- **Disk trend:** SYRAX keeps one free-space reading a day and warns when, at the current rate, the disk fills
+  within 14 days. Before, it warned only below 2 GB.
+- **Lessons transfer:** a lesson learned on one objective now reaches others with the same kind of check, for
+  example "call the built skill directly".
+- **No needless web searches:** when two or more fresh, sourced, confident facts already answer a question,
+  `research` returns them instead of searching. `force` still searches.
+- **Plan status now:** 144 EXISTS, 109 PARTIAL, 17 MISSING, 22 out
+  of scope, 8 decided against.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work

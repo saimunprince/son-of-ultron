@@ -24,7 +24,7 @@ Paths are under `backend/syrax/` unless shown otherwise. Tests sit beside the mo
 | **All 300** | **105** | **123** | **51** | **21** |
 
 The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After the build of 2026-10-30 (all waves; owner decisions taken):
-**142 EXISTS, 108 PARTIAL, 20 MISSING, 22 out of scope, 8 decided against.**
+**144 EXISTS, 109 PARTIAL, 17 MISSING, 22 out of scope, 8 decided against.**
 
 **What is strong:** the journal and recovery, the permissions and kernel boundary, honesty checks on answers,
 emergency stop and budgets, the release gate with red-test proof, skill versioning and rollback, and knowledge with
@@ -113,7 +113,7 @@ provenance and freshness.
 | 43 | Online learning | PARTIAL | routing table rebuilt from quality runs | brain order only |
 | 44 | Continual task adaptation | PARTIAL | past_experience, learned briefs | prompt-level |
 | 45 | Catastrophic forgetting prevention | PARTIAL | quality/bench regressions, release gate | weight sense out of scope |
-| 46 | Transfer learning | MISSING | lessons are recalled for the same subject only | — |
+| 46 | Transfer learning | PARTIAL (same-check lessons recalled across subjects, test_transfer_lessons) | lessons are recalled for the same subject only | — |
 | 47 | Few-shot adaptation | PARTIAL | lessons injected into briefs | no example choice |
 | 48 | Unsupervised learning | PARTIAL | skillevo.candidates groups repeated requests | — |
 | 49 | Self-supervised learning | PARTIAL | trajectories.py exports graded JSONL | no consumer |
@@ -221,7 +221,7 @@ provenance and freshness.
 | 141 | Expected-utility reasoning | PARTIAL | limits.rank heuristic | — |
 | 142 | Worst-case analysis | EXISTS (wave 1: permissions.reversibility, test_reversibility) | — | **wave 1** (reversibility) |
 | 143 | Reversibility assessment | EXISTS (wave 1: permissions.reversibility, test_reversibility) | DESTRUCTIVE level, undo.py | **wave 1** |
-| 144 | Value-of-information analysis | MISSING | — | wave 4 |
+| 144 | Value-of-information analysis | EXISTS (research answers from fresh stored knowledge before searching, test_research_voi) | — | wave 4 |
 | 145 | Decision thresholds | EXISTS | NOISE_PCT, MIN_GAP (test_experiment_rigor) | — |
 | 146 | Risk budgeting | PARTIAL | task/call budgets | not risk-weighted |
 | 147 | Failure containment | EXISTS | Landlock, worktrees, guard (test_confine_worker) | — |
@@ -368,7 +368,7 @@ evidence for. If the owner later asks for it, the design above stands.
 | 276 | Energy monitoring | PARTIAL | battery only | — |
 | 277 | Storage lifecycle management | EXISTS | maintain, backup.prune (test_backup) | — |
 | 278 | Cost-aware routing | PARTIAL (wave 3: daily quotas respected; no cost model) | routing quality per kind | **wave 3** |
-| 279 | Capacity planning | MISSING | — | — |
+| 279 | Capacity planning | EXISTS (capacity.py: days until the disk is full, disk_trend alert, test_capacity) | — | — |
 | 280 | Sustainable operation | PARTIAL | quiet hours, pressure | — |
 | 281, 287, 289, 290 | Global workspace, consciousness theories, subjective experience, sentience ethics | OUT OF SCOPE | — | see above |
 | 282 | Metacognitive access | EXISTS (wave 2: calibration in self_inspect, test_calibration) | selfmodel, honesty checks | wave 2 (calibration) |
