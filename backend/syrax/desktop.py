@@ -170,7 +170,7 @@ def media_report(data: dict) -> str:
 def front_read() -> tuple:
     """One read of the window in front: (front_window's words, its title when it is SYRAX's own (winctl.is_own) else "")."""
     if not WINDOWS:
-        return None, ""
+        return _gnome_front_read()
     try:
         from syrax import presence, winctl
 
@@ -1007,3 +1007,21 @@ def _portal_screenshot(runner=None) -> str:
     if not Path(out["path"]).is_file():
         raise RuntimeError(f"the portal named {out['path']}, which does not exist")
     return out["path"]
+
+
+def _gnome_front_read() -> tuple:
+    """front_read on GNOME through SYRAX's focus extension (gnomefocus): None when it cannot be read (the extension is
+    not loaded), as before. The app class is not a Windows process name, so the title alone decides whether the window
+    is SYRAX's own (winctl.is_own: "SYRAX - Google Chrome")."""
+    from syrax import gnomefocus, presence, winctl
+
+    if MACOS:
+        return None, ""
+    w = gnomefocus.read()
+    if w is None:
+        return None, ""
+    if not w:
+        return "", ""
+    title = presence.redact(w["title"]) or "an untitled window"
+    own = w["title"] if winctl.is_own({"title": w["title"], "process": ""}) else ""
+    return f"'{title}' ({w['wm_class'] or 'unknown program'})", own

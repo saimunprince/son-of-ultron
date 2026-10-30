@@ -1,0 +1,7 @@
+{
+  "uuid": "syrax-focus@son-of-ultron",
+  "name": "SYRAX focus",
+  "description": "Tells SYRAX (the local assistant) which window is in front: its title and app class, over D-Bus (org.syrax.Focus). Nothing else is read or changed.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"],
+  "url": "https://github.com/saimunprince/son-of-ultron"
+}
