@@ -257,7 +257,8 @@ def goal_of(f: Feature) -> str:
     how = f"Build the feature '{f.title}' ({f.value}) How: {f.syrax}."
     if f.check and f.check.get("kind") == "skill_verified":
         how += (f" Make it a skill named `{f.check['name']}` with tests (skill_create), declaring every argument of "
-                "execute() in `parameters`; it closes when the skill is VERIFIED.")
+                "execute() in `parameters`; it closes when the skill is VERIFIED and one direct call of the tool "
+                f"`{f.check['name']}` itself (not python_execute importing it) has succeeded.")
     return how + f" Its permission level is {f.risk or 'WRITE'}; stay inside it."
 
 
@@ -282,6 +283,8 @@ def reopen_regressed(journal: Journal) -> List[int]:
     reopened = []
     for o in journal.objectives(limit=ALL_OBJECTIVES, status="DONE"):
         check = o.get("check_spec") or {}
+        if o["id"] < 0:
+            continue  # merged in from another PC's journal: its history, never this PC's open work (2026-10-30)
         if not str(o.get("key") or "").startswith("feature:") or check.get("kind") != "skill_verified":
             continue
         row = journal.skill(str(check.get("name") or ""))

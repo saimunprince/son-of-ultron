@@ -106,7 +106,8 @@ BRIEF_HINTS = {
     "skill_verified": (" First `skill_list`: reuse or adapt a skill that already does this. Then `know`, `research` or `github_search` for"
                        " how it is done (an official API or a maintained library beats guessing). Build it with `skill_create`"
                        " (code + pytest tests, dependencies listed). The objective closes only when the skill `{name}` is VERIFIED"
-                       " by its tests AND one real call of `{name}` afterwards succeeds: call it once with a realistic input."
+                       " by its tests AND one real call of `{name}` afterwards succeeds: call the tool `{name}` itself once with a realistic"
+                       " input (a direct tool call; running it through python_execute does not count)."
                        " Write files only inside the workspace. Do not call `release`: a skill is not in the repository."),
     "tool_verified": (" For this objective one call of the `{tool}` tool with a harmless read-only action is enough; if it takes a "
                       "path, use a folder or file you make inside the workspace; report its output and finish."),
@@ -682,7 +683,7 @@ def rejudge_blocked(journal: Journal) -> int:
     closed = 0
     for o in journal.objectives(limit=200, status="BLOCKED"):
         kind = (o.get("check_spec") or {}).get("kind", "task_success")
-        if kind in ("human", "task_success"):
+        if kind in ("human", "task_success") or o["id"] < 0:  # a merged objective is another PC's history
             continue
         verdict, evidence = judge(journal, o, None)
         verdict, contract = contracts.assess(journal, o, None, verdict, evidence, path="rejudge")
@@ -1085,6 +1086,10 @@ class Autonomy:
         done = {o["id"] for o in self.journal.objectives(limit=ALL_OBJECTIVES, status="DONE")}
         ahead = list(self.journal.objectives(limit=50, status="ACTIVE"))
         for o in self.journal.objectives(limit=500, status="OPEN"):
+            if o["id"] < 0:
+                # Live 2026-10-30: objectives merged in from the Windows journal (ids below zero) were reopened here
+                # and pursued beside this PC's own copies of the same features. They are history, not open work.
+                continue
             clash = next(((other, why) for other in ahead if (why := goal_conflict(other, o))), None)
             if clash:
                 other, why = clash
