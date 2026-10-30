@@ -115,14 +115,36 @@ def similarity(a: str, b: str) -> float:
     return len(wa & wb) / len(wa | wb) if wa and wb else 0.0
 
 
+# Non-numeric contradictions (EVOLUTION_PLAN direction 10): only differing figures were caught. Relations that have a
+# single answer per subject ("Python 3.12 was released in October 2023" vs "... in October 2024") contradict when the
+# same subject gets two different objects, whatever the wording (journal.links_of extracts them).
+FUNCTIONAL = ("was released in", "was created by", "is written in")
+
+
+def _functional(claim: str) -> dict:
+    from syrax.journal import links_of
+
+    return {(s, r): o for s, r, o in links_of(claim) if r in FUNCTIONAL}
+
+
+def _disagree(mine: dict, theirs: dict) -> bool:
+    return any(k in theirs and theirs[k] != o and not (o in theirs[k] or theirs[k] in o) for k, o in mine.items())
+
+
 def compare(claim: str, journal: Journal, limit: int = 5000) -> Tuple[Optional[dict], List[dict]]:
     """(the stored conclusion this duplicates or None, conclusions it contradicts), over every stored
     conclusion that is not SUPERSEDED (newest first). Both can be set: a duplicate is reported even when another
     row conflicts."""
     mine = figures(claim)
+    my_facts = _functional(claim)
     duplicate, conflicts = None, []
     for k in reversed(journal.knowledge_of_kind(("conclusion",), limit=limit)):
-        if k.get("status") == "SUPERSEDED" or similarity(claim, k["claim"]) < SIMILAR:
+        if k.get("status") == "SUPERSEDED":
+            continue
+        if my_facts and _disagree(my_facts, _functional(k["claim"])):
+            conflicts.append(k)  # the same thing given two different values: a contradiction however worded
+            continue
+        if similarity(claim, k["claim"]) < SIMILAR:
             continue
         theirs = figures(k["claim"])
         if mine and theirs and not _overlap(mine, theirs):
