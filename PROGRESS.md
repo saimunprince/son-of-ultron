@@ -239,6 +239,26 @@ pushed (each with a red test and a GREEN gate):
 - **Plan status now:** 144 EXISTS, 109 PARTIAL, 17 MISSING, 22 out
   of scope, 8 decided against.
 
+### 2026-10-30, 18:30: a full live test of everything
+
+- **Quality suite:** 66 of 67 (98.5 %). The day before it was 61/67.
+  - The one miss, `deep2_log_report`, was the brain's own parsing slip: its regex expected "took N ms" at the end of
+    a line, and the case hides two lines that go on after it.
+  - Run again on its own, the case passed (1/1). Nothing in SYRAX's code was wrong.
+- **New tools, live:**
+  - `data_query` profiled a CSV correctly (1 empty cell, 1 duplicate row) and summed revenue per item correctly.
+  - `paper_search` returned three real arXiv papers with links.
+  - `logic_check` caught "the road is wet, so it rained" as not following.
+  - A question in Bengali script got a Bengali answer, with the clock read rather than guessed.
+- **Measurements, live:**
+  - Tool calls carry their predicted failure.
+  - Disk history is being kept.
+  - Temperatures are normal (CPU 41 °C), so no alert.
+  - The persona change was journaled as `identity.changed`.
+- **Autonomy, one forced cycle:**
+  - SYRAX chose a new limitation and predicted a 95 % chance of success.
+  - It researched and learned a sourced conclusion, and the objective was DONE on the first attempt.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
