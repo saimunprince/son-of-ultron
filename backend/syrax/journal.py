@@ -181,7 +181,9 @@ _MISUSE = {
                                      r"|Unrecognized command|The path \S.* is a directory and only|The path \S.* is not absolute and was not found"
                                      r"|The editor cannot `)"),
     "desktop": re.compile(r"^Error: (\w+ needs |Nothing to open)"),
-    "learn": re.compile(r"^Error: learn refused: cite"),
+    # the honesty check refusing an unsupported claim is the caller's mistake, not the tool's (2026-10-30: these counted
+    # as failures and lifted the drift monitor's tool-failure share)
+    "learn": re.compile(r"^Error: learn refused: (cite|knowledge_id \d+ does not support)"),
     "apply_patch": re.compile(r"^Error: apply_patch refused: (the patch does not apply cleanly|empty patch|not a unified diff|patch too large|"
                               r"[^\n]*paths must be repository-relative)"),
     # an exception in the caller's code; a timeout, a dead worker or an empty answer may be the tool's own fault
@@ -190,7 +192,7 @@ _MISUSE = {
 # Any tool, skills included: input it cannot act on, in the words tools use for it. Live 2026-10-15: pdf_text
 # called on a .txt file ("is not a PDF") and on a path that did not exist ("no file at") made a working skill
 # FAILING, then a skill-repair objective.
-_MISUSE_ANY = re.compile(r"\bno file at\b|\bis not an? (?:PDF|image|video|audio|text file|folder|directory)\b"
+_MISUSE_ANY = re.compile(r"\bno file at\b|\bis not an? (?:PDF|image|video|audio|text file|folder|directory)\b|\b\d{4}-\d\d-\d\d is in the past\b"
                          r"|\bpages? \d+(?:-\d+)? (?:is|are) outside\b", re.I)
 _OBSERVED_PREFIX = re.compile(r"^Observed output of cmd `[^`]*` executed:\s*")
 

@@ -106,8 +106,18 @@ def attempts_to_done(c, t0, t1) -> Value:
 
 
 def tool_failure_share(c, t0, t1) -> Value:
+    """Failed tool calls among calls that ran: a call the guard refused never ran, and a call refused for the caller's
+    own mistake (journal.misuse: a wrong path, a date in the past, an unsupported claim to `learn`) is no failure of
+    the tool (2026-10-30: both counted, and the drift monitor read them as a decline)."""
+    from syrax.journal import misuse
+
     ok = _one(c, "SELECT COUNT(*) FROM events WHERE type='tool.completed' AND ts>=? AND ts<?", t0, t1)
-    bad = _one(c, "SELECT COUNT(*) FROM events WHERE type='tool.failed' AND ts>=? AND ts<?", t0, t1)
+    bad = 0
+    for name, refused, output in c.execute(
+            "SELECT json_extract(payload, '$.name'), json_extract(payload, '$.refused'), json_extract(payload, '$.output') "
+            "FROM events WHERE type='tool.failed' AND ts>=? AND ts<?", (t0, t1)):
+        if not refused and not misuse(name, output):
+            bad += 1
     return _share(bad, ok + bad)
 
 
@@ -354,7 +364,7 @@ METRICS: List[Metric] = [
     Metric("repeated_failures", "Brain", "Objectives that repeated a failed strategy", "lower", "%", "Objectives with two or more attempts, updated in the window, whose attempts_log holds two attempts that were not DONE and used the same strategy fingerprint (the distinct tool calls of the attempt, as autonomy records them), out of all objectives with two or more attempts.", repeated_failures),
     Metric("brain_calls_per_objective", "Brain", "Brain calls per verified objective (median)", "lower", "calls", "Median over the machine-checked objectives closed DONE in the window of the brain.answered events of all their tasks (every attempt, from attempts_log, evidence.task_id and last_task_id); objectives closed without a task are left out and counted in the detail.", brain_calls_per_objective),
     Metric("minutes_per_objective", "Brain", "Minutes per verified objective (median)", "lower", "minutes", "Median over the same objectives of the wall time of all their tasks, each from its start to the event that ended it (completed, failed, cancelled or interrupted; its last update when none did).", minutes_per_objective),
-    Metric("tool_failures", "Brain", "Tool calls that failed", "lower", "%", "tool.failed out of all finished tool calls in the window (refusals by a guard count as failures).", tool_failure_share),
+    Metric("tool_failures", "Brain", "Tool calls that failed", "lower", "%", "tool.failed out of all finished tool calls in the window; calls a guard refused and calls refused for the caller's own mistake (journal.misuse) are left out. This PC's own rows only.", tool_failure_share),
     Metric("unfinished", "Brain", "Own tasks left unfinished", "lower", "%", "Autonomous tasks that ended PARTIAL (step limit, loop stop) or FAILED, out of all finished ones.", unfinished_own_tasks),
     Metric("regressions", "Brain", "Quality runs that regressed", "lower", "%", "Quality runs in the window (full suite or a subset re-run) whose status was REGRESSION: a pass rate below the run they were compared to, out of all quality runs.", regression_rate),
     Metric("own_commits", "Evolution", "Commits SYRAX made to itself", "higher", "count", "commit.created that changed a file outside docs/: code, tests or config that passed the gate and a second brain's review and was committed by SYRAX's release. The daily regeneration of the docs is counted apart.", _commits(docs_only=False)),
@@ -381,11 +391,26 @@ METRICS: List[Metric] = [
 PILLARS = ("Brain", "Evolution", "Memory", "Evidence", "Demonstration")
 
 
+IMPORTED = {  # tables that hold rows merged in from another PC's journal (syrax-tools/import_windows_journal.py)
+    "events": "id > 0", "checkpoints": "id > 0", "objectives": "id > 0", "knowledge": "id > 0", "experiments": "id > 0",
+    "tasks": "last_event_id IS NULL OR last_event_id >= 0",
+}
+
+
+def _own_rows(c: sqlite3.Connection) -> None:
+    """Make this connection see only this PC's own rows: a TEMP VIEW of the same name shadows each table that can hold
+    merged rows (their ids are shifted below zero). 2026-10-30: after the Windows journal was merged, a "last 3 days"
+    window mixed both machines, and the drift monitor compared Windows days with Linux days."""
+    for table, own in IMPORTED.items():
+        c.execute(f"CREATE TEMP VIEW IF NOT EXISTS {table} AS SELECT * FROM main.{table} WHERE {own}")
+
+
 def measure(journal_path: Path = DEFAULT_FILE, now: Optional[float] = None) -> Dict[str, Any]:
     now = now or time.time()
     w = WINDOW_DAYS * 86400
     windows = {"last": (now - w, now), "previous": (now - 2 * w, now - w), "all": (0.0, now)}
     c = sqlite3.connect(f"file:{Path(journal_path).as_posix()}?mode=ro", uri=True)
+    _own_rows(c)  # this PC's own record; merged history stays readable through the journal itself
     try:
         span = c.execute("SELECT MIN(ts), MAX(ts), COUNT(*) FROM events").fetchone()
         rows = []
@@ -424,6 +449,7 @@ def drift(journal_path: Path = DEFAULT_FILE, now: Optional[float] = None, days: 
     w = days * 86400
     windows = [(now - 3 * w, now - 2 * w), (now - 2 * w, now - w), (now - w, now)]
     c = sqlite3.connect(f"file:{Path(journal_path).as_posix()}?mode=ro", uri=True)
+    _own_rows(c)
     out = []
     try:
         for m in METRICS:
