@@ -269,14 +269,24 @@ class ResearchTool(BaseTool):
         "properties": {
             "question": {"type": "string", "description": "What you need to find out, as a precise question."},
             "max_sources": {"type": "integer", "description": "How many sources to read (1-6, default 4)."},
+            "force": {"type": "boolean", "description": "Search the web even when stored knowledge seems to answer it."},
         },
         "required": ["question"],
     }
     researcher: Optional[Any] = Field(default=None, exclude=True)
 
-    async def execute(self, question: str, max_sources: int = 4) -> ToolResult:
+    async def execute(self, question: str, max_sources: int = 4, force: bool = False) -> ToolResult:
         if self.researcher is None:
             return ToolResult(error="research engine unavailable (core not started)")
+        journal = getattr(self.researcher, "journal", None)
+        if not force and journal is not None:
+            known = await asyncio.to_thread(already_known, journal, question)
+            if known:
+                lines = [f"ALREADY KNOWN ({len(known)} fresh, sourced entries answer this; no web search was made). "
+                         "If they do not answer the question, call research again with force=true."]
+                lines += [f"- id={k['id']} [confidence {k['confidence']:.2f}] {k['claim'][:300]}\n    source: {k['source_url'] or k['sources']}"
+                          for k in known]
+                return ToolResult(output="\n".join(lines))
         try:
             report = await self.researcher.research(question, max_sources)
         except ValueError as e:
@@ -288,6 +298,28 @@ class ResearchTool(BaseTool):
 
 
 STALE_DAYS = int(os.getenv("SYRAX_STALE_DAYS", "90"))  # web knowledge older than this is re-researched before use
+
+
+VOI_MIN_ROWS, VOI_MIN_CONFIDENCE, VOI_OVERLAP = 2, 0.6, 0.6
+
+
+def already_known(journal: Any, question: str) -> List[dict]:
+    """Stored knowledge that already answers `question` well enough to skip a web search (EVOLUTION_PLAN direction 144
+    value of information): at least VOI_MIN_ROWS ACTIVE rows, not stale, confidence VOI_MIN_CONFIDENCE or more, each
+    sharing VOI_OVERLAP of the question's content words. Otherwise [] and the research goes ahead."""
+    words = content_words(question)
+    if len(words) < 2:
+        return []
+    good = []
+    for k in journal.knowledge_search(question):
+        if k.get("status", "ACTIVE") != "ACTIVE" or k["confidence"] < VOI_MIN_CONFIDENCE:
+            continue
+        age = knowledge_age_days(k)
+        if age is not None and age > STALE_DAYS:
+            continue
+        if len(words & content_words(" ".join([k["claim"], k.get("question") or ""]))) / len(words) >= VOI_OVERLAP:
+            good.append(k)
+    return good if len(good) >= VOI_MIN_ROWS else []
 
 
 def knowledge_age_days(row: dict, now: Optional[float] = None) -> Optional[int]:
