@@ -1148,6 +1148,26 @@ class Autonomy:
             ahead.append(o)
         return None
 
+    async def _tune_prior(self) -> None:
+        """Once a day: the prior strength of predicted_success is re-chosen from history (calibrate.tune_prior;
+        EVOLUTION_PLAN direction 87). A change is journaled as hyperparameter.tuned with the scores behind it."""
+        last = float(self.journal.get_meta("last_prior_tune") or 0)
+        if time.time() - last < 86400:
+            return
+        await self.journal.run(self.journal.set_meta, "last_prior_tune", str(time.time()))
+        try:
+            before = calibrate.prior_strength(self.journal)
+            t = await asyncio.to_thread(calibrate.tune_prior, self.journal)
+        except Exception as e:
+            logger.warning(f"prior tuning failed: {e}")
+            return
+        await self.journal.run(self.journal.set_meta, calibrate.PRIOR_META, json.dumps(t))
+        after = calibrate.prior_strength(self.journal)
+        if after != before:
+            await self.journal.record("hyperparameter.tuned", {
+                "name": "calibration_prior", "from": before, "to": after, "brier": t["score"], "brier_default": t["baseline"],
+                "n": t["n"], "method": "prequential Brier over finished objectives", "grid": t.get("grid")})
+
     async def _check_drift(self) -> None:
         """Once a day: metrics that got worse two days running are journaled drift.detected (rise.drift, wave 2), so a
         slow decline is on record before it shows in a weekly report. Measuring never stops the cycle."""
@@ -1248,6 +1268,7 @@ class Autonomy:
                 logger.warning(f"re-checking catalog features failed: {e}")
         await self._roll_back_regressions()
         await self._check_drift()
+        await self._tune_prior()
         await self._state("SELECTING")
         objective = self._pick()
         if objective is None and self.reflect:

@@ -16,15 +16,77 @@ FINISHED = {"DONE": 1, "BLOCKED": 0, "DROPPED": 0}
 BINS = 5
 
 
+def _kind(o: dict) -> str:
+    spec = o.get("check_spec") or {}
+    return (spec.get("kind") if isinstance(spec, dict) else None) or "task_success"
+
+
 def predicted_success(journal: Journal, kind: str, exclude: Optional[int] = None) -> float:
-    """(done + 1) / (finished + 2) over finished objectives whose check kind is `kind` (a new kind starts at 0.5)."""
+    """(done + a) / (finished + 2a) over finished objectives whose check kind is `kind` (a new kind starts at 0.5);
+    a is prior_strength (1, Laplace, until tuning adopts another)."""
+    a = prior_strength(journal)
     done = total = 0
     for o in journal.objectives(limit=ALL_OBJECTIVES, status=list(FINISHED)):
-        if o["id"] == exclude or ((o.get("check_spec") or {}).get("kind") or "task_success") != kind:
+        if o["id"] == exclude or _kind(o) != kind:
             continue
         total += 1
         done += FINISHED[o["status"]]
-    return round((done + 1) / (total + 2), 3)
+    return round((done + a) / (total + 2 * a), 3)
+
+
+# EVOLUTION_PLAN direction 87 (hyperparameter optimization): the prior's strength a is chosen from history, not by
+# hand. Prequential: each finished objective is predicted only from the objectives that closed before it was created,
+# so no score sees the future. Adopted only from TUNE_MIN objectives and a TUNE_MARGIN Brier gain over DEFAULT_PRIOR.
+PRIOR_GRID = (0.5, 1.0, 2.0, 4.0, 6.0, 8.0)
+DEFAULT_PRIOR = 1.0
+TUNE_MIN = 30
+TUNE_MARGIN = 0.003
+PRIOR_META = "calibration_prior"
+
+
+def prior_strength(journal: Journal) -> float:
+    """The adopted prior strength (meta PRIOR_META, written by the autonomy's daily tuning), else DEFAULT_PRIOR."""
+    import json
+
+    try:
+        t = json.loads(journal.get_meta(PRIOR_META) or "{}")
+    except (TypeError, ValueError):
+        return DEFAULT_PRIOR
+    a = t.get("best") if t.get("adopted") else None
+    return float(a) if a in PRIOR_GRID else DEFAULT_PRIOR
+
+
+def prequential_brier(journal: Journal, a: float) -> tuple:
+    """(Brier score, n) of predicting each finished objective from those closed before it was created, with prior a."""
+    rows = [(o["created"], o["updated"], _kind(o), FINISHED[o["status"]])
+            for o in journal.objectives(limit=ALL_OBJECTIVES, status=list(FINISHED))]
+    if not rows:
+        return None, 0
+    closed = sorted((u, k, y) for _, u, k, y in rows)
+    seen: Dict[str, List[int]] = {}
+    i = se = 0
+    for created, _, kind, y in sorted(rows):
+        while i < len(closed) and closed[i][0] < created:
+            st = seen.setdefault(closed[i][1], [0, 0])
+            st[0] += closed[i][2]
+            st[1] += 1
+            i += 1
+        d, t = seen.get(kind, [0, 0])
+        se += ((d + a) / (t + 2 * a) - y) ** 2
+    return round(se / len(rows), 4), len(rows)
+
+
+def tune_prior(journal: Journal) -> dict:
+    """The grid's best prior strength, its score, the default's score, n, and whether it is adopted."""
+    scores = {a: prequential_brier(journal, a) for a in PRIOR_GRID}
+    n = scores[DEFAULT_PRIOR][1]
+    if not n:
+        return {"best": DEFAULT_PRIOR, "score": None, "baseline": None, "n": 0, "adopted": False}
+    best = min(PRIOR_GRID, key=lambda a: (scores[a][0], abs(a - DEFAULT_PRIOR)))
+    base = scores[DEFAULT_PRIOR][0]
+    adopted = n >= TUNE_MIN and best != DEFAULT_PRIOR and scores[best][0] <= base - TUNE_MARGIN
+    return {"best": best if adopted else DEFAULT_PRIOR, "score": scores[best][0], "baseline": base, "n": n,
+            "adopted": adopted, "grid": {str(a): scores[a][0] for a in PRIOR_GRID}}
 
 
 def pairs(journal: Journal, limit: int = 2000) -> List[tuple]:
