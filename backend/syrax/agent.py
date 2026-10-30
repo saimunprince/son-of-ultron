@@ -24,6 +24,7 @@ from syrax.github_research import GitHubSearchTool
 from syrax.editor import SyraxEditor
 from syrax.journal import JournalError
 from syrax.journal_query import JournalQueryTool
+from syrax.data_query import DataQueryTool
 from syrax.devloop import ReleaseTool
 from syrax.selfedit import ApplyPatchTool, RepoMapTool
 from syrax.experiments import ExperimentTool
@@ -480,7 +481,7 @@ class SyraxAgent(Manus):
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
             AsyncPythonExecute(), SyraxEditor(), DesktopControl(),
-            RememberTool(), RecallTool(), ForgetTool(), RemindTool(), WatchTopicTool(), UndoTool(), SelfInspectTool(), JournalQueryTool(),
+            RememberTool(), RecallTool(), ForgetTool(), RemindTool(), WatchTopicTool(), UndoTool(), SelfInspectTool(), JournalQueryTool(), DataQueryTool(),
             ResearchTool(), KnowTool(), LearnTool(), GitHubSearchTool(),
             SkillCreateTool(), SkillListTool(), SkillTestTool(), ReleaseTool(), RepoMapTool(), ApplyPatchTool(), PresentTool(), ExperimentTool(), CompareVersionsTool(), Terminate()
         )

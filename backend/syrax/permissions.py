@@ -54,7 +54,7 @@ KINDS = ("conversation", "eval", "autonomous")
 
 STATIC: Dict[str, str] = {
     "self_inspect": READ_ONLY, "know": READ_ONLY, "recall": READ_ONLY, "skill_list": READ_ONLY,
-    "journal_query": READ_ONLY, "compare_versions": READ_ONLY, "terminate": READ_ONLY, "ask_human": READ_ONLY,
+    "journal_query": READ_ONLY, "data_query": READ_ONLY, "compare_versions": READ_ONLY, "terminate": READ_ONLY, "ask_human": READ_ONLY,
     "remember": WRITE, "forget": WRITE, "remind": WRITE, "watch_topic": WRITE, "undo": READ_ONLY, "learn": WRITE, "present": WRITE, "experiment": WRITE,
     "skill_test": WRITE, "release": WRITE, "repo_map": READ_ONLY,
     "research": EXTERNAL_READ, "github_search": EXTERNAL_READ, "browser_screenshot": EXTERNAL_READ, "browser_exec": EXTERNAL_READ,
