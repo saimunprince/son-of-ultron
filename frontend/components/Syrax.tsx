@@ -664,6 +664,9 @@ export default function Syrax() {
           setFlashError(true);
           setTimeout(() => setFlashError(false), 1800);
           break;
+        default:
+          // audit 2026-10-29: unknown server messages vanished without a trace; they are at least visible to whoever debugs
+          console.debug("[SYRAX] unhandled server message", (e as { type?: string }).type);
       }
     },
     [push, say],
@@ -1247,7 +1250,7 @@ export default function Syrax() {
           />
         )}
         {consoleOpen && consoleTab === "live" && (
-          <div className="console-feed" ref={feedRef}>
+          <div className="console-feed" ref={feedRef} role="log" aria-live="polite" aria-label="SYRAX operations log">
             {entries.length === 0 && (
               <div className="entry entry-notice">
                 {link !== "online"

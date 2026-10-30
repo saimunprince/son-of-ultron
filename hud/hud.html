@@ -34,6 +34,7 @@
   #bar.thinking::after { opacity: .8; left: 14px; right: auto; width: 30%; animation: scan 1.6s cubic-bezier(.45,0,.55,1) infinite alternate; }
   @keyframes tick { from { opacity: .8; transform: scaleX(.15); } to { opacity: 0; transform: scaleX(1); } }
   @keyframes scan { from { transform: translateX(0); } to { transform: translateX(calc(760px * .8 - 100%)); } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
   /* window controls + drag strip: only in the desktop shell, whose window is frameless */
   /* title strip: invisible; grab the top 40px to move the window (windowed mode only), double-click maximizes/restores */
   #drag { position: fixed; top: 0; left: 0; right: 0; height: 40px; -webkit-app-region: drag; display: none; z-index: 9; }
@@ -1704,6 +1705,7 @@ let last = performance.now(), t0 = last - T_SKIP * 1000, P = 0, fpsAcc = 0, fpsN
 cv.style.transform = 'none';
 // no boot: the HUD is live the moment the page opens
 S.woken = true; bar.style.opacity = 1;
+const REDUCED_MOTION = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 function frame(now) {
   if (!S.woken) { wakeScreen(now); last = now; requestAnimationFrame(frame); return; }
   const dt = Math.min(.05, (now - last) / 1000); last = now;
@@ -1723,6 +1725,7 @@ function frame(now) {
   // ambient glitch is rare and thin; the G key / glitch command still fire the full effect
   if (t > nextGlitch) { S.glitch = .14; nextGlitch = t + 35 + Math.random() * 40; }
   S.glitch = Math.max(0, S.glitch - dt * 1.4);
+  if (REDUCED_MOTION) S.glitch = 0; // prefers-reduced-motion: no screen tearing (audit 2026-10-29)
   // mouse parallax stays subtle: slow follow, small in-canvas offsets only
   S.tx += (S.nx - S.tx) * Math.min(1, dt * 1.5); S.ty += (S.ny - S.ty) * Math.min(1, dt * 1.5);
   // no sleep mode: the HUD stays fully lit when another window has focus (S.standby stays 0)

@@ -800,7 +800,10 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     mode = next;
   }
 
+  // prefers-reduced-motion (audit 2026-10-29: the orb ignored it): no surges, and the motion runs at a fifth
+  const reduced = typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   function pulse(strength = 1) {
+    if (reduced) return;
     kick = Math.min(2, kick + strength);
   }
 
@@ -821,7 +824,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     energy += (target.energy - energy) * 0.05;
     heat += (target.heat - heat) * 0.035;
     kick *= 0.93;
-    const s = speed;
+    const s = reduced ? speed * 0.2 : speed;
     levelSmooth += (level - levelSmooth) * 0.35;
     const speakWave =
       mode === "speaking"
