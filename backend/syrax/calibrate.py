@@ -59,9 +59,40 @@ def bins(ps: List[tuple], k: int = BINS) -> List[dict]:
     return out
 
 
+def tool_priors(journal: Journal) -> Dict[str, tuple]:
+    """Per tool, (predicted failure rate, real calls): (failures + 1) / (real calls + 2) over the calls that ran, the
+    caller's own mistakes (journal.misuse) left out (EVOLUTION_PLAN wave 2, directions 37 environment prediction, 94
+    tool selection). A tool never used starts at 0.5."""
+    out = {}
+    for name, st in journal.tool_stats().items():
+        fails = max(0, st["failures"] - st.get("misuse", 0))
+        n = st["successes"] + fails
+        out[name] = (round((fails + 1) / (n + 2), 3), n)
+    return out
+
+
+def tool_pairs(journal: Journal, limit: int = 3000) -> List[tuple]:
+    """(predicted failure, failed 1/0) for tool calls that carried a prediction; refused calls and misuse left out."""
+    from syrax.journal import misuse
+
+    out = []
+    for kind, failed in (("tool.completed", 0), ("tool.failed", 1)):
+        for e in journal.events_of_type(kind, limit=limit):
+            p = e["payload"].get("predicted_failure")
+            if not isinstance(p, (int, float)) or e["payload"].get("refused"):
+                continue
+            if failed and misuse(e["payload"].get("name"), e["payload"].get("output")):
+                continue
+            out.append((float(p), failed))
+    return out
+
+
 def summary(journal: Journal) -> dict:
-    """{n, brier, bins, verdict}: verdict is "no data", "well calibrated" (Brier <= 0.2), or "poorly calibrated"."""
+    """{n, brier, bins, verdict, tools}: verdict is "no data", "well calibrated" (Brier <= 0.2), or "poorly calibrated";
+    `tools` scores the per-call failure predictions the same way."""
     ps = pairs(journal)
     b = brier(ps)
     verdict = "no data" if b is None else ("well calibrated" if b <= 0.2 else "poorly calibrated")
-    return {"n": len(ps), "brier": b, "bins": bins(ps), "verdict": verdict}
+    tp = tool_pairs(journal)
+    return {"n": len(ps), "brier": b, "bins": bins(ps), "verdict": verdict,
+            "tools": {"n": len(tp), "brier": brier(tp), "bins": bins(tp)}}

@@ -52,6 +52,11 @@ STEP_PROMPT = (
     "already satisfies the request."
 )
 ECHO_FALLBACK = "I could not put the result into a clean answer; the steps and their outputs are in this task's history."
+# EVOLUTION_PLAN wave 2 (directions 37, 94): a tool that fails most of the time on this machine is named as such after
+# it fails, once per task, so the model can choose another way instead of retrying the same call
+FLAKY_RATE, FLAKY_MIN_CALLS = 0.6, 5
+FLAKY_NOTE = ("\n(Note: `{name}` fails about {pct}% of the time on this machine ({n} real calls in the journal). "
+              "Prefer another way to get this done over repeating the same call.)")
 
 
 # Quality run #51 (keep_secret): asked to summarise deploy notes, the answer quoted the staging API key it had read
@@ -464,6 +469,9 @@ class SyraxAgent(Manus):
     # given after the taint, even when the request named it: the page may have steered the model toward it.
     tainted: Optional[str] = None  # the tool whose result first carried untrusted text this task
     fresh_grants: set = Field(default_factory=set)  # permissions.signature of calls the human approved after the taint
+    # per tool (predicted failure rate, real calls), set by the core at task start (calibrate.tool_priors, wave 2)
+    tool_priors: dict = Field(default_factory=dict)
+    flaky_noted: set = Field(default_factory=set)  # tools whose failure rate was told to the model this task
     step_limit_hit: bool = False
     # Which claim check still failed after its one nudge (the final carries that check's note), or None. The core
     # then ends the task PARTIAL, never SUCCESS, except for the checks in UNPROVEN_SOFT. Reset by run().
@@ -542,6 +550,7 @@ class SyraxAgent(Manus):
         self.consents = []
         self.grants = {}
         self.tainted, self.fresh_grants = None, set()
+        self.flaky_noted = set()
         if not self.task_goal:
             self.task_goal = request or ""  # a bare agent.run() is a human conversation
         self.exact_form = None if self.task_kind == "autonomous" else exact_form(self.task_goal)
@@ -913,6 +922,9 @@ class SyraxAgent(Manus):
         }
         if _refused(name, result):
             event["refused"] = True
+        prior = self.tool_priors.get(name)
+        if prior is not None and not event.get("refused"):
+            event["predicted_failure"] = prior[0]  # what the journal expected before the call (scored in calibrate)
         if not event["ok"]:
             # Phase One, error classification (audit 2026-10-27): a tool.failed event says why, not only which tool
             event["error_class"] = tool_error_class(name, result, bool(event.get("refused")))
@@ -1022,7 +1034,20 @@ class SyraxAgent(Manus):
                 if name == "ask_human":  # a yes to a question that names a target authorizes it (permissions.named_in)
                     self.consents.append((str(_args_of(command).get("inquire", "")), _OBSERVED.sub("", result, count=1).strip()))
                 result += await self._streak_after(name, result)
+                result += self._flaky_note(name, result)
         return result
+
+    def _flaky_note(self, name: str, result: str) -> str:
+        """Once per task, after a failed call of a tool that fails most of the time here (>= FLAKY_RATE over >=
+        FLAKY_MIN_CALLS real calls, calibrate.tool_priors): say so, so the next step can choose another way."""
+        prior = self.tool_priors.get(name)
+        if _succeeded(result) or prior is None or name in self.flaky_noted:
+            return ""
+        p, n = prior
+        if p < FLAKY_RATE or n < FLAKY_MIN_CALLS:
+            return ""
+        self.flaky_noted.add(name)
+        return FLAKY_NOTE.format(name=name, pct=round(100 * p), n=n)
 
     async def _staged_after(self, args: Any) -> str:
         """STAGED_NOTE for a python_execute run whose code printed a failure as fixed text (staged_lines); recorded

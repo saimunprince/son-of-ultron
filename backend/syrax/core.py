@@ -711,6 +711,12 @@ class Core:
         self.current = running
         await self._record_phase({"phase": "understand", "from": None})
         if self.agent is not None:  # permissions: the kind and the human's own words (not the brief)
+            try:  # what the journal expects of each tool, once per task (calibrate.tool_priors, wave 2)
+                from syrax import calibrate
+
+                self.agent.tool_priors = await asyncio.to_thread(calibrate.tool_priors, self.journal)
+            except Exception as e:  # a prediction is never worth failing a task over
+                logger.warning(f"tool priors unavailable: {e}")
             self.agent.task_kind = running.kind
             self.agent.task_goal = said or running.goal
             # a budget is per task: a release objective's 30 steps never leak into the next task
