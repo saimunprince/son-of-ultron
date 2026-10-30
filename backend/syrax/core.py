@@ -401,6 +401,12 @@ class Core:
             self.current.unjournaled += 1
             logger.warning(f"journal refused {kind} for {self.current.task_id}: {e}")
             await self.broadcast({**event, "unjournaled": True, "task_id": self.current.task_id})
+            if kind == "intent.recorded":
+                # Audit 2026-10-29 (lifecycle): the intent of a send is journaled BEFORE the send so that a crash
+                # inside it reads as "may have gone out" (EXTERNAL_UNCERTAIN). Unjournaled, the send went out anyway
+                # and recovery saw nothing. No record, no send: the error ends the call and the task (agent.py lets
+                # journal errors through).
+                raise
 
     async def _record_phase(self, payload: dict) -> None:
         """F4: tell the UI about a phase transition. It is not stored: the phase
@@ -778,6 +784,12 @@ class Core:
             await self._checkpoint("final", verified={"final": True}, next_action=None)
             status = "PARTIAL" if self.agent.step_limit_hit or getattr(self.agent, "loop_stopped", False) else "SUCCESS"
             payload = {"status": status, "result": reply}
+            if self.current.unjournaled:
+                # Audit 2026-10-29 (lifecycle): steps the journal refused were only counted, and the task could still
+                # end SUCCESS. A result whose evidence is missing in part is not proven: PARTIAL, and it says how much.
+                payload["unjournaled"] = self.current.unjournaled
+                if status == "SUCCESS":
+                    payload["status"], payload["reason"] = "PARTIAL", "unjournaled"
             # Mission rule: a claim the agent's checks still reject after their one nudge never completes as SUCCESS
             unproven = getattr(self.agent, "unproven", None)
             if unproven:
