@@ -269,6 +269,16 @@ pushed (each with a red test and a GREEN gate):
 - The scores are on record in every `goal.selected` event.
 - Plan status: 145 EXISTS, 16 MISSING.
 
+### 2026-10-30, 20:45: one general skill instead of two (plan direction 100)
+
+- Before, SYRAX only refused a new skill that copied a kept one. Two kept skills that do nearly the same job stayed two
+  separate tools, and the brain had to choose between them.
+- Now the daily check finds such pairs and proposes making them one skill:
+  - The two share a subject in their names and take the same arguments, or their purposes are 40 % or more alike.
+  - Each pair is proposed once per version of its code. The owner decides; nothing is merged on its own.
+- On this PC's journal it finds exactly one pair: `youtube_open` and `youtube_play`, both taking a search query.
+- Plan status: 146 EXISTS, 15 MISSING.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work

@@ -24,7 +24,7 @@ Paths are under `backend/syrax/` unless shown otherwise. Tests sit beside the mo
 | **All 300** | **105** | **123** | **51** | **21** |
 
 The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After the build of 2026-10-30 (all waves; owner decisions taken):
-**145 EXISTS, 109 PARTIAL, 16 MISSING, 22 out of scope, 8 decided against.**
+**146 EXISTS, 109 PARTIAL, 15 MISSING, 22 out of scope, 8 decided against.**
 
 **What is strong:** the journal and recovery, the permissions and kernel boundary, honesty checks on answers,
 emergency stop and budgets, the release gate with red-test proof, skill versioning and rollback, and knowledge with
@@ -172,7 +172,7 @@ provenance and freshness.
 | 97 | API integration | PARTIAL | API-wrapping skills | no OpenAPI → skill |
 | 98 | Skill versioning | EXISTS | keep_version, rollback, content_hash (test_skill_lifecycle) | — |
 | 99 | Skill deprecation | EXISTS (auto-rollback + deprecation proposals, test_skill_deprecation) | auto-rollback on regression (2026-10-29, test_skill_auto_rollback) | wave 4 (deprecation proposals) |
-| 100 | Skill generalization | MISSING | duplicate_of refuses only | — |
+| 100 | Skill generalization | EXISTS | duplicate_of refuses copies; the daily radar proposes one general skill for alike pairs (skillevo.generalizations, test_skill_generalize) | — |
 | 101 | Code comprehension | EXISTS | repo_map (test_selfedit) | no call graph |
 | 102 | Architecture analysis | PARTIAL | impact_of on hand-kept system_map.json | — |
 | 103 | Automated testing | EXISTS | verify.run_gates, covering_tests (test_verify) | — |
