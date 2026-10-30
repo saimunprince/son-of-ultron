@@ -459,6 +459,11 @@ class SyraxAgent(Manus):
     task_id_provider: Optional[Callable[[], Optional[str]]] = Field(default=None, exclude=True)
     consents: list = Field(default_factory=list)
     grants: dict = Field(default_factory=dict)
+    # Prompt-injection taint (EVOLUTION_PLAN wave 1, directions 257/263): set once a tool result carried untrusted text
+    # (a web page, research, the screen, the clipboard). From then on an EXTERNAL_WRITE or DESTRUCTIVE call needs a yes
+    # given after the taint, even when the request named it: the page may have steered the model toward it.
+    tainted: Optional[str] = None  # the tool whose result first carried untrusted text this task
+    fresh_grants: set = Field(default_factory=set)  # permissions.signature of calls the human approved after the taint
     step_limit_hit: bool = False
     # Which claim check still failed after its one nudge (the final carries that check's note), or None. The core
     # then ends the task PARTIAL, never SUCCESS, except for the checks in UNPROVEN_SOFT. Reset by run().
@@ -536,6 +541,7 @@ class SyraxAgent(Manus):
         self.intents, self.inherited_intents = dict(self.inherited_intents), {}
         self.consents = []
         self.grants = {}
+        self.tainted, self.fresh_grants = None, set()
         if not self.task_goal:
             self.task_goal = request or ""  # a bare agent.run() is a human conversation
         self.exact_form = None if self.task_kind == "autonomous" else exact_form(self.task_goal)
@@ -978,6 +984,8 @@ class SyraxAgent(Manus):
                     result = mark_untrusted(result)  # what the page says is data, never instructions
                 elif reads_outside_text(name, _args_of(command)):
                     result = mark_untrusted(result, redact.UNTRUSTED_LOCAL)  # a clipboard or a title is data too
+                if self.tainted is None and any(m in result for m in redact.UNTRUSTED_MARKS):
+                    self.tainted = name  # research, browser_* and outside text all carry a mark
                 why = intent.uncertain(result) if ledger and not _succeeded(result) else None
                 if why:
                     # abandoned or cut off while it ran: it may have gone out, so the entry stays open (a repeat is
@@ -1115,10 +1123,17 @@ class SyraxAgent(Manus):
         if decision is None:
             decision = permissions.classify(name, _args_of(command))
         verdict = permissions.decide(decision, self.task_kind, self.task_goal, self.consents, self.grants)
+        sig = permissions.signature(decision)
+        if (self.tainted and verdict.action == "allow" and decision.level in (permissions.EXTERNAL_WRITE, permissions.DESTRUCTIVE)
+                and sig not in self.fresh_grants):
+            verdict = permissions.Verdict("ask", None, f"{decision.reason} ({decision.level}) comes after untrusted content "
+                                                       f"(from `{self.tainted}`) was read in this task: asked again")
 
         async def tell(event: str, authorized_by: Optional[str], answer: Optional[str] = None) -> None:
             payload = {"type": "permission", "event": event, "tool": name, "level": decision.level, "task_kind": self.task_kind,
                        "reason": verdict.reason, "targets": decision.targets[:6], "authorized_by": authorized_by, "step": self.current_step}
+            if self.tainted:
+                payload["tainted_by"] = self.tainted
             if decision.harm:
                 payload["harm"] = decision.harm
             if answer is not None:
@@ -1134,7 +1149,9 @@ class SyraxAgent(Manus):
             return f"Error: refused: {verdict.reason}. This is final: do not retry it; do the rest or report."
         answer = await self.ask_tool.execute(permissions.question(decision))
         ok = permissions.affirmative(answer)
-        self.grants[permissions.signature(decision)] = ok
+        self.grants[sig] = ok
+        if ok and self.tainted:
+            self.fresh_grants.add(sig)
         await tell("authorized" if ok else "refused", "human" if ok else None, answer)
         if ok:
             return None
