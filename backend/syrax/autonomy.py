@@ -718,6 +718,22 @@ def check_path(raw: Any) -> Optional[Path]:
     return None
 
 
+def goal_conflict(a: dict, b: dict) -> Optional[str]:
+    """Why objective `b` cannot be pursued alongside `a`, or None: the same check twice (one would only repeat the
+    other), or file_present and file_absent on the same path (each undoes the other)."""
+    sa, sb = a.get("check_spec") or {}, b.get("check_spec") or {}
+    ka, kb = sa.get("kind"), sb.get("kind")
+    if not ka or not kb or ka == "task_success" or kb == "task_success":
+        return None
+    if sa == sb:
+        return f"the same check as objective #{a['id']} ({ka})"
+    if {ka, kb} == {"file_present", "file_absent"}:
+        pa, pb = str(sa.get("path") or "").replace("\\", "/").rstrip("/"), str(sb.get("path") or "").replace("\\", "/").rstrip("/")
+        if pa and pa == pb:
+            return f"objective #{a['id']} wants {pa} {'present' if ka == 'file_present' else 'absent'}; this one the opposite"
+    return None
+
+
 SUGGEST_DAYS = 14
 SUGGEST_MIN_TASKS = 20
 
@@ -1063,10 +1079,24 @@ class Autonomy:
     # ——— one cycle ———
 
     def _pick(self) -> Optional[dict]:
+        """The first OPEN objective (priority, then age) whose dependencies are done and that conflicts with none ahead
+        of it (goal_conflict; EVOLUTION_PLAN wave 4, direction 123): the later of two conflicting objectives waits, and
+        the conflict is journaled once as objective.conflict."""
         done = {o["id"] for o in self.journal.objectives(limit=ALL_OBJECTIVES, status="DONE")}
+        ahead = list(self.journal.objectives(limit=50, status="ACTIVE"))
         for o in self.journal.objectives(limit=500, status="OPEN"):
+            clash = next(((other, why) for other in ahead if (why := goal_conflict(other, o))), None)
+            if clash:
+                other, why = clash
+                try:
+                    self.journal.record_sync("objective.conflict", {"objective_id": o["id"], "with": other["id"], "why": why},
+                                             dedupe_key=f"objective-conflict:{o['id']}:{other['id']}")
+                except JournalError:
+                    pass
+                continue
             if all(d in done for d in (o.get("dependencies") or [])):
                 return o
+            ahead.append(o)
         return None
 
     async def _check_drift(self) -> None:
