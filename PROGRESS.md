@@ -184,6 +184,25 @@ pushed (each with a red test and a GREEN gate):
   - **Fix:** the goal and the brief now both ask for a direct call. The operator reopened the two affected
     objectives (#33, #35).
 
+### 2026-10-30, evening: the three owner decisions ("ja korar koro": decided for the owner)
+
+- **Bangla replies:**
+  - A request in Bengali script is answered in Bengali script. Code, names and technical terms stay as they are.
+  - Banglish written in Latin letters stays English, as before.
+  - An English answer to a Bengali request is asked once again in Bengali.
+- **Linux keyboard and mouse, without root:**
+  - SYRAX can now type, press hotkeys, click and switch dark mode on this GNOME (Wayland) desktop.
+  - It works through GNOME's own RemoteDesktop portal, because xdotool cannot reach Wayland apps and ydotool needs
+    root.
+  - GNOME asks once; a restore token, kept private, spares later questions.
+  - The Windows "mouse in the corner" failsafe does not exist here, because Wayland hides the pointer position. The
+    emergency stop and the human-only rule remain.
+- **Incident during its first gate:**
+  - An old test reached the real portal and pressed one real ctrl+c on the desktop.
+  - Tests can no longer touch the real keyboard, mouse or theme, and that block is itself tested.
+- **Emotion estimation:** not built. Guessing a mood from typed text is unreliable, and SYRAX must not claim
+  feelings it cannot show. The reasons are in EVOLUTION_PLAN.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
