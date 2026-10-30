@@ -941,6 +941,37 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
     return ("DONE" if status == "SUCCESS" else "RETRY"), {"task_status": status, "result": (task or {}).get("result")}
 
 
+def expected_value(journal: Journal, objective: dict, _cache: Optional[dict] = None) -> dict:
+    """EVOLUTION_PLAN direction 18 (multi-objective optimization): what an objective is expected to give, from history.
+    success: calibrate.predicted_success of its check kind; cost: the average brain calls of its limitation kind
+    (limits.kind_stats, DEFAULT_COST without history); value = success / (1 + cost / 20), the same discount
+    limits.value_of uses. `_cache` shares the stats across one ranking."""
+    from syrax import limits
+
+    cache = _cache if _cache is not None else {}
+    spec = objective.get("check_spec") or {}
+    kind = (spec.get("kind") if isinstance(spec, dict) else None) or "task_success"
+    if ("success", kind) not in cache:
+        cache[("success", kind)] = calibrate.predicted_success(journal, kind)
+    if "stats" not in cache:
+        cache["stats"] = limits.kind_stats(journal)
+    lim = (((objective.get("evidence") or {}).get("limitation")) or {}).get("kind")
+    calls = (cache["stats"].get(lim) or {}).get("calls") if lim else None
+    cost = calls if calls is not None else limits.DEFAULT_COST
+    success = cache[("success", kind)]
+    return {"success": success, "cost": cost, "value": round(success / (1 + cost / 20), 4)}
+
+
+def rank(journal: Journal, objectives: List[dict]) -> List[dict]:
+    """Priority first (it carries the owner's and safety's order), then the highest expected value, then the oldest
+    (the journal's own order, kept by a stable sort)."""
+    objectives = list(objectives)
+    if len({o.get("priority") for o in objectives}) == len(objectives):
+        return objectives  # no two share a priority: nothing to weigh
+    cache: dict = {}
+    return sorted(objectives, key=lambda o: (o.get("priority") or 0, -expected_value(journal, o, cache)["value"]))
+
+
 class Autonomy:
     def __init__(self, core: Any, journal: Optional[Journal] = None):
         self.core = core
@@ -1078,7 +1109,8 @@ class Autonomy:
             # what SYRAX expects before it tries, scored against the outcome later (calibrate.py, wave 2)
             "predicted_success": calibrate.predicted_success(
                 self.journal, ((spec if isinstance(spec, dict) else {}) or {}).get("kind") or "task_success", exclude=objective["id"]),
-            "rule": "highest priority, then oldest, among OPEN objectives whose dependencies are done",
+            "expected": expected_value(self.journal, objective),
+            "rule": "highest priority, then the highest expected value (success / cost), then oldest, among OPEN objectives whose dependencies are done",
             "alternatives": [{"id": o["id"], "priority": o.get("priority"), "goal": str(o.get("goal") or "")[:120]} for o in others],
         })
         await self._state("WORKING", objective_id=objective["id"])
@@ -1092,12 +1124,12 @@ class Autonomy:
     # ——— one cycle ———
 
     def _pick(self) -> Optional[dict]:
-        """The first OPEN objective (priority, then age) whose dependencies are done and that conflicts with none ahead
+        """The first OPEN objective (priority, then expected value, then age: rank) whose dependencies are done and that conflicts with none ahead
         of it (goal_conflict; EVOLUTION_PLAN wave 4, direction 123): the later of two conflicting objectives waits, and
         the conflict is journaled once as objective.conflict."""
         done = {o["id"] for o in self.journal.objectives(limit=ALL_OBJECTIVES, status="DONE")}
         ahead = list(self.journal.objectives(limit=50, status="ACTIVE"))
-        for o in self.journal.objectives(limit=500, status="OPEN"):
+        for o in rank(self.journal, self.journal.objectives(limit=500, status="OPEN")):
             if o["id"] < 0:
                 # Live 2026-10-30: objectives merged in from the Windows journal (ids below zero) were reopened here
                 # and pursued beside this PC's own copies of the same features. They are history, not open work.
