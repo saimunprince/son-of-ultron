@@ -272,14 +272,26 @@ def past_experience(journal: Journal, objective: dict, limit: int = 3, budget: i
         ospec = o.get("check_spec") or {}
         score = (3 if ospec.get("kind") == spec.get("kind") else 0) + (4 if same else 0) + shared
         scored.append((o["status"] in FAILED_STATUSES, score, o))
-    if not scored:
+    chosen = [o for _, _, o in sorted(scored, key=lambda x: (not x[0], -x[1], -x[2]["updated"]))[:limit]]
+    # Transfer (EVOLUTION_PLAN direction 46): a lesson learned on another subject with the same kind of check (e.g.
+    # "call the built skill directly") still applies; when the subject matches leave room, the newest such failures
+    # with a written lesson fill it, marked as coming from elsewhere
+    transfer = []
+    if len(chosen) < limit and spec.get("kind"):
+        taken = {o["id"] for o in chosen} | {objective.get("id")}
+        transfer = sorted((o for o, _ in pool if o["id"] not in taken and o["status"] in FAILED_STATUSES
+                           and (o.get("check_spec") or {}).get("kind") == spec.get("kind")
+                           and str((o.get("progress") or {}).get("lesson") or "").strip()),
+                          key=lambda o: -o["updated"])[: limit - len(chosen)]
+    if not chosen and not transfer:
         return ""
     lines = []
-    for _, _, o in sorted(scored, key=lambda x: (not x[0], -x[1], -x[2]["updated"]))[:limit]:
+    for o in chosen + transfer:
         prog = o.get("progress") or {}
         log = prog.get("attempts_log") or []
         how = "; ".join((log[-1].get("strategy") or [])[:4]) if log else ""
-        lines.append(f"- #{o['id']} {o['status']} after {o.get('attempts', 0)} attempt(s): {str(o['goal'])[:110]} — "
+        mark = " (another subject, same kind of check)" if o in transfer else ""
+        lines.append(f"- #{o['id']} {o['status']} after {o.get('attempts', 0)} attempt(s){mark}: {str(o['goal'])[:110]} — "
                      f"{str(prog.get('lesson') or '')[:150]}" + (f" (how: {how[:160]})" if how else ""))
     return ("Past experience with similar objectives (repeat what worked, avoid what failed):\n" + "\n".join(lines))[:budget] + "\n"
 
