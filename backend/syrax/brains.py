@@ -150,6 +150,58 @@ def _first_sentence(text: str, limit: int = 200) -> str:
     return (m.group(1) if m else text)[:limit]
 
 
+# Live 2026-10-31: 43 tools, and even their compact manual left a request at ~8,619 tokens, over Groq's 8,000.
+# For a brain the compact manual does not fit, the tools are chosen (select_tools): these always, then the tools whose
+# name or description shares words with the request, best first, while the request fits.
+ESSENTIAL_TOOLS = frozenset({"terminate", "ask_human", "python_execute", "desktop", "recall", "remember", "research",
+                             "know", "undo", "present"})
+_WORD = re.compile(r"[^\W\d_]{3,}", re.UNICODE)
+
+
+def _words(text: str) -> set:
+    """Content words (memory.content_words: no stop words, so "the" never makes a tool relevant)."""
+    from syrax.memory import content_words
+
+    return set(content_words(" ".join(_WORD.findall(text or ""))))
+
+
+def _request_text(messages: List[dict]) -> str:
+    """The newest human turn (not a console step prompt), and the one before it, for context."""
+    turns = [str(m.get("content") or "") for m in messages if m.get("role") == "user" and m.get("content") not in STEP_PROMPTS]
+    return " ".join(turns[-2:])
+
+
+def select_tools(tools: List[dict], messages: List[dict], budget: int, max_tokens: int) -> List[dict]:
+    """The tools that fit `budget` with these messages: all of them if they fit, else the essential ones and then the
+    ones sharing the most words with the request, kept in their original order."""
+    try:
+        fit_request(messages, tools, budget, max_tokens)
+        return tools
+    except BrainError:
+        pass
+    want = _words(_request_text(messages))
+
+    def name(t: dict) -> str:
+        return str((t.get("function") or {}).get("name") or "")
+
+    def score(t: dict) -> int:
+        f = t.get("function") or {}
+        return len(want & (_words(name(t).replace("_", " ")) | _words(str(f.get("description") or ""))))
+
+    keep = {name(t) for t in tools if name(t) in ESSENTIAL_TOOLS}
+    rest = sorted((t for t in tools if name(t) not in keep), key=lambda t: -score(t))
+    for t in rest:
+        if score(t) == 0:
+            break
+        trial = keep | {name(t)}
+        try:
+            fit_request(messages, [x for x in tools if name(x) in trial], budget, max_tokens)
+            keep = trial
+        except BrainError:
+            continue
+    return [t for t in tools if name(t) in keep]
+
+
 def compact_tools(tools: List[dict]) -> List[dict]:
     """The tool list for a brain whose request budget the full manual does not fit (live 2026-10-29: Groq's 8k free
     tier refused every SYRAX request, ~5.2k of it tool descriptions, so a Gemini outage left only Pollinations). Each
@@ -943,9 +995,11 @@ class BrainRouter(LLM):
                 # the full tool manual does not fit this brain: the same tools, their first sentences and their
                 # parameters without prose (names, types, enums, required stay, so calls stay exact)
                 small = compact_tools(tools)
-                params["messages"], params["max_tokens"] = fit_request(messages, small, p.max_request_tokens, self.max_tokens)
-                params["tools"] = small
-                logger.info(f"brain {pid}: compact tool descriptions ({count_tokens(tools)} -> {count_tokens(small)} tokens)")
+                chosen = select_tools(small, messages, p.max_request_tokens, self.max_tokens)
+                params["messages"], params["max_tokens"] = fit_request(messages, chosen, p.max_request_tokens, self.max_tokens)
+                params["tools"] = chosen
+                logger.info(f"brain {pid}: compact tool descriptions ({count_tokens(tools)} -> {count_tokens(small)} tokens)"
+                            + (f", {len(chosen)} of {len(small)} tools chosen for this request" if len(chosen) < len(small) else ""))
             if len(params["messages"]) < before:
                 logger.info(f"brain {pid}: trimmed {before - len(params['messages'])} old messages to fit {p.max_request_tokens} tokens")
         client = self._client(pid)
