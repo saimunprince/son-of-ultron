@@ -19,6 +19,7 @@ not change it (devloop.JUDGES).
 from __future__ import annotations
 
 import asyncio
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -56,8 +57,17 @@ def run_junit(wt: Path, xml: Path) -> bool:
     from syrax import verify
 
     gate = next(g for g in verify.default_gates(wt) if g.name == "pytest")
-    gate = dataclasses.replace(gate, name="pytest_junit", cmd=[*gate.cmd, f"--junitxml={xml}"])
+    # Live 2026-10-28..31 (Linux): the confined gate may write only the worktree and its TMPDIR, and the report was
+    # asked for beside the worktree, so it was never written and the capability matrix went stale. It is written in
+    # the gate's TMPDIR and moved to `xml` afterwards.
+    tmp_dir = Path((gate.env or {}).get("TMPDIR") or xml.parent)
+    report = tmp_dir / f"{xml.name}"
+    report.unlink(missing_ok=True)
+    gate = dataclasses.replace(gate, name="pytest_junit", cmd=[*gate.cmd, f"--junitxml={report}"])
     verify.run_gate(gate)
+    if report.exists() and report != xml:
+        xml.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(report), str(xml))
     return xml.exists()
 
 

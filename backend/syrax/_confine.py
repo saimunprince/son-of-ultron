@@ -49,10 +49,16 @@ SECRET_NAME = re.compile(r"(KEY|TOKEN|SECRET|PASSW|CREDENTIAL|COOKIE|AUTH)", re.
 SECRET_EXACT = ("SSH_AUTH_SOCK", "SSH_AGENT_PID", "GPG_AGENT_INFO", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR")
 SECRET_PREFIX = ("CLAUDE_CODE_", "AWS_", "AZURE_", "GOOGLE_APPLICATION")
 KEEP = ("SYRAX_GUARD_PATHS",)  # the guard's own list of protected paths, not a secret
+# Live 2026-10-28..31: GIT_CONFIG_KEY_n holds a git config key's NAME (core.hooksPath, from devloop.install_git_safety);
+# scrubbed for the "KEY" in it while GIT_CONFIG_COUNT stayed, every git in the confined gate failed ("missing config
+# key GIT_CONFIG_KEY_0") and the daily ledger publish was blocked four times. Its value was never scrubbed by name.
+KEEP_PATTERN = re.compile(r"^GIT_CONFIG_KEY_\d+$")
 
 
 def is_secret_env(name: str) -> bool:
-    return name not in KEEP and (name in SECRET_EXACT or name.startswith(SECRET_PREFIX) or bool(SECRET_NAME.search(name)))
+    if name in KEEP or KEEP_PATTERN.match(name):
+        return False
+    return name in SECRET_EXACT or name.startswith(SECRET_PREFIX) or bool(SECRET_NAME.search(name))
 
 
 def scrub_env(environ=None) -> List[str]:
