@@ -239,7 +239,7 @@ pushed (each with a red test and a GREEN gate):
 - **Plan status now:** 144 EXISTS, 109 PARTIAL, 17 MISSING, 22 out
   of scope, 8 decided against.
 
-### 2026-10-30, 18:30: a full live test of everything
+### 2026-10-30, 18:05: a full live test of everything
 
 - **Quality suite:** 66 of 67 (98.5 %). The day before it was 61/67.
   - The one miss, `deep2_log_report`, was the brain's own parsing slip: its regex expected "took N ms" at the end of
@@ -259,7 +259,7 @@ pushed (each with a red test and a GREEN gate):
   - SYRAX chose a new limitation and predicted a 95 % chance of success.
   - It researched and learned a sourced conclusion, and the objective was DONE on the first attempt.
 
-### 2026-10-30, 20:00: choosing between goals of the same priority (plan direction 18)
+### 2026-10-30, 19:35: choosing between goals of the same priority (plan direction 18)
 
 - Before, two open goals with the same priority were taken oldest first.
 - Now, among them, the one SYRAX expects to finish more often, for fewer brain calls, goes first.
@@ -269,7 +269,7 @@ pushed (each with a red test and a GREEN gate):
 - The scores are on record in every `goal.selected` event.
 - Plan status: 145 EXISTS, 16 MISSING.
 
-### 2026-10-30, 20:45: one general skill instead of two (plan direction 100)
+### 2026-10-30, 19:45: one general skill instead of two (plan direction 100)
 
 - Before, SYRAX only refused a new skill that copied a kept one. Two kept skills that do nearly the same job stayed two
   separate tools, and the brain had to choose between them.
@@ -279,7 +279,7 @@ pushed (each with a red test and a GREEN gate):
 - On this PC's journal it finds exactly one pair: `youtube_open` and `youtube_play`, both taking a search query.
 - Plan status: 146 EXISTS, 15 MISSING.
 
-### 2026-10-30, 21:30: a setting tuned from SYRAX's own history (plan direction 87)
+### 2026-10-30, 19:50: a setting tuned from SYRAX's own history (plan direction 87)
 
 - How likely SYRAX thinks a goal is to succeed used a fixed, hand-set starting assumption.
 - Now, once a day, SYRAX tries several values of that setting against its own past goals and keeps the one that
@@ -292,6 +292,20 @@ pushed (each with a red test and a GREEN gate):
 - Settings with no past to replay against, such as how much to explore, stay hand-set; tuning them honestly needs
   experiments, not history.
 - Plan status: 147 EXISTS, 14 MISSING.
+
+### 2026-10-31, morning: the first night with the new code
+
+- The PC was off from 20:21 to 10:14, so SYRAX did not run overnight. It has no autostart; it was started again at 10:21.
+- **Tuning, live:** the first cycle tuned the success prior from 1 to 4 on 371 goals and journaled it
+  (`hyperparameter.tuned`, error 0.1570 down to 0.1503).
+- **Focus extension, live:** after the re-login, the front window is read correctly (VS Code, by its window class).
+- **A bug found and fixed:** goal #35 (verify `youtube_open`) called the skill directly, as it should.
+  - The skill opened a YouTube window on the owner's screen. It declared itself read-only, so SYRAX's own work was
+    allowed to call it, though its own work must never act on the screen.
+  - The answer was then called unproven, because no screen-level tool had run.
+  - Fix: code that opens windows or files, types, clicks or plays sound is now screen-level (`SYSTEM`), whatever a
+    skill declares about itself. SYRAX's own work can no longer call it; a conversation still can.
+- Times in yesterday's entries are corrected to the real ones from the launcher log.
 
 ## Open
 
