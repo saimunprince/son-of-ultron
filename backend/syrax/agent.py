@@ -484,6 +484,7 @@ class SyraxAgent(Manus):
     # Which claim check still failed after its one nudge (the final carries that check's note), or None. The core
     # then ends the task PARTIAL, never SUCCESS, except for the checks in UNPROVEN_SOFT. Reset by run().
     unproven: Optional[str] = None
+    rule_conflicts: list = Field(default_factory=list)  # the owner's rules this request seems to break (direction 196)
 
     available_tools: ToolCollection = Field(
         default_factory=lambda: ToolCollection(
@@ -577,13 +578,27 @@ class SyraxAgent(Manus):
         # 2026-10-28 live: the brain invented a clock time ("18:03" at 15:18); nothing in the prompt said the time.
         clock = (f"This task started at {local_clock()} on this machine. For the time now (later in a long task), "
                  "read desktop system_info; never state a time or date you did not read.")
-        self.system_prompt = "\n\n".join(x for x in (base, TOOLS_GUIDE, clock, block) if x)
+        rule_note = ""
+        self.rule_conflicts = []
+        if self.task_kind == "conversation":
+            try:  # the owner's rules this request seems to go against (memory.rule_conflicts, direction 196)
+                from syrax.memory import rule_conflicts
+
+                hits = rule_conflicts(self.task_goal or "", get_memory().facts())
+            except Exception:
+                hits = []
+            if hits:
+                rule_note = ("RULE CHECK: the human set " + "; ".join(f'the rule "{h}"' for h in hits[:3]) + ", and this "
+                             "request seems to go against it. Before acting, say so in one line and use `ask_human` to ask "
+                             "whether to go ahead anyway. If it does not really conflict, say why in a few words and go on.")
+                self.rule_conflicts = hits[:3]
+        self.system_prompt = "\n\n".join(x for x in (base, TOOLS_GUIDE, clock, block, rule_note) if x)
         # the same prompt in few words, for a brain the full one does not fit (brains.SHORT_SYSTEMS, live 2026-10-31)
         from syrax.brains import register_short_system
         from syrax.prompt import SYRAX_PERSONA_SHORT
 
         facts = (block or "").split("\n\nRECENT CONVERSATIONS")[0]
-        short = "\n\n".join(x for x in (SYRAX_PERSONA_SHORT.format(directory=config.workspace_root), TOOLS_GUIDE_SHORT, clock, facts) if x)
+        short = "\n\n".join(x for x in (SYRAX_PERSONA_SHORT.format(directory=config.workspace_root), TOOLS_GUIDE_SHORT, clock, facts, rule_note) if x)
         register_short_system(self.system_prompt, short)
         self.next_step_prompt = STEP_PROMPT
         if self.next_step_prompt:

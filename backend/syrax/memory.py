@@ -57,6 +57,33 @@ _PREFERENCE = re.compile(r"\b(prefers?|likes?|loves?|hates?|dislikes?|enjoys?|fa
 _RULE = re.compile(r"(^|\b)(always|never|don't|do not|must|should|only)\b.*\b(you|syrax|me|reply|answer|ask|use)\b|\b(call me|address me|speak to me)\b", re.I)
 
 
+# EVOLUTION_PLAN direction 196 (value-conflict analysis): a request that goes against a rule the owner set ("never
+# delete my photos" and "delete the old photos") was carried out like any other. A prohibiting rule whose own words the
+# request mostly shares is named to the brain before it acts (agent.py), which says so and asks.
+_PROHIBIT = re.compile(r"\b(never|don't|dont|do not|must not|mustn't|no more|stop)\b", re.I)
+_RULE_FILLER = {"never", "dont", "don't", "must", "always", "syrax", "please", "ever", "anything", "stop"}
+
+
+def _stems(text: str) -> set:
+    return {w[:-1] if len(w) > 3 and w.endswith("s") else w for w in content_words(text) if w not in _RULE_FILLER}
+
+
+def rule_conflicts(goal: str, facts: List[dict]) -> List[str]:
+    """The owner's prohibiting rules that `goal` seems to go against: at least two of the rule's words (or all of them
+    when it has fewer) and at least half of them are in the request."""
+    want = _stems(goal)
+    out = []
+    for f in facts:
+        text = str(f.get("text") or "")
+        if f.get("type") != "rule" or not _PROHIBIT.search(text):
+            continue
+        words = _stems(text)
+        hit = words & want
+        if words and len(hit) >= min(2, len(words)) and len(hit) * 2 >= len(words):
+            out.append(text)
+    return out
+
+
 def infer_type(text: str) -> str:
     """fact | preference | rule, from the wording; an observation is never inferred (SYRAX says so itself)."""
     if _RULE.search(text):
