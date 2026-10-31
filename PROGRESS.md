@@ -388,6 +388,23 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
     - It now lists the judges by file name, main ones first. The case passes.
 - Nothing in today's other changes caused a miss.
 
+### 2026-10-31: the daily ledger publish works again on Linux
+
+- Found from today's review: since the move to Linux (10-28), SYRAX's daily publish failed every time, four times in
+  all. Its own gate had 144 failing tests, so `docs/RISE.md` and the capability matrix went four days without an
+  update. The drift check had flagged the stale matrix.
+- **Cause 1, a safety rule hitting the wrong thing.** The confined gate removes environment variables that look like
+  secrets, judged by name ("KEY", "TOKEN" ...).
+  - It removed `GIT_CONFIG_KEY_0`, which only holds the name of a git setting.
+  - The count of those settings was kept, so every git command inside the gate failed.
+  - Git setting names are now kept. Secrets are still removed.
+- **Cause 2:** the test report for the matrix was written outside the folders the confined gate may write to, so the
+  matrix was never built. It is now written where the gate may write, then moved.
+- **Proof:** the publish was run end to end on a copy, with the running server's exact environment.
+  - Before the fix: 144 failed, the same as live.
+  - After: the tests pass and the matrix is built (GREEN 34, YELLOW 3, RED 1, UNVERIFIED 7).
+- The next scheduled publish will show it live.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
