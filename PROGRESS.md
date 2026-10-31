@@ -329,6 +329,17 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   - Turn it on with `python syrax.py --phone on`, then `--restart`. `--phone show` prints the link.
 - Live: asked which scenes it has, SYRAX called the new tool and answered "chill, coding and research".
 
+### 2026-10-31: the answer's language follows the current message
+
+- Found live: right after a question in Bengali, an English question got a Bengali answer. The last conversations are
+  part of what the brain reads, and a small brain kept their language.
+- Fixed in two places:
+  - The persona now says the current message decides the language.
+  - An English request answered in Bengali script is asked once again in English, unless the request asked for
+    Bangla, such as "translate to bangla".
+- Live, same order as before (Bengali, then English): the brain again answered in Bengali first, the check asked once,
+  and the final answer was English.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
