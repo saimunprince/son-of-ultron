@@ -49,6 +49,7 @@ durable journal first and fanned out to every connected session; ``state``,
 """
 
 import asyncio
+import contextlib
 import dataclasses
 import json
 import os
@@ -201,7 +202,21 @@ async def lifespan(_: FastAPI):
     logger.info(f"SYRAX online at ws://{HOST}:{PORT}/ws")
     # Warm the local ear in the background so the first voice command is fast.
     warm = asyncio.create_task(asyncio.to_thread(_warm_whisper))
+    phone_server = phone_task = None
+    try:  # the phone page (phone.py): watch and emergency stop only, off until the owner turns it on
+        from syrax import phone
+
+        phone_server = phone.server(get_core, emergency_stop)
+        if phone_server is not None:
+            phone_task = asyncio.create_task(phone_server.serve())
+            logger.info(f"SYRAX phone page on http://{phone_server.config.host}:{phone_server.config.port}/ (python syrax.py --phone show)")
+    except Exception as e:
+        logger.warning(f"phone page did not start: {e}")
     yield
+    if phone_server is not None:
+        phone_server.should_exit = True
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(phone_task, 5)
     watchdog.stop()
     reminder_loop.cancel()
     alert_loop.cancel()
@@ -389,6 +404,24 @@ async def self_model(request: Request, section: str = "summary"):
         return await asyncio.to_thread(get_core().selfmodel.snapshot, section)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+async def emergency_stop(core, note: str = "", who: str = "operator", session: Optional[str] = None, origin: Optional[str] = None) -> None:
+    """Set the emergency stop (syrax.estop), stop the autonomy loop and cancel what runs now. The ws `estop` message
+    and the phone page (phone.py) both come here, so a stop means the same wherever it is pressed."""
+    from syrax import estop
+
+    # the running task is named first: stopping the autonomy loop cancels its task, and afterwards nothing would say
+    # the emergency stop ended it (live 2026-10-29: the record said only "aborted by human")
+    running = core.current if core.busy else None
+    if running is not None:
+        await core.journal.record("task.stop_requested", {"session": session, "origin": origin, "reason": "emergency stop"},
+                                  task_id=running.task_id)
+    await asyncio.to_thread(estop.set_stop, core.journal, note, who)
+    await core.autonomy.stop()
+    if running is not None and core.busy:
+        await core.cancel()
+    await core.broadcast({"type": "autonomy_status", **await asyncio.to_thread(core.autonomy.status)})
 
 
 @app.get("/health")
@@ -803,17 +836,7 @@ class Session:
             note = str(msg.get("note") or "")[:300]
             who = f"ws session {self.id} ({self.ws.headers.get('origin') or 'no origin'})"
             if msg.get("on", True):
-                # the running task is named first: stopping the autonomy loop cancels its task, and afterwards nothing
-                # would say the emergency stop ended it (live 2026-10-29: the record said only "aborted by human")
-                running = self.core.current if self.core.busy else None
-                if running is not None:
-                    await self.core.journal.record("task.stop_requested", {
-                        "session": self.id, "origin": self.ws.headers.get("origin"), "reason": "emergency stop"},
-                        task_id=running.task_id)
-                await asyncio.to_thread(estop.set_stop, self.core.journal, note, who)
-                await self.core.autonomy.stop()
-                if running is not None and self.core.busy:
-                    await self.core.cancel()
+                await emergency_stop(self.core, note, who, session=self.id, origin=self.ws.headers.get("origin"))
             else:
                 await asyncio.to_thread(estop.clear_stop, self.core.journal, note, who)  # autonomy stays as it was set
                 if self.core.autonomy.enabled:

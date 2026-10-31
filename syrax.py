@@ -908,6 +908,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--backup", action="store_true", help="copy the journal, brains, memory and config into backend/config/backups (verified, 7 kept)")
     ap.add_argument("--restore", metavar="DIR", help="put a backup folder back into backend/config; refuses while SYRAX runs")
     ap.add_argument("--token", action="store_true", help="print the token a non-browser client needs for /ws, /live and the voice endpoints")
+    ap.add_argument("--phone", choices=("on", "off", "show"), help="the phone page (watch + emergency stop only, on the home WiFi): turn it on or off, or print its link; on/off take effect at the next restart")
     ap.add_argument("--stop", action="store_true", help="stop the running SYRAX")
     ap.add_argument("--restart", action="store_true", help="stop, then start in the background")
     ap.add_argument("--respawn", action="store_true", help=argparse.SUPPRESS)  # SYRAX restarting itself
@@ -919,6 +920,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         from syrax import auth
 
         print(auth.token())
+        return 0
+    if a.phone:
+        sys.path.insert(0, str(BACKEND))
+        from syrax import phone
+
+        if a.phone in ("on", "off"):
+            phone.save(a.phone == "on")
+            print(f"phone page {a.phone}: run python syrax.py --restart to apply.")
+        st = phone.settings()
+        if st["enabled"]:
+            print(f"Open on your phone (same WiFi), keep this link private:\n{phone.link()}")
+            print("The page can watch SYRAX and press the emergency stop, nothing more.")
+        else:
+            print("phone page is off (python syrax.py --phone on)")
         return 0
     if a.setup:
         setup()
