@@ -357,6 +357,22 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   - Live, with Ollama put first: "17 times 23" answered 391, and a weather question called `weather` and answered
     correctly, both on this PC alone. The brain order was set back afterwards.
 
+### 2026-10-31: the last plan items decided, two of them built
+
+- **The 14 MISSING items:** each has a written meaning and a recommendation in `docs/MISSING_ITEMS_2026-10-31.md`.
+- **Built (298), what SYRAX costs the owner:** a new weekly number, "requests that cost the human nothing more".
+  - These are requests that ended in success with no question, no permission prompt, and were not disputed or
+    undone afterwards.
+  - It sits next to the existing count of human interventions, and drift watches it like the other metrics.
+- **Built (196), a request that breaks the owner's own rule:** SYRAX names the rule before acting, says so and asks.
+  - Example: the rule "never delete my photos" and the request "delete the old photos".
+  - A request that only touches one word of a rule is not flagged.
+- **Re-classified (248):** cross-domain discovery is PARTIAL, because lessons already move between subjects.
+- **Decided against, 8 items, each with its reason:** distributed queues, theory of mind, perspective taking, the
+  three ethics models, simulation-based discovery and audience adaptation.
+- **Left for the owner, 3 items:** personality adaptation, visual tracking and sensor fusion.
+- Plan status: 149 EXISTS, 110 PARTIAL, 3 MISSING (all waiting for the owner).
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work

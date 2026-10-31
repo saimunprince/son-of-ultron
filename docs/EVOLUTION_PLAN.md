@@ -24,7 +24,7 @@ Paths are under `backend/syrax/` unless shown otherwise. Tests sit beside the mo
 | **All 300** | **105** | **123** | **51** | **21** |
 
 The counts are taken from the tables below, one status per item, as mapped on 2026-10-30. After the build of 2026-10-30 (all waves; owner decisions taken):
-**147 EXISTS, 109 PARTIAL, 14 MISSING, 22 out of scope, 8 decided against.**
+**149 EXISTS, 110 PARTIAL, 3 MISSING (all waiting for the owner), 22 out of scope, 16 decided against.**
 
 **What is strong:** the journal and recovery, the permissions and kernel boundary, honesty checks on answers,
 emergency stop and budgets, the release gate with red-test proof, skill versioning and rollback, and knowledge with
@@ -144,7 +144,7 @@ provenance and freshness.
 | 74 | Ambiguity resolution | PARTIAL | ask_human | when to ask is prompt only |
 | 75 | Natural dialogue | PARTIAL | memory.recent, live.py | — |
 | 76 | Explanation generation | PARTIAL | goal.selected reasons, WHY view | — |
-| 77 | Audience adaptation | MISSING | — | — |
+| 77 | Audience adaptation | NOT BUILT (decided 2026-10-31, see docs/MISSING_ITEMS_2026-10-31.md) | one audience; the owner's preferences reach every prompt through memory | — |
 | 78 | Communication repair | EXISTS | claims.is_dispute (test_disputes) | — |
 | 79 | Knowledge elicitation | PARTIAL | memory remember, ask_human | — |
 | 80 | Truthful communication | EXISTS | claims.py, staged-output check (test_honest_claims, test_staged_output) | — |
@@ -215,7 +215,7 @@ provenance and freshness.
 | 135 | Idempotent execution | EXISTS | intent ledger; no record → no send (test_intent_ledger, test_unjournaled) | — |
 | 136 | Retry management | EXISTS | MAX_ATTEMPTS, brain retries (test_autonomy_retry) | — |
 | 137 | Timeout handling | EXISTS | deadlines, MCP timeout (test_task_deadline) | — |
-| 138 | Distributed task queues | MISSING | one in-process queue by design | low value on one PC |
+| 138 | Distributed task queues | NOT BUILT (decided 2026-10-31, see docs/MISSING_ITEMS_2026-10-31.md) | one in-process queue by design | low value on one PC |
 | 139 | State reconciliation | EXISTS | settle_interrupted, intent.uncertain (test_resume_uncertain) | — |
 | 140 | Safe shutdown | EXISTS | core.shutdown bounded (test_shutdown_stop) | — |
 | 141 | Expected-utility reasoning | PARTIAL | limits.rank heuristic | — |
@@ -234,7 +234,7 @@ provenance and freshness.
 | 154 | Identity continuity | EXISTS (wave 1: identity audit, test_identity_audit) | selfmodel.identity, fixed persona | **wave 1** (identity audit) |
 | 155 | Personal history | EXISTS | journal, archive lineage, rise (test_archive) | — |
 | 156 | Value representation | PARTIAL | PRINCIPLES prose + permission code | — |
-| 157 | Personality adaptation | MISSING | static persona | owner's choice |
+| 157 | Personality adaptation | MISSING (owner's decision, docs/MISSING_ITEMS_2026-10-31.md) | static persona | owner's choice |
 | 158 | Self-narrative | PARTIAL | rise/ledger/devlog | — |
 | 159 | Identity conflict detection | EXISTS (wave 1: identity.changed at boot, test_identity_audit) | — | **wave 1** |
 | 160 | Identity-change auditing | EXISTS (wave 1: prompt.py a judge, test_identity_audit) | prompt.py not a judge, no event | **wave 1** |
@@ -243,9 +243,9 @@ provenance and freshness.
 
 | # | Direction | Status | Evidence | Gap |
 |---|---|---|---|---|
-| 161 | Theory of mind modeling | MISSING | — | — |
+| 161 | Theory of mind modeling | NOT BUILT (decided 2026-10-31, see docs/MISSING_ITEMS_2026-10-31.md) | the measurable part exists: disputes, exact instructions, language follow | — |
 | 162 | Intent recognition | PARTIAL | exact_form, disputes, named tools (test_exact_form) | — |
-| 163 | Perspective taking | MISSING | — | — |
+| 163 | Perspective taking | NOT BUILT (decided 2026-10-31, see docs/MISSING_ITEMS_2026-10-31.md) | as 161 | — |
 | 164 | Social-context reasoning | PARTIAL | quiet hours, presence (test_proactive) | timing only |
 | 165 | Conflict mediation | OUT OF SCOPE | — | one owner |
 | 166 | Cooperative planning | PARTIAL | plan steps, ask_human, review | — |
@@ -266,14 +266,14 @@ provenance and freshness.
 | 188 | Curiosity prioritization | EXISTS (wave 4: UCB bonus, test_explore_bonus) | — | wave 4 |
 | 189 | Safe exploration | EXISTS | levels, worktrees, Landlock (test_isolated_evolution) | — |
 | 190 | Discovery logging | EXISTS | knowledge table, experiments (test_knowledge_state) | — |
-| 191 | Moral-reasoning models | MISSING | prompt only | — |
+| 191 | Moral-reasoning models | NOT BUILT (decided 2026-10-31, see docs/MISSING_ITEMS_2026-10-31.md) | the permission system and hard rules are its concrete form | — |
 | 192 | Harm assessment | EXISTS | level_of_source harm, guard (test_guard) | rule-based |
 | 193 | Consent awareness | EXISTS | named_in, affirmative (test_permissions_verbs) | — |
 | 194 | Privacy reasoning | EXISTS | redact, secrets never stored (test_redact) | — |
-| 195 | Fairness analysis | MISSING | — | — |
-| 196 | Value-conflict analysis | MISSING | — | — |
+| 195 | Fairness analysis | NOT BUILT (decided 2026-10-31, see docs/MISSING_ITEMS_2026-10-31.md) | as 191 | — |
+| 196 | Value-conflict analysis | EXISTS (a request against an owner's rule is named to the brain, which says so and asks: memory.rule_conflicts, test_rule_conflict) | — | — |
 | 197 | Accountability mapping | PARTIAL | `by` fields, origin tags, chain | wave 1 (who-authorized view) |
-| 198 | Ethical uncertainty | MISSING | prompt only | — |
+| 198 | Ethical uncertainty | NOT BUILT (decided 2026-10-31, see docs/MISSING_ITEMS_2026-10-31.md) | as 191; reversibility is stated in every permission question | — |
 | 199 | Proportional safeguards | EXISTS | level × kind matrix (test_autonomy_levels) | — |
 | 200 | Ethical outcome review | PARTIAL | review.py reviews code diffs | — |
 
@@ -296,9 +296,9 @@ evidence for. If the owner later asks for it, the design above stands.
 | 201 | Visual perception | PARTIAL (screenshots on Linux via the GNOME portal, test_linux_screenshot; no OCR without tesseract) | screenshots, camera.py, image brains (test_camera) | OCR is Windows-only |
 | 202 | Auditory perception | PARTIAL | voice.py transcribe (test_voice) | speech only |
 | 203 | Speech understanding | EXISTS | whisper/Groq transcribe, live.py (test_voice, test_live) | — |
-| 204 | Visual tracking | MISSING | — | — |
+| 204 | Visual tracking | MISSING (owner's decision: OpenCV and an always-on camera) | camera.py takes one photo | — |
 | 205 | Scene understanding | PARTIAL | images to multimodal brains | — |
-| 206 | Sensor fusion | MISSING | — | — |
+| 206 | Sensor fusion | MISSING (owner's decision, as 204) | — | — |
 | 207 | Temporal perception | EXISTS | clock, durations (test_clock_honesty) | — |
 | 208 | Spatial grounding | PARTIAL (click at coordinates on Linux, test_linux_input; finding text on screen needs OCR) | sight.py (Windows) | **wave 3** |
 | 209 | Perception uncertainty | PARTIAL | sight candidates | — |
@@ -332,12 +332,12 @@ evidence for. If the owner later asks for it, the design above stands.
 | 240 | Compute provenance | EXISTS | brain.answered provider/model | not stamped on finals |
 | 241 | Automated literature review | PARTIAL (paper_search on arXiv, test_paper_search; other paper sources not yet) | research.py web only | no paper sources |
 | 242 | Scientific hypothesis generation | PARTIAL | prompt only | — |
-| 243 | Simulation-based discovery | MISSING | — | — |
+| 243 | Simulation-based discovery | NOT BUILT (decided 2026-10-31, see docs/MISSING_ITEMS_2026-10-31.md) | experiments with interleaved arms, worktree + gate before a change lands | — |
 | 244 | Mathematical reasoning | PARTIAL | python_execute | no checked math tool |
 | 245 | Experimental protocol design | EXISTS | experiments baseline/candidate (test_experiments) | — |
 | 246 | Data-quality assessment | EXISTS (data_query profile: types, empty cells, distinct, min/max, duplicates, test_data_query) | — | — |
 | 247 | Scientific replication | PARTIAL | repro, experiment repeats | — |
-| 248 | Cross-domain discovery | MISSING | — | — |
+| 248 | Cross-domain discovery | PARTIAL | lessons transfer between subjects with the same check (autonomy past_experience) | no link between unrelated domains |
 | 249 | Research prioritization | PARTIAL | limits.rank | — |
 | 250 | Scientific communication | PARTIAL | research reports | — |
 | 251 | Threat modeling | PARTIAL | audits, guard rules | — |
@@ -384,7 +384,7 @@ evidence for. If the owner later asks for it, the design above stands.
 | 295 | Immutable change history | EXISTS | HMAC chain, git, skill versions | no off-host anchor |
 | 296 | Independent oversight | PARTIAL | human-only E-STOP/restore | — |
 | 297 | Value drift monitoring | EXISTS (wave 2: rise.drift value metrics, test_drift) | — | **wave 2** |
-| 298 | Human-impact evaluation | MISSING | — | — |
+| 298 | Human-impact evaluation | EXISTS (rise smooth_requests: the human's requests that cost them nothing more, test_rise_smooth; with human_interventions) | — | — |
 | 299 | Reversible evolution | EXISTS | undo, knowngood, rollbacks (test_undo) | — |
 | 300 | Periodic redesign | PARTIAL | daily scorecard proposal | — |
 
