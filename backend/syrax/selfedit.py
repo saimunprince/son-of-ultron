@@ -119,7 +119,12 @@ def render_map(root: Path, query: str = "") -> str:
     if named:
         lines.append("\nfiles whose path matches (repository-relative, as apply_patch wants them):")
         lines += [f"  {f}" for f in named[:15]] + ([f"  … and {len(named) - 15} more; narrow the query"] if named[15:] else [])
-    lines.append("\nProtected (never patched by SYRAX; a human commits those): the judges listed in devloop.JUDGES.")
+    # quality case self_map_protected, 2026-10-31: the line named only "devloop.JUDGES", and with test files called
+    # test_judge_*.py in the matches the brain answered with those. The judges are named, by file name.
+    from syrax.devloop import JUDGES
+
+    names = sorted({Path(j).name for j in JUDGES})
+    lines.append("\nProtected (never patched by SYRAX; a human commits those), the judges in devloop.JUDGES: " + ", ".join(names) + ".")
     return "\n".join(lines)
 
 
