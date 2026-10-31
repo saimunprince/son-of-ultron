@@ -128,10 +128,13 @@ CATALOG: List[Feature] = [
             "desktop click_text / find_text (sight.py): Windows UI Automation finds the control by its name (foreground window "
             "first), Windows OCR reads the screen when no control matches; scaled to the click's pixels, primary screen only, "
             "and a tie clicks nothing but lists the candidates. No new dependency", risk="SYSTEM", seen_in="Mark-LV"),
+    Feature("scenes", "Work scenes", "Computer control", HAVE, "'Coding mode', 'research mode', 'chill mode' set the computer up in one request.",
+            "the scene tool (scenes.py): built-in and owner scenes (config/scenes.json) named as exact desktop calls the brain makes "
+            "through permissions; steps limited to open, launch, volume, media, window, dark mode", risk="READ_ONLY", seen_in="Ultron"),
     Feature("undo", "Undo the last action", "Computer control", HAVE, "'Undo' reverses what SYRAX just did.",
-            "the undo tool (undo.py): the newest reversible actions (brightness, wallpaper, dark mode, file edits) from the journal, "
+            "the undo tool (undo.py): the newest reversible actions (volume, brightness, wallpaper, dark mode, trashed files, file edits) from the journal, "
             "and the exact reversing call, which the brain makes through permissions; code changes roll back (devloop). "
-            "Editor history does not survive a restart; the Recycle Bin restores trashed files", risk="WRITE", seen_in="Mark-LV"),
+            "Editor history does not survive a restart; on Windows the Recycle Bin restores trashed files", risk="WRITE", seen_in="Mark-LV"),
     Feature("recycle_bin", "Delete to the Recycle Bin", "Computer control", HAVE, "Deleted files can be restored.",
             "desktop action trash (Send2Trash 2.1.0, approved 2026-10-12); DESTRUCTIVE, so it runs only when the human named the file",
             risk="DESTRUCTIVE", seen_in="Mark-LV"),
