@@ -12,3 +12,4 @@ def test_the_protected_line_names_the_judges():
     for name in ("quality.py", "guard.py", "permissions.py", "journal.py", "devloop.py", "verify.py"):
         assert name in last, name
     assert len({j.split("/")[-1] for j in JUDGES}) == last.count(".py")
+    assert last.split(": ", 1)[1].startswith("quality.py, verify.py")  # devloop's order, the main judges first

@@ -123,7 +123,7 @@ def render_map(root: Path, query: str = "") -> str:
     # test_judge_*.py in the matches the brain answered with those. The judges are named, by file name.
     from syrax.devloop import JUDGES
 
-    names = sorted({Path(j).name for j in JUDGES})
+    names = list(dict.fromkeys(Path(j).name for j in JUDGES))  # devloop's own order: the main judges come first
     lines.append("\nProtected (never patched by SYRAX; a human commits those), the judges in devloop.JUDGES: " + ", ".join(names) + ".")
     return "\n".join(lines)
 
