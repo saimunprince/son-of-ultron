@@ -373,6 +373,21 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
 - **Left for the owner, 3 items:** personality adaptation, visual tracking and sensor fusion.
 - Plan status: 149 EXISTS, 110 PARTIAL, 3 MISSING (all waiting for the owner).
 
+### 2026-10-31: full quality run after the day's changes
+
+- **Full run: 63 of 67 (94 %).** Gemini's quota ran low, so many cases went to the smaller "flash-lite" models and to
+  Pollinations.
+- **The four misses, each followed up:**
+  - `self_map_release` passed when run again.
+  - `deep2_spec_from_tests` passed when run again.
+  - `deep2_log_report`: the same brain mistake as yesterday. It reads the slowest step's line wrongly. This is not a
+    SYRAX fault.
+  - `self_map_protected` was a SYRAX fault, now fixed:
+    - `repo_map` named its protected files only as "the judges in devloop.JUDGES". Test files called
+      `test_judge_*.py` were among its matches, and the brain named those.
+    - It now lists the judges by file name, main ones first. The case passes.
+- Nothing in today's other changes caused a miss.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
