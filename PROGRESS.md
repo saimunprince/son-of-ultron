@@ -405,6 +405,20 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   - After: the tests pass and the matrix is built (GREEN 34, YELLOW 3, RED 1, UNVERIFIED 7).
 - The next scheduled publish will show it live.
 
+### 2026-10-31, evening: the publish fix proven live; a critical UI security fix
+
+- **The daily publish worked live** at 16:44, on its own. SYRAX regenerated the ledger, the devlog and the capability
+  matrix, and committed them (`5ae75ed`). This is the first time since the move to Linux.
+  - The matrix still shows the release gate as RED. It was built from the morning's blocked gate; the gate went GREEN
+    in this very publish, so the next matrix shows it fixed.
+- **Security:** the UI's `next` had a critical flaw (unauthenticated remote code execution in image optimization, and
+  a denial of service). It was found by SYRAX's daily security check.
+  - Updated from 16.3.8 to 16.4.2. This is a patch release in the same major version, two weeks old, and only `next`
+    and its own packages changed.
+  - The gate was GREEN with it: type check, lint, tests and build.
+  - 11 moderate findings remain, all in development-only lint tools. Fixing them would need a major downgrade, so they
+    were left alone.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
