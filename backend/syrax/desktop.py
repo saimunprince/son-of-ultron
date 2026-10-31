@@ -391,6 +391,9 @@ def _looks_like_url(t: str) -> bool:
     return bool(re.match(r"^(https?://|www\.)", t) or re.match(r"^[\w-]+(\.[\w-]+)+(/\S*)?$", t))
 
 
+VOLUME_READ = re.compile(r"Volume (\d+)%( \(muted\))?\.")
+
+
 class DesktopControl(BaseTool):
     name: str = "desktop"
     description: str = (
@@ -411,10 +414,10 @@ class DesktopControl(BaseTool):
                 "enum": [
                     "open", "launch_app", "list_apps", "volume", "media", "screenshot",
                     "notify", "clipboard_get", "clipboard_set", "find_files", "system_info", "lock_screen", "window",
-                    "type_text", "hotkey", "click", "click_text", "find_text", "dark_mode", "display_off", "trash", "camera",
+                    "type_text", "hotkey", "click", "click_text", "find_text", "dark_mode", "display_off", "trash", "untrash", "camera",
                 ],
             },
-            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name (Store apps included). find_files: name pattern. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin."},
+            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name (Store apps included). find_files: name pattern. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin. untrash: the original path of a trashed file, to put it back (Linux)."},
             "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop; each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
@@ -499,8 +502,23 @@ class DesktopControl(BaseTool):
         return ToolResult(output=", ".join(names[:80]) or "No matching apps.")
 
     async def _do_volume(self, value: str, **_) -> ToolResult:
+        """The volume action. A change says the level before it ("Volume 35% -> 80%.", "..., it was not muted."), so
+        undo (undo.py) can put it back."""
+        v = (value or "").lower().rstrip("%") or "get"
+        if v == "get":
+            return await self._volume_raw(v)
+        before = await self._volume_raw("get")
+        done = await self._volume_raw(v)
+        b = VOLUME_READ.match(before.output or "") if not before.error else None
+        a = VOLUME_READ.match(done.output or "") if not done.error else None
+        if not (a and b):
+            return done
+        if v in ("mute", "unmute"):
+            return ToolResult(output=f"{done.output.rstrip('.')}, it was {'muted' if b.group(2) else 'not muted'}.")
+        return ToolResult(output=f"Volume {b.group(1)}% -> {a.group(1)}%{a.group(2) or ''}.")
+
+    async def _volume_raw(self, v: str) -> ToolResult:
         sink = "@DEFAULT_AUDIO_SINK@"
-        v = value.lower().rstrip("%") or "get"
         if WINDOWS:
             return await self._win_volume(v)
         if MACOS:
@@ -927,6 +945,34 @@ class DesktopControl(BaseTool):
         if p.exists():
             return ToolResult(error=f"{p} is still there; the Recycle Bin did not take it.")
         return ToolResult(output=f"Moved {p} to the Recycle Bin; restore it from there if it was a mistake.")
+
+    async def _do_untrash(self, target: str, **_) -> ToolResult:
+        """Put a file the trash took back where it was (the freedesktop trash: Trash/info/<name>.trashinfo holds its
+        original Path). The newest entry for that path wins; an existing file there is never overwritten."""
+        if WINDOWS or MACOS:
+            return ToolResult(error="untrash works on Linux; restore the file from the Recycle Bin or Trash.")
+        if not target:
+            return ToolResult(error="untrash needs the file's original path in target.")
+        from urllib.parse import unquote
+
+        want = Path(os.path.expanduser(target)).resolve()
+        trash = Path(os.getenv("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "Trash"
+        found = []
+        for info in (trash / "info").glob("*.trashinfo"):
+            text = info.read_text(encoding="utf-8", errors="replace")
+            m = re.search(r"^Path=(.+)$", text, re.M)
+            d = re.search(r"^DeletionDate=(.+)$", text, re.M)
+            if m and Path(unquote(m.group(1).strip())).resolve() == want and (trash / "files" / info.stem).exists():
+                found.append(((d.group(1).strip() if d else ""), info))
+        if not found:
+            return ToolResult(error=f"{want} is not in the trash.")
+        if want.exists():
+            return ToolResult(error=f"{want} already exists; nothing was overwritten. Move it first, then untrash.")
+        info = max(found)[1]
+        want.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(trash / "files" / info.stem), str(want))
+        info.unlink()
+        return ToolResult(output=f"Restored {want} from the trash.")
 
     async def _do_camera(self, value: str = "", **_) -> ToolResult:
         """One photo from the webcam (camera.py), saved in the workspace, journaled and shown to the brain."""

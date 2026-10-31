@@ -146,12 +146,13 @@ def dark_mode(value: str = "get", runner: Any = None) -> str:
     """GNOME's colour scheme through gsettings: get, on, off."""
     value = (value or "get").lower()
     key = ["org.gnome.desktop.interface", "color-scheme"]
-    if value == "get":
-        r = subprocess.run(["gsettings", "get", *key], capture_output=True, text=True, timeout=10)
-        return "Dark mode is on." if "dark" in r.stdout else "Dark mode is off."
-    if value not in ("on", "off"):
+    if value not in ("get", "on", "off"):
         raise ValueError("value must be get, on or off")
+    r = subprocess.run(["gsettings", "get", *key], capture_output=True, text=True, timeout=10)
+    was = "on" if "dark" in (r.stdout or "") else "off"
+    if value == "get":
+        return f"Dark mode is {was}."
     if os.getenv("SYRAX_NO_REAL_INPUT") == "1":
         raise RuntimeError("changing the real desktop is off here (SYRAX_NO_REAL_INPUT=1)")
     subprocess.run(["gsettings", "set", *key, "prefer-dark" if value == "on" else "default"], check=True, timeout=10)
-    return f"Dark mode turned {value}."
+    return f"Dark mode turned {value} (it was {was})."  # undo.py reads what it was

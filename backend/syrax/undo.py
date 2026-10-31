@@ -11,8 +11,9 @@ The `undo` tool does not act. It tells the brain the newest actions not yet
 undone and the exact call that reverses each, and the brain makes that call
 through the normal path, so permissions and the journal treat it like any
 other call. The editor keeps its undo history in memory, so a file edit made
-before a restart cannot be undone this way, and a file sent to the Recycle Bin
-is restored from the Recycle Bin.
+before a restart cannot be undone this way. A volume change says the level
+before it, and a trashed file comes back through desktop untrash on Linux; on
+Windows it is restored from the Recycle Bin.
 
 From the feature catalog (undo); the idea came from the surveyed JARVIS
 assistants, the code is SYRAX's own.
@@ -34,6 +35,10 @@ BRIGHTNESS = re.compile(r"Screen brightness (\d+)% -> (\d+)%")
 WALLPAPER = re.compile(r"Wallpaper set to (.+?) \(it was (.+?); to undo")
 THEME = re.compile(r"Windows switched from (light|dark) to (light|dark) mode")
 ORGANIZED = re.compile(r"Moved (\d+) file\(s\) in (.+?): .*? manifest: (.+?) \(action=undo")
+VOLUME = re.compile(r"Volume (\d+)% -> (\d+)%")
+MUTE_WAS = re.compile(r"it was (not muted|muted)\.")
+TRASHED = re.compile(r"Moved (.+?) to the Recycle Bin;")
+GNOME_THEME = re.compile(r"Dark mode turned (on|off) \(it was (on|off)\)")
 EDITS = {"create", "str_replace", "insert"}
 WINDOW = 3000  # how far back (journal events) "undo" looks
 
@@ -55,6 +60,19 @@ def reverse_of(tool: str, args: Dict[str, Any], output: str) -> Optional[Dict[st
     if tool == "desktop" and a.get("action") == "dark_mode" and (m := THEME.search(out)):
         return {"label": f"Windows {m.group(1)} -> {m.group(2)} mode",
                 "reverse": {"tool": "desktop", "args": {"action": "dark_mode", "value": "off" if m.group(1) == "light" else "on"}}}
+    if tool == "desktop" and a.get("action") == "dark_mode" and (m := GNOME_THEME.search(out)) and m.group(1) != m.group(2):
+        return {"label": f"dark mode {m.group(2)} -> {m.group(1)}",
+                "reverse": {"tool": "desktop", "args": {"action": "dark_mode", "value": m.group(2)}}}
+    if tool == "desktop" and a.get("action") == "volume":
+        if (m := VOLUME.search(out)) and m.group(1) != m.group(2):
+            return {"label": f"volume {m.group(1)}% -> {m.group(2)}%",
+                    "reverse": {"tool": "desktop", "args": {"action": "volume", "value": m.group(1)}}}
+        v = str(a.get("value") or "").lower()
+        if (m := MUTE_WAS.search(out)) and v in ("mute", "unmute") and (m.group(1) == "muted") != (v == "mute"):
+            return {"label": f"volume {v}d", "reverse": {"tool": "desktop", "args": {"action": "volume", "value": "unmute" if v == "mute" else "mute"}}}
+        return None
+    if tool == "desktop" and a.get("action") == "trash" and (m := TRASHED.search(out)):
+        return {"label": f"moved {m.group(1)} to the trash", "reverse": {"tool": "desktop", "args": {"action": "untrash", "target": m.group(1)}}}
     if tool == "organize_folder" and a.get("action") == "organize" and (m := ORGANIZED.search(out)):
         return {"label": f"sorted {m.group(1)} file(s) in {m.group(2)}",
                 "reverse": {"tool": "organize_folder", "args": {"action": "undo", "folder": m.group(2), "manifest": m.group(3)}}}
@@ -100,8 +118,8 @@ def pending(journal: Journal, limit: int = 5) -> List[Dict[str, Any]]:
 class UndoTool(BaseTool):
     name: str = "undo"
     description: str = (
-        "When the human says 'undo' or 'put it back': shows SYRAX's newest reversible actions (brightness, wallpaper, "
-        "dark mode, a sorted folder, file edits) and the exact call that reverses each. Then make that call yourself. This tool changes nothing."
+        "When the human says 'undo' or 'put it back': shows SYRAX's newest reversible actions (volume, brightness, "
+        "wallpaper, dark mode, a trashed file, a sorted folder, file edits) and the exact call that reverses each. Then make that call yourself. This tool changes nothing."
     )
     parameters: dict = {"type": "object", "properties": {}, "required": []}
     journal_provider: Callable[[], Journal] = Field(default=get_journal, exclude=True)
