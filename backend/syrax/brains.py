@@ -202,6 +202,34 @@ def select_tools(tools: List[dict], messages: List[dict], budget: int, max_token
     return [t for t in tools if name(t) in keep]
 
 
+# A system prompt and its short version (agent.py registers both per task). A brain that cannot fit the full prompt
+# even with the tools chosen per request gets the short one (live 2026-10-31: Ollama, 4,096 tokens).
+SHORT_SYSTEMS: Dict[str, str] = {}
+SHORT_KEEP = 16
+
+
+def register_short_system(full: str, short: str) -> None:
+    if full and short and len(short) < len(full):
+        SHORT_SYSTEMS.pop(full, None)
+        SHORT_SYSTEMS[full] = short
+        while len(SHORT_SYSTEMS) > SHORT_KEEP:
+            SHORT_SYSTEMS.pop(next(iter(SHORT_SYSTEMS)))
+
+
+def shorten_system(messages: List[dict]) -> Optional[List[dict]]:
+    """The messages with each registered system prompt replaced by its short version, or None when none is there."""
+    out, changed = [], False
+    for m in messages:
+        c = m.get("content")
+        if m.get("role") == "system" and isinstance(c, str):
+            for full, short in SHORT_SYSTEMS.items():
+                if full in c:
+                    c, changed = c.replace(full, short), True
+            m = {**m, "content": c}
+        out.append(m)
+    return out if changed else None
+
+
 def compact_tools(tools: List[dict]) -> List[dict]:
     """The tool list for a brain whose request budget the full manual does not fit (live 2026-10-29: Groq's 8k free
     tier refused every SYRAX request, ~5.2k of it tool descriptions, so a Gemini outage left only Pollinations). Each
@@ -996,10 +1024,19 @@ class BrainRouter(LLM):
                 # parameters without prose (names, types, enums, required stay, so calls stay exact)
                 small = compact_tools(tools)
                 chosen = select_tools(small, messages, p.max_request_tokens, self.max_tokens)
-                params["messages"], params["max_tokens"] = fit_request(messages, chosen, p.max_request_tokens, self.max_tokens)
+                note = ""
+                try:
+                    params["messages"], params["max_tokens"] = fit_request(messages, chosen, p.max_request_tokens, self.max_tokens)
+                except BrainError:
+                    shorter = shorten_system(messages)
+                    if shorter is None:
+                        raise
+                    chosen = select_tools(small, shorter, p.max_request_tokens, self.max_tokens)
+                    params["messages"], params["max_tokens"] = fit_request(shorter, chosen, p.max_request_tokens, self.max_tokens)
+                    note = ", the short persona"
                 params["tools"] = chosen
                 logger.info(f"brain {pid}: compact tool descriptions ({count_tokens(tools)} -> {count_tokens(small)} tokens)"
-                            + (f", {len(chosen)} of {len(small)} tools chosen for this request" if len(chosen) < len(small) else ""))
+                            + (f", {len(chosen)} of {len(small)} tools chosen for this request" if len(chosen) < len(small) else "") + note)
             if len(params["messages"]) < before:
                 logger.info(f"brain {pid}: trimmed {before - len(params['messages'])} old messages to fit {p.max_request_tokens} tokens")
         client = self._client(pid)

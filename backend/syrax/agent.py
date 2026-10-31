@@ -85,6 +85,10 @@ FINAL_ASK = (
 )
 
 
+TOOLS_GUIDE_SHORT = (
+    "TOOLS: the human's computer (apps, sites, music, volume, screen, files): `desktop`. Calculations and scripts: "
+    "`python_execute`. Facts you lack: `know`, then `research`. The time or date: read `desktop` system_info, never guess."
+)
 TOOLS_GUIDE = (
     "TOOL GUIDE: When the human wants something on THEIR computer (open a site or app, "
     "play music, volume, screenshot of their screen, notifications, clipboard, find their "
@@ -574,6 +578,13 @@ class SyraxAgent(Manus):
         clock = (f"This task started at {local_clock()} on this machine. For the time now (later in a long task), "
                  "read desktop system_info; never state a time or date you did not read.")
         self.system_prompt = "\n\n".join(x for x in (base, TOOLS_GUIDE, clock, block) if x)
+        # the same prompt in few words, for a brain the full one does not fit (brains.SHORT_SYSTEMS, live 2026-10-31)
+        from syrax.brains import register_short_system
+        from syrax.prompt import SYRAX_PERSONA_SHORT
+
+        facts = (block or "").split("\n\nRECENT CONVERSATIONS")[0]
+        short = "\n\n".join(x for x in (SYRAX_PERSONA_SHORT.format(directory=config.workspace_root), TOOLS_GUIDE_SHORT, clock, facts) if x)
+        register_short_system(self.system_prompt, short)
         self.next_step_prompt = STEP_PROMPT
         if self.next_step_prompt:
             from syrax.brains import STEP_PROMPTS
