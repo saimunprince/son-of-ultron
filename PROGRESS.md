@@ -349,7 +349,13 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   tool.
 - Live, with Groq put first for one test: Groq answered, with 15 of 43 tools, and called `weather` correctly. The
   brain order was set back afterwards.
-- Still open: Ollama. The system prompt alone is about 3,000 tokens, so a 4,096-token local model has no room left.
+- Ollama (the local model, 4,096 tokens) now answers too:
+  - For a brain too small for the full persona, a short one is sent: the same identity, language rule, console
+    rules and safety rules in about 400 tokens. Every other brain keeps the full persona.
+  - The configured Ollama model (`qwen2.5-coder:7b`) came from the Windows PC and is not installed here. It is now
+    `qwen3:4b-instruct`, which is installed; it can be changed in the BRAIN panel.
+  - Live, with Ollama put first: "17 times 23" answered 391, and a weather question called `weather` and answered
+    correctly, both on this PC alone. The brain order was set back afterwards.
 
 ## Open
 
