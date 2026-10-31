@@ -259,6 +259,43 @@ def human_interventions(c, t0, t1) -> Value:
     return float(asked + perm + obj + stopped), f"{asked} asked, {perm} permissions, {obj} objectives, {stopped} tasks stopped"
 
 
+UNDO_WITHIN_S = 600  # an undo this soon after a request counts against that request
+
+
+def smooth_requests(c, t0, t1) -> Value:
+    """EVOLUTION_PLAN direction 298 (human-impact evaluation): the human's requests (conversation tasks) that ended in
+    the window and cost them nothing more: SUCCESS, no question asked, no permission prompted or refused, and the next
+    request was neither a dispute of it (claims.is_dispute) nor an undo within UNDO_WITHIN_S."""
+    from syrax.claims import is_dispute
+
+    keys = ("task_id", "goal", "status", "created", "updated")
+    rows = [dict(zip(keys, r)) for r in c.execute(
+        "SELECT task_id, goal, status, created, updated FROM tasks WHERE kind='conversation' "
+        "AND status IN ('SUCCESS','PARTIAL','FAILED','CANCELLED','BLOCKED','INTERRUPTED') ORDER BY created")]
+    ends = [r for r in rows if t0 <= r["updated"] < t1]
+    if not ends:
+        return None, "no request of the human ended in the window"
+    after = {r["task_id"]: rows[i + 1] if i + 1 < len(rows) else None for i, r in enumerate(rows)}
+    why = {"not SUCCESS": 0, "asked": 0, "permission": 0, "disputed": 0, "undone": 0}
+    smooth = 0
+    for r in ends:
+        t = r["task_id"]
+        types = {x[0] for x in c.execute("SELECT type FROM events WHERE task_id=? AND type IN ('ask','permission.authorized','permission.refused')", (t,))}
+        nxt = after.get(t)
+        undone = bool(nxt and nxt["created"] - r["updated"] <= UNDO_WITHIN_S and c.execute(
+            "SELECT 1 FROM events WHERE task_id=? AND type='tool.started' AND json_extract(payload,'$.name')='undo' LIMIT 1",
+            (nxt["task_id"],)).fetchone())
+        flags = {"not SUCCESS": r["status"] != "SUCCESS", "asked": "ask" in types,
+                 "permission": bool(types & {"permission.authorized", "permission.refused"}),
+                 "disputed": bool(nxt and is_dispute(nxt["goal"])), "undone": undone}
+        for k, v in flags.items():
+            why[k] += v
+        smooth += not any(flags.values())
+    v, _ = _share(smooth, len(ends))
+    costs = ", ".join(f"{n} {k}" for k, n in why.items() if n)
+    return v, f"{smooth} of {len(ends)} requests" + (f"; {costs}" if costs else "")
+
+
 def live_tree_edits(c, t0, t1) -> Value:
     """Edits SYRAX's own (autonomous) tasks made in the running tree instead of
     an isolated worktree (M1). code.changed of an isolated task says so."""
@@ -376,6 +413,7 @@ METRICS: List[Metric] = [
     Metric("review_rejections", "Evolution", "Changes a second brain rejected", "-", "count", "review.completed with approve false.", review_rejections),
     Metric("experiments", "Evolution", "Experiments run", "higher", "count", "Rows in the experiments table: baseline against candidate, verdict computed from numbers.", experiments_run),
     Metric("human_interventions", "Evolution", "Human interventions", "lower", "count", "Times a person had to step in: ask events (SYRAX asked a question), permission.authorized with authorized_by human, objective.* events whose note a human wrote (\"human: ...\", a dismissal), and task.cancelled by a human (aborted, removed from the queue or dismissed).", human_interventions),
+    Metric("smooth_requests", "Evolution", "The human's requests that cost them nothing more", "higher", "%", "Conversation tasks that ended in the window SUCCESS, with no question asked, no permission prompted or refused, and not disputed or undone by the next request (an undo within 10 minutes), out of all that ended: what SYRAX costs the human, not only whether its tasks pass (direction 298).", smooth_requests),
     Metric("human_commits", "Evolution", "Commits a person made", "-", "%", "Commits in the repository in the window by any author but SYRAX, out of all commits (git log): how much of the change still comes from people.", human_commit_share),
     Metric("knowledge_stored", "Memory", "Conclusions stored", "-", "count", "knowledge.stored events (verified conclusions with sources).", _count_events("knowledge.stored")),
     Metric("knowledge_used", "Memory", "Conclusions read back", "higher", "count", "Stored conclusions whose last use falls in the window: memory that was used, not only kept.", knowledge_used),
