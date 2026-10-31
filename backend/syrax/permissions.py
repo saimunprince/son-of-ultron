@@ -220,6 +220,13 @@ def undeclare(name: str) -> None:
     DECLARED.pop(name, None)
 
 
+# Live 2026-10-31 (objective #35): youtube_open calls webbrowser.open, declared EXTERNAL_READ and read as READ_ONLY,
+# so SYRAX's own work opened a window on the human's screen. Code that opens windows or files, types, clicks, or plays
+# sound on the host is SYSTEM, whatever the skill declares (risk_of only raises). claims.py uses the same pattern.
+HOST_ACT = re.compile(r"\bos\.startfile\b|\bwebbrowser\.open\w*\b|\bpyautogui\b|\bpyperclip\b|\bwinsound\b|\bplaysound\b|\bpynput\b"
+                      r"|\bkeybd_event\b|\bpycaw\b|\bwin32clipboard\b", re.I)
+
+
 def level_of_source(text: str) -> Tuple[str, str, List[str]]:
     """(level, reason, harm) for a piece of code, worst rung first."""
     text = text or ""
@@ -234,6 +241,8 @@ def level_of_source(text: str) -> Tuple[str, str, List[str]]:
         return EXTERNAL_WRITE, guard.NET_SEND[1], []
     if guard.SHELL[0].search(text):
         return SYSTEM, guard.SHELL[1], []
+    if HOST_ACT.search(text):
+        return SYSTEM, "acts on the host's screen, input or sound", []
     if guard.NET_READ[0].search(text):
         return EXTERNAL_READ, guard.NET_READ[1], []
     if guard.FILE_WRITE.search(text):

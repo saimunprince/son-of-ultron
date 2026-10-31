@@ -582,8 +582,7 @@ def changes_something(name: str, args: Any) -> bool:
 
 # python code that acts on the host (opens, plays, types, copies) or posts to the network, below the permission
 # levels that would say so (os.startfile is no shell command; requests.post is a network read by level)
-_HOST_CODE = re.compile(r"\bos\.startfile\b|\bwebbrowser\.open\w*\b|\bpyautogui\b|\bpyperclip\b|\bwinsound\b|\bplaysound\b|\bpynput\b"
-                        r"|\bkeybd_event\b|\bpycaw\b|\bwin32clipboard\b", re.I)
+_HOST_CODE = permissions.HOST_ACT
 _NET_POST = re.compile(r"\.(?:post|put|patch)\(|\bsend_message\b|\bsend_mail\b|\bsendmail\b|\bcurl\b[^\n]*(?:-X\s*POST|--data\b|-d\s|-F\s)", re.I)
 
 
