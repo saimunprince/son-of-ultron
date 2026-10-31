@@ -340,6 +340,17 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
 - Live, same order as before (Bengali, then English): the brain again answered in Bengali first, the check asked once,
   and the final answer was English.
 
+### 2026-10-31: Groq answers again (tools chosen per request for small brains)
+
+- Found live: with 43 tools, Groq (8,000-token limit) and Ollama (4,096) refused every request as too large, even with
+  the short tool descriptions. When Gemini was slow or busy, only Pollinations was left, at one reply per 45 seconds.
+- Now, for a brain that cannot take the whole list, the request carries the tools it needs: a fixed set of essential
+  ones, then those whose words match the request, while it fits. A brain that can take every tool still gets every
+  tool.
+- Live, with Groq put first for one test: Groq answered, with 15 of 43 tools, and called `weather` correctly. The
+  brain order was set back afterwards.
+- Still open: Ollama. The system prompt alone is about 3,000 tokens, so a 4,096-token local model has no room left.
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
