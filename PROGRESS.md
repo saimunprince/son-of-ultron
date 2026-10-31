@@ -4,19 +4,26 @@ The short, current page: where SYRAX stands now, what was done, what is next. Up
 Detail lives in [docs/AUDIT_2026-10-28.md](docs/AUDIT_2026-10-28.md) (findings and the open list), the commit
 messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
-## Now (2026-10-30, +0600)
+## Now (2026-10-31 evening, +0600)
 
-- **Stage:** stabilized on Linux and running live with autonomy at **level 3** (it may edit its workspace and run
-  code; no self-release, no self-restart). The emergency stop is off.
-- **main:** see the latest commit. Every change went through a red test first, then the full release gate (about
-  2,500 tests plus the frontend build) GREEN, then a push.
-- **Machines:** this Linux PC is the main one. The Windows PC still runs its own copy. Its journal (history from
-  2026-09-30) was merged here on 10-29.
-- **Brains:** Gemini first, then Groq (slow on the free tier, about 1 request per minute), then local Ollama, then
-  Pollinations.
-- **Today's autonomy budget** (40 tasks) is spent. It resumes on its own tomorrow.
-- **Working on:** the full audit mission (2026-10-29 evening). Three read-only audits ran: task lifecycle and
-  recovery, capability acquisition, and frontend wiring. Their findings are being fixed in priority order below.
+- **Stage:** running live on Linux, with autonomy at **level 3**. At that level it may edit its workspace and run
+  code, but it does not release or restart itself. The emergency stop is off.
+- **Health today:**
+  - Quality 63/67 on a day of low Gemini quota. Each miss was followed up: two passed when run again, one is a known
+    brain slip, and one was a SYRAX fault, now fixed.
+  - The daily publish works again on Linux. Its first live run was at 16:44.
+  - No critical security finding is open.
+- **Brains:** Gemini first, then Groq, then local Ollama (`qwen3:4b-instruct`), then Pollinations. Groq and Ollama
+  now answer too: small brains get the tools the request needs and a short persona.
+- **Objectives:** 34 DONE, 9 BLOCKED, none open. The autonomy keeps deriving new ones from its own weaknesses.
+- **The plan** (docs/EVOLUTION_PLAN.md): 149 EXISTS, 110 PARTIAL, 3 MISSING, all 3 waiting for the owner.
+- **New today:**
+  - more things can be undone;
+  - work scenes ("coding mode");
+  - a phone page, off by default;
+  - rule-conflict checks;
+  - a "requests that cost you nothing" metric;
+  - tuned predictions.
 
 ## Done
 
@@ -421,28 +428,29 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
 
 ## Open
 
-- **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
-  to end before tuning it.
-- **The Windows PC:** `git pull` there, then check that its gate is GREEN. The fix could not be run on Windows from
-  here.
-- **10 Windows skills have no code on this PC:** make_docx, make_xlsx, make_pptx, make_pdf, disk_usage, image_tools,
-  json_tools, youtube_open, aircraft_nearby and system_optimizer. Copy their `backend/skills/<name>` folders, then
-  rerun the import.
-- **From the audits, not fixed yet:**
-  - **Journal write failures:** a failed write during a task is only counted, and the task can still end SUCCESS.
-    If the write that failed was an `intent.recorded`, recovery cannot see that a send may have gone out.
-  - **No acquisition pipeline:** skill creation is not linked to gap detection. The brain must decide by itself to
-    build a skill.
+- **Needs the owner:**
+  - **Start at login:** `python syrax.py --install-service`. The PC was off overnight on 10-30, and SYRAX does not
+    start by itself.
+  - **Phone page:** `python syrax.py --phone on`, then `--restart`. It can only watch and press the emergency stop.
+  - **Objective #35 (`youtube_play`):** say "play lo-fi on YouTube" once. SYRAX's own work may no longer open
+    windows on your screen, so only your request can prove it.
+  - **3 plan items:** personality adaptation, visual tracking and sensor fusion. The last two need OpenCV and an
+    always-on camera. See docs/MISSING_ITEMS_2026-10-31.md.
+  - **5 Windows skills have no code on this PC:** make_docx, make_xlsx, make_pptx, make_pdf and system_optimizer.
+    Copy their `backend/skills/<name>` folders from the Windows PC, then rerun the import.
+  - **The Windows PC:** `git pull` there, then check that its gate is GREEN.
+- **Watching:**
+  - **CPU heat:** 94.9 °C and 96.2 °C at midday, during long test runs. SYRAX raised the alerts.
+  - **Moderate npm findings:** 11, all in development-only lint tools. Fixing them would need a major downgrade.
+  - **`deep2_log_report`:** a quality case some brains miss. They read the slowest step's line wrongly.
 
 ## Next
 
-Everything in the plan that needs no owner decision and fits this PC is built. What is left:
-
-1. **Owner decisions:**
-   - **xdotool or ydotool** (a system package), so SYRAX can click and type on Linux.
-   - **The persona's English-only rule:** whether SYRAX answers in Bangla when you write in Bangla.
-   - **Emotion estimation:** whether you want it at all.
-2. **Watching:** the drift monitor, calibration and tool-prediction scores fill in as SYRAX works. The first
-   readings arrive within days.
-3. **The remaining PARTIAL and MISSING rows** are mostly research topics (formal logic, theory of mind, fairness,
-   simulation) or things this PC cannot do. Each needs its own design before code.
+1. **Tomorrow morning:**
+   - the first drift and calibration readings after today's changes;
+   - the first effect of the tuned prior (a = 4);
+   - whether the matrix shows the release gate GREEN after the next publish.
+2. **As SYRAX works:**
+   - the new "requests that cost you nothing" number and the rule-conflict check, on real requests;
+   - skill-merge proposals, such as `youtube_open` with `youtube_play`, waiting for the owner's yes or no.
+3. **The 110 PARTIAL plan rows:** each one gets a check before any code, as before.
