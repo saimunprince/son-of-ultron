@@ -32,3 +32,29 @@ def test_banglish_and_english_are_not_asked(script):
         ws.send_json({"type": "task", "text": "aj koto gorom?"})
         drain_until_idle(ws)
     assert get_journal().tasks()[0]["result"] == "It is 31 degrees." and not script.queue
+
+
+def test_a_bengali_answer_to_an_english_request_is_asked_again_in_english(script):
+    # live 2026-10-31: the exchange before was in Bengali, and "which work scenes do you have?" got a Bengali answer
+    from syrax.claims import LANG_ASK_EN
+
+    script.queue = [reply("আমি যে দৃশ্যগুলো (scenes) সাপোর্ট করি: chill, coding, এবং research।"), reply("My scenes: chill, coding and research.")]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "which work scenes do you have?"})
+        drain_until_idle(ws)
+    task = get_journal().tasks()[0]
+    assert task["result"] == "My scenes: chill, coding and research." and LANG_ASK_EN.split(":")[0] in str(script.seen[-1][-1].content)
+
+
+def test_a_request_that_asks_for_bengali_is_not_asked(script):
+    script.queue = [reply("শুভ সকাল।")]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        ws.send_json({"type": "task", "text": "translate 'good morning' to bangla"})
+        drain_until_idle(ws)
+    assert get_journal().tasks()[0]["result"] == "শুভ সকাল।" and not script.queue
+
+
+def test_the_persona_says_the_current_message_decides():
+    assert "current message" in SYRAX_PERSONA

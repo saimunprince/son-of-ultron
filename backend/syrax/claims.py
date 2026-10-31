@@ -664,6 +664,14 @@ LANG_ASK = ("The human wrote in Bengali script. Give the same answer again in Be
             "commands, numbers and technical terms as they are. Reply with that and nothing else.")
 
 
+# Live 2026-10-31: the exchange before was in Bengali, and an English "which work scenes do you have?" got a Bengali
+# answer (the recent conversations are in the prompt, and a small brain kept their language). The current message
+# decides: a request with no Bengali script that does not ask for Bengali is asked once again in English.
+LANG_ASK_EN = ("The human wrote this message in English. Give the same answer again in English: keep code, file names, "
+               "commands and numbers as they are. Reply with that and nothing else.")
+WANTS_BENGALI = re.compile(r"\b(?:bangla|bengali|banglay|bangla[iy]|bengali script)\b|বাংলা", re.I)
+
+
 def bengali(text: str, share: float = 0.3) -> bool:
     """Whether at least `share` of the letters in `text` are Bengali script."""
     letters = _LETTER.findall(text or "")
