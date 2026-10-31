@@ -307,6 +307,28 @@ pushed (each with a red test and a GREEN gate):
     skill declares about itself. SYRAX's own work can no longer call it; a conversation still can.
 - Times in yesterday's entries are corrected to the real ones from the launcher log.
 
+### 2026-10-31: three ideas from the Ultron project, built SYRAX's way
+
+The owner shared github.com/AbuZar-Ansarii/Ultron. It was read, not run, and no code was copied. It has many features
+but no tests, and its self-written tools are checked by four patterns only. Three of its ideas were worth having:
+
+- **More things can be undone.** Undo now also covers:
+  - a volume change, which now says the level before it;
+  - GNOME dark mode, which now says what it was before;
+  - a file sent to the trash: a new `untrash` action puts it back and never overwrites a file that is there now.
+- **Work scenes.** "coding mode", "research mode" and "chill mode", in English, Banglish or Bengali, set the
+  computer up in one request: apps, pages, volume and dark mode.
+  - Like undo, the scene tool only lists the calls to make. Each one still goes through permissions and the journal,
+    and each can be undone.
+  - The owner can add or replace scenes in `backend/config/scenes.json`. Typing, clicking and trashing are never
+    allowed as steps.
+- **Phone page, off by default.** A phone on the home WiFi can see what SYRAX is doing and press the emergency stop,
+  nothing more.
+  - It cannot send a request, clear the stop or change a setting.
+  - It has its own token, separate from the core's, and the core itself stays closed to the network.
+  - Turn it on with `python syrax.py --phone on`, then `--restart`. `--phone show` prints the link.
+- Live: asked which scenes it has, SYRAX called the new tool and answered "chill, coding and research".
+
 ## Open
 
 - **Ollama on CPU** is slow (2k tokens in 38 s) and shares RAM with other local models. Waiting for that other work
