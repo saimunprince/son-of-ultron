@@ -149,6 +149,9 @@ def dark_mode(value: str = "get", runner: Any = None) -> str:
     if value not in ("get", "on", "off"):
         raise ValueError("value must be get, on or off")
     r = subprocess.run(["gsettings", "get", *key], capture_output=True, text=True, timeout=10)
+    if getattr(r, "returncode", 0) != 0:
+        # audit 2026-11-01 (I-11): a failed read was taken as "off", so the undo of a change would have been wrong
+        raise RuntimeError(f"could not read GNOME's color scheme: {(getattr(r, 'stderr', '') or '').strip()[:160] or 'gsettings failed'}")
     was = "on" if "dark" in (r.stdout or "") else "off"
     if value == "get":
         return f"Dark mode is {was}."

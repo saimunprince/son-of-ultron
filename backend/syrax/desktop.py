@@ -551,7 +551,9 @@ class DesktopControl(BaseTool):
                 await _run("amixer", "-q", "set", "Master", arg)
             _, out, _ = await _run("amixer", "get", "Master")
             m = re.search(r"\[(\d+)%\]", out)
-            return ToolResult(output=f"Volume {m.group(1)}%." if m else out[:200])
+            # audit 2026-11-01 (I-11): amixer's "[off]" is its mute state; without it the undo of a mute was always wrong
+            muted = " (muted)" if re.search(r"\[off\]", out) else ""
+            return ToolResult(output=f"Volume {m.group(1)}%{muted}." if m else out[:200])
         return ToolResult(error="No volume control (wpctl/amixer) found.")
 
     async def _win_volume(self, v: str) -> ToolResult:
@@ -1034,7 +1036,19 @@ def _hands_module():
     user32 on Windows (wininput)."""
     from syrax import linuxinput, wininput
 
+    if MACOS:
+        return _NotOnMac  # audit 2026-11-01 (I-07): macOS went to the GNOME portal backend and failed oddly
     return wininput if WINDOWS else linuxinput  # the module's own platform flag, as every other desktop action
+
+
+class _NotOnMac:
+    """Keyboard, mouse and dark mode are not built for macOS: each says so plainly (RuntimeError, as _hands reports)."""
+
+    @staticmethod
+    def _no(*_a, **_k):
+        raise RuntimeError("keyboard, mouse and dark mode control are not built for macOS yet (Windows and GNOME on Linux only)")
+
+    click = hotkey = type_text = dark_mode = _no
 
 
 def _portal_screenshot(runner=None) -> str:
