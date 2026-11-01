@@ -532,6 +532,28 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   before their own release. The publish's own gate and commit appear in the next day's pages.
 - Each fix went through the full gate, GREEN, and was pushed.
 
+### 2026-11-01, late night: smaller fixes, and one bug of today's own found live
+
+- **A bug from today's F14, found live by the owner.** Every new skill was rejected at review ("the diff does not
+  contain the skill"), because the reviewer was sent an empty diff.
+  - Fixed (`8fa47a7`), with a test that reads what the reviewer really gets.
+  - Live: `reverse_text` was built, reviewed by Groq (written by Gemini), registered, and answered correctly.
+- **UI:**
+  - after a reconnect the state shown is the live one;
+  - reconnect notices appear once;
+  - the phone page says whether the stop went through.
+- **Platforms:**
+  - macOS says plainly that keyboard, mouse and dark mode are not built;
+  - Linux volume reports when it is muted;
+  - a failed read of dark mode changes nothing.
+- **Skills:**
+  - a twin of a failed skill is refused (fix that one instead);
+  - Windows- or macOS-only skill code is not offered on another system.
+  - A twin of a disabled skill stays allowed, because an existing test pins that rule.
+- **Seen in the same chat:** after the review rejected its skill, SYRAX said "I built a factorial computation skill",
+  which was false. It corrected itself only when challenged. The claim checks live in `agent.py`, which needs the
+  owner's approval.
+
 ## Open
 
 - **Needs the owner:**
