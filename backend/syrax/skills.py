@@ -567,6 +567,24 @@ def inferred_platforms(source: str) -> tuple:
     return ()
 
 
+def unannotated_fields(code: str) -> List[str]:
+    """BaseTool fields that `class Skill` assigns without an annotation (`name = "x"`), in order. pydantic refuses
+    them at import ("Field 'name' defined on a base class was overridden by a non-annotated attribute"); live
+    2026-11-01 three new skills failed their first gate run on it. A syntax error is left to the gate."""
+    try:
+        tree = ast.parse(code or "")
+    except SyntaxError:
+        return []
+    fields = set(BaseTool.model_fields)
+    out: List[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "Skill":
+            for stmt in node.body:
+                if isinstance(stmt, ast.Assign):
+                    out += [t.id for t in stmt.targets if isinstance(t, ast.Name) and t.id in fields and t.id not in out]
+    return out
+
+
 def platform_problem(tool: Any, source: Optional[str] = None) -> Optional[str]:
     """Why `tool` cannot run here, or None. A skill may declare `platforms` (sys.platform values: "win32", "linux",
     "darwin"); none declared means every system. Audit 2026-10-29: wallpaper and screen_brightness are Windows code
@@ -792,6 +810,11 @@ class SkillFactory:
             raise ValueError("code must define class Skill(BaseTool)")
         if "def test_" not in test_code:
             raise ValueError("test_code must define at least one test_ function")
+        bare = unannotated_fields(code)
+        if bare:
+            raise ValueError("class Skill must annotate the fields it sets, or pydantic refuses it: write "
+                             + ", ".join(f"`{n}: {'dict' if n == 'parameters' else 'str'} = ...`" for n in bare)
+                             + f" instead of `{bare[0]} = ...`")
         if self.journal.skill(name) is None:  # a new name; the same name is how a skill is improved
             twin = self.duplicate_of(name, purpose, code)
             if twin is not None:
