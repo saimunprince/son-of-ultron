@@ -66,10 +66,29 @@ def parse(text: str) -> Optional[Dict[str, Any]]:
     }
 
 
+def model_family(name: Any) -> str:
+    """A model's name without its provider prefix, tag or tier: openai/gpt-oss-120b and gpt-oss-120b:free are one."""
+    n = str(name or "").strip().lower()
+    n = n.rsplit("/", 1)[-1]
+    return n.split(":", 1)[0]
+
+
 def reviewers(router: Any, authors: Iterable[str]) -> List[str]:
-    """Enabled brains that did not write the change, in the human's order."""
+    """Enabled brains that did not write the change, in the human's order. Audit 2026-11-01 (self-improvement F7):
+    independence was per provider only, and the same model runs on several (groq's and cerebras' gpt-oss-120b,
+    gemini through openrouter): a provider serving the author's model is not an independent reviewer either."""
     taken = set(authors)
-    return [p for p in router.store.order if router.store.enabled(p) and p not in taken]
+    store = router.store
+    model = getattr(store, "model", None)
+    author_models = {model_family(model(a)) for a in taken} - {""} if callable(model) else set()
+    out = []
+    for p in store.order:
+        if not store.enabled(p) or p in taken:
+            continue
+        if author_models and callable(model) and model_family(model(p)) in author_models:
+            continue
+        out.append(p)
+    return out
 
 
 def new_file_diff(path: str, text: str) -> str:
