@@ -806,7 +806,10 @@ class SkillFactory:
         authors = sorted({e["payload"].get("provider") for e in (self.journal.events(task_id) if task_id else [])
                           if e["type"] == "brain.answered"} - {None})
         if live is None:
-            info = {"diff": "", "new_files": {f"backend/skills/{name}/{k}": v for k, v in files.items() if v}, "stat": f"new skill {name}"}
+            new_files = {f"backend/skills/{name}/{k}": v for k, v in files.items() if v}
+            # live 2026-11-01: without "untracked", review.diff_for_review sent the reviewer an empty diff, and every new
+            # skill was rejected as "the diff does not contain the skill" (string_reverse, compute_factorial)
+            info = {"diff": "", "new_files": new_files, "untracked": sorted(new_files), "stat": f"new skill {name}"}
         else:
             diff = "".join(
                 "".join(difflib.unified_diff((live.get(k) or "").splitlines(True), (files.get(k) or "").splitlines(True),

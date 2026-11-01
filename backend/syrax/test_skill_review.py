@@ -56,3 +56,21 @@ def test_the_authors_are_passed_so_they_never_review(tmp_path):
     f.reviewer = spy
     asyncio.run(f.create("word_count", "count words", GOOD, GOOD_TEST))
     assert seen["authors"] == ["groq"]
+
+
+def test_the_reviewer_reads_the_new_skills_code(tmp_path):
+    # live 2026-11-01: the reviewer got an empty diff for every new skill and rejected string_reverse and
+    # compute_factorial as "the diff does not contain the skill"; the stub reviewers above never looked
+    from syrax.review import diff_for_review
+
+    j, f, coll = factory(tmp_path)
+    seen = {}
+
+    async def reads(info, summary, authors):
+        seen["body"] = diff_for_review(info)
+        return await approve(info, summary, authors)
+
+    f.reviewer = reads
+    asyncio.run(f.create("word_count", "count words", GOOD, GOOD_TEST))
+    assert "+++ b/backend/skills/word_count/skill.py" in seen["body"] and "class Skill" in seen["body"]
+    assert "content not provided" not in seen["body"]
