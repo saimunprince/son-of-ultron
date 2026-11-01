@@ -102,7 +102,10 @@ ensure_spawn()
 # (human_boundary, since 2026-10-29).
 TASK_KIND: Optional[str] = None
 WRITE_ROOTS: tuple = ()  # extra writable roots for the running task (its isolation worktree)
-CONFINED_KINDS = ("autonomous",)
+# Audit 2026-11-01 (self-improvement F6): a quality case's python_execute had the human's reach and edited live code
+# (quality run #15: self_patch_edit rewrote backend/syrax/reminders.py with open().write); eval work is SYRAX's own,
+# so it is confined like autonomous work: it writes the workspace only; apply_patch and the editor stay journaled
+CONFINED_KINDS = ("autonomous", "eval")
 
 
 OWN_TCP_PORTS = tuple(int(p) for p in os.getenv("SYRAX_OWN_TCP_PORTS", "80,443,53").split(",") if p.strip())
