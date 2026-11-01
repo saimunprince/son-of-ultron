@@ -879,6 +879,7 @@ class SkillFactory:
             known_limitations=known_limitations or (existing or {}).get("known_limitations") or [],
             created_task_id=created_task_id or (existing or {}).get("created_task_id"),
             content_hash=content_hash(skill_dir),  # code_version moves only when this does (journal.upsert_skill_sync)
+            task_id=self.task_id_provider() if callable(getattr(self, "task_id_provider", None)) else None,
         )
         _atomic_write(skill_dir / "skill.json", json.dumps(row, indent=2, default=str))
         return row

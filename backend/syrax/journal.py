@@ -2013,8 +2013,11 @@ class Journal:
         created_task_id: Optional[str] = None,
         event: Optional[str] = None,
         content_hash: Optional[str] = None,
+        task_id: Optional[str] = None,
     ) -> dict:
-        """`version` counts verifications (every call bumps it). `code_version` counts code: it moves only when
+        """`task_id` is the task this verification happened in, the event's task (audit 2026-11-01, S5: it was always
+        the creator's task, so a later task's verification never counted as its own evidence); without it, the
+        creator's. `version` counts verifications (every call bumps it). `code_version` counts code: it moves only when
         `content_hash` differs from the stored one (skills.content_hash: sha256 over the skill's .py files); a row
         that has no hash yet takes the first one it is given without a bump, and a call without a hash keeps both."""
         if status not in SKILL_STATUSES:
@@ -2042,7 +2045,7 @@ class Journal:
                 ),
             )
             self._insert_event(
-                cur, ts, created_task_id, event or f"skill.{status.lower()}",
+                cur, ts, task_id or created_task_id, event or f"skill.{status.lower()}",
                 {"skill": name, "version": version, "status": status, "tests_passed": tests_passed, "tests_failed": tests_failed, "purpose": purpose[:160],
                  "content_hash": content_hash, "code_version": code_version},
             )
