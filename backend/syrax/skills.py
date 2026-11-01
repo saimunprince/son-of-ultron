@@ -243,6 +243,18 @@ def _summary(out: str) -> Tuple[int, int]:
     return passed, failed
 
 
+def skill_test_names(path: Path) -> set:
+    """The test function names in a test file (top level and in Test* classes); empty when it is missing or broken."""
+    import ast
+
+    try:
+        tree = ast.parse(Path(path).read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError, ValueError):
+        return set()
+    nodes = list(tree.body) + [n for c in tree.body if isinstance(c, ast.ClassDef) and c.name.startswith("Test") for n in c.body]
+    return {n.name for n in nodes if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith("test")}
+
+
 def _source_hash(skill_dir: Path) -> str:
     """The skill's own sources as one hash: skill.py, test_skill.py and __init__.py (a missing file counts too)."""
     h = hashlib.sha256()
@@ -778,6 +790,13 @@ class SkillFactory:
         await self.journal.record("skill.created", {"skill": name, "purpose": purpose[:160], "path": str(skill_dir), "candidate": str(cand)},
                                   task_id=task_id)
         result = await self._gate(cand)
+        dropped = sorted(skill_test_names((skill_dir / "test_skill.py")) - skill_test_names(cand / "test_skill.py"))
+        if result["status"] == "VERIFIED" and dropped:
+            # Audit 2026-11-01 (skills S2, live 10-30): a revision of organize_folder went from 5 tests to 3; the two
+            # dropped were its file-safety tests. The live version's tests are the revision's contract.
+            result = {**result, "status": "FAILED", "stage": "tests_dropped",
+                      "evidence": "the revision drops tests the live version passes: " + ", ".join(dropped)
+                                  + ". Keep every existing test (fix the code, or add tests); a revision may only add."}
         if result["status"] == "VERIFIED":
             try:
                 problems = schema_problems(await asyncio.to_thread(load_skill, cand))
