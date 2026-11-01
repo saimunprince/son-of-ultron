@@ -37,7 +37,7 @@ CONTRACT_VERSION = 1
 REPO_ROOT = BACKEND_ROOT.parent
 MEASUREMENT_KINDS = frozenset({"quality_case_passes", "quality_recovered", "benchmark_recovered", "verification_green", "tool_reliability"})
 WORK_PRODUCT_KINDS = frozenset({"change_released", "file_present", "file_absent", "knowledge_stored", "knowledge_confidence", "skill_verified",
-                                "repro_proven"})
+                                "repro_proven", "capability_acquired"})
 DOUBTFUL = frozenset({"INTERRUPTED", "UNKNOWN"})  # a crash or a restart cut the task off: what it left is unverified
 CHANGE_EVENTS = ("code.changed", "commit.created", "skill.created", "knowledge.stored")
 CHECK_KINDS_FOR_HUMANS = ("change_released", "file_present", "file_absent", "tool_verified", "quality_case_passes", "knowledge_stored", "skill_verified")
@@ -130,8 +130,8 @@ def _evidence_for(journal: Journal, objective: dict, evidence: dict, repo_root: 
             for e in events_after(journal, objective):
                 if e["id"] in settled and e["type"] in ("knowledge.superseded", "knowledge.resolved"):
                     items.append({"type": "event", "id": e["id"], "task_id": e.get("task_id")})
-    elif kind == "skill_verified":
-        name = spec.get("name")
+    elif kind in ("skill_verified", "capability_acquired"):
+        name = spec.get("name") if kind == "skill_verified" else evidence.get("skill")
         for e in events_after(journal, objective):
             if e["type"] in ("skill.verified", "skill.created") and e["payload"].get("skill") == name:
                 items.append({"type": "event", "id": e["id"], "task_id": e.get("task_id")})

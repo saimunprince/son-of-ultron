@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import datetime
 import math
+import re
 import time
 from typing import Any, Callable, Dict, List, Optional
 
@@ -103,6 +104,74 @@ def recent_tool_stats(journal: Journal, per_tool: int = RECENT_USES) -> Dict[str
     return {n: {"successes": sum(v), "failures": len(v) - sum(v), "window": per_tool} for n, v in outcomes.items() if n}
 
 
+# Audit 2026-11-01 (skills S15, the owner's core ask): SYRAX built a skill only when a human-written catalog entry, an
+# objective or a failing skill asked for one; nothing noticed that the human kept asking for something it could not
+# do. A capability gap is two or more of the human's requests in GAP_WINDOW_S that failed or whose answer admits the
+# ability is missing, sharing at least two content words, that no VERIFIED skill already covers. A request stopped by
+# a permission or the emergency stop is a decision, not a gap.
+GAP_WINDOW_S = 7 * 86400
+GAP_MIN = 2
+CANNOT = re.compile(
+    r"\bi\s+(?:can(?:no|')?t|cannot|am\s+(?:not\s+able|unable)\s+to|don'?t\s+have\s+(?:a|any|the)\s+(?:tool|way|skill|ability))"
+    r"|\bno\s+(?:tool|skill)\s+(?:can|to|for|that)|\bnot\s+(?:able|possible)\s+(?:for\s+me\s+)?to"
+    r"|\bbeyond\s+my\s+(?:current\s+)?(?:tools|abilities|capabilities)", re.I)
+_GAP_STOP = {"please", "can", "you", "syrax", "make", "want", "need", "help", "tell", "show", "give", "get"}
+
+
+def capability_gaps(journal: Journal, now: Optional[float] = None) -> List[dict]:
+    from syrax.memory import content_words
+    from syrax.skills import purpose_overlap
+
+    now = now or time.time()
+    misses = []
+    for t in journal.tasks(limit=500):
+        if t.get("kind") != "conversation" or (t.get("created") or 0) < now - GAP_WINDOW_S:
+            continue
+        failed = t.get("status") == "FAILED" or bool(CANNOT.search(str(t.get("result") or "")[:600]))
+        if not failed:
+            continue
+        kinds = {e["type"] for e in journal.events(t["task_id"])}
+        if kinds & {"permission.refused", "estop.refused", "task.cancelled"}:
+            continue
+        words = set(content_words(str(t.get("goal") or ""))) - _GAP_STOP
+        if len(words) >= 2:
+            misses.append((t, words))
+    covered = [str(s.get("purpose") or "") for s in journal.skills(status="VERIFIED")]
+    out, used = [], set()
+    for i, (t, words) in enumerate(misses):
+        if t["task_id"] in used:
+            continue
+        group = [(t, words)] + [(u, w) for u, w in misses[i + 1:] if u["task_id"] not in used and len(words & w) >= 2]
+        if len(group) < GAP_MIN:
+            continue
+        common = set.intersection(*(w for _, w in group))
+        if len(common) < 2:
+            continue
+        goals = [str(u.get("goal") or "")[:160] for u, _ in group]
+        if any(purpose_overlap(" ".join(sorted(common)), c) >= 0.3 for c in covered):
+            continue  # a verified skill already does this; repair handles one that fails
+        used |= {u["task_id"] for u, _ in group}
+        subject = " ".join(sorted(common)[:5])
+        out.append({
+            "kind": "capability_gap",
+            "subject": subject,
+            "score": round(min(0.9, 0.5 + 0.1 * (len(group) - GAP_MIN)), 3),
+            "detail": f"{len(group)} requests in the last {GAP_WINDOW_S // 86400} days needed a capability SYRAX lacks ({subject}): "
+                      + " | ".join(goals[:3]),
+            "evidence": {"tasks": [u["task_id"] for u, _ in group], "goals": goals, "words": sorted(common)},
+            "check": {"kind": "capability_acquired", "words": sorted(common), "request": goals[0]},
+            "plan": [
+                "`skill_list` first: if an existing skill or tool can already do it, use that and say so.",
+                f"`know`, then `research` or `github_search`, for how to do it: {goals[0]}",
+                "Build it with `skill_create` (code plus tests that call the skill); a package that is not installed is the owner's decision: propose it, do not install.",
+                f"Call the new skill directly once on a realistic version of the request: {goals[0]}",
+            ],
+            "plan_checks": [{"kind": "tool_ok", "tools": ["skill_list"]}, {"kind": "tool_ok", "tools": ["know", "research", "github_search"]},
+                            None, None],
+        })
+    return out
+
+
 def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[dict]:
     """Every measurable limitation, strongest first."""
     now = now or time.time()
@@ -135,6 +204,7 @@ def rank(journal: Journal, selfmodel: Any, now: Optional[float] = None) -> List[
             "plan_checks": [{"kind": "tool_ok", "tools": ["self_inspect", "journal_query"]}, None, {"kind": "released"}, {"kind": "tool_ok", "tools": [tool], "min": MIN_USES}],
         })
     out += skillevo.repairs(journal)  # Phase 3: a skill failing in real use gets a new version
+    out += capability_gaps(journal, now)  # audit 2026-11-01 (S15): what the human asked for and SYRAX could not do
     answered = failed = 0
     for e in journal.events_between(now - BRAIN_WINDOW_S, now, limit=10000):
         if e["type"] == "brain.answered":

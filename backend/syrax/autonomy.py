@@ -103,6 +103,12 @@ BRIEF_HINTS = {
                         "it compiles them and runs the covering tests and shows the result); fix forward with another patch; then `release`. "
                         "A test imports modules as `from syrax.<module> import ...` and uses tmp_path stores and journals the way the "
                         "module's existing test file does; a test that opens the running journal fails (read-only to other processes)."),
+    "capability_acquired": (" The human asked for this more than once and SYRAX could not do it. First `skill_list`: if a"
+                            " skill or tool already does it, use it and say so. Then `know`, `research` or `github_search` for how"
+                            " it is done (an official API or a maintained library beats guessing). Build it with `skill_create`"
+                            " (code + pytest tests that call the skill); a package that is not installed is the owner's decision."
+                            " The objective closes only when a skill built in this objective is VERIFIED AND one real call of"
+                            " that skill afterwards succeeds: call the new tool itself once (a direct tool call)."),
     "skill_verified": (" First `skill_list`: reuse or adapt a skill that already does this. Then `know`, `research` or `github_search` for"
                        " how it is done (an official API or a maintained library beats guessing). Build it with `skill_create`"
                        " (code + pytest tests, dependencies listed). The objective closes only when the skill `{name}` is VERIFIED"
@@ -842,6 +848,27 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
             "skill": name, "status": (sk or {}).get("status"), "files_present": present,
             "last_verified": (sk or {}).get("last_verified"), "real_use_ok": used,
             **({} if used else {"missing": "one real, successful call of the skill after it was verified"})}
+    if kind == "capability_acquired":
+        # audit 2026-11-01 (S15): a capability gap is closed by a skill this objective's own tasks built, that is
+        # VERIFIED, still on disk, and did its job once in a real call after its verification
+        mine = {a.get("task_id") for a in ((objective.get("progress") or {}).get("attempts_log") or [])}
+        mine |= {objective.get("last_task_id"), (task or {}).get("task_id")}
+        mine.discard(None)
+        built = []
+        for tid in mine:
+            for e in journal.events(tid):
+                if e["type"] == "skill.created" and e["ts"] >= objective["created"]:
+                    built.append(e["payload"].get("skill"))
+        stats = journal.tool_stats()
+        for name in dict.fromkeys(b for b in built if b):
+            sk = journal.skill(name) or {}
+            present = bool(sk.get("path") and (Path(sk["path"]) / "skill.py").exists())
+            st = stats.get(name)
+            used = bool(st and st["last_used"] and st["last_used"] >= (sk.get("last_verified") or 0) and st["last_outcome"] == "ok")
+            if sk.get("status") == "VERIFIED" and present and used:
+                return "DONE", {"skill": name, "status": "VERIFIED", "real_use_ok": True}
+        return "RETRY", {"skills_built": list(dict.fromkeys(b for b in built if b)),
+                         "missing": "a skill built by this objective's own tasks, VERIFIED, and one real successful call of it"}
     if kind == "tool_reliability":
         from syrax.limits import judge_tool_reliability
         return judge_tool_reliability(journal, objective)
