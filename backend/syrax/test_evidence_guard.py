@@ -283,12 +283,15 @@ def test_own_work_with_no_reviewer_wired_is_held(tmp_path, kind, monkeypatch):
     assert (root / "backend" / "syrax" / "mod.py").read_text() != "VALUE = 7\n"  # rolled back
 
 
-def test_a_conversation_release_with_no_reviewer_still_commits(tmp_path, monkeypatch):
+def test_a_conversation_release_with_no_reviewer_is_held(tmp_path, monkeypatch):
+    """Changed 2026-11-01 by the owner's F10 spec (it said: still commits). With no reviewer wired and no opt-out, a
+    conversation release is held like own work, but its edits stay in the working tree. Flagged for sign-off."""
     root = repo(tmp_path)
     j, t, dl = loop(tmp_path, root, "conversation", reviewer=None, opt_out="1", monkeypatch=monkeypatch)
     (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 8\n")
     rep = asyncio.run(dl.release("eight", PLAN))
-    assert rep["outcome"] == "COMMITTED"
+    assert rep["outcome"] == "REVIEW_UNAVAILABLE" and rep["held"] is True
+    assert (root / "backend" / "syrax" / "mod.py").read_text() == "VALUE = 8\n"
 
 
 def test_no_reviewer_with_the_services_opt_out_commits_as_before(tmp_path, monkeypatch):
