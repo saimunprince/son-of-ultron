@@ -650,6 +650,7 @@ SKILL_STATUSES = ("NOT_TESTED", "VERIFIED", "FAILED", "DISABLED")
 # reads as tampering. Every other event is chained.
 UNCHAINED = ("think", "brain.failover", "brain.answered", "presentation.created", "presentation.dismissed")
 GENESIS = "syrax-journal-chain-v1"
+CHAIN_HEAD = "chain_head"  # meta: the signed newest chained event (LIFE-3)
 
 KNOWLEDGE_KINDS = ("web", "local", "experiment", "human", "conclusion")
 # Confidence policy: evidence decides, never the author.
@@ -824,8 +825,12 @@ class Journal:
             # the integrity chain: this event's HMAC covers its own fields and the previous chained event's HMAC
             row = cur.execute("SELECT chain FROM events WHERE chain IS NOT NULL AND id<? ORDER BY id DESC LIMIT 1", (ev_id,)).fetchone()
             prev = row[0] if row else GENESIS
-            cur.execute("UPDATE events SET chain=? WHERE id=?",
-                        (self._chain_mac(prev, ev_id, ts, task_id, type_, _dumps(payload), seq), ev_id))
+            mac = self._chain_mac(prev, ev_id, ts, task_id, type_, _dumps(payload), seq)
+            cur.execute("UPDATE events SET chain=? WHERE id=?", (mac, ev_id))
+            # Audit 2026-11-01 (LIFE-3): the chain alone could not tell that its tail was deleted or that every chain
+            # value was wiped; a signed head (the newest chained event's id and value) is kept in the same transaction
+            cur.execute("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        (CHAIN_HEAD, json.dumps({"id": ev_id, "chain": mac, "sig": self._head_sig(ev_id, mac)})))
         mine = getattr(self._mine, "ids", None)
         if mine is not None:
             mine.append(ev_id)
@@ -853,6 +858,33 @@ class Journal:
         msg = "\x1f".join((prev, str(ev_id), repr(float(ts)), task_id or "", type_, payload_text, str(seq)))
         return hmac.new(self._chain_key(), msg.encode("utf-8"), hashlib.sha256).hexdigest()
 
+    def _head_sig(self, ev_id: int, mac: str) -> str:
+        return hmac.new(self._chain_key(), f"head\x1f{ev_id}\x1f{mac}".encode("utf-8"), hashlib.sha256).hexdigest()
+
+    def _check_head(self) -> Optional[dict]:
+        """A failure verdict when the signed chain head disagrees with the newest chained event, else None. A journal
+        written before the head existed has none, and only the chain itself is checked until its next chained write."""
+        with self._lock:
+            raw = self._db.execute("SELECT value FROM meta WHERE key=?", (CHAIN_HEAD,)).fetchone()
+            last = self._db.execute("SELECT id, chain FROM events WHERE chain IS NOT NULL ORDER BY id DESC LIMIT 1").fetchone()
+        if not raw:
+            return None
+        try:
+            head = json.loads(raw[0])
+            hid, hmac_value, sig = int(head["id"]), str(head["chain"]), str(head["sig"])
+        except (ValueError, KeyError, TypeError):
+            return {"ok": False, "checked": 0, "first_bad": None, "reason": "the chain head record is unreadable"}
+        if not hmac.compare_digest(sig, self._head_sig(hid, hmac_value)):
+            return {"ok": False, "checked": 0, "first_bad": hid, "reason": "the chain head's signature does not match"}
+        if last is None:
+            return {"ok": False, "checked": 0, "first_bad": hid, "reason": f"the chain was wiped: the head names event {hid}, no event is chained"}
+        if last["id"] < hid:
+            return {"ok": False, "checked": 0, "first_bad": last["id"],
+                    "reason": f"chained events after {last['id']} were removed: the head names event {hid}"}
+        if last["id"] > hid or last["chain"] != hmac_value:
+            return {"ok": False, "checked": 0, "first_bad": hid, "reason": "the newest chained event is not the one the head names"}
+        return None
+
     def verify_chain(self, limit: Optional[int] = None) -> dict:
         """Recompute the chain over the kept events (the last ``limit`` chained ones, or all). The first chained event
         in the window is the anchor. Returns {ok, checked, first_bad, reason}: a changed field, an inserted or deleted
@@ -879,6 +911,9 @@ class Journal:
                 return {"ok": False, "checked": len(rows), "first_bad": r["id"],
                         "reason": "the event or the one chained before it was changed, added or removed"}
             prev = r["chain"]
+        bad_head = self._check_head()  # after the chain itself, so its own verdicts come first
+        if bad_head:
+            return {**bad_head, "checked": len(rows)}
         return {"ok": True, "checked": len(rows), "first_bad": None, "reason": None}
 
     def _apply(self, cur: sqlite3.Cursor, row: sqlite3.Row, type_: str, payload: dict, ev_id: int, ts: float) -> None:
