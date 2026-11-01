@@ -444,6 +444,15 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   - the persona: answer first, introduce itself only when asked, no slogans, replies that fit the moment;
   - the owner's Freedom Engine core instructions.
 
+### 2026-11-01, afternoon: the mission merged; SYRAX starts at login
+
+- The audit mission branch was merged and pushed after a GREEN gate (`58c45a8`).
+- The owner installed the login service, but it failed at start because systemd did not find node and npx. Fixed:
+  the service file now carries the shell's PATH (`syrax.py`).
+- **Rerun `python syrax.py --install-service` once** to write the corrected service file.
+- A quality run was cut short when SYRAX was restarted during it. Cause: the operator's idle check printed "no" but
+  exited 0. The check now fails when SYRAX is busy. The quality suite runs again next.
+
 ## Open
 
 - **Needs the owner:**
