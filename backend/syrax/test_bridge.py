@@ -285,7 +285,8 @@ def test_tool_task_records_steps_operation_and_checkpoints(script):
     cps = j.checkpoints(task["task_id"])
     assert cps[0]["stage"] == "observed:python_execute"
     assert cps[0]["completed_steps"] == [{"step": 1, "tool": "python_execute", "id": cps[0]["completed_steps"][0]["id"], "ok": True}]
-    assert any(m.get("role") == "tool" for m in cps[0]["context"])
+    # 2026-11-01 (LIFE-5): only the latest checkpoint keeps the conversation; it holds the tool result, the first none
+    assert any(m.get("role") == "tool" for m in cps[-1]["context"]) and cps[0]["context"] == []
     ts = [e for e in seen if e["type"] == "tool_start"][0]
     assert ts["step"] == 1 and ts["task_id"] == task["task_id"]
     assert any(e["type"] == "checkpoint" for e in seen)
