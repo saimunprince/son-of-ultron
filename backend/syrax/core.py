@@ -151,6 +151,7 @@ TASK_DEADLINE_S = {
     "eval": None,
 }
 DEADLINE_REASON = "ran out of time: the task's deadline ({span}) passed"
+ISOLATION_FAILED = "own work runs only in its own worktree, and the worktree could not be made"
 ESTOP_AT_START = "emergency stop: it was set while the task was starting, so the task never ran"
 QUALITY_TIMEOUT_REASON = "the quality case ran out of time"  # quality.py's runner cancels with this text
 
@@ -651,6 +652,7 @@ class Core:
 
         # the operator's autonomy level bounds what own work may do (permissions.level_needed), read fresh per task
         _permissions.OWN_LEVEL = await asyncio.to_thread(lambda: self.autonomy.level) if kind == "autonomous" else 5
+        isolation_failed = None
         if kind == "autonomous" and os.getenv("SYRAX_ISOLATE", "0") == "1":
             # M1, isolated evolution: SYRAX's own work happens in a worktree, never in the running tree
             try:
@@ -667,6 +669,7 @@ class Core:
             except Exception as e:
                 logger.warning(f"could not isolate task {task_id}: {e}")
                 await self.journal.record("isolation.failed", {"error": str(e)[:300]}, task_id=task_id)
+                isolation_failed = str(e)[:200]
         await self._prepare(Running(task_id=task_id, goal=goal, session_id=session_id, kind=kind), said, max_steps)
         if kind in ("eval", "autonomous") and self.agent is not None:
             # Self-contained work: earlier tasks' messages only cost tokens and
@@ -685,6 +688,17 @@ class Core:
             self._human_context = None
         from syrax import estop
 
+        if isolation_failed is not None:
+            # Audit 2026-11-01 (self-improvement F5): a task whose worktree could not be made went on in the running
+            # tree, and its release could commit straight onto the live branch. Own work that cannot be isolated
+            # does not run: it ends CANCELLED, like a start under the emergency stop.
+            await self._mark("task.cancelled", {"error": f"{ISOLATION_FAILED}: {isolation_failed}", "error_class": "environment"})
+            try:
+                await _to_the_end(self._clean_repo_after_task(), "the cleanup after a failed isolation")
+            finally:
+                self.current = None
+                await self.broadcast({"type": "state", "state": "idle"})
+            return None
         if kind in estop.BLOCKED_KINDS and await asyncio.to_thread(estop.active, self.journal):
             # Audit 2026-10-29: submit checked the stop before the agent build, the worktree and the routing above
             # (minutes, at worst); an E-STOP pressed meanwhile found no running task to cancel. Checked again at the
