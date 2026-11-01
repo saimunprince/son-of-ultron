@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import ast
 import re
 import subprocess
 import threading
@@ -274,6 +275,24 @@ JUDGES = (
 )
 
 
+# Audit 2026-11-01 (self-improvement F2, F3): pytest reads its configuration from files it finds near the tests, and
+# Python imports a package folder before a module file of the same name. A new backend/syrax/pytest.ini deselected
+# tests; a new backend/syrax/verify/__init__.py would shadow the judge verify.py. Both are refused in any task kind.
+TEST_CONFIG_NAMES = frozenset({"pytest.ini", ".pytest.ini", "pyproject.toml", "tox.ini", "setup.cfg", "conftest.py"})
+
+
+def _shadowed_judge(path: str) -> Optional[str]:
+    """The judge a new path would shadow: backend/syrax/<judge stem>/... or a sitecustomize package in the guard site."""
+    if path.startswith("backend/syrax/_guard_site/sitecustomize/"):
+        return "backend/syrax/_guard_site/sitecustomize.py"
+    parts = path.split("/")
+    if len(parts) > 3 and parts[0] == "backend" and parts[1] == "syrax":
+        judge = f"backend/syrax/{parts[2]}.py"
+        if judge in JUDGES:
+            return judge
+    return None
+
+
 def judge_problems(files: Dict[str, str]) -> List[str]:
     """Changes SYRAX may not release in any task: the judges (the protected set,
     JUDGES above, which includes this definition), and any edit or deletion of an
@@ -285,8 +304,83 @@ def judge_problems(files: Dict[str, str]) -> List[str]:
         name = path.rsplit("/", 1)[-1]
         if path in JUDGES:
             problems.append(f"{path}: this file judges SYRAX's own work; only a human changes it")
+        elif name in TEST_CONFIG_NAMES:
+            problems.append(f"{path}: this file configures the test run that judges SYRAX's work; only a human changes it")
+        elif (shadowed := _shadowed_judge(path)):
+            problems.append(f"{path}: this package shadows the judge {shadowed} on import; only a human changes it")
         elif (name.startswith("test_") or name.endswith(".test.ts")) and st != "??":
             problems.append(f"{path}: existing tests are the contract; add a new test instead of changing this one")
+    return problems
+
+
+# Audit 2026-11-01 (self-improvement F1): every test module of the suite runs in one pytest process, so a new test
+# module could change pytest itself at import (`_pytest.python.Function.runtest = lambda self: None` made a failing
+# existing test pass) and the gate went GREEN. A new test module may hold imports, functions, classes, constants and a
+# docstring at its top level; it may not import _pytest, and nowhere may it assign to an attribute of pytest or
+# builtins (monkeypatch, which undoes itself after the test, is the way).
+_TAMPER_MODULES = ("pytest", "_pytest", "builtins")
+
+
+def _sys_path_setup(node: ast.AST) -> bool:
+    """`sys.path.insert(<int>, "<path>")` or `sys.path.append("<path>")` with constant arguments only."""
+    if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)):
+        return False
+    f = node.value.func
+    if not (isinstance(f, ast.Attribute) and f.attr in ("insert", "append") and isinstance(f.value, ast.Attribute)
+            and f.value.attr == "path" and isinstance(f.value.value, ast.Name) and f.value.value.id == "sys"):
+        return False
+    return not node.value.keywords and all(isinstance(a, ast.Constant) for a in node.value.args)
+
+
+def tamper_problems(root: Path, files: Dict[str, str]) -> List[str]:
+    problems = []
+    for path, st in sorted(files.items()):
+        name = path.rsplit("/", 1)[-1]
+        if st != "??" or not re.fullmatch(r"test_.*\.py", name) or not (Path(root) / path).is_file():
+            continue
+        try:
+            tree = ast.parse((Path(root) / path).read_bytes().decode("utf-8", "replace"))
+        except SyntaxError:
+            continue  # the gate's own collection reports it
+        bound = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for a in node.names:
+                    bound[a.asname or a.name.split(".")[0]] = a.name
+            elif isinstance(node, ast.ImportFrom):
+                for a in node.names:
+                    bound[a.asname or a.name] = f"{node.module or ''}.{a.name}"
+        mods = {n for n, full in bound.items() if full.split(".")[0] in _TAMPER_MODULES or full.lstrip(".").split(".")[0] in _TAMPER_MODULES}
+        why = None
+        if any(full.split(".")[0] == "_pytest" or full.startswith("_pytest") for full in bound.values()):
+            why = "imports _pytest (the test runner's internals)"
+        if not why:
+            for node in ast.walk(tree):
+                targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, (ast.AugAssign, ast.AnnAssign)) else []
+                for t in targets:
+                    base = t
+                    while isinstance(base, (ast.Attribute, ast.Subscript)):
+                        base = base.value
+                    if isinstance(t, ast.Attribute) and isinstance(base, ast.Name) and base.id in mods:
+                        why = f"changes {bound[base.id].split('.')[0].lstrip('_') if bound[base.id].startswith('_') else bound[base.id].split('.')[0]} (line {t.lineno}); use monkeypatch"
+                        break
+                if why:
+                    break
+        for node in ([] if why else tree.body):
+            if why:
+                break
+            if isinstance(node, (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                continue
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant):
+                continue
+            if _sys_path_setup(node):
+                continue  # `sys.path.insert(0, '.')`: how a test finds the package, common in SYRAX's own tests
+            if isinstance(node, (ast.Assign, ast.AnnAssign)) and all(isinstance(t, ast.Name) for t in
+                                                                      (node.targets if isinstance(node, ast.Assign) else [node.target])):
+                continue
+            why = f"runs code at import (line {node.lineno}); put it in a test or a fixture"
+        if why:
+            problems.append(f"{path}: a new test that {why}: it could change how the other tests run")
     return problems
 
 
@@ -516,7 +610,7 @@ class DevLoop:
         task_id = self.task_id_provider()
         task = self.journal.task(task_id) if task_id else None
         judged = judge_problems(files)  # every task kind: only a human-made commit changes the judges
-        problems += judged
+        problems += judged + tamper_problems(self.root, files)
         active = None
         if task and task.get("kind") == "autonomous":
             oid = self._active_objective_id(task)
