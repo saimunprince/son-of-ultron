@@ -510,6 +510,18 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   - It works only within 24 hours, only if the diff is unchanged, and only on your own message, never on the brain's.
   - The approval is journaled with your words and the change's hash.
 
+### 2026-11-01, late night: four smaller fixes, one after another
+
+- **S8:** re-testing a skill whose code did not change no longer wipes its record of real use. A repair objective now
+  needs a new version of the code.
+- **S9:** before a skill whose code was edited on disk is re-tested, the last verified copy is kept, so a broken edit
+  can be rolled back.
+- **LIFE-3:** a signed "chain head" now sits beside the journal's integrity chain. Deleting the newest events, or
+  wiping the chain, is caught at boot. Live: checked 9,200 events, ok.
+- **Catalog:** every feature lists the platforms it runs on (Windows-only ones are marked), and the stale rows were
+  corrected.
+- Each fix went through the full gate, GREEN, and was pushed.
+
 ## Open
 
 - **Needs the owner:**
