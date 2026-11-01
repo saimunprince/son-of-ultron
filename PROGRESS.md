@@ -476,6 +476,18 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   - an edit whose diff carried the viewer's line numbers;
   - a deep log report.
 
+### 2026-11-01, night: a bad own release is reverted on its own
+
+- **Before:** when task quality fell after a release of SYRAX's own, it only opened an objective listing the
+  suspects. The bad change stayed in main until a human looked.
+- **Now:** at level 3 and up, SYRAX reverts the change itself when the full quality suite falls by 5 points or more
+  and exactly one own code commit landed between the two runs.
+  - The revert goes through the full gate and a second brain's review, like any release.
+  - A revert held at review or failed changes nothing, and each commit is tried only once.
+  - A human's commit is never reverted.
+- `apply_patch` now accepts a diff copied from the editor's numbered view. Two quality runs missed `self_patch_edit`
+  this way.
+
 ## Open
 
 - **Needs the owner:**
