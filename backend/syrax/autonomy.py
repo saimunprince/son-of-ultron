@@ -1234,6 +1234,21 @@ class Autonomy:
             except Exception as e:
                 logger.warning(f"rolling back {r['skill']} failed: {e}")
 
+    async def _revert_regressing_release(self) -> None:
+        """Audit 2026-11-01 (F12): an own code release that made the full quality suite fall is reverted through the
+        release path (revert.py: gate and review decide). At level 3 and up, like the skill rollback."""
+        if self.level < 3:
+            return
+        from syrax import revert
+
+        try:
+            if await self.journal.run(revert.candidate, self.journal) is None:
+                return
+            devloop = getattr(self.core, "devloop", None)
+            await revert.revert(self.journal, reviewer=getattr(devloop, "reviewer", None))
+        except Exception as e:  # never kills the cycle
+            logger.warning(f"reverting a regressing release failed: {e}")
+
     async def run_once(self, force: bool = False) -> CycleReport:
         """One bounded cycle. ``force`` ignores the enabled flag (manual `cycle_now`), never the emergency stop."""
         rep = CycleReport(started=time.time(), outcome="IDLE")
@@ -1294,6 +1309,7 @@ class Autonomy:
             except Exception as e:
                 logger.warning(f"re-checking catalog features failed: {e}")
         await self._roll_back_regressions()
+        await self._revert_regressing_release()
         await self._check_drift()
         await self._tune_prior()
         await self._state("SELECTING")
