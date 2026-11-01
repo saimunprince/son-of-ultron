@@ -89,14 +89,21 @@ async def scan(router: Any, journal: Journal, now: Optional[float] = None, max_t
             report["py_audit"] = await asyncio.to_thread(audit_python, journal)
     except Exception as e:
         report["audit"] = {"error": str(e)[:200]}
-    try:  # Phase 3: requests the human keeps repeating become skill proposals
-        from syrax import skillevo
+    # Phase 3: requests the human keeps repeating become skill proposals. Audit 2026-11-01 (skills S14): one try
+    # around all three swallowed any error silently, and no skill proposal was ever journaled; each runs on its own
+    # and a failure is on record.
+    from syrax import skillevo
 
-        report["skill_candidates"] = skillevo.propose_candidates(journal, now)
-        report["skill_deprecations"] = skillevo.propose_deprecations(journal, now)
-        report["skill_generalizations"] = skillevo.propose_generalizations(journal, now)
-    except Exception:
-        pass
+    for key, fn in (("skill_candidates", skillevo.propose_candidates), ("skill_deprecations", skillevo.propose_deprecations),
+                    ("skill_generalizations", skillevo.propose_generalizations)):
+        try:
+            report[key] = fn(journal, now)
+        except Exception as e:
+            report[key] = {"error": f"{type(e).__name__}: {e}"[:200]}
+            try:
+                journal.record_sync("radar.error", {"step": key, "error": report[key]["error"]})
+            except Exception:
+                pass
     try:  # the daily pass also checks whether the brain order matches measured quality
         from syrax import scorecard
 
