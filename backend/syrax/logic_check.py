@@ -15,18 +15,28 @@ from typing import Any, Dict, List, Optional
 from app.tool.base import BaseTool, ToolResult
 
 MAX_VARS = 12
-_TOKEN = re.compile(r"\s*(<->|->|\(|\)|!|~|&|\||[A-Za-z_][A-Za-z0-9_]*)")
+_NAME = r"[A-Za-z_][A-Za-z0-9_]*"
+# a ground atom like bird(tweety) or loves(a, b) is one proposition; it comes before the plain name
+_ATOM = rf"{_NAME}\(\s*{_NAME}(?:\s*,\s*{_NAME})*\s*\)"
+_TOKEN = re.compile(rf"\s*(<->|->|{_ATOM}|\(|\)|!|~|&|\||{_NAME})")
 _WORDS = {"not": "!", "and": "&", "or": "|", "implies": "->", "iff": "<->"}
+_QUANTIFIER = re.compile(r"(?:^|[\s(])(forall|exists)\b|[\u2200\u2203]", re.I)
+FIRST_ORDER = ("{q} is first-order logic; logic_check is propositional only. Write it for the individual instead, "
+               "e.g. premises ['bird(tweety) -> fly(tweety)', 'bird(tweety)'], conclusion 'fly(tweety)'")
 
 
 def tokens(text: str) -> List[str]:
     out, pos, text = [], 0, text.strip()
+    # Live 2026-11-01: 'forall X (bird(X) -> fly(X))' failed with "unexpected 'X'", which told the brain nothing
+    q = _QUANTIFIER.search(text)
+    if q:
+        raise ValueError(FIRST_ORDER.format(q=repr((q.group(1) or q.group(0)).lower())))
     while pos < len(text):
         m = _TOKEN.match(text, pos)
         if not m:
             raise ValueError(f"cannot read {text[pos:pos + 12]!r}")
         t = m.group(1)
-        out.append(_WORDS.get(t.lower(), t))
+        out.append(re.sub(r"\s+", "", t) if "(" in t else _WORDS.get(t.lower(), t))
         pos = m.end()
     return out
 
@@ -142,7 +152,8 @@ class LogicCheckTool(BaseTool):
     name: str = "logic_check"
     description: str = (
         "Check a deduction exactly (propositional logic, truth table): do the premises entail the conclusion? Formulas "
-        "use names and not, and, or, -> (implies), <-> (iff), parentheses, e.g. premises ['rain -> wet', 'rain'], "
+        "use names (or ground atoms like bird(tweety)) and not, and, or, -> (implies), <-> (iff), parentheses; no "
+        "forall/exists (instantiate them for the individual), e.g. premises ['rain -> wet', 'rain'], "
         "conclusion 'wet'. Gives the counterexample when it does not follow; without a conclusion it checks the "
         "premises are consistent. Use it before stating that something follows."
     )

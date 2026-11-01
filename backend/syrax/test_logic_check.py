@@ -33,3 +33,17 @@ def test_the_tool_answers_in_words():
     assert out == "NOT ENTAILED: with rain=F, wet=T every premise is true and the conclusion is false."
     assert asyncio.run(t.execute(premises=["rain -> wet", "rain"], conclusion="wet")).output.startswith("ENTAILED (checked all 4")
     assert asyncio.run(t.execute(premises=["p ->"], conclusion="q")).error
+
+
+def test_quantifiers_are_named_and_ground_atoms_are_read():
+    """Live 2026-11-01: a brain sent 'forall X (bird(X) -> fly(X))' and got "unexpected 'X'", which told it nothing.
+    A quantifier now gets a clear first-order message with the way out; a ground atom like bird(tweety) is one name."""
+    with pytest.raises(ValueError, match="propositional only.*bird\\(tweety\\)"):
+        check(["forall X (bird(X) -> fly(X))", "bird(tweety)"], "fly(tweety)")
+    with pytest.raises(ValueError, match="propositional only"):
+        check(["exists x: p(x)"], "")
+    r = check(["bird(tweety) -> fly(tweety)", "bird(tweety)"], "fly(tweety)")
+    assert r["result"] == "ENTAILED" and r["vars"] == ["bird(tweety)", "fly(tweety)"]
+    assert check(["loves(a, b)"], "loves(b, a)")["result"] == "NOT ENTAILED"
+    err = asyncio.run(LogicCheckTool().execute(premises=["forall X (bird(X) -> fly(X))"], conclusion="fly(t)")).error
+    assert "propositional only" in err
