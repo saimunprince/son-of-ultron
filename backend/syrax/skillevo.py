@@ -36,7 +36,7 @@ def real_use(journal: Journal, limit_events: int = 5000) -> Dict[str, dict]:
     calls, seen as 0). Each skill's own tool results since its verification are read now (journal.tool_results);
     `limit_events` is kept for callers and no longer limits anything."""
     skills = {s["name"]: s for s in journal.skills(status="VERIFIED")}
-    out = {n: {"uses": 0, "failures": 0, "since": s.get("last_verified") or s.get("updated") or 0, "version": s.get("version"),
+    out = {n: {"uses": 0, "failures": 0, "since": code_since(journal, s), "version": s.get("version"),
                "recent_failures": []} for n, s in skills.items()}
     for name, st in out.items():
         for e in journal.tool_results(name, st["since"]):
@@ -44,6 +44,29 @@ def real_use(journal: Journal, limit_events: int = 5000) -> Dict[str, dict]:
     for st in out.values():
         st["recent_failures"] = st["recent_failures"][-5:]
     return out
+
+
+def code_since(journal: Journal, skill: dict) -> float:
+    """When the skill's current code was first verified. Audit 2026-11-01 (skills S8): real use was counted from the
+    LAST verification, so re-verifying unchanged code (skill_test, skill_enable) wiped a failing record (youtube_open
+    is at version 7 with code_version 3). Only a new code version starts a new record."""
+    current = skill.get("code_version")
+    first = None
+    for ts, cv in reversed(journal.skill_verifications(skill["name"])):
+        if current is not None and cv is not None and int(cv) != int(current):
+            break
+        first = ts
+    return first or skill.get("last_verified") or skill.get("updated") or 0
+
+
+def code_version_at(journal: Journal, name: str, ts: float) -> Optional[int]:
+    """The skill's code version as of `ts`: that of its last verification at or before it."""
+    at = None
+    for t, cv in journal.skill_verifications(name):
+        if t > ts:
+            break
+        at = cv
+    return int(at) if at is not None else None
 
 
 def _count_use(st: dict, name: str, e: dict) -> None:

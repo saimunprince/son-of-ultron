@@ -880,10 +880,21 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         st = journal.tool_stats().get(name) if spec.get("real_use", True) else None
         used = (not spec.get("real_use", True)) or bool(
             st and st["last_used"] and st["last_used"] >= ((sk or {}).get("last_verified") or 0) and st["last_outcome"] == "ok")
-        return ("DONE" if verified and used else "RETRY"), {
+        missing = {} if used else {"missing": "one real, successful call of the skill after it was verified"}
+        new_code = True
+        if str(objective.get("key") or "").startswith("limit:skill_repair:"):
+            # Audit 2026-11-01 (S8): a repair closed on skill_test plus one easy call, with the same code; a repair
+            # is a new code version, past the one the skill had when the objective was set
+            from syrax.skillevo import code_version_at
+
+            base = code_version_at(journal, name, objective["created"])
+            new_code = base is None or int((sk or {}).get("code_version") or 0) > base
+            if not new_code:
+                missing = {"missing": f"a new code version of `{name}` (still version {base}): fix the code with skill_create; "
+                                      "re-verifying the same code repairs nothing"}
+        return ("DONE" if verified and used and new_code else "RETRY"), {
             "skill": name, "status": (sk or {}).get("status"), "files_present": present,
-            "last_verified": (sk or {}).get("last_verified"), "real_use_ok": used,
-            **({} if used else {"missing": "one real, successful call of the skill after it was verified"})}
+            "last_verified": (sk or {}).get("last_verified"), "real_use_ok": used, **missing}
     if kind == "capability_acquired":
         # audit 2026-11-01 (S15): a capability gap is closed by a skill this objective's own tasks built, that is
         # VERIFIED, still on disk, and did its job once in a real call after its verification
