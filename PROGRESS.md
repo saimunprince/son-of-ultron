@@ -501,6 +501,15 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   - A bug objective needs its own fix plus a working call.
   - The evidence records the objective, the commits and the verification.
 
+### 2026-11-01, night: approve a held chat release from the chat
+
+- When a release asked for in a chat is held at review, SYRAX shows the diff and the reviewer's findings, and says how
+  to approve.
+- Answer with a short approval, for example "approve, land it", "approve koro" or "অনুমোদন". The release then lands
+  exactly the change that was shown, after the gate runs again.
+  - It works only within 24 hours, only if the diff is unchanged, and only on your own message, never on the brain's.
+  - The approval is journaled with your words and the change's hash.
+
 ## Open
 
 - **Needs the owner:**
