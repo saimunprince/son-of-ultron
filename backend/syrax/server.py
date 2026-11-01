@@ -548,7 +548,11 @@ class Session:
             await self.send({"type": "pong"})
         elif kind == "task" and presence.parse_command(text):
             # "hide" / "show" / "go minimal": a visibility change, never a task, allowed while one runs
-            await self.core.presence.set(presence.parse_command(text), by="voice" if msg.get("voice") else "text")
+            visibility = presence.parse_command(text)
+            await self.core.presence.set(visibility, by="voice" if msg.get("voice") else "text")
+            # Audit 2026-11-01 (I-05): the web UI does not show the HUD's visibility, so the command looked ignored
+            await self.send({"type": "notice", "text": f"HUD visibility: {visibility}. (\"{text[:60]}\" changes the "
+                                                       "desktop HUD; it is not a task.)"})
         elif kind == "presence":
             try:
                 await self.core.presence.set(str(msg.get("visibility") or ""), by=str(msg.get("by") or "ui")[:20])
