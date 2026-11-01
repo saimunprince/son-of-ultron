@@ -488,6 +488,19 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
 - `apply_patch` now accepts a diff copied from the editor's numbered view. Two quality runs missed `self_patch_edit`
   this way.
 
+### 2026-11-01, night: chat releases are reviewed; objectives close only on their own work (F10, F11)
+
+- **F10, chat releases:** a code change asked for in a chat is now reviewed by a second brain that did not write it,
+  nor the same model on another provider.
+  - With no reviewer, or a rejection, nothing is committed. The edits stay in the working tree, and the diff and the
+    findings are shown to the owner.
+  - Two older tests pinned "a chat release commits unreviewed"; they now assert the hold, with the owner's sign-off.
+- **F11, objectives:** a release names its objective (`objective_id` in the journal, `Objective: #<id>` in git).
+  - An objective no longer closes on another objective's commit, or on another task's green gate. The owner's own
+    `--gate` still counts.
+  - A bug objective needs its own fix plus a working call.
+  - The evidence records the objective, the commits and the verification.
+
 ## Open
 
 - **Needs the owner:**
