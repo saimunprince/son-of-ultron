@@ -239,6 +239,7 @@ class Core:
         self.skills = SkillFactory(self.journal, task_id_provider=self.current_task_id)
         self.devloop = DevLoop(self.journal, task_id_provider=self.current_task_id)
         self.devloop.reviewer = _cross_review
+        self.skills.reviewer = _cross_review  # F14: skill code is reviewed by a second brain too
         self.versions = VersionComparer(self.journal, task_id_provider=self.current_task_id)
         self.presentation = PresentationEngine(self.journal, emit=self.broadcast)
         from syrax.presence import Presence

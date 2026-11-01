@@ -563,6 +563,8 @@ class SkillFactory:
         self.journal = journal
         self.root = Path(root or SKILLS_ROOT)  # resolved at call time so tests can point it elsewhere
         self.task_id_provider = task_id_provider or (lambda: None)
+        # Audit 2026-11-01 (F14): skill code went live with no second brain (core wires its cross-brain review here)
+        self.reviewer: Optional[Callable[..., Any]] = None
         self.collection: Optional[ToolCollection] = None  # the live agent's tools
         self.loaded: Dict[str, BaseTool] = {}
         # verified skills this system cannot run (platform_problem): never registered here, their status untouched,
@@ -782,7 +784,45 @@ class SkillFactory:
         for fname, text in files.items():
             _atomic_write(skill_dir / fname, text)
         await self.journal.record("skill.created", {"skill": name, "purpose": purpose[:160], "path": str(skill_dir)}, task_id=task_id)
-        return await self.verify(name, purpose=purpose, dependencies=dependencies, known_limitations=known_limitations, created_task_id=task_id)
+        if self.reviewer is None:
+            return await self.verify(name, purpose=purpose, dependencies=dependencies, known_limitations=known_limitations, created_task_id=task_id)
+        result = await self._gate(skill_dir)
+        if result["status"] == "VERIFIED":
+            result = await self._reviewed(name, purpose, result, files, None)
+        return await self._commit(name, result, purpose=purpose, dependencies=dependencies,
+                                  known_limitations=known_limitations, created_task_id=task_id)
+
+    async def _reviewed(self, name: str, purpose: str, result: dict, files: Dict[str, str],
+                        live: Optional[Dict[str, str]]) -> dict:
+        """A second brain reads a skill's code before it goes live (audit 2026-11-01, F14: a skill is SYRAX changing
+        what it can do, and nothing but its own author's tests judged it). The brains that answered in this task are
+        the authors and never review. No review, or a rejection, fails the gate at stage "review"; the human's
+        opt-out at start (SYRAX_REVIEW=0) skips it, as for releases."""
+        if self.reviewer is None:
+            return result
+        import difflib
+
+        task_id = self.task_id_provider()
+        authors = sorted({e["payload"].get("provider") for e in (self.journal.events(task_id) if task_id else [])
+                          if e["type"] == "brain.answered"} - {None})
+        if live is None:
+            info = {"diff": "", "new_files": {f"backend/skills/{name}/{k}": v for k, v in files.items() if v}, "stat": f"new skill {name}"}
+        else:
+            diff = "".join(
+                "".join(difflib.unified_diff((live.get(k) or "").splitlines(True), (files.get(k) or "").splitlines(True),
+                                             f"a/backend/skills/{name}/{k}", f"b/backend/skills/{name}/{k}"))
+                for k in sorted(set(files) | set(live)))
+            info = {"diff": diff, "new_files": {}, "stat": f"revision of skill {name}"}
+        verdict = await self.reviewer(info, f"skill {name}: {purpose}", authors)
+        if verdict.get("skipped"):
+            return result
+        await self.journal.record("skill.review", {"skill": name, "authors": authors, **{k: verdict.get(k) for k in
+                                  ("available", "approve", "problems", "reasons", "reviewer")}}, task_id=task_id)
+        if verdict.get("available") is False or not verdict.get("approve"):
+            why = "; ".join(verdict.get("reasons") or []) or ("no second brain could review it" if verdict.get("available") is False else "rejected")
+            return {**result, "status": "FAILED", "stage": "review",
+                    "evidence": f"its tests passed, but a second brain did not approve the code: {why}"}
+        return result
 
     def candidate_dir(self, name: str) -> Path:
         return self.root / CANDIDATES_DIR / self.root.name / name
@@ -818,6 +858,9 @@ class SkillFactory:
                     raise ValueError("a model could not call it: " + "; ".join(problems))
             except Exception as e:
                 result = {**result, "status": "FAILED", "stage": "load", "evidence": f"tests passed but the skill failed to load: {e}"}
+        if result["status"] == "VERIFIED":
+            live_files = {k: (skill_dir / k).read_text(encoding="utf-8", errors="replace") for k in files if (skill_dir / k).is_file()}
+            result = await self._reviewed(name, purpose, result, files, live_files)
         if result["status"] == "VERIFIED":
             self.keep_version(name, new_hash=new_hash)
             for fname, text in files.items():
