@@ -1053,6 +1053,10 @@ class Core:
             resume_note += " " + intent.RESUME_NOTE.format(summary=external.get("summary") or external.get("tool") or "?")
         agent.memory.add_message(Message.system_message(resume_note))
         agent.inherited_intents = {intent.key(i.get("tool"), i["args_hash"]): {**i, "done": False} for i in open_intents if i.get("args_hash")}
+        # Audit 2026-11-01 (LIFE-1): sends that finished are held too: the context a resume starts from may predate them
+        for i in self.journal.done_intents(task_id):
+            if i.get("args_hash"):
+                agent.inherited_intents.setdefault(intent.key(i.get("tool"), i["args_hash"]), {**i, "done": False})
         if external and external.get("args_hash"):
             agent.inherited_intents.setdefault(intent.key(external.get("tool"), external["args_hash"]), {**external, "done": False})
         await self.journal.mark_resumed(task_id, session_id)

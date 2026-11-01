@@ -1203,6 +1203,27 @@ class Journal:
         rows = (cur.execute(q, (task_id,)) if cur is not None else self._db.execute(q, (task_id,))).fetchall()
         return intent.open_of((str(r[0]), _loads(r[1]) or {}) for r in rows)
 
+    def done_intents(self, task_id: str, cur: Optional[sqlite3.Cursor] = None) -> List[dict]:
+        """The task's sends that finished (intent.recorded, then intent.done), each with `done_ts`: what a resume from
+        an older checkpoint must not repeat (audit 2026-11-01, LIFE-1)."""
+        q = ("SELECT type, payload, ts FROM events WHERE task_id=? AND type IN ('intent.recorded', 'intent.done') "
+             "ORDER BY seq, id")
+        rows = (cur.execute(q, (task_id,)) if cur is not None else self._db.execute(q, (task_id,))).fetchall()
+        recorded: Dict[str, dict] = {}
+        out = []
+        for type_, payload, ts in rows:
+            pl = _loads(payload) or {}
+            h = str(pl.get("args_hash") or "")
+            if not h:
+                continue
+            if type_ == "intent.recorded":
+                recorded[h] = {"tool": pl.get("tool"), "args_hash": h, "summary": pl.get("summary"), "step": pl.get("step")}
+            elif h in recorded:
+                entry = recorded.pop(h)
+                if pl.get("ok", True):  # ok false: the call said it did not happen
+                    out.append({**entry, "done_ts": ts})
+        return out
+
     def _effects_of(self, name: str, args: dict, cur: Optional[sqlite3.Cursor] = None) -> dict:
         """The permission level, targets and harm of a call (permissions.py). A skill's level
         comes from its registry row, because at recovery the skills are not declared yet.
@@ -1299,6 +1320,20 @@ class Journal:
             state = "RESUMABLE"
         else:
             state = "UNCERTAIN"
+        if state == "RESUMABLE" and not verdict.get("intent"):
+            # Audit 2026-11-01 (LIFE-2): a send left open by an earlier step (it timed out, the task went on) made no
+            # difference when the crash came during another call; (LIFE-1) a send that finished after the last
+            # checkpoint is missing from the context a resume starts from, so the model would send it again.
+            open_ = self.open_intents(row["task_id"], cur)
+            after = [i for i in self.done_intents(row["task_id"], cur) if not cp or i["done_ts"] >= cp["ts"]]
+            if open_:
+                state, verdict = "UNCERTAIN", {**verdict, "intent": open_[-1], "checks": {
+                    **verdict.get("checks", {}), "reason": f"{open_[-1].get('tool')} was never seen to finish and may have gone out ("
+                    f"{open_[-1].get('summary')}); verify before repeating"}}
+            elif after:
+                state, verdict = "UNCERTAIN", {**verdict, "intent": after[-1], "checks": {
+                    **verdict.get("checks", {}), "reason": f"{after[-1].get('tool')} went out after the last checkpoint ("
+                    f"{after[-1].get('summary')}); a resume from that checkpoint would repeat it"}}
         checks = {
             "journal_consistent": bool(last) and last["id"] == row["last_event_id"],
             "git_head_unchanged": (row["git_head"] == head_now) if row["git_head"] else None,
