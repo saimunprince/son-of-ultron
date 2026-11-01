@@ -50,6 +50,16 @@ def due(journal: Journal, now: Optional[float] = None) -> bool:
     return _since(journal, PUBLISHED, now) >= EVERY_S and _since(journal, ATTEMPTED, now) >= RETRY_S
 
 
+BEFORE_RELEASE = ("> Written by the daily publish before its own gate and commit: this publish's verification, commit and "
+                  "matrix appear in the next one (audit 2026-11-01, D1).")
+
+
+def before_release(text: str) -> str:
+    """The document with BEFORE_RELEASE under its title: the numbers in it are the state before this release."""
+    head, _, rest = text.partition("\n")
+    return f"{head}\n\n{BEFORE_RELEASE}\n{rest}" if BEFORE_RELEASE not in text else text
+
+
 def run_junit(wt: Path, xml: Path) -> bool:
     """The release gate's own pytest command on the worktree, with a JUnit report."""
     import dataclasses
@@ -85,7 +95,7 @@ async def write_matrix(journal: Journal, wt: Path, xml: Path, head: str, junit: 
         rows, text = await asyncio.to_thread(
             capmatrix.build, Path(journal.path), xml, None, None, head, wt, None, evidence,
             capmatrix.gate_from_verification(last[0] if last else None), Path(journal.path).name)
-        (wt / "docs" / "CAPABILITY_MATRIX.md").write_text(text, encoding="utf-8", newline="\n")
+        (wt / "docs" / "CAPABILITY_MATRIX.md").write_text(before_release(text), encoding="utf-8", newline="\n")
         return {s: sum(1 for r in rows if r["status"] == s) for s in capmatrix.ORDER}
     finally:
         xml.unlink(missing_ok=True)
@@ -116,14 +126,14 @@ async def publish(journal: Journal, root: Path = REPO_ROOT, gates: Optional[Call
         head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(root), capture_output=True, text=True).stdout.strip() or "?"
         data = await asyncio.to_thread(rise.measure, journal.path, now)
         (wt / "docs").mkdir(parents=True, exist_ok=True)
-        (wt / "docs" / "RISE.md").write_text(rise.render(data, head), encoding="utf-8", newline="\n")
+        (wt / "docs" / "RISE.md").write_text(before_release(rise.render(data, head)), encoding="utf-8", newline="\n")
         from syrax import devlog  # M6: one entry per day SYRAX ran, from the journal and git
 
         days = await asyncio.to_thread(devlog.entries, journal, now, root)
-        (wt / "docs" / "DEVLOG.md").write_text(devlog.render(days, head), encoding="utf-8", newline="\n")
+        (wt / "docs" / "DEVLOG.md").write_text(before_release(devlog.render(days, head)), encoding="utf-8", newline="\n")
         from syrax import archive  # Phase 5: the archive of SYRAX's own variants
 
-        (wt / "docs" / "ARCHIVE.md").write_text(await asyncio.to_thread(archive.render, journal, head), encoding="utf-8", newline="\n")
+        (wt / "docs" / "ARCHIVE.md").write_text(before_release(await asyncio.to_thread(archive.render, journal, head)), encoding="utf-8", newline="\n")
         counts = None
         if matrix:
             xml = root / ".syrax" / "maintenance" / f"{wt.name}-pytest.xml"  # beside the worktree, never committed
