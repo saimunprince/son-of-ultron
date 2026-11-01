@@ -18,3 +18,12 @@ def test_a_merged_tasks_events_are_returned(tmp_path):
                       (-10_000_000 + i, now, typ, json.dumps({"text": "x"}), i + 1))
     assert [e["type"] for e in j.events("win1")] == ["task.started", "final"]
     assert j.events("win1", after_id=0) == []  # an explicit after_id still filters
+
+
+def test_a_merged_objective_derives_no_follow_ups(tmp_path):
+    from syrax import followup
+
+    j = Journal(tmp_path / "j.db")
+    merged = {"id": -9999833, "goal": "verify youtube_open", "check_spec": {"kind": "skill_verified", "name": "youtube_open"},
+              "evidence": {}, "progress": {}}
+    assert followup.derive(j, merged) == []

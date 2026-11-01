@@ -70,6 +70,10 @@ def derive(journal: Journal, objective: dict) -> List[dict]:
     depth = int(ev.get("followup_depth") or 0)
     if depth >= MAX_DEPTH or spec.get("kind") in ("human", None):
         return []
+    if int(objective.get("id") or 0) < 0:
+        # Audit 2026-11-01 (LIFE-8): an objective merged in from the Windows journal (id below zero) is history; it was
+        # picked once and blocked here, and its follow-ups pursued Windows features beside this PC's own copies
+        return []
     oid = objective["id"]
     events = [e for t in plan.task_ids_of(objective) for e in journal.events(t)]
     tool = spec.get("tool")
