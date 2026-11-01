@@ -109,7 +109,7 @@ def write_rights(version: int) -> int:
 
 
 def landlock(writable: Iterable[str], readable: Optional[Iterable[str]] = None, listable: Iterable[str] = (),
-             tcp_connect: Optional[Iterable[int]] = None) -> List[str]:
+             tcp_connect: Optional[Iterable[int]] = None, allow_bind: bool = False) -> List[str]:
     """Allow file changes only beneath ``writable`` for this process and all it starts. With ``readable``, reading,
     listing and executing are limited too, to ``readable`` and ``writable`` (2026-10-29: own code could still read
     the brain keys); ``listable`` folders may be listed (names only: Python's import finder lists every sys.path
@@ -122,7 +122,10 @@ def landlock(writable: Iterable[str], readable: Optional[Iterable[str]] = None, 
         raise OSError("Landlock is not available on this system")
     libc = _libc()
     handled = write_rights(version) | (READ_RIGHTS if readable is not None else 0)
-    net = (NET_BIND_TCP | NET_CONNECT_TCP) if (tcp_connect is not None and version >= 4) else 0
+    # allow_bind (audit 2026-11-01, the release gate): only connecting is limited; binding stays open, because the
+    # suite's own tests serve on an ephemeral 127.0.0.1 port and connect to it there
+    net = ((NET_CONNECT_TCP if allow_bind else NET_BIND_TCP | NET_CONNECT_TCP)
+           if (tcp_connect is not None and version >= 4) else 0)
     attr = _RulesetAttr(handled, net, (_SCOPE_SIGNAL | _SCOPE_ABSTRACT_UNIX_SOCKET) if version >= 6 else 0)
     size = 24 if version >= 6 else 16 if version >= 4 else 8  # older kernels know only the first fields
     ruleset = libc.syscall(_SYS_CREATE_RULESET, ctypes.byref(attr), ctypes.c_size_t(size), ctypes.c_uint32(0))
@@ -225,8 +228,17 @@ def apply(spec: Optional[dict]) -> Optional[str]:
     return None
 
 
+def ephemeral_ports() -> range:
+    """The kernel's ephemeral port range (where a socket bound to port 0 lands), Linux's default when unreadable."""
+    try:
+        lo, hi = (int(x) for x in open("/proc/sys/net/ipv4/ip_local_port_range").read().split()[:2])
+        return range(lo, hi + 1)
+    except (OSError, ValueError):
+        return range(32768, 61000)
+
+
 def wrap(cmd: list, writable: Iterable[str], readable: Optional[Iterable[str]] = None, listable: Iterable[str] = (),
-         tcp_connect: Optional[Iterable[int]] = None) -> list:
+         tcp_connect: Optional[Iterable[int]] = None, allow_bind: bool = False) -> list:
     """`cmd` run under a Landlock write boundary: the live server's copy of this file (never the tree under test, which
     could carry a changed one) applies it and then execs `cmd`. Unchanged where Landlock is absent. With `readable`
     (and `listable`), reading is limited too; with `tcp_connect`, TCP goes only to those ports (as landlock())."""
@@ -243,8 +255,15 @@ def wrap(cmd: list, writable: Iterable[str], readable: Optional[Iterable[str]] =
             args += ["--list", str(path)]
     if tcp_connect is not None:
         args.append("--tcp-limited")
-        for port in tcp_connect:
-            args += ["--tcp", str(int(port))]
+        ports = sorted({int(p) for p in tcp_connect})
+        eph = ephemeral_ports()
+        if len(ports) > 64 and set(eph) <= set(ports):  # the ephemeral range travels as one argument
+            args += ["--tcp-range", f"{eph.start}-{eph.stop - 1}"]
+            ports = [p for p in ports if p not in eph]
+        for port in ports:
+            args += ["--tcp", str(port)]
+        if allow_bind:
+            args.append("--tcp-bind-ok")
     return [*args, "--", *map(str, cmd)]
 
 
@@ -261,10 +280,13 @@ def _main(argv: List[str]) -> int:
     writable = values("--write")
     readable = values("--read") if "--read-limited" in opts else None
     tcp = [int(p) for p in values("--tcp")] if "--tcp-limited" in opts else None
+    for r in values("--tcp-range"):
+        lo, hi = (int(x) for x in r.split("-", 1))
+        tcp = (tcp or []) + list(range(lo, hi + 1))
     if not cmd:
         return 2
     try:
-        landlock(writable + ["/dev/null", "/dev/shm"], readable, values("--list"), tcp)
+        landlock(writable + ["/dev/null", "/dev/shm"], readable, values("--list"), tcp, allow_bind="--tcp-bind-ok" in opts)
     except OSError as e:
         sys.stderr.write(f"confinement failed, nothing ran: {e}\n")
         return 126

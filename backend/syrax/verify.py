@@ -440,8 +440,16 @@ def default_gates(root: Path = REPO_ROOT, journal_path: Optional[str] = None, jo
     gate_tmp = os.path.join(tempfile.gettempdir(), f"syrax_gate_tmp_{getattr(os, 'getuid', lambda: 0)()}")
     os.makedirs(gate_tmp, mode=0o700, exist_ok=True)  # one per user: every root's gate has the same environment
     test_env["TMPDIR"] = gate_tmp
+    # Audit 2026-11-01 (security F1): the suite runs code SYRAX may have written, and it could connect to the core's
+    # own port, whose Origin check trusts any local client that claims the UI's origin (clear the emergency stop,
+    # raise the autonomy level). TCP connects now go only to the web, DNS and the ephemeral range, where the suite's
+    # own test servers listen; the core (8765), the UI (3000), the phone page (8770) and local services sit below it.
+    # Reading stays open: the tests read the home folder, and Landlock cannot leave backend/config out of a granted
+    # tree (tried 2026-11-01: 79 tests failed on /home/<user>). That limit is known and documented.
+    from syrax import tools as _tools
+
     pytest_cmd = _confine.wrap([py, "-m", "pytest", "syrax", "-q", "-p", "no:cacheprovider", "-o", "faulthandler_timeout=300"],
-                               [root, gate_tmp])
+                               [root, gate_tmp], tcp_connect=[*_tools.OWN_TCP_PORTS, *_confine.ephemeral_ports()], allow_bind=True)
     npx = _npx()
     tsc, eslint, node_test = [npx, "tsc", "--noEmit"], [npx, "eslint", "."], [_npm(), "test", "--silent"]
 
