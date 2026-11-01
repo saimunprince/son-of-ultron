@@ -37,7 +37,7 @@ The rule from the plan holds: nothing counts as done without a check that proves
 - **157 Personality adaptation.** The persona is the owner's own choice. Adapting it automatically would change who
   SYRAX is without being asked. Recommendation: no, unless the owner wants it.
 - **204 Visual tracking and 206 Sensor fusion.** These would be things like webcam hand gestures (Ultron has them) or
-  combining camera, microphone and screen. They need OpenCV, a new dependency, and the camera on all the time.
+  combining camera, microphone and screen. OpenCV is already installed (approved 2026-10-12, used by camera.py); what is new is the camera on all the time.
   Recommendation: only if the owner wants gesture control.
 
 ## Decided against, with the reason

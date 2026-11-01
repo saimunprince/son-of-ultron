@@ -30,18 +30,19 @@ The counts are taken from the tables below, one status per item, as mapped on 20
 emergency stop and budgets, the release gate with red-test proof, skill versioning and rollback, and knowledge with
 provenance and freshness.
 
-**What is weak:**
-- calibration: stated confidence is never compared with outcomes;
-- prompt-injection containment;
-- desktop control on Linux: the click, keyboard and front-window code is Windows-only;
-- statistics in experiments;
-- emotion and theory-of-mind modeling: none exists;
-- multilingual replies;
-- long-running drift checks.
+**What was weak on 2026-10-30, and where it stands (2026-11-01):**
+- calibration: built (calibrate.py; the prior is tuned from history, n = 371);
+- prompt-injection containment: partial (taint on fetched content, review material fenced; still a model's judgment);
+- desktop control on Linux: built through the GNOME portals (linuxinput.py); window, find_text and display_off
+  remain Windows-only;
+- statistics in experiments: built (interleaved arms, permutation test);
+- emotion and theory-of-mind modeling: decided against, with reasons (docs/MISSING_ITEMS_2026-10-31.md);
+- multilingual replies: built for Bengali script; voice input and output are still English only;
+- long-running drift checks: built (rise.drift, daily).
 
 ## Out of scope, and why
 
-21 items cannot be built honestly on this machine. Nothing in this plan pretends otherwise.
+22 items cannot be built honestly on this machine. Nothing in this plan pretends otherwise.
 
 - **No body or sensors (211–217, 220, 34):** robot locomotion, manipulation, motor control, tactile sense, balance,
   sim-to-real transfer, embodied adaptation and physical intuition. SYRAX has no robot. Human–agent interaction (216)
@@ -296,7 +297,7 @@ evidence for. If the owner later asks for it, the design above stands.
 | 201 | Visual perception | PARTIAL (screenshots on Linux via the GNOME portal, test_linux_screenshot; no OCR without tesseract) | screenshots, camera.py, image brains (test_camera) | OCR is Windows-only |
 | 202 | Auditory perception | PARTIAL | voice.py transcribe (test_voice) | speech only |
 | 203 | Speech understanding | EXISTS | whisper/Groq transcribe, live.py (test_voice, test_live) | — |
-| 204 | Visual tracking | MISSING (owner's decision: OpenCV and an always-on camera) | camera.py takes one photo | — |
+| 204 | Visual tracking | MISSING (owner's decision: an always-on camera; OpenCV is already installed) | camera.py takes one photo | — |
 | 205 | Scene understanding | PARTIAL | images to multimodal brains | — |
 | 206 | Sensor fusion | MISSING (owner's decision, as 204) | — | — |
 | 207 | Temporal perception | EXISTS | clock, durations (test_clock_honesty) | — |

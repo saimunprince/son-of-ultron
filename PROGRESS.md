@@ -434,8 +434,8 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   - **Phone page:** `python syrax.py --phone on`, then `--restart`. It can only watch and press the emergency stop.
   - **Objective #35 (`youtube_play`):** say "play lo-fi on YouTube" once. SYRAX's own work may no longer open
     windows on your screen, so only your request can prove it.
-  - **3 plan items:** personality adaptation, visual tracking and sensor fusion. The last two need OpenCV and an
-    always-on camera. See docs/MISSING_ITEMS_2026-10-31.md.
+  - **3 plan items:** personality adaptation, visual tracking and sensor fusion. The last two need an always-on
+    camera (OpenCV itself is already installed). See docs/MISSING_ITEMS_2026-10-31.md.
   - **5 Windows skills have no code on this PC:** make_docx, make_xlsx, make_pptx, make_pdf and system_optimizer.
     Copy their `backend/skills/<name>` folders from the Windows PC, then rerun the import.
   - **The Windows PC:** `git pull` there, then check that its gate is GREEN.

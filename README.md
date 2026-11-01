@@ -18,8 +18,8 @@ The proof lives in two generated files, never typed by hand:
 evidence). SYRAX regenerates both through its own release at most once a day,
 in an idle cycle (no open objective, after the radar) when the login service
 set `SYRAX_PUBLISH_RISE=1`; `python -m syrax.capmatrix` regenerates the matrix
-by hand. [SYRAX_STATUS.md](SYRAX_STATUS.md) is the hand-written snapshot the
-owner's engineer keeps beside them. The plan they judge is
+by hand. [PROGRESS.md](PROGRESS.md) is the current, hand-written state;
+[SYRAX_STATUS.md](SYRAX_STATUS.md) is an older snapshot from the Windows PC (2026-10-25). The plan they judge is
 [docs/EXECUTION_PLAN.md](docs/EXECUTION_PLAN.md).
 
 **An open-source personal AI whose job is to improve itself and to help its human.**
@@ -136,8 +136,16 @@ Passwords, keys and tokens are refused.
 The `desktop` tool acts on your own session (GNOME on Linux, the Windows
 shell, Finder/LaunchServices on macOS): open sites/files/apps in your browser
 or file manager, volume, play/pause/next, screenshots, notifications,
-clipboard, file search, battery/CPU/RAM/disk, lock screen. Nothing destructive
-(no shutdown, no killing apps, no deleting files).
+clipboard, file search, battery/CPU/RAM/disk, lock screen. No shutdown and no
+killing apps. Deleting is only `trash` (to the Recycle Bin or the Linux trash, so
+it can be restored), and it is DESTRUCTIVE: asked first unless you named the file.
+
+On Linux these system tools are used when present: `wpctl` or `amixer` (volume),
+`playerctl` (media), `wl-copy`/`wl-paste` or `xsel` (clipboard), `notify-send`,
+`gnome-screenshot`, `grim` or `scrot` (else the desktop portal), and PyGObject in
+the system `python3` for the GNOME portals (keyboard, mouse, screenshots). A
+missing one makes that action say so; nothing else is affected. On Ubuntu:
+`sudo apt install playerctl wl-clipboard python3-gi`.
 
 On Windows, apps come from the Start Menu and from the Start apps that are not
 a shortcut file, so Microsoft Store apps (WhatsApp, Spotify) are found and
@@ -312,7 +320,7 @@ playing needs a tool of that class that succeeded in the task (for playing, a
 once and, if the claim stays, carries a note such as "(Not done: no sending
 tool ran in this task.)".
 Details, schema and limits: `docs/EXECUTION_MODEL.md`. Component map:
-`docs/SYSTEM_MAP.md`. Gap analysis and roadmap: `docs/GAP_ANALYSIS.md`.
+`docs/SYSTEM_MAP.md`. The plan: `docs/EVOLUTION_PLAN.md` (`docs/GAP_ANALYSIS.md` is superseded).
 
 WebSocket additions: `history {limit}`, `task_events {task_id}`,
 `verifications {limit}`, `resume {task_id}`, `self_model {section}`; `hello`
@@ -444,8 +452,8 @@ benchmark into the journal on every DevLoop release and on
 "(no journal: not recorded)". The `experiment` tool runs a baseline and a candidate tool call,
 repeated, and computes the verdict from the numbers. Regressions, repeatedly
 blocked strategies and weakly supported knowledge become objectives about
-SYRAX itself. `quality_run` over WebSocket runs a fixed suite of 61 cases (52
-single-step tasks and 9 deep multi-step ones, `quality._cases`) through the
+SYRAX itself. `quality_run` over WebSocket runs a fixed suite of 67 cases (52
+single-step tasks, 9 deep multi-step ones and 6 deeper ones, `quality._cases`) through the
 real brain and checks the outcomes by machine (pass rate, compared run to run).
 `compare_versions` measures two commits against each other in clean worktrees;
 `compare_brains {a, b}` runs the quality suite once per brain. Closing a stage

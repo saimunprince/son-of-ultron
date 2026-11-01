@@ -1,3 +1,7 @@
+> **Superseded (2026-11-01).** This is the Windows-era snapshot (numbers refreshed 2026-10-25). SYRAX now runs on
+> Linux; the current state is in [PROGRESS.md](PROGRESS.md) and in the generated docs
+> ([docs/RISE.md](docs/RISE.md), [docs/CAPABILITY_MATRIX.md](docs/CAPABILITY_MATRIX.md)). Kept as history.
+
 # SYRAX Status
 
 The measured snapshot. Every number below was produced by a command listed in
