@@ -243,6 +243,15 @@ def _summary(out: str) -> Tuple[int, int]:
     return passed, failed
 
 
+def _source_hash(skill_dir: Path) -> str:
+    """The skill's own sources as one hash: skill.py, test_skill.py and __init__.py (a missing file counts too)."""
+    h = hashlib.sha256()
+    for name in ("skill.py", "test_skill.py", "__init__.py"):
+        f = Path(skill_dir) / name
+        h.update(name.encode() + b"\0" + (f.read_bytes() if f.is_file() else b"<missing>") + b"\0")
+    return h.hexdigest()
+
+
 def run_skill_tests(skill_dir: Path, timeout: float = TEST_TIMEOUT_S) -> dict:
     """Compile and test a skill in a subprocess. Returns evidence, never raises.
 
@@ -277,18 +286,32 @@ def run_skill_tests(skill_dir: Path, timeout: float = TEST_TIMEOUT_S) -> dict:
     # private TMPDIR (Linux Landlock via the running server's _confine.py, like the release gate)
     tmp = tempfile.mkdtemp(prefix="syrax_skilltest_tmp_")
     env["TMPDIR"] = tmp
+    # Audit 2026-11-01 (S3): the run had only a write boundary, so a test read a protected keys file and reached the
+    # local model (11434), the UI and pypi. It now gets what own code's python_execute gets: reading limited to the
+    # system, the interpreter and the repository without backend/config, and TCP only to the web and DNS.
+    from syrax import tools as _tools
+
+    readable = [*_tools.read_roots(), str(skill_dir), str(skill_dir.parent), str(skill_dir.parent.parent), tmp, guard.SITE_DIR]
+    before = _source_hash(skill_dir)
     try:
         proc = subprocess.run(
             # --rootdir: pytest lists every folder between its rootdir and the test; under %TEMP% that
             # once tripped over a Chrome temp folder vanishing mid-listing (2026-10-12) and failed good skills
             _confine.wrap([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--rootdir", str(skill_dir),
-                           str(skill_dir / "test_skill.py")], [skill_dir, tmp]),
+                           str(skill_dir / "test_skill.py")], [skill_dir, tmp], readable=readable,
+                          listable=_tools.list_roots(), tcp_connect=_tools.OWN_TCP_PORTS),
             cwd=str(BACKEND_ROOT), capture_output=True, text=True, timeout=timeout, env=env,
         )
     except subprocess.TimeoutExpired:
         shutil.rmtree(tmp, ignore_errors=True)
         return {"status": "FAILED", "stage": "test", "evidence": f"tests timed out after {timeout}s", "passed": 0, "failed": 0, "ms": int((time.monotonic() - started) * 1000)}
     shutil.rmtree(tmp, ignore_errors=True)
+    # Audit 2026-11-01 (S1): the tests may write the skill's folder, and one rewrote skill.py after the safety scan;
+    # the rewritten code was registered as VERIFIED. What ran its tests must be what gets registered.
+    if _source_hash(skill_dir) != before:
+        return {"status": "FAILED", "stage": "tampered", "evidence": "the tests changed the skill's own source files "
+                "(skill.py, test_skill.py or __init__.py) while they ran; what was scanned is not what would be registered",
+                "passed": 0, "failed": 0, "ms": int((time.monotonic() - started) * 1000)}
     out = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
     passed, failed = _summary(out)
     ok = proc.returncode == 0 and passed > 0 and failed == 0

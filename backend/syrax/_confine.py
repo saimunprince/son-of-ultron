@@ -225,14 +225,26 @@ def apply(spec: Optional[dict]) -> Optional[str]:
     return None
 
 
-def wrap(cmd: list, writable: Iterable[str]) -> list:
+def wrap(cmd: list, writable: Iterable[str], readable: Optional[Iterable[str]] = None, listable: Iterable[str] = (),
+         tcp_connect: Optional[Iterable[int]] = None) -> list:
     """`cmd` run under a Landlock write boundary: the live server's copy of this file (never the tree under test, which
-    could carry a changed one) applies it and then execs `cmd`. Unchanged where Landlock is absent."""
+    could carry a changed one) applies it and then execs `cmd`. Unchanged where Landlock is absent. With `readable`
+    (and `listable`), reading is limited too; with `tcp_connect`, TCP goes only to those ports (as landlock())."""
     if abi() < 1:
         return list(cmd)
     args = [sys.executable, os.path.abspath(__file__)]
     for path in writable:
         args += ["--write", str(path)]
+    if readable is not None:
+        args.append("--read-limited")
+        for path in readable:
+            args += ["--read", str(path)]
+        for path in listable:
+            args += ["--list", str(path)]
+    if tcp_connect is not None:
+        args.append("--tcp-limited")
+        for port in tcp_connect:
+            args += ["--tcp", str(int(port))]
     return [*args, "--", *map(str, cmd)]
 
 
@@ -243,11 +255,16 @@ def _main(argv: List[str]) -> int:
         return 2
     split = argv.index("--")
     opts, cmd = argv[:split], argv[split + 1:]
-    writable = [opts[i + 1] for i, a in enumerate(opts) if a == "--write" and i + 1 < len(opts)]
+    def values(flag: str) -> List[str]:
+        return [opts[i + 1] for i, a in enumerate(opts) if a == flag and i + 1 < len(opts)]
+
+    writable = values("--write")
+    readable = values("--read") if "--read-limited" in opts else None
+    tcp = [int(p) for p in values("--tcp")] if "--tcp-limited" in opts else None
     if not cmd:
         return 2
     try:
-        landlock(writable + ["/dev/null", "/dev/shm"])
+        landlock(writable + ["/dev/null", "/dev/shm"], readable, values("--list"), tcp)
     except OSError as e:
         sys.stderr.write(f"confinement failed, nothing ran: {e}\n")
         return 126
