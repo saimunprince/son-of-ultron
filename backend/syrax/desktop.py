@@ -65,6 +65,35 @@ def local_clock(now=None) -> str:
     return f"{t.strftime('%A %Y-%m-%d %H:%M:%S')} (UTC{off[:3]}:{off[3:]})"
 
 
+def resolve_zone(place: str) -> Optional[str]:
+    """An IANA zone for a zone name or a city in one ('Tokyo' -> 'Asia/Tokyo'), or None. Live 2026-11-01: asked the
+    time in Tokyo, the brain did the zone arithmetic itself and was 11 hours off; the zone database knows."""
+    import zoneinfo
+
+    want = re.sub(r"\s+", "_", (place or "").strip()).lower()
+    if not want:
+        return None
+    try:
+        zones = sorted(zoneinfo.available_timezones())
+    except Exception:
+        return None
+    for z in zones:
+        if z.lower() == want:
+            return z
+    city = [z for z in zones if z.rsplit("/", 1)[-1].lower() == want and not z.startswith("Etc/")]
+    return city[0] if city else None
+
+
+def zone_clock(zone: str, now=None) -> str:
+    """The date, time and offset in `zone` now (or at `now`), in local_clock's form."""
+    import datetime as _dt
+    import zoneinfo
+
+    t = (now or _dt.datetime.now().astimezone()).astimezone(zoneinfo.ZoneInfo(zone))
+    off = t.strftime("%z")
+    return f"{t.strftime('%A %Y-%m-%d %H:%M:%S')} (UTC{off[:3]}:{off[3:]})"
+
+
 def session_env() -> Dict[str, str]:
     """Environment that reaches the graphical session even from a service."""
     env = dict(os.environ)
@@ -400,7 +429,7 @@ class DesktopControl(BaseTool):
         "Control the human's own computer (GNOME/Linux, Windows or macOS). Use this when they want something to happen "
         "on THEIR screen: open a website in their browser, open a file/folder/app, set volume, "
         "play/pause music, take a screenshot, show a notification, read/write the clipboard, find "
-        "files, check battery/CPU/RAM/disk, lock the screen. Whether an app is installed: list_apps with its name "
+        "files, check battery/CPU/RAM/disk and the time (here or in another city: system_info with that city as target), lock the screen. Whether an app is installed: list_apps with its name "
         "(on Windows Microsoft Store apps such as WhatsApp included), never a file search. On Windows also: type text into the focused window "
         "(type_text), press keys (hotkey, e.g. ctrl+c, alt+tab), click at screen pixels (click) or on what the screen shows by its words (click_text: a button, menu, tab, link or text; find_text only says where it is), switch dark mode "
         "(dark_mode) and turn the display off (display_off); the human stops typing and clicking by moving the "
@@ -417,7 +446,7 @@ class DesktopControl(BaseTool):
                     "type_text", "hotkey", "click", "click_text", "find_text", "dark_mode", "display_off", "trash", "untrash", "camera",
                 ],
             },
-            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name (Store apps included). find_files: name pattern. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin. untrash: the original path of a trashed file, to put it back (Linux)."},
+            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name (Store apps included). find_files: name pattern. system_info: a city or time zone (Tokyo, Europe/London) to also read the time there. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin. untrash: the original path of a trashed file, to put it back (Linux)."},
             "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop; each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
@@ -774,10 +803,16 @@ class DesktopControl(BaseTool):
         found = await asyncio.to_thread(_find, root, target.lower(), 25, 8.0)
         return ToolResult(output="\n".join(found) if found else f"No files matching '{target}' under {root}.")
 
-    async def _do_system_info(self, **_) -> ToolResult:
+    async def _do_system_info(self, target: str = "", **_) -> ToolResult:
         # 2026-10-28 live: asked for the time, the brain read this tool (which had no clock) and answered
         # "18:03" at 15:18. The clock is a reading like the others, so an answer about it has a source.
         lines = [f"Local time: {local_clock()}"]
+        if target:
+            zone = resolve_zone(target)
+            if zone is None:
+                return ToolResult(error=f"system_info: no time zone known for {target!r}; give a city in the zone "
+                                        "database or a zone name such as Asia/Tokyo or Europe/London")
+            lines.append(f"Time in {zone}: {zone_clock(zone)}")
         load = await asyncio.to_thread(sysinfo.loadavg)
         if load:
             lines.append(f"CPU load: {load[0]:.2f} {load[1]:.2f} {load[2]:.2f} ({os.cpu_count()} cores)")
