@@ -611,10 +611,6 @@ class DevLoop:
         task = self.journal.task(task_id) if task_id else None
         judged = judge_problems(files)  # every task kind: only a human-made commit changes the judges
         problems += judged + tamper_problems(self.root, files)
-        if task and task.get("kind") == "eval":
-            # Audit 2026-11-01 (self-improvement F6): a quality case works in the running tree; it never releases (no
-            # case asks it to), and its edits are rolled back after the case
-            problems.append("a quality case never releases: its edits are rolled back after the case")
         active = None
         if task and task.get("kind") == "autonomous":
             oid = self._active_objective_id(task)

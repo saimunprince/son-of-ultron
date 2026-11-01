@@ -655,6 +655,9 @@ class Core:
 
         # python_execute confines SYRAX's own work with a kernel write boundary (tools.confinement, 2026-10-28)
         _tools.TASK_KIND, _tools.WRITE_ROOTS = kind, ()
+        if kind == "eval" and getattr(getattr(self, "quality", None), "ws", None):
+            # a quality case's confined python writes its own case folder (audit 2026-11-01, F6)
+            _tools.WRITE_ROOTS = (self.quality.ws,)
         from syrax import permissions as _permissions
 
         # the operator's autonomy level bounds what own work may do (permissions.level_needed), read fresh per task
