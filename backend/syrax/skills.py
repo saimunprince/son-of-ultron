@@ -72,6 +72,7 @@ UNSAFE = HOST_HARM + (TREE_DELETE,) + WEAKENS_GUARD
 # .versions/<code_version>/ (the last KEPT_VERSIONS), so the human can roll back; DISABLED sticks until the human
 # enables; a new name that duplicates a VERIFIED skill's purpose (or its arguments and much of its purpose) is refused.
 VERSIONS_DIR = ".versions"
+VERIFIED_COPY = ".verified"  # the sources as last verified (S9)
 KEPT_VERSIONS = 5
 # A revision of a VERIFIED skill (audit 2026-10-27: pdf_text went VERIFIED -> FAILED live on 10-15 when a rewrite's
 # tests failed over its own folder) is written to <root>/.candidates/<root name>/<name>/ and goes through the same
@@ -860,9 +861,49 @@ class SkillFactory:
         skill_dir = self.root / name
         if not (skill_dir / "skill.py").is_file():
             raise ValueError(f"no skill named {name!r}")
+        self._keep_verified_before_retest(name)
         result = await self._gate(skill_dir)
         return await self._commit(name, result, purpose=purpose, dependencies=dependencies,
                                   known_limitations=known_limitations, created_task_id=created_task_id)
+
+    def _keep_verified_before_retest(self, name: str) -> Optional[int]:
+        """Audit 2026-11-01 (skills S9): skill_test on code edited on disk (by a human-mode python_execute or the
+        editor) kept no version, so the verified code was lost and a failing test left nothing to roll back to. The
+        copy saved at the last verification (VERIFIED_COPY) goes to .versions/<code_version> first, when the disk
+        no longer matches the verified hash."""
+        row = self.journal.skill(name) or {}
+        skill_dir = self.root / name
+        saved = skill_dir / VERIFIED_COPY
+        want = row.get("content_hash")
+        if row.get("status") not in ("VERIFIED", "NOT_TESTED") or not want or content_hash(skill_dir) == want:
+            return None
+        if not saved.is_dir() or content_hash(saved) != want:
+            return None
+        code_version = int(row.get("code_version") or 1)
+        dst = self.versions_dir(name) / str(code_version)
+        if dst.is_dir() and content_hash(dst) == want:
+            return code_version  # already kept
+        shutil.rmtree(dst, ignore_errors=True)
+        shutil.copytree(saved, dst)
+        for old in self.kept_versions(name)[:-KEPT_VERSIONS]:
+            shutil.rmtree(self.versions_dir(name) / str(old), ignore_errors=True)
+        try:
+            self.journal.record_sync("skill.version_kept", {"skill": name, "code_version": code_version, "content_hash": want,
+                                                             "reason": "its code changed on disk since it was verified"},
+                                     task_id=self.task_id_provider() if callable(getattr(self, "task_id_provider", None)) else None)
+        except Exception:
+            pass
+        return code_version
+
+    def _save_verified_copy(self, name: str) -> None:
+        """The verified sources, kept beside the skill so a later edit on disk can still be rolled back (S9)."""
+        skill_dir = self.root / name
+        saved = skill_dir / VERIFIED_COPY
+        shutil.rmtree(saved, ignore_errors=True)
+        saved.mkdir(parents=True, exist_ok=True)
+        for f in sorted(skill_dir.glob("*.py")) + [skill_dir / "skill.json"]:
+            if f.is_file():
+                shutil.copyfile(f, saved / f.name)
 
     async def _commit(self, name: str, result: dict, purpose: Optional[str] = None, dependencies: Optional[List[str]] = None,
                       known_limitations: Optional[List[str]] = None, created_task_id: Optional[str] = None) -> dict:
@@ -895,6 +936,8 @@ class SkillFactory:
             task_id=self.task_id_provider() if callable(getattr(self, "task_id_provider", None)) else None,
         )
         _atomic_write(skill_dir / "skill.json", json.dumps(row, indent=2, default=str))
+        if row.get("status") == "VERIFIED":
+            self._save_verified_copy(name)
         return row
 
     async def remove(self, name: str) -> dict:
