@@ -522,6 +522,16 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   corrected.
 - Each fix went through the full gate, GREEN, and was pushed.
 
+### 2026-11-01, late night: three more fixes
+
+- **S6:** a skill objective whose skill was verified before the objective was set now closes on a real successful
+  call after it. Such objectives used to stay BLOCKED (#27, #33, #37).
+- **F14:** a skill SYRAX writes is now read by a second brain before it goes live, as code releases are. A
+  rejection, or no reviewer, keeps it out; a failed revision leaves the old version live.
+- **D1:** the daily RISE, devlog, archive and matrix pages now say under their title that they show the state from
+  before their own release. The publish's own gate and commit appear in the next day's pages.
+- Each fix went through the full gate, GREEN, and was pushed.
+
 ## Open
 
 - **Needs the owner:**
