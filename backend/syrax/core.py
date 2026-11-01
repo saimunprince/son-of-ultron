@@ -151,6 +151,7 @@ TASK_DEADLINE_S = {
     "eval": None,
 }
 DEADLINE_REASON = "ran out of time: the task's deadline ({span}) passed"
+OBSERVER_TIMEOUT_S = float(os.getenv("SYRAX_OBSERVER_TIMEOUT_S", "10"))
 ISOLATION_FAILED = "own work runs only in its own worktree, and the worktree could not be made"
 ESTOP_AT_START = "emergency stop: it was set while the task was starting, so the task never ran"
 QUALITY_TIMEOUT_REASON = "the quality case ran out of time"  # quality.py's runner cancels with this text
@@ -272,7 +273,13 @@ class Core:
             await self.presentation.on_direct(event)
         for cb in list(self.observers):
             try:
-                await cb(event)
+                # Audit 2026-11-01 (I-03): one client that stopped reading (a sleeping laptop, a frozen tab) held every
+                # broadcast, and with it the running task, until the socket timed out. A client that takes longer
+                # than OBSERVER_TIMEOUT_S is dropped; it gets everything again when it reconnects (the hello replays).
+                await asyncio.wait_for(cb(event), OBSERVER_TIMEOUT_S)
+            except asyncio.TimeoutError:
+                logger.warning(f"an observer took over {OBSERVER_TIMEOUT_S} s to take an event: dropped")
+                self.unsubscribe(cb)
             except Exception as e:
                 logger.warning(f"observer failed: {e}")
 
