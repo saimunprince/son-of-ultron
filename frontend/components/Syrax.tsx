@@ -157,6 +157,8 @@ export default function Syrax() {
   const pendingAskRef = useRef<string | null>(null);
   const lastSentRef = useRef<LastSent>(null); // the double-submit guard (lib/submitGuard)
   const runningTaskRef = useRef<string | null>(null); // the task the backend runs now (hello.running, task.started)
+  // audit 2026-11-01 (I-14): every reconnect's hello pushed the same INTERRUPTED / RUNNING / QUEUED notices again
+  const helloNoticesRef = useRef<Set<string>>(new Set());
 
   const [camera, setCamera] = useState<CameraState>("off");
   const [tracker, setTracker] = useState<TrackerStatus>({ hands: 0, mode: "idle" });
@@ -341,6 +343,8 @@ export default function Syrax() {
           setToolCount(e.tools.length);
           runningTaskRef.current = e.running?.task_id ?? null;
           for (const t of e.interrupted) {
+            if (helloNoticesRef.current.has(`interrupted:${t.task_id}`)) continue;
+            helloNoticesRef.current.add(`interrupted:${t.task_id}`);
             push({
               kind: "notice",
               id: nextId++,
@@ -349,9 +353,14 @@ export default function Syrax() {
               secondary: dismissAction(t.task_id),
             });
           }
-          if (e.running) push({ kind: "notice", id: nextId++, text: `RUNNING · "${e.running.goal.slice(0, 80)}" · step ${e.running.step}` });
+          if (e.running && !helloNoticesRef.current.has(`running:${e.running.task_id}`)) {
+            helloNoticesRef.current.add(`running:${e.running.task_id}`);
+            push({ kind: "notice", id: nextId++, text: `RUNNING · "${e.running.goal.slice(0, 80)}" · step ${e.running.step}` });
+          }
           setQueued((e.queue ?? []).length);
           for (const q of e.queue ?? []) {
+            if (helloNoticesRef.current.has(`queued:${q.task_id}`)) continue;
+            helloNoticesRef.current.add(`queued:${q.task_id}`);
             push({
               kind: "notice",
               id: nextId++,
@@ -664,6 +673,8 @@ export default function Syrax() {
           setFlashError(true);
           setTimeout(() => setFlashError(false), 1800);
           break;
+        case "pong":
+          break; // the heartbeat's answer: nothing to show (it was logged to the console on every beat)
         default:
           // audit 2026-10-29: unknown server messages vanished without a trace; they are at least visible to whoever debugs
           console.debug("[SYRAX] unhandled server message", (e as { type?: string }).type);

@@ -148,6 +148,10 @@ const d=await r.json();const a=d.autonomy||{};
 s.innerHTML=(d.estop?'<b>Emergency stop is ON</b><br>':'')+'Autonomy: '+esc(a.enabled?('level '+a.level+', '+((a.state||{}).state||'?')):'off')
 +' · today '+esc(a.autonomous_today)+'/'+esc(a.daily_tasks)+'<br>Now: '+(d.running?esc(d.running.goal):'<span class="mute">idle</span>')
 +'<ul>'+d.tasks.map(x=>'<li>'+esc(x.status)+' — '+esc(x.goal)+'</li>').join('')+'</ul>';b.disabled=!!d.estop}catch(e){s.textContent='SYRAX is not answering.'}}
-async function stopIt(){if(!confirm('Stop SYRAX now?'))return;await fetch('/estop',{method:'POST',headers:h});load()}
+async function stopIt(){if(!confirm('Stop SYRAX now?'))return;b.disabled=true;
+try{const r=await fetch('/estop',{method:'POST',headers:h});if(!r.ok)throw new Error(r.status==401?'the link has no valid token':'error '+r.status);
+s.insertAdjacentHTML('afterbegin','<b>Stop sent.</b><br>')}catch(e){b.disabled=false;
+s.insertAdjacentHTML('afterbegin','<b style="color:var(--red)">STOP NOT SENT: '+esc(e.message||'SYRAX is not answering')+'. Try again.</b><br>')}
+load()}
 load();setInterval(load,5000);
 </script></body></html>"""

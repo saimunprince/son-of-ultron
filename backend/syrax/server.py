@@ -535,9 +535,11 @@ class Session:
             tid = snap["running"]["task_id"]
             events = await asyncio.to_thread(get_journal().events, tid)
             await self.send({"type": "task_events", "task_id": tid, "events": events})
-            await self.send({"type": "state", **snap["state"]})
-        else:
-            await self.send({"type": "state", "state": "idle"})
+        # Audit 2026-11-01 (I-04): the last state came from the snapshot taken before the hello, the briefing and the
+        # replay; a task that ended (or began) meanwhile left the UI showing busy (or idle) until the next change.
+        # The state now is what is sent last.
+        live = getattr(self.core, "state", None) or {}
+        await self.send({"type": "state", **(live if self.core.busy and live.get("state") else {"state": "idle"})})
 
     async def handle(self, msg: dict) -> None:
         kind = msg.get("type")
