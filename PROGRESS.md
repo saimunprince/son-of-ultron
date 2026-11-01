@@ -464,6 +464,18 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   through python instead of apply_patch after Gemini was busy.
 - SYRAX now runs under the login service.
 
+### 2026-11-01, night: quality cases are confined like SYRAX's own work
+
+- **Found in quality run #15:** a quality case rewrote live code through python. The cleanup undid it, but nothing
+  stopped it.
+- **Fixed:** a quality case's python now runs under the same kernel limits as SYRAX's own work. It can write only
+  the workspace and the suite's own case folder.
+- **Full quality run #17 with the limits: 63 of 67**, with no permission errors. The four misses were the brain's
+  own:
+  - two cases where a different tool was chosen;
+  - an edit whose diff carried the viewer's line numbers;
+  - a deep log report.
+
 ## Open
 
 - **Needs the owner:**
