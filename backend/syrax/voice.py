@@ -56,6 +56,16 @@ def load_voice(journal) -> str:
 TTS_RATE = os.getenv("SYRAX_TTS_RATE", "-10%")
 TTS_PITCH = os.getenv("SYRAX_TTS_PITCH", "-14Hz")
 WHISPER_MODEL = os.getenv("SYRAX_WHISPER_MODEL", "small.en")
+# Audit 2026-11-01 (integrations I-06): speech was forced to English, so the owner's Bengali came back as English
+# garbage. The language is detected unless SYRAX_STT_LANGUAGE names one; an English-only local model (*.en) stays
+# English. For Bengali offline, SYRAX_WHISPER_MODEL=small (a ~460 MB download, the owner's choice).
+STT_LANGUAGE = os.getenv("SYRAX_STT_LANGUAGE") or None
+TTS_VOICE_BN = os.getenv("SYRAX_TTS_VOICE_BN", "bn-BD-PradeepNeural")
+
+
+def stt_language(model: str) -> Optional[str]:
+    """The language to force for `model`: SYRAX_STT_LANGUAGE, else English for an *.en model, else None (detect)."""
+    return STT_LANGUAGE or ("en" if model.endswith(".en") else None)
 MAX_TTS_CHARS = 900
 MAX_AUDIO_BYTES = 12 * 1024 * 1024
 
@@ -77,13 +87,20 @@ def speakable(text: str) -> str:
     return text
 
 
+def voice_for(text: str) -> str:
+    """The voice for `text`: a Bengali voice for Bengali script (an English voice reads it as noise), else the pick."""
+    from syrax.claims import bengali
+
+    return TTS_VOICE_BN if bengali(text) else (ACTIVE_VOICE or TTS_VOICE)
+
+
 async def synthesize(text: str) -> bytes:
     import edge_tts
 
     text = speakable(text)
     if not text:
         return b""
-    communicate = edge_tts.Communicate(text, ACTIVE_VOICE or TTS_VOICE, rate=TTS_RATE, pitch=TTS_PITCH)
+    communicate = edge_tts.Communicate(text, voice_for(text), rate=TTS_RATE, pitch=TTS_PITCH)
     audio = bytearray()
     async for chunk in communicate.stream():
         if chunk.get("type") == "audio":
@@ -123,7 +140,7 @@ class LocalWhisper:
         with self._lock:
             segments, _ = model.transcribe(
                 io.BytesIO(audio),
-                language="en",
+                language=stt_language(self.size),
                 beam_size=1,
                 vad_filter=True,
                 condition_on_previous_text=False,
@@ -143,7 +160,7 @@ async def groq_transcribe(audio: bytes, key: str) -> str:
             files={"file": ("speech.wav", audio, "audio/wav")},
             data={
                 "model": "whisper-large-v3-turbo",
-                "language": "en",
+                **({"language": STT_LANGUAGE} if STT_LANGUAGE else {}),  # multilingual: detected unless set
                 "prompt": STT_PROMPT,
                 "response_format": "json",
                 "temperature": "0",

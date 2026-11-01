@@ -80,8 +80,8 @@ from syrax.selfmodel import SECTIONS
 redact.install()  # every log line of this process has credential-shaped strings masked (audit 2026-10-25)
 
 VOICE_HINT = (
-    "\n\n[Spoken aloud by voice. Answer in one or two short spoken English "
-    "sentences. No markdown, no lists, no code unless asked.]"
+    "\n\n[Spoken aloud by voice. Answer in one or two short spoken sentences, in the language the human "
+    "spoke. No markdown, no lists, no code unless asked.]"
 )
 
 HOST = os.getenv("SYRAX_HOST", "127.0.0.1")
