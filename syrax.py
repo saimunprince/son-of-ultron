@@ -784,6 +784,22 @@ def _startup_script() -> Path:
     return Path(os.environ.get("APPDATA", str(Path.home() / "AppData/Roaming"))) / "Microsoft/Windows/Start Menu/Programs/Startup/SYRAX.vbs"
 
 
+def service_path(environ: Optional[dict] = None) -> str:
+    """The PATH the login service runs with. Live 2026-11-01: systemd's user manager does not read the shell's PATH,
+    so the service could not find node and npx in ~/.local/bin and failed at start ('No such file or directory:
+    npx'). The installing shell's PATH is kept, with the folders of node, npm and npx first if they are elsewhere."""
+    env = os.environ if environ is None else environ
+    parts = [p for p in str(env.get("PATH") or "").split(os.pathsep) if p]
+    for tool in ("node", "npm", "npx"):
+        found = shutil.which(tool, path=os.pathsep.join(parts) or None)
+        if found and os.path.dirname(found) not in parts:
+            parts.insert(0, os.path.dirname(found))
+    for d in ("/usr/local/bin", "/usr/bin", "/bin"):
+        if d not in parts:
+            parts.append(d)
+    return os.pathsep.join(dict.fromkeys(parts))
+
+
 def install_service() -> None:
     setup(verbose=False)
     if LINUX:
@@ -791,6 +807,7 @@ def install_service() -> None:
         unit_dir.mkdir(parents=True, exist_ok=True)
         unit = unit_dir / f"{SERVICE_NAME}.service"
         exec_start = " ".join(f'"{a}"' for a in launcher_cmd())
+        path_line = f'Environment="PATH={service_path()}"\n'
         unit.write_text(f"""[Unit]
 Description=SYRAX, son of Ultron
 After=graphical-session.target network-online.target
@@ -799,7 +816,7 @@ PartOf=graphical-session.target
 [Service]
 Type=simple
 WorkingDirectory={ROOT}
-ExecStart={exec_start}
+{path_line}ExecStart={exec_start}
 Restart=on-failure
 RestartSec=5
 KillMode=control-group
