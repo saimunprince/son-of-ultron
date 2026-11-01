@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import sys
 from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import Field
@@ -57,7 +58,7 @@ def reverse_of(tool: str, args: Dict[str, Any], output: str) -> Optional[Dict[st
     if tool == "wallpaper" and (m := WALLPAPER.search(out)) and m.group(2) != "(none)":
         return {"label": f"wallpaper {m.group(2)} -> {m.group(1)}",
                 "reverse": {"tool": "wallpaper", "args": {"action": "set", "path": m.group(2)}}}
-    if tool == "desktop" and a.get("action") == "dark_mode" and (m := THEME.search(out)):
+    if tool == "desktop" and a.get("action") == "dark_mode" and (m := THEME.search(out)) and m.group(1) != m.group(2):
         return {"label": f"Windows {m.group(1)} -> {m.group(2)} mode",
                 "reverse": {"tool": "desktop", "args": {"action": "dark_mode", "value": "off" if m.group(1) == "light" else "on"}}}
     if tool == "desktop" and a.get("action") == "dark_mode" and (m := GNOME_THEME.search(out)) and m.group(1) != m.group(2):
@@ -71,11 +72,18 @@ def reverse_of(tool: str, args: Dict[str, Any], output: str) -> Optional[Dict[st
         if (m := MUTE_WAS.search(out)) and v in ("mute", "unmute") and (m.group(1) == "muted") != (v == "mute"):
             return {"label": f"volume {v}d", "reverse": {"tool": "desktop", "args": {"action": "volume", "value": "unmute" if v == "mute" else "mute"}}}
         return None
-    if tool == "desktop" and a.get("action") == "trash" and (m := TRASHED.search(out)):
+    if tool == "desktop" and a.get("action") == "trash" and sys.platform.startswith("linux") and (m := TRASHED.search(out)):
+        # untrash is Linux's freedesktop trash; elsewhere the Recycle Bin restores it (audit 2026-11-01, I-02)
         return {"label": f"moved {m.group(1)} to the trash", "reverse": {"tool": "desktop", "args": {"action": "untrash", "target": m.group(1)}}}
     if tool == "organize_folder" and a.get("action") == "organize" and (m := ORGANIZED.search(out)):
         return {"label": f"sorted {m.group(1)} file(s) in {m.group(2)}",
                 "reverse": {"tool": "organize_folder", "args": {"action": "undo", "folder": m.group(2), "manifest": m.group(3)}}}
+    if tool == "str_replace_editor" and a.get("command") == "create" and a.get("path") and "File created successfully" in out:
+        # Audit 2026-11-01 (I-01, confirmed): undo_edit after creating a NEW file answered "undone successfully" and
+        # left the file (the editor's history holds the new text, not the absence of a file). Undoing it moves the
+        # file to the trash, which asks first and can be restored.
+        return {"label": f"created {a['path']}",
+                "reverse": {"tool": "desktop", "args": {"action": "trash", "target": a["path"]}}}
     if tool == "str_replace_editor" and a.get("command") in EDITS and a.get("path"):
         return {"label": f"{a['command']} {a['path']}",
                 "reverse": {"tool": "str_replace_editor", "args": {"command": "undo_edit", "path": a["path"]}}}
