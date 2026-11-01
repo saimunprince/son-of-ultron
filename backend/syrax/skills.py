@@ -582,6 +582,14 @@ class SkillFactory:
                     self.journal.backfill_skill_hash_sync(row["name"], content_hash(self.root / row["name"]))
                 except Exception:
                     pass  # the next verification stores it; a missing hash never stops a skill from loading
+            elif (now := content_hash(self.root / row["name"])) != row["content_hash"]:
+                # Audit 2026-11-01 (skills S4, confirmed): code edited on disk after its verification was registered
+                # as VERIFIED at the next boot, untested. It waits for a test now (skill_test, or the prebuilt
+                # installer for a shipped skill, which re-verifies changed ones right after this).
+                self.journal.set_skill_status_sync(row["name"], "NOT_TESTED", note=(
+                    f"its code changed on disk since it was verified ({str(row['content_hash'])[:12]} -> {now[:12]}); "
+                    "not loaded until skill_test verifies it again"))
+                continue
             try:
                 src = self.root / row["name"] / "skill.py"
                 unsafe = unsafe_reasons(src.read_text(encoding="utf-8", errors="replace")) if src.is_file() else []
