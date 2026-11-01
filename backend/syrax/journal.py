@@ -2191,14 +2191,22 @@ class Journal:
             rows = self._db.execute(sql, params).fetchall()
         return [self._task_dict(r) for r in rows]
 
-    def events(self, task_id: str, limit: int = 500, after_id: int = 0) -> List[dict]:
+    def events(self, task_id: str, limit: int = 500, after_id: Optional[int] = None) -> List[dict]:
+        """A task's events in order; with `after_id`, only those after it. Audit 2026-11-01 (LIFE-6): the default was
+        after_id=0, which hid every event of a task merged in from the Windows journal (their ids are below zero)."""
         limit = max(1, min(int(limit), 5000))
         with self._lock:
-            rows = self._db.execute(
-                "SELECT id, ts, task_id, type, payload, seq FROM events "
-                "WHERE task_id=? AND id>? ORDER BY seq LIMIT ?",
-                (task_id, after_id, limit),
-            ).fetchall()
+            if after_id is None:
+                rows = self._db.execute(
+                    "SELECT id, ts, task_id, type, payload, seq FROM events WHERE task_id=? ORDER BY seq LIMIT ?",
+                    (task_id, limit),
+                ).fetchall()
+            else:
+                rows = self._db.execute(
+                    "SELECT id, ts, task_id, type, payload, seq FROM events "
+                    "WHERE task_id=? AND id>? ORDER BY seq LIMIT ?",
+                    (task_id, after_id, limit),
+                ).fetchall()
         return [{**dict(r), "payload": _loads(r["payload"], {})} for r in rows]
 
     def last_event_id(self) -> int:
