@@ -453,6 +453,17 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
 - A quality run was cut short when SYRAX was restarted during it. Cause: the operator's idle check printed "no" but
   exited 0. The check now fails when SYRAX is busy. The quality suite runs again next.
 
+### 2026-11-01, evening: quality on the merged code
+
+- **Full quality run #15 on the merged code: 61 of 67.**
+- **Two misses came from today's changes, both fixed:**
+  - "Reply with the single word: ready" used a tool. The new persona's "use tools whenever they help" was read as
+    "always"; it now says simple talk needs no tool.
+  - Opening a `file://` page failed.
+- **Four misses were the brain's own:** a renamed function kept as an alias, two deep data tasks, and one edit made
+  through python instead of apply_patch after Gemini was busy.
+- SYRAX now runs under the login service.
+
 ## Open
 
 - **Needs the owner:**
