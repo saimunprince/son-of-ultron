@@ -235,6 +235,12 @@ def read_journal(path: Path, now: Optional[float] = None) -> Dict[str, Any]:
     now = now or time.time()
     c = sqlite3.connect(f"file:{Path(path).as_posix()}?mode=ro", uri=True)
     c.row_factory = sqlite3.Row
+    # Audit 2026-11-01 (docs D2): rows merged in from the Windows journal counted as this PC's runtime evidence, so
+    # "Desktop truth" and "Play on YouTube" were GREEN on Linux with no Linux evidence. Only this PC's rows count
+    # (rise._own_rows, the same views the RISE ledger uses).
+    from syrax.rise import _own_rows
+
+    _own_rows(c)
     try:
         out: Dict[str, Any] = {"tool_stats": tool_stats(c, now)}
         # per case, the latest verdict within the window: a later subset run must
