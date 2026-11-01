@@ -438,6 +438,13 @@ class DesktopControl(BaseTool):
         if not target:
             return ToolResult(error="open needs a target (URL, file or folder).")
         t = os.path.expanduser(target)
+        if t.lower().startswith("file://"):
+            # quality case browser_read, 2026-11-01: "file:///…/page.html" was "not a URL, an existing path or an app"
+            from urllib.parse import unquote, urlparse
+
+            local = unquote(urlparse(t).path)
+            if os.path.exists(local):
+                t = local
         if _looks_like_url(t) and not os.path.exists(t):
             if not t.startswith("http"):
                 t = "https://" + t
