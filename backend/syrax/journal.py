@@ -1084,6 +1084,11 @@ class Journal:
                 ),
             )
             cp_id = int(cur.lastrowid)
+            # Audit 2026-11-01 (LIFE-5, P1): every checkpoint stored the whole conversation again, so one 31-step task
+            # held 2.9 MB and checkpoint contexts were 137 MB of a 193 MB journal. A resume reads only the latest
+            # checkpoint's context (repro reads the latest too): the earlier ones of this task are emptied. Their
+            # other fields (stage, steps, verified, assumptions) stay.
+            cur.execute("UPDATE checkpoints SET context='[]' WHERE task_id=? AND seq<? AND context!='[]'", (task_id, seq))
             payload = {
                 "checkpoint_id": cp_id,
                 "seq": seq,
