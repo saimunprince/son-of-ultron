@@ -30,25 +30,31 @@ BOOKKEEPING = {"terminate", "ask_human", "self_inspect", "know", "recall", "jour
 
 
 def real_use(journal: Journal, limit_events: int = 5000) -> Dict[str, dict]:
-    """Per VERIFIED skill: calls and failures since its version was verified."""
+    """Per VERIFIED skill: calls and failures since its version was verified. Audit 2026-11-01 (skills S7): this read
+    only the newest 5000 events of any type (about 1.7 days live, most of them presentation and autonomy noise), so
+    repairs, deprecations and the automatic rollback never saw a skill's record (flight_search: 12 failures of 17
+    calls, seen as 0). Each skill's own tool results since its verification are read now (journal.tool_results);
+    `limit_events` is kept for callers and no longer limits anything."""
     skills = {s["name"]: s for s in journal.skills(status="VERIFIED")}
     out = {n: {"uses": 0, "failures": 0, "since": s.get("last_verified") or s.get("updated") or 0, "version": s.get("version"),
                "recent_failures": []} for n, s in skills.items()}
-    for e in journal.recent_events(limit_events):
-        if e["type"] not in ("tool.completed", "tool.failed"):
-            continue
-        name = e["payload"].get("name")
-        st = out.get(name)
-        if st is None or e["ts"] < st["since"] or e["payload"].get("refused"):
-            continue  # a refused call never ran: it says nothing about the skill
-        if e["type"] == "tool.failed" and misuse(name, e["payload"].get("output")):
-            continue  # nor does input it cannot act on (journal.misuse): a .txt given to pdf_text
-        st["uses"] += 1
-        if e["type"] == "tool.failed" or not e["payload"].get("ok", True):
-            st["failures"] += 1
-            if len(st["recent_failures"]) < 5:
-                st["recent_failures"].append({"task_id": e.get("task_id"), "output": str(e["payload"].get("output") or "")[-300:]})
+    for name, st in out.items():
+        for e in journal.tool_results(name, st["since"]):
+            _count_use(st, name, e)
+    for st in out.values():
+        st["recent_failures"] = st["recent_failures"][-5:]
     return out
+
+
+def _count_use(st: dict, name: str, e: dict) -> None:
+    if e["payload"].get("refused"):
+        return  # a refused call never ran: it says nothing about the skill
+    if e["type"] == "tool.failed" and misuse(name, e["payload"].get("output")):
+        return  # nor does input it cannot act on (journal.misuse): a .txt given to pdf_text
+    st["uses"] += 1
+    if e["type"] == "tool.failed" or not e["payload"].get("ok", True):
+        st["failures"] += 1
+        st["recent_failures"].append({"task_id": e.get("task_id"), "output": str(e["payload"].get("output") or "")[-300:]})
 
 
 def repairs(journal: Journal) -> List[dict]:
