@@ -4,29 +4,14 @@ The short, current page: where SYRAX stands now, what was done, what is next. Up
 Detail lives in [docs/AUDIT_2026-10-28.md](docs/AUDIT_2026-10-28.md) (findings and the open list), the commit
 messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
-## Now (2026-11-01, +0600)
+## Now (2026-11-01, 19:00 +0600)
 
-- **Stage:** a full audit and repair mission (2026-11-01) is done on branch `mission-2026-11-01`, waiting for the
-  owner's merge. Its report is [docs/AUDIT_2026-11-01.md](docs/AUDIT_2026-11-01.md).
-  - 25 fixes, each with a regression test (100 new tests).
-  - The full release gate is GREEN on the branch.
-  - Not pushed: the mission said no push without the owner.
-- **Live SYRAX:** running on `main` with the new persona (super villain, answer first, no self-introduction) and the
-  Freedom Engine. Autonomy is at level 3, the emergency stop is off.
-- **Fixed on the branch, most important first:**
-  - SYRAX-written tests in the gate can no longer reach the core's port;
-  - a release cannot neuter the tests that judge it;
-  - skill tests are sandboxed and cannot swap the skill they test;
-  - a crash cannot make a message or payment go out twice;
-  - the capability matrix uses only this PC's evidence;
-  - the journal stops growing by about 5 MB a day.
-- **New on the branch:**
-  - SYRAX notices requests it keeps failing and acquires the missing skill (capability gaps);
-  - Bengali voice: speech is detected, and Bengali is spoken in a Bengali voice.
-- **Open:** see the report, sections 7 and 8.
-  - One P0 is narrowed but not closed: any local process can claim the UI's Origin; SYRAX's own code paths are
-    blocked at the kernel.
-  - Tests in the gate can still read `backend/config`.
+- **Stage:** the 11-01 audit mission is merged and pushed; SYRAX runs on `main` as a login service. The evening was
+  live testing: SYRAX was asked real tasks, and what went wrong outside the protected files was fixed.
+- **Live SYRAX:** the super-villain persona with the Freedom Engine; autonomy level 3; the emergency stop is off.
+- **Ready, not merged:** branch `fix-world-clock` (the time in another city). Its tests pass; the full gate has
+  not run yet, so it is not on `main`.
+- **Open:** see Open below, and the report [docs/AUDIT_2026-11-01.md](docs/AUDIT_2026-11-01.md), sections 7 and 8.
 
 ## Done
 
@@ -554,10 +539,25 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   which was false. It corrected itself only when challenged. The claim checks live in `agent.py`, which needs the
   owner's approval.
 
+### 2026-11-01, evening: live tests, two fixes
+
+SYRAX was given real tasks (sums, RAM, memory, files, logic, time) and its service log was read.
+
+- **Logic:** "forall X (bird(X) -> fly(X))" failed with "unexpected 'X'", which told the brain nothing. A quantifier
+  now gets a plain message: the checker is propositional, so write it for the individual. Atoms like
+  `bird(tweety)` are read as one statement.
+- **Skills:** three new skills failed their first test run on a pydantic error, because the code wrote `name = "..."`
+  without a type. `skill_create` now refuses that at once and says the fix.
+- **Found, in the protected files (owner's review):**
+  - a data query's answer dropped a row;
+  - "what can't you do" was answered without reading its own limits;
+  - Gemini rejects some tool-result turns with HTTP 400 (an empty function name), so the call fails over.
+- **Found, waiting for its gate:** asked the time in Tokyo, SYRAX was 11 hours off. Branch `fix-world-clock` reads
+  it from the zone database.
+
 ## Open
 
 - **Needs the owner:**
-  - **Merge and push** branch `mission-2026-11-01` (report, section 8).
   - **Review the protected files:** `agent.py` and `brains.py` were changed on 10-30 and 10-31 under "sob koro",
     before the mission named them protected.
   - **Compact the journal:** about 130 MB of old checkpoint contexts, and VACUUM. Backup first.
