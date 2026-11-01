@@ -616,6 +616,27 @@ def _restore(root: Path, before: Dict[str, Optional[bytes]]) -> None:
             (root / f).write_bytes(data)
 
 
+_VIEW_NUMBER = re.compile(r"^([ +-])\s*\d+\t")
+
+
+def strip_view_numbers(diff: str) -> str:
+    """Quality runs #15 and #17 (2026-11-01, self_patch_edit): the brain copied the editor's `cat -n` view into the diff,
+    so every context line read "     25\tfrom syrax..." and the patch never applied. When every context and removed
+    line of every hunk carries such a number, the numbers are taken off (added lines too, where they have one); when
+    not all do, the diff is left exactly as written."""
+    lines = diff.split("\n")
+    body = [ln for ln in lines if ln[:1] in (" ", "-") and not ln.startswith("--- ")]
+    if not body or not all(_VIEW_NUMBER.match(ln) for ln in body):
+        return diff
+    out = []
+    for ln in lines:
+        if ln.startswith(("--- ", "+++ ", "@@")) or ln[:1] not in (" ", "+", "-"):
+            out.append(ln)
+        else:
+            out.append(_VIEW_NUMBER.sub(r"\1", ln, count=1))
+    return "\n".join(out)
+
+
 def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dict[str, Any]:
     """Apply a unified diff to the task's tree, compile the touched Python, run the covering tests."""
     root = root or work_root()
@@ -627,6 +648,7 @@ def apply_patch(diff: str, root: Optional[Path] = None, run: bool = True) -> Dic
     if not diff.endswith("\n"):
         diff += "\n"
     diff = normalize_headers(diff)
+    diff = strip_view_numbers(diff)
     files = diff_paths(diff)
     if not files:
         raise ValueError("not a unified diff: no '--- a/path' / '+++ b/path' headers")
