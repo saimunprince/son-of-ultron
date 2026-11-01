@@ -4,26 +4,29 @@ The short, current page: where SYRAX stands now, what was done, what is next. Up
 Detail lives in [docs/AUDIT_2026-10-28.md](docs/AUDIT_2026-10-28.md) (findings and the open list), the commit
 messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
-## Now (2026-10-31 evening, +0600)
+## Now (2026-11-01, +0600)
 
-- **Stage:** running live on Linux, with autonomy at **level 3**. At that level it may edit its workspace and run
-  code, but it does not release or restart itself. The emergency stop is off.
-- **Health today:**
-  - Quality 63/67 on a day of low Gemini quota. Each miss was followed up: two passed when run again, one is a known
-    brain slip, and one was a SYRAX fault, now fixed.
-  - The daily publish works again on Linux. Its first live run was at 16:44.
-  - No critical security finding is open.
-- **Brains:** Gemini first, then Groq, then local Ollama (`qwen3:4b-instruct`), then Pollinations. Groq and Ollama
-  now answer too: small brains get the tools the request needs and a short persona.
-- **Objectives:** 34 DONE, 9 BLOCKED, none open. The autonomy keeps deriving new ones from its own weaknesses.
-- **The plan** (docs/EVOLUTION_PLAN.md): 149 EXISTS, 110 PARTIAL, 3 MISSING, all 3 waiting for the owner.
-- **New today:**
-  - more things can be undone;
-  - work scenes ("coding mode");
-  - a phone page, off by default;
-  - rule-conflict checks;
-  - a "requests that cost you nothing" metric;
-  - tuned predictions.
+- **Stage:** a full audit and repair mission (2026-11-01) is done on branch `mission-2026-11-01`, waiting for the
+  owner's merge. Its report is [docs/AUDIT_2026-11-01.md](docs/AUDIT_2026-11-01.md).
+  - 25 fixes, each with a regression test (100 new tests).
+  - The full release gate is GREEN on the branch.
+  - Not pushed: the mission said no push without the owner.
+- **Live SYRAX:** running on `main` with the new persona (super villain, answer first, no self-introduction) and the
+  Freedom Engine. Autonomy is at level 3, the emergency stop is off.
+- **Fixed on the branch, most important first:**
+  - SYRAX-written tests in the gate can no longer reach the core's port;
+  - a release cannot neuter the tests that judge it;
+  - skill tests are sandboxed and cannot swap the skill they test;
+  - a crash cannot make a message or payment go out twice;
+  - the capability matrix uses only this PC's evidence;
+  - the journal stops growing by about 5 MB a day.
+- **New on the branch:**
+  - SYRAX notices requests it keeps failing and acquires the missing skill (capability gaps);
+  - Bengali voice: speech is detected, and Bengali is spoken in a Bengali voice.
+- **Open:** see the report, sections 7 and 8.
+  - One P0 is narrowed but not closed: any local process can claim the UI's Origin; SYRAX's own code paths are
+    blocked at the kernel.
+  - Tests in the gate can still read `backend/config`.
 
 ## Done
 
@@ -426,31 +429,42 @@ but no tests, and its self-written tools are checked by four patterns only. Thre
   - 11 moderate findings remain, all in development-only lint tools. Fixing them would need a major downgrade, so they
     were left alone.
 
+### 2026-11-01: full audit, repair and verification mission
+
+- Six parallel audits:
+  - security;
+  - lifecycle and journal;
+  - capability acquisition;
+  - self-improvement;
+  - integrations;
+  - docs against evidence.
+- 25 fixes on branch `mission-2026-11-01`, each with a regression test; the full gate is GREEN.
+- The full list, the open items and the owner decisions are in [docs/AUDIT_2026-11-01.md](docs/AUDIT_2026-11-01.md).
+- On `main` (live, not pushed):
+  - the persona: answer first, introduce itself only when asked, no slogans, replies that fit the moment;
+  - the owner's Freedom Engine core instructions.
+
 ## Open
 
 - **Needs the owner:**
-  - **Start at login:** `python syrax.py --install-service`. The PC was off overnight on 10-30, and SYRAX does not
-    start by itself.
-  - **Phone page:** `python syrax.py --phone on`, then `--restart`. It can only watch and press the emergency stop.
-  - **Objective #35 (`youtube_play`):** say "play lo-fi on YouTube" once. SYRAX's own work may no longer open
-    windows on your screen, so only your request can prove it.
-  - **3 plan items:** personality adaptation, visual tracking and sensor fusion. The last two need an always-on
-    camera (OpenCV itself is already installed). See docs/MISSING_ITEMS_2026-10-31.md.
-  - **5 Windows skills have no code on this PC:** make_docx, make_xlsx, make_pptx, make_pdf and system_optimizer.
-    Copy their `backend/skills/<name>` folders from the Windows PC, then rerun the import.
-  - **The Windows PC:** `git pull` there, then check that its gate is GREEN.
+  - **Merge and push** branch `mission-2026-11-01` (report, section 8).
+  - **Review the protected files:** `agent.py` and `brains.py` were changed on 10-30 and 10-31 under "sob koro",
+    before the mission named them protected.
+  - **Compact the journal:** about 130 MB of old checkpoint contexts, and VACUUM. Backup first.
+  - **Unused dependencies:** gymnasium, browsergym (with a 1.1 GB torch), datasets.
+  - **Linux packages:** `sudo apt install playerctl wl-clipboard` (media and clipboard).
+  - **Offline Bengali speech:** `SYRAX_WHISPER_MODEL=small`, a 460 MB download.
+  - **Start at login** (`--install-service`) and the **phone page** (`--phone on`).
+  - **Objective #35:** say "play lo-fi on YouTube" once.
+  - **3 plan items:** personality adaptation, visual tracking and sensor fusion.
+  - **5 Windows skills** have no code here; and the **Windows PC** needs a `git pull`.
 - **Watching:**
-  - **CPU heat:** 94.9 °C and 96.2 °C at midday, during long test runs. SYRAX raised the alerts.
-  - **Moderate npm findings:** 11, all in development-only lint tools. Fixing them would need a major downgrade.
-  - **`deep2_log_report`:** a quality case some brains miss. They read the slowest step's line wrongly.
+  - CPU heat during long runs: heavy runs now wait for the CPU to go below 65 °C;
+  - Ollama requests that still exceed 4,096 tokens.
 
 ## Next
 
-1. **Tomorrow morning:**
-   - the first drift and calibration readings after today's changes;
-   - the first effect of the tuned prior (a = 4);
-   - whether the matrix shows the release gate GREEN after the next publish.
-2. **As SYRAX works:**
-   - the new "requests that cost you nothing" number and the rule-conflict check, on real requests;
-   - skill-merge proposals, such as `youtube_open` with `youtube_play`, waiting for the owner's yes or no.
-3. **The 110 PARTIAL plan rows:** each one gets a check before any code, as before.
+1. After the merge: restart SYRAX and run a full quality suite on the merged code, when the CPU is cool.
+2. Close the remaining P2 items (report, section 7), smallest first.
+3. Watch the first capability gaps SYRAX finds on its own, and the first automatic skill repairs, now that real use
+   is measured over the skill's whole record.
