@@ -110,15 +110,19 @@ def test_a_rejection_still_rejects_and_an_approval_still_commits(tmp_path):
     assert git(root, "log", "-1", "--format=%s") == "syrax: fix VALUE"
 
 
-def test_a_conversation_release_commits_without_a_second_brain(tmp_path):
-    """The human is the reviewer of their own conversation's release: today's behaviour stays."""
+def test_a_conversation_release_without_a_second_brain_is_held(tmp_path):
+    """Changed 2026-11-01 by the owner's F10 spec (it said: the human is the reviewer of their own conversation's
+    release). Every conversation release is now reviewed by a second brain; with none, nothing is committed and the
+    human's edits stay in the working tree. Stricter than before, not weaker; flagged for the owner's sign-off."""
     root = repo(tmp_path)
+    head0 = git(root, "rev-parse", "HEAD")
     j, t, dl = reviewed_loop(tmp_path, root, nobody, kind="conversation")
     (root / "backend" / "syrax" / "mod.py").write_text("VALUE = 5\n")
     rep = asyncio.run(dl.release("five"))
-    assert rep["outcome"] == "COMMITTED" and git(root, "rev-parse", "HEAD") == rep["commit"]
+    assert rep["outcome"] == "REVIEW_UNAVAILABLE" and git(root, "rev-parse", "HEAD") == head0
+    assert (root / "backend" / "syrax" / "mod.py").read_text() == "VALUE = 5\n"
     kinds = [e["type"] for e in j.events(t)]
-    assert "review.unavailable" not in kinds and "review.completed" not in kinds and "commit.created" in kinds
+    assert "review.unavailable" in kinds and "commit.created" not in kinds
 
 
 def test_the_humans_explicit_opt_out_still_commits(tmp_path):

@@ -876,7 +876,11 @@ class DevLoop:
         # Audit 2026-10-27: the review was skipped silently when no reviewer was wired (core.py sets it). Own work
         # without a reviewer is held like own work without a second brain, never committed unreviewed; only the
         # human's opt-out in the service's environment at start (SYRAX_REVIEW=0, the test suite's conftest) skips it.
-        if task and task.get("kind") in ("autonomous", "eval") and (self.reviewer is not None or not self.review_opt_out):
+        # Audit 2026-11-01 (F10, owner's spec): a release asked for in a conversation is reviewed by a second brain too.
+        # Held (no review, or rejected), it is not committed and, unlike own work, not rolled back: the human asked for
+        # these edits, so they stay in the working tree with the diff and the findings for the human to judge.
+        human_release = bool(task and task.get("kind") == "conversation")
+        if task and task.get("kind") in REVIEWED_KINDS and (self.reviewer is not None or not self.review_opt_out):
             authors = sorted({e["payload"].get("provider") for e in self.journal.events(task_id) if e["type"] == "brain.answered"} - {None})
             told = summary + "".join(f"\n{k.capitalize()}: {v}" for k, v in plan.items())
             if impact["components"]:
@@ -895,6 +899,10 @@ class DevLoop:
                 reason = "; ".join(verdict.get("reasons") or []) or "no second brain could review the change"
                 tried = list(verdict.get("brains_tried") or [])
                 await self.journal.record("review.unavailable", {"reason": reason, "brains_tried": tried, "authors": authors}, task_id=task_id)
+                if human_release:
+                    await self.journal.record("release.held", {"reason": reason, "outcome": "REVIEW_UNAVAILABLE"}, task_id=task_id)
+                    report.update({"outcome": "REVIEW_UNAVAILABLE", "held": True, "rollback": None, "diff": _held_diff(info)})
+                    return report
                 rb = await asyncio.to_thread(self.rollback, info)
                 await self.journal.record("rollback.created", {"reason": "no second brain could review the change", "review_reason": reason,
                                                                "brains_tried": tried, **rb, "snapshot": str(snap)}, task_id=task_id)
@@ -902,6 +910,11 @@ class DevLoop:
                 return report
             await self.journal.record("review.completed", {"authors": authors, **verdict}, task_id=task_id)
             if not verdict.get("skipped") and not verdict.get("approve"):
+                if human_release:
+                    await self.journal.record("release.held", {"reason": "review rejected the change", "reasons": verdict.get("reasons"),
+                                                               "outcome": "REVIEW_REJECTED"}, task_id=task_id)
+                    report.update({"outcome": "REVIEW_REJECTED", "held": True, "rollback": None, "diff": _held_diff(info)})
+                    return report
                 rb = await asyncio.to_thread(self.rollback, info)
                 await self.journal.record("rollback.created", {"reason": "review rejected the change", "reasons": verdict.get("reasons"), **rb, "snapshot": str(snap)}, task_id=task_id)
                 report.update({"outcome": "REVIEW_REJECTED", "rollback": rb, "snapshot": str(snap)})
@@ -924,6 +937,18 @@ class DevLoop:
         return report
 
 
+REVIEWED_KINDS = ("autonomous", "eval", "conversation")
+HELD_DIFF_CHARS = 6000
+
+
+def _held_diff(info: Dict[str, Any]) -> str:
+    """The diff of a held release for the human, cut to HELD_DIFF_CHARS (the full one is in the working tree)."""
+    d = str(info.get("diff") or "")
+    for path in info.get("new_files") or info.get("untracked") or []:
+        d += f"\n(new file) {path}"
+    return d if len(d) <= HELD_DIFF_CHARS else d[:HELD_DIFF_CHARS] + f"\n… {len(d) - HELD_DIFF_CHARS} more characters: `git diff` shows all"
+
+
 def render(report: Dict[str, Any]) -> str:
     lines = [f"RELEASE {report['outcome']} · verification #{report['verification_id']} {report['verification']}"]
     lines.append("files: " + ", ".join(f"{p} ({s})" for p, s in report["files"].items()))
@@ -934,6 +959,16 @@ def render(report: Dict[str, Any]) -> str:
         rb = report["rollback"]
         lines.append(f"\nRolled back: restored {len(rb['restored'])} file(s), removed {len(rb['removed'])} new file(s); tree clean={rb['clean']}. "
                      f"Snapshot of the attempt: {report['snapshot']}. The same change will fail again: diagnose the evidence and change approach.")
+    elif report.get("held"):
+        rv = report.get("review") or {}
+        why = "; ".join(rv.get("reasons") or []) or "no reason given"
+        head = (f"a second brain ({rv.get('reviewer')}) rejected it ({', '.join(rv.get('problems') or [])}): {why}"
+                if report["outcome"] == "REVIEW_REJECTED" else f"no second brain could review it ({why})")
+        lines.append(f"\nNot committed: {head}. The edits stay in the working tree, uncommitted, for the human to judge. "
+                     "Show the human the diff and the findings below in your answer; the human decides (commit it, change it, "
+                     "or say what to fix). Do not release again in this task.")
+        lines.append(f"\n--- findings ---\n" + "\n".join(f"- {r}" for r in (rv.get("reasons") or ["(none)"])))
+        lines.append(f"\n--- diff ---\n{report.get('diff') or '(empty)'}")
     elif report["outcome"] == "REVIEW_REJECTED":
         # the reviewer's reasons, which the release used to answer with "None" (live 2026-10-15, objective 237)
         rv, rb = report.get("review") or {}, report["rollback"]
