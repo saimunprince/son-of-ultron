@@ -169,10 +169,20 @@ async def lifespan(_: FastAPI):
 
     install_git_safety()  # every git this process starts runs with hooks and fsmonitor off (audit 2026-10-28)
     try:  # the journal's integrity chain (journal.verify_chain): checked at every boot, the result is on record
-        check = await asyncio.to_thread(journal.verify_chain, 5000)
+        # the whole chain: on the live journal it takes about 0.05 s for 7,000 chained events (audit 2026-11-01:
+        # a window of 5000 trusted its first row, so an edit there passed)
+        check = await asyncio.to_thread(journal.verify_chain)
         await journal.record("integrity.checked", check)
         if not check["ok"]:
             logger.warning(f"journal integrity chain broken at event {check['first_bad']}: {check['reason']}")
+            # Audit 2026-11-01 (LIFE-4): a broken chain only reached the log, and SYRAX's own work started as usual on a
+            # journal that may have been changed. Now the human hears of it and own work holds until they look:
+            # the emergency stop is set (persistent; the human clears it) and an alert is journaled.
+            from syrax import estop
+
+            note = f"journal integrity chain broken at event {check['first_bad']}: {check['reason']}"[:300]
+            await journal.record("alert.raised", {"kind": "integrity", "detail": note})
+            await asyncio.to_thread(estop.set_stop, journal, note, "integrity check at boot")
     except Exception as e:
         logger.warning(f"could not check the journal's integrity chain: {e}")
     if core.autonomy.enabled:
