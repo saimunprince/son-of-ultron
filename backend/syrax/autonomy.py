@@ -873,14 +873,20 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         name = str(spec.get("name") or "")
         sk = journal.skill(name)
         present = bool(sk and sk.get("path") and (Path(sk["path"]) / "skill.py").exists())  # live: VERIFIED in the registry, files deleted
-        verified = bool(sk and sk.get("status") == "VERIFIED" and present and (sk.get("last_verified") or 0) >= objective["created"])
+        # Audit 2026-11-01 (S6, live objectives 27, 33, 37): a skill verified BEFORE the objective was set never
+        # counted, so a follow-up for a skill that was verified and in use stayed RETRY and was BLOCKED. An earlier
+        # verification counts when a real successful call comes after the objective was set (checked below).
+        fresh = bool(sk and (sk.get("last_verified") or 0) >= objective["created"])
+        verified = bool(sk and sk.get("status") == "VERIFIED" and present)
         # Audit 2026-10-29 (capability acquisition): VERIFIED meant only that the skill passed tests the same brain wrote
         # for it. The objective now also needs one real call of the skill, after that verification, that succeeded:
         # the capability did its job once outside its own tests. {"real_use": false} in the spec waives it.
         st = journal.tool_stats().get(name) if spec.get("real_use", True) else None
-        used = (not spec.get("real_use", True)) or bool(
-            st and st["last_used"] and st["last_used"] >= ((sk or {}).get("last_verified") or 0) and st["last_outcome"] == "ok")
-        missing = {} if used else {"missing": "one real, successful call of the skill after it was verified"}
+        since = max((sk or {}).get("last_verified") or 0, 0 if fresh else objective["created"])
+        used = (not spec.get("real_use", True) and fresh) or bool(
+            st and st["last_used"] and st["last_used"] >= since and st["last_outcome"] == "ok")
+        missing = {} if used else {"missing": "one real, successful call of the skill after it was verified"
+                                              + ("" if fresh else " and after this objective was set")}
         new_code = True
         if str(objective.get("key") or "").startswith("limit:skill_repair:"):
             # Audit 2026-11-01 (S8): a repair closed on skill_test plus one easy call, with the same code; a repair
