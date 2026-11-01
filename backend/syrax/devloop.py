@@ -29,6 +29,7 @@ import asyncio
 import json
 import os
 import ast
+import hashlib
 import re
 import subprocess
 import threading
@@ -756,6 +757,23 @@ class DevLoop:
     DECISION_VERDICT = {"COMMITTED": "CANDIDATE_BETTER", "ROLLED_BACK": "BASELINE_BETTER", "REVIEW_REJECTED": "BASELINE_BETTER",
                         "REFUSED": "BASELINE_BETTER", "COMMIT_FAILED": "INCONCLUSIVE", "REVIEW_UNAVAILABLE": "INCONCLUSIVE"}
 
+    def human_approval(self, task: Optional[dict], info: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """The owner's approval of a held conversation release (approve-from-chat, 2026-11-01), or None. All of:
+        the human's own message in this conversation task is a short approval (APPROVAL); a release.held of the last
+        APPROVAL_WINDOW_S exists; and the tree's change now hashes exactly like the held one, so what lands is what
+        was shown. The brain's words never count: only the task's goal, which is the human's message."""
+        if not task or task.get("kind") != "conversation":
+            return None
+        said = str(task.get("goal") or "").strip()
+        if len(said) > 160 or not APPROVAL.search(said):
+            return None
+        now_sha = diff_sha(info)
+        since = time.time() - APPROVAL_WINDOW_S
+        for e in reversed(self.journal.events_of_type("release.held", since=since, limit=50)):  # newest first
+            if e["payload"].get("diff_sha256") == now_sha:
+                return {"held_task": e.get("task_id"), "held_event": e["id"], "diff_sha256": now_sha, "words": said[:160]}
+        return None
+
     def _active_objective_id(self, task: Optional[dict]) -> Optional[int]:
         """The objective an autonomous task works on: the cycle marks exactly one ACTIVE before it starts the task."""
         if not task or task.get("kind") != "autonomous":
@@ -881,6 +899,9 @@ class DevLoop:
         # Held (no review, or rejected), it is not committed and, unlike own work, not rolled back: the human asked for
         # these edits, so they stay in the working tree with the diff and the findings for the human to judge.
         human_release = bool(task and task.get("kind") == "conversation")
+        # The owner's approve-from-chat path (2026-11-01): a held conversation release lands when the human's own
+        # message approves it and the tree holds exactly the diff that was shown (human_approval)
+        approval = self.human_approval(task, info) if human_release else None
         if task and task.get("kind") in REVIEWED_KINDS and (self.reviewer is not None or not self.review_opt_out):
             authors = sorted({e["payload"].get("provider") for e in self.journal.events(task_id) if e["type"] == "brain.answered"} - {None})
             told = summary + "".join(f"\n{k.capitalize()}: {v}" for k, v in plan.items())
@@ -900,26 +921,37 @@ class DevLoop:
                 reason = "; ".join(verdict.get("reasons") or []) or "no second brain could review the change"
                 tried = list(verdict.get("brains_tried") or [])
                 await self.journal.record("review.unavailable", {"reason": reason, "brains_tried": tried, "authors": authors}, task_id=task_id)
-                if human_release:
-                    await self.journal.record("release.held", {"reason": reason, "outcome": "REVIEW_UNAVAILABLE"}, task_id=task_id)
+                if human_release and approval:
+                    await self.journal.record("release.approved_by_human", {**approval, "review": "unavailable", "reason": reason}, task_id=task_id)
+                    report["human_approval"] = approval
+                elif human_release:
+                    await self.journal.record("release.held", {"reason": reason, "outcome": "REVIEW_UNAVAILABLE",
+                                                               "diff_sha256": diff_sha(info)}, task_id=task_id)
                     report.update({"outcome": "REVIEW_UNAVAILABLE", "held": True, "rollback": None, "diff": _held_diff(info)})
                     return report
-                rb = await asyncio.to_thread(self.rollback, info)
-                await self.journal.record("rollback.created", {"reason": "no second brain could review the change", "review_reason": reason,
-                                                               "brains_tried": tried, **rb, "snapshot": str(snap)}, task_id=task_id)
-                report.update({"outcome": "REVIEW_UNAVAILABLE", "rollback": rb, "snapshot": str(snap)})
-                return report
-            await self.journal.record("review.completed", {"authors": authors, **verdict}, task_id=task_id)
-            if not verdict.get("skipped") and not verdict.get("approve"):
-                if human_release:
-                    await self.journal.record("release.held", {"reason": "review rejected the change", "reasons": verdict.get("reasons"),
-                                                               "outcome": "REVIEW_REJECTED"}, task_id=task_id)
-                    report.update({"outcome": "REVIEW_REJECTED", "held": True, "rollback": None, "diff": _held_diff(info)})
+                else:
+                    rb = await asyncio.to_thread(self.rollback, info)
+                    await self.journal.record("rollback.created", {"reason": "no second brain could review the change", "review_reason": reason,
+                                                                   "brains_tried": tried, **rb, "snapshot": str(snap)}, task_id=task_id)
+                    report.update({"outcome": "REVIEW_UNAVAILABLE", "rollback": rb, "snapshot": str(snap)})
                     return report
-                rb = await asyncio.to_thread(self.rollback, info)
-                await self.journal.record("rollback.created", {"reason": "review rejected the change", "reasons": verdict.get("reasons"), **rb, "snapshot": str(snap)}, task_id=task_id)
-                report.update({"outcome": "REVIEW_REJECTED", "rollback": rb, "snapshot": str(snap)})
-                return report
+            else:
+                await self.journal.record("review.completed", {"authors": authors, **verdict}, task_id=task_id)
+                if not verdict.get("skipped") and not verdict.get("approve"):
+                    if human_release and approval:
+                        await self.journal.record("release.approved_by_human", {**approval, "review": "rejected",
+                                                                                 "reasons": verdict.get("reasons")}, task_id=task_id)
+                        report["human_approval"] = approval
+                    elif human_release:
+                        await self.journal.record("release.held", {"reason": "review rejected the change", "reasons": verdict.get("reasons"),
+                                                                   "outcome": "REVIEW_REJECTED", "diff_sha256": diff_sha(info)}, task_id=task_id)
+                        report.update({"outcome": "REVIEW_REJECTED", "held": True, "rollback": None, "diff": _held_diff(info)})
+                        return report
+                    else:
+                        rb = await asyncio.to_thread(self.rollback, info)
+                        await self.journal.record("rollback.created", {"reason": "review rejected the change", "reasons": verdict.get("reasons"), **rb, "snapshot": str(snap)}, task_id=task_id)
+                        report.update({"outcome": "REVIEW_REJECTED", "rollback": rb, "snapshot": str(snap)})
+                        return report
         try:
             objective_id = self._active_objective_id(task)  # F11: the commit names the objective it was made for
             c = await asyncio.to_thread(self.commit, info, summary, vid, objective_id)
@@ -938,6 +970,20 @@ class DevLoop:
         else:
             report["push"] = {"ok": None, "output": "not pushed: SYRAX_AUTOPUSH is off; a human pushes"}
         return report
+
+
+# The owner's approve-from-chat words (English, Banglish, Bengali), in a short message of their own
+APPROVAL = re.compile(r"\b(?:approve[ds]?|approval|land\s+it|commit\s+it|release\s+it|ship\s+it|go\s+ahead)\b"
+                      r"|\b(?:approve|land|commit|release)\s+(?:koro|kor|kore\s+dao)\b|অনুমোদন|ল্যান্ড\s*কর", re.I)
+APPROVAL_WINDOW_S = 24 * 3600
+
+
+def diff_sha(info: Dict[str, Any]) -> str:
+    """One hash of a change: the diff of tracked files and every new file's path and content."""
+    h = hashlib.sha256(str(info.get("diff") or "").encode("utf-8", "replace"))
+    for path, body in sorted((info.get("new_files") or {}).items()):
+        h.update(b"\0" + str(path).encode() + b"\0" + str(body).encode("utf-8", "replace"))
+    return h.hexdigest()
 
 
 REVIEWED_KINDS = ("autonomous", "eval", "conversation")
@@ -968,8 +1014,9 @@ def render(report: Dict[str, Any]) -> str:
         head = (f"a second brain ({rv.get('reviewer')}) rejected it ({', '.join(rv.get('problems') or [])}): {why}"
                 if report["outcome"] == "REVIEW_REJECTED" else f"no second brain could review it ({why})")
         lines.append(f"\nNot committed: {head}. The edits stay in the working tree, uncommitted, for the human to judge. "
-                     "Show the human the diff and the findings below in your answer; the human decides (commit it, change it, "
-                     "or say what to fix). Do not release again in this task.")
+                     "Show the human the diff and the findings below in your answer; the human decides: they may approve it in "
+                     "their next message (for example \"approve, land it\"), and a release then lands exactly this diff; or "
+                     "change it, or say what to fix. Do not release again in this task.")
         lines.append(f"\n--- findings ---\n" + "\n".join(f"- {r}" for r in (rv.get("reasons") or ["(none)"])))
         lines.append(f"\n--- diff ---\n{report.get('diff') or '(empty)'}")
     elif report["outcome"] == "REVIEW_REJECTED":
