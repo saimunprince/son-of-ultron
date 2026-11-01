@@ -711,12 +711,13 @@ class DevLoop:
         clean = not changed_files(self.root)
         return {"restored": restored, "removed": removed, "clean": clean}
 
-    def commit(self, info: Dict[str, Any], summary: str, verification_id: Optional[int]) -> Dict[str, Any]:
+    def commit(self, info: Dict[str, Any], summary: str, verification_id: Optional[int], objective_id: Optional[int] = None) -> Dict[str, Any]:
         files = list(info["files"])
         add = _git(["add", "--", *files], self.root)
         if add.returncode != 0:
             raise RuntimeError(f"git add failed: {add.stderr.strip()}")
-        msg = f"syrax: {summary.strip()}\n\nVerified-By: syrax.verify #{verification_id}\nCo-Authored-By: SYRAX <syrax@localhost>\n"
+        objective = f"Objective: #{objective_id}\n" if objective_id is not None else ""  # F11: the commit names its objective
+        msg = f"syrax: {summary.strip()}\n\nVerified-By: syrax.verify #{verification_id}\n{objective}Co-Authored-By: SYRAX <syrax@localhost>\n"
         out = _git(["-c", "user.name=SYRAX", "-c", "user.email=syrax@localhost", "commit", "-q", "-m", msg], self.root)
         if out.returncode != 0:
             raise RuntimeError(f"git commit failed: {out.stderr.strip() or out.stdout.strip()}")
@@ -920,12 +921,14 @@ class DevLoop:
                 report.update({"outcome": "REVIEW_REJECTED", "rollback": rb, "snapshot": str(snap)})
                 return report
         try:
-            c = await asyncio.to_thread(self.commit, info, summary, vid)
+            objective_id = self._active_objective_id(task)  # F11: the commit names the objective it was made for
+            c = await asyncio.to_thread(self.commit, info, summary, vid, objective_id)
         except RuntimeError as e:
             await self.journal.record("commit.failed", {"error": str(e)[:500]}, task_id=task_id)
             report.update({"outcome": "COMMIT_FAILED", "error": str(e)})
             return report
-        await self.journal.record("commit.created", {"commit": c["commit"], "files": c["files"], "summary": summary, "verification_id": vid}, task_id=task_id)
+        await self.journal.record("commit.created", {"commit": c["commit"], "files": c["files"], "summary": summary, "verification_id": vid,
+                                                     **({"objective_id": objective_id} if objective_id is not None else {})}, task_id=task_id)
         report.update({"outcome": "COMMITTED", "commit": c["commit"]})
         if self.autopush:
             await self.journal.record("push.started", {"commit": c["commit"]}, task_id=task_id)

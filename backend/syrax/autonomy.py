@@ -819,6 +819,34 @@ def suspects(journal: Journal, run: dict, previous: Optional[dict]) -> List[dict
     return list(out.values())[::-1]
 
 
+def own_task_ids(journal: Journal, objective: dict, task: Optional[dict]) -> set:
+    """The tasks that worked on this objective: the one being judged, every attempt in its log, its last task, and
+    every cycle that ran it (cycle.completed with its id)."""
+    ids = {t for t in [(task or {}).get("task_id"), objective.get("last_task_id")] if t}
+    ids |= {a.get("task_id") for a in ((objective.get("progress") or {}).get("attempts_log") or []) if a.get("task_id")}
+    ids |= {e["payload"].get("task_id") for e in journal.events_between(objective["created"], limit=5000)
+            if e["type"] == "cycle.completed" and e["payload"].get("objective_id") == objective.get("id") and e["payload"].get("task_id")}
+    return ids
+
+
+def _own_commits(journal: Journal, objective: dict, ids: set) -> list:
+    """commit.created events of this objective (audit 2026-11-01, F11): a commit that names an objective counts only
+    for that objective; one without a name counts for the objective whose task made it (or, task-less, as before:
+    the contract withdraws it as nobody's work)."""
+    oid = objective.get("id")
+    out = []
+    for e in journal.events_between(objective["created"], limit=5000):
+        if e["type"] != "commit.created":
+            continue
+        named = e["payload"].get("objective_id")
+        if named is not None:
+            if named == oid:
+                out.append(e)
+        elif e.get("task_id") is None or e.get("task_id") in ids:
+            out.append(e)
+    return out
+
+
 def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str, dict]:
     """Decide DONE / RETRY from journal evidence only. Returns (verdict, evidence)."""
     spec = objective.get("check_spec") or {}
@@ -830,6 +858,14 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         used_after = bool(st and st["last_used"] and st["last_used"] >= objective["created"])
         ok = bool(st and st["last_outcome"] == "ok")
         ev = {"tool": spec.get("tool"), "used_after_objective": used_after, "last_outcome": st["last_outcome"] if st else None, "stats": st}
+        if str(objective.get("key") or "").startswith("tool-bug:"):
+            # Audit 2026-11-01 (F11): a traceback in SYRAX's own code closed on the next successful call, with no fix;
+            # the bug objective needs its own commit (the fix) and a successful call after it
+            commits = [e for e in _own_commits(journal, objective, own_task_ids(journal, objective, task)) if e.get("task_id")]
+            after_fix = bool(commits and st and st["last_used"] and st["last_used"] >= commits[-1]["ts"])
+            ev.update({"objective_id": objective.get("id"), "commits": [e["payload"].get("commit") for e in commits][:5],
+                       **({} if commits else {"missing": "a commit of this objective's own task that fixes the bug"})})
+            return ("DONE" if commits and after_fix and ok else "RETRY"), ev
         return ("DONE" if used_after and ok else "RETRY"), ev
     if kind == "skill_verified":
         # Phase 3: a capability SYRAX built for itself counts only when its own
@@ -930,18 +966,18 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
     if kind == "change_released":
         # only a commit made by this objective's own tasks counts; someone
         # else's release landing in the window is not this objective's work
-        ids = {task["task_id"]} if task and task.get("task_id") else set()
-        window = journal.events_between(objective["created"], limit=5000)
-        ids |= {e["payload"].get("task_id") for e in window
-                if e["type"] == "cycle.completed" and e["payload"].get("objective_id") == objective.get("id") and e["payload"].get("task_id")}
-        # a task-less commit event (recorded from outside any task) keeps counting
-        commits = [e for e in window if e["type"] == "commit.created" and (e.get("task_id") is None or e.get("task_id") in ids)]
+        ids = own_task_ids(journal, objective, task)
+        # a task-less commit event (recorded from outside any task) keeps counting here; the contract withdraws it.
+        # Audit 2026-11-01 (F11): a commit that names another objective never counts for this one
+        commits = _own_commits(journal, objective, ids)
         # A check that names files is met only when this objective's commits, together, changed every one of them.
         # Live 2026-10-17 (objective 267): step 1 of three landed alone (09e97df) and any commit counted as DONE.
         touched = {f for e in commits for f in (e["payload"].get("files") or [])}
         missing = [f for f in spec.get("files") or [] if f not in touched]
         verdict = "DONE" if commits and not missing else "RETRY"
-        ev = {"commits": [e["payload"].get("commit") for e in commits][:5], "tasks": sorted(ids), **({"missing_files": missing} if missing else {})}
+        ev = {"objective_id": objective.get("id"), "commits": [e["payload"].get("commit") for e in commits][:5],
+              "verification_ids": [e["payload"].get("verification_id") for e in commits][:5], "tasks": sorted(ids),
+              **({"missing_files": missing} if missing else {})}
         if verdict == "DONE" and isinstance(spec.get("repro"), dict):
             # a brief filed with a judge-proven test is done only when that very test was committed (repro.py)
             from syrax import repro
@@ -961,9 +997,17 @@ def judge(journal: Journal, objective: dict, task: Optional[dict]) -> tuple[str,
         ok = (not exists) if kind == "file_absent" else bool(exists and mtime is not None and mtime >= objective["created"] - 1)
         return ("DONE" if ok else "RETRY"), {"path": str(path), "exists": exists, "mtime": mtime}
     if kind == "verification_green":
-        rows = journal.verifications(limit=1)
-        ok = bool(rows and rows[0]["status"] == "GREEN" and rows[0]["ts"] >= objective["created"])
-        return ("DONE" if ok else "RETRY"), {"verification": rows[0] if rows else None}
+        # Audit 2026-11-01 (F11, live objective 42): any later GREEN gate closed it, even the daily ledger's own,
+        # another task's. A gate run by another task does not count; this objective's own task's, or a task-less one
+        # (the human's own `--gate`, a measurement SYRAX does not write), does.
+        ids = own_task_ids(journal, objective, task)
+        rows = [r for r in journal.verifications(limit=50) if r["ts"] >= objective["created"]]
+        mine = [r for r in rows if r.get("task_id") is None or r.get("task_id") in ids]
+        latest = mine[0] if mine else None
+        ok = bool(latest and latest["status"] == "GREEN")
+        return ("DONE" if ok else "RETRY"), {"objective_id": objective.get("id"), "verification": latest,
+                                             "verification_id": (latest or {}).get("id"), "verification_task": (latest or {}).get("task_id"),
+                                             "ignored_other_tasks": [r["id"] for r in rows if r not in mine][:5]}
     status = (task or {}).get("status")
     return ("DONE" if status == "SUCCESS" else "RETRY"), {"task_status": status, "result": (task or {}).get("result")}
 
