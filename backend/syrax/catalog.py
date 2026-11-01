@@ -26,7 +26,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from syrax.journal import ALL_OBJECTIVES, BACKEND_ROOT, Journal
 
@@ -50,6 +50,8 @@ class Feature:
     check: Optional[Dict[str, Any]] = None  # the objective check that proves it done
     auto: bool = False              # SYRAX may promote and build it itself
     seen_in: str = ""
+    # Audit 2026-11-01 (D7, I-08): Windows-only features showed as HAVE on Linux too. Empty means every platform.
+    platforms: Tuple[str, ...] = ()
 
 
 def skill(name: str) -> Dict[str, Any]:
@@ -103,20 +105,21 @@ CATALOG: List[Feature] = [
     Feature("open_apps", "Open apps and links", "Computer control", HAVE, "Opens any app, file or website by name.",
             "desktop.py: open, launch_app, list_apps", seen_in="all"),
     Feature("volume_media", "Volume and media keys", "Computer control", HAVE, "Volume, mute, play/pause.", "desktop.py: volume, media", seen_in="Mark-LV"),
-    Feature("windows", "Window control", "Computer control", HAVE, "Focus, minimise or list windows.", "desktop.py: window (winctl.py)", seen_in="Mark-LV"),
+    Feature("windows", "Window control", "Computer control", HAVE, "Focus, minimise or list windows.", "desktop.py: window (winctl.py)", seen_in="Mark-LV", platforms=("win32",)),
     Feature("clipboard", "Clipboard read and write", "Computer control", HAVE, "Reads or fills the clipboard.", "desktop.py: clipboard_get, clipboard_set", seen_in="Mark-LV"),
     Feature("screenshot", "Screenshots", "Computer control", HAVE, "Captures the screen.", "desktop.py: screenshot; browser_screenshot", seen_in="Mark-LV"),
     Feature("lock_notify", "Lock screen and notifications", "Computer control", HAVE, "Locks the PC; shows desktop notifications.",
             "desktop.py: lock_screen, notify", seen_in="Mark-LV"),
     Feature("system_info", "System information", "Computer control", HAVE, "CPU, RAM, disk, battery, GPU.", "desktop.py: system_info (sysinfo.py)", seen_in="Mark-LV"),
     Feature("brightness", "Screen brightness", "Computer control", HAVE, "Reads or sets the screen brightness, with the old level for undo.",
-            "prebuilt skill screen_brightness", risk="SYSTEM", seen_in="Mark-LV"),
+            "prebuilt skill screen_brightness", risk="SYSTEM", seen_in="Mark-LV", platforms=("win32",)),
     Feature("wallpaper", "Wallpaper", "Computer control", HAVE, "Shows or changes the wallpaper, with the old one for undo.",
-            "prebuilt skill wallpaper", risk="SYSTEM", seen_in="Mark-LV"),
-    Feature("dark_mode", "Dark mode", "Computer control", HAVE, "Switches Windows between light and dark.",
-            "desktop action dark_mode (wininput.py): HKCU theme values, the old mode reported for undo", risk="SYSTEM", seen_in="Mark-LV"),
+            "prebuilt skill wallpaper", risk="SYSTEM", seen_in="Mark-LV", platforms=("win32",)),
+    Feature("dark_mode", "Dark mode", "Computer control", HAVE, "Switches between light and dark.",
+            "desktop action dark_mode: Windows HKCU theme values (wininput.py), GNOME color-scheme (linuxinput.py); the old mode "
+            "reported for undo", risk="SYSTEM", seen_in="Mark-LV", platforms=("win32", "linux")),
     Feature("display_sleep", "Turn the display off", "Computer control", HAVE, "Turns the screen off until the mouse moves.",
-            "desktop action display_off (wininput.py, SC_MONITORPOWER)", risk="SYSTEM", seen_in="Mark-LV"),
+            "desktop action display_off (wininput.py, SC_MONITORPOWER)", risk="SYSTEM", seen_in="Mark-LV", platforms=("win32",)),
     Feature("power", "Shut down or restart the PC", "Computer control", REJECTED, "Powers the machine off.",
             "refused by design for every task kind (guard.HOST_HARM): only the human powers the machine off", seen_in="Mark-LV, Mark-XXXIX-OR"),
     Feature("wifi_toggle", "Wi-Fi on and off", "Computer control", REJECTED, "Switches the network adapter.",
@@ -127,7 +130,7 @@ CATALOG: List[Feature] = [
     Feature("click_by_sight", "Click what it sees", "Computer control", HAVE, "'Click the Save button' found on the screen.",
             "desktop click_text / find_text (sight.py): Windows UI Automation finds the control by its name (foreground window "
             "first), Windows OCR reads the screen when no control matches; scaled to the click's pixels, primary screen only, "
-            "and a tie clicks nothing but lists the candidates. No new dependency", risk="SYSTEM", seen_in="Mark-LV"),
+            "and a tie clicks nothing but lists the candidates. No new dependency", risk="SYSTEM", seen_in="Mark-LV", platforms=("win32",)),
     Feature("scenes", "Work scenes", "Computer control", HAVE, "'Coding mode', 'research mode', 'chill mode' set the computer up in one request.",
             "the scene tool (scenes.py): built-in and owner scenes (config/scenes.json) named as exact desktop calls the brain makes "
             "through permissions; steps limited to open, launch, volume, media, window, dark mode", risk="READ_ONLY", seen_in="Ultron"),
@@ -162,7 +165,7 @@ CATALOG: List[Feature] = [
             "overwrite", risk="EXTERNAL_READ", seen_in="Mark-LV"),
     Feature("system_alerts", "Spoken system alerts", "Computer control", HAVE, "Warns when memory, disk, battery or CPU stay in trouble.",
             "alerts.py: resources.py readings, several in a row before an alert, an hour between repeats, silent in quiet hours; "
-            "journaled as alert.raised, shown and spoken by the UI. Temperature is not measured yet", seen_in="Mark-LV"),
+            "journaled as alert.raised, shown and spoken by the UI; CPU temperature (hwmon on Linux) raises a heat alert", seen_in="Mark-LV"),
     Feature("game_updater", "Game updates (Steam, Epic)", "Computer control", REJECTED, "Installs and updates games, then shuts down.",
             "scheduled tasks and an unattended shutdown; little value for the risk", seen_in="Mark-LV"),
     # ——— Web ———
@@ -235,7 +238,8 @@ CATALOG: List[Feature] = [
     Feature("theme", "Recolour the interface", "Interface", HAVE, "Pick the interface colour.",
             "the ULTRON / CLASSIC button switches the whole look (UI and orb), remembered in the browser; two looks, no free colour wheel",
             seen_in="Mark-LV"),
-    Feature("autostart", "Start with Windows", "Interface", HAVE, "SYRAX runs after every boot.", "Startup SYRAX.vbs, syrax.py service mode", seen_in="Mark-LV"),
+    Feature("autostart", "Start at login", "Interface", HAVE, "SYRAX runs after every login.",
+            "syrax.py --install-service: Windows Startup SYRAX.vbs, Linux systemd --user service (restarts on failure)", seen_in="Mark-LV"),
     # ——— Scheduling ———
     Feature("reminders", "Reminders", "Scheduling", HAVE, "'Remind me at 5 to call Rahim.'",
             "the remind tool (reminders.py): kept in the journal, fired by SYRAX's own loop with a spoken line, a notice and a "
@@ -310,6 +314,17 @@ def next_auto(journal: Journal) -> Optional[Feature]:
     return None
 
 
+PLATFORM_NAMES = {"win32": "Windows", "linux": "Linux", "darwin": "macOS"}
+
+
+def on_this_platform(feature: "Feature", platform: Optional[str] = None) -> bool:
+    """Whether a feature works on `platform` (sys.platform by default); a feature with no platforms works on all."""
+    import sys
+
+    here = platform or sys.platform
+    return not feature.platforms or any(here.startswith(p) for p in feature.platforms)
+
+
 def render() -> str:
     c = counts()
     lines = ["# SYRAX feature catalog", "",
@@ -325,12 +340,14 @@ def render() -> str:
         rows = [f for f in CATALOG if f.area == area]
         if not rows:
             continue
-        lines += [f"## {area}", "", "| Feature | Status | What it does | SYRAX | Risk | Needs | Done when |", "|---|---|---|---|---|---|---|"]
+        lines += [f"## {area}", "", "| Feature | Status | Platforms | What it does | SYRAX | Risk | Needs | Done when |",
+                  "|---|---|---|---|---|---|---|---|"]
         for f in rows:
             done = ""
             if f.check:
                 done = f"skill `{f.check['name']}` verified" if f.check.get("kind") == "skill_verified" else "change released through the gate"
-            lines.append(f"| {f.title}{' **auto**' if f.auto else ''} | {f.status} | {f.value} | {f.syrax} | {f.risk or '—'} | {f.needs or '—'} | {done or '—'} |")
+            where = ", ".join(PLATFORM_NAMES.get(x, x) for x in f.platforms) or "all"
+            lines.append(f"| {f.title}{' **auto**' if f.auto else ''} | {f.status} | {where} | {f.value} | {f.syrax} | {f.risk or '—'} | {f.needs or '—'} | {done or '—'} |")
         lines.append("")
     return "\n".join(lines)
 
