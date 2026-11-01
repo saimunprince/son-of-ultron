@@ -548,13 +548,35 @@ class NotOnThisPlatform(ValueError):
     """A verified skill that declares the operating systems it runs on, and this is not one of them."""
 
 
-def platform_problem(tool: Any) -> Optional[str]:
+# Audit 2026-11-01 (skills S12): only a declared `platforms` hid a skill; Windows-only code that declared none was a
+# VERIFIED tool on Linux. Such code is recognised by the APIs it uses, unless it checks the platform itself.
+_WIN_ONLY = re.compile(r"\bwindll\b|\bwinreg\b|\bpowershell(?:\.exe)?\b|SystemParametersInfo|\bwin32api\b|\bwin32con\b|\bpywinauto\b", re.I)
+_MAC_ONLY = re.compile(r"\bosascript\b|\bAppKit\b|\bNSWorkspace\b")
+_CHECKS_PLATFORM = re.compile(r"\bsys\.platform\b|\bplatform\.system\(|\bos\.name\b")
+
+
+def inferred_platforms(source: str) -> tuple:
+    """The platforms a skill's source can only run on, from the APIs it uses; () when it checks the platform itself or
+    uses none of them."""
+    if not source or _CHECKS_PLATFORM.search(source):
+        return ()
+    if _WIN_ONLY.search(source):
+        return ("win32",)
+    if _MAC_ONLY.search(source):
+        return ("darwin",)
+    return ()
+
+
+def platform_problem(tool: Any, source: Optional[str] = None) -> Optional[str]:
     """Why `tool` cannot run here, or None. A skill may declare `platforms` (sys.platform values: "win32", "linux",
     "darwin"); none declared means every system. Audit 2026-10-29: wallpaper and screen_brightness are Windows code
     (ctypes.windll, powershell) yet were VERIFIED tools on Linux, offered to the brain and failing at every call."""
     plats = getattr(tool, "platforms", None)
     if plats and sys.platform not in tuple(plats):
         return f"runs on {', '.join(plats)}, not on {sys.platform}"
+    guessed = () if plats else inferred_platforms(source or "")
+    if guessed and sys.platform not in guessed:
+        return f"its code uses {', '.join(guessed)}-only APIs and declares no platforms; not on {sys.platform}"
     return None
 
 
@@ -614,7 +636,8 @@ class SkillFactory:
     def _register(self, name: str) -> BaseTool:
         assert self.collection is not None
         tool = load_skill(self.root / name)
-        why = platform_problem(tool)
+        src = self.root / name / "skill.py"
+        why = platform_problem(tool, src.read_text(encoding="utf-8", errors="replace") if src.is_file() else None)
         if why:
             self._unregister(name)
             raise NotOnThisPlatform(why)
@@ -734,13 +757,13 @@ class SkillFactory:
                                                     "content_hash": result.get("content_hash")}, task_id=self.task_id_provider())
         return result
 
-    def duplicate_of(self, name: str, purpose: str, code: str) -> Optional[dict]:
+    def duplicate_of(self, name: str, purpose: str, code: str, statuses: tuple = ("VERIFIED",)) -> Optional[dict]:
         """The VERIFIED skill (another name) that `code`/`purpose` would duplicate: purposes whose content words
         overlap by DUPLICATE_OVERLAP or more, or the same set of SAME_ARGS_MIN+ `parameters` property names with
         SAME_ARGS_OVERLAP of the purpose in common. Identical argument names alone never refuse: `text` is what
         most text tools take."""
         props = schema_properties(code) or set()
-        for row in self.journal.skills(status="VERIFIED"):
+        for row in (r for st in statuses for r in self.journal.skills(status=st)):
             if row["name"] == name:
                 continue
             overlap = purpose_overlap(purpose, row.get("purpose") or "")
@@ -774,6 +797,12 @@ class SkillFactory:
             if twin is not None:
                 raise ValueError(f"a skill for this exists: {twin['name']} — {twin.get('purpose') or ''}; "
                                  f"extend it (skill_create with that name) instead of a duplicate")
+            # Audit 2026-11-01 (S13): a twin of a skill that failed its tests is refused; fix that one. A twin of a
+            # DISABLED skill stays allowed: only VERIFIED skills claim a purpose (test_skill_lifecycle, a contract)
+            broken = self.duplicate_of(name, purpose, code, statuses=("FAILED",))
+            if broken is not None:
+                raise ValueError(f"a skill for this exists and failed its tests: {broken['name']} — {broken.get('purpose') or ''}; "
+                                 f"fix it under its own name (skill_create {broken['name']}) instead of starting a twin")
         skill_dir = self.root / name
         task_id = self.task_id_provider()
         files = {"skill.py": code, "test_skill.py": test_code, "__init__.py": ""}
