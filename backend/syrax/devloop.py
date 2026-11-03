@@ -153,7 +153,10 @@ def changed_files(root: Path) -> Dict[str, str]:
             continue
         status, path = ln[:2].strip() or "M", ln[3:]
         if " -> " in path:
-            path = path.split(" -> ", 1)[1]
+            # a staged rename: the old path is gone, which the judges must see as a deletion (audit 2026-11-01, F15:
+            # renaming a test away hid it, since only the new path was kept)
+            old, path = path.split(" -> ", 1)
+            files[old] = "D"
         files[path] = status
     return files
 
