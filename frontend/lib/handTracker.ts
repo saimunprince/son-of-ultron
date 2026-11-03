@@ -4,6 +4,8 @@ import {
   type NormalizedLandmark,
 } from "@mediapipe/tasks-vision";
 
+import { HAND_CONNECTIONS, fistFires, isFist, palmCenter } from "./gestures";
+
 const WASM_CDN =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
 const MODEL_URL =
@@ -37,15 +39,20 @@ export interface HandTrackerCallbacks {
   /** Called when both hands pinch and spread/close: multiply camera distance by factor. */
   onZoom(factor: number): void;
   onStatus(status: TrackerStatus): void;
+  /** A pinch just closed, at this point (mirrored normalized coords). */
+  onPinch?(at: Point): void;
+  /** A fist just closed (once per fist, with a cooldown), at the palm (mirrored normalized coords). */
+  onFist?(at: Point): void;
 }
 
-interface Point {
+export interface Point {
   x: number;
   y: number;
 }
 
 interface HandState {
   pinching: boolean;
+  fist: boolean;
   grab: Point; // smoothed pinch midpoint, mirrored
 }
 
@@ -65,6 +72,7 @@ export class HandTracker {
   private prevSpinGrab: Point | null = null;
   private prevZoomDist: number | null = null;
   private lastStatus: TrackerStatus = { hands: 0, mode: "idle" };
+  private lastFistAt = -Infinity;
 
   constructor(
     video: HTMLVideoElement,
@@ -119,6 +127,7 @@ export class HandTracker {
     this.prevMode = "idle";
     this.prevSpinGrab = null;
     this.prevZoomDist = null;
+    this.lastFistAt = -Infinity;
     const ctx = this.overlay.getContext("2d");
     ctx?.clearRect(0, 0, this.overlay.width, this.overlay.height);
     this.emitStatus({ hands: 0, mode: "idle" });
@@ -160,13 +169,26 @@ export class HandTracker {
 
       let state = this.handStates.get(label);
       if (!state) {
-        state = { pinching: false, grab: raw };
+        state = { pinching: false, fist: false, grab: raw };
         this.handStates.set(label, state);
       }
 
+      // A fist is its own gesture: its thumb and index are close too, but it never pinches
+      const fist = isFist(lm, state.fist);
+      const now = performance.now();
+      if (fistFires(state.fist, fist, this.lastFistAt, now)) {
+        this.lastFistAt = now;
+        const c = palmCenter(lm);
+        this.callbacks.onFist?.({ x: 1 - c.x, y: c.y });
+      }
+      state.fist = fist;
+
       // Hysteresis so the pinch doesn't flicker on/off at the threshold
-      if (state.pinching && pinchRatio > PINCH_OFF) state.pinching = false;
+      const wasPinching = state.pinching;
+      if (fist) state.pinching = false;
+      else if (state.pinching && pinchRatio > PINCH_OFF) state.pinching = false;
       else if (!state.pinching && pinchRatio < PINCH_ON) state.pinching = true;
+      if (state.pinching && !wasPinching) this.callbacks.onPinch?.(raw);
 
       state.grab = {
         x: state.grab.x + (raw.x - state.grab.x) * SMOOTHING,
@@ -232,39 +254,43 @@ export class HandTracker {
     if (!ctx) return;
     const { width, height } = this.overlay;
     ctx.clearRect(0, 0, width, height);
+    const css = getComputedStyle(document.documentElement);
+    const hot = css.getPropertyValue("--accent-hot").trim() || "#ff3b30";
+    const rgb = css.getPropertyValue("--line-rgb").trim() || "220 226 235";
 
     for (const lm of landmarks) {
-      const thumb = lm[THUMB_TIP];
-      const index = lm[INDEX_TIP];
       // Overlay canvas sits on the mirrored video preview, so mirror x here too
-      const tx = (1 - thumb.x) * width;
-      const ty = thumb.y * height;
-      const ix = (1 - index.x) * width;
-      const iy = index.y * height;
-
+      const pt = (i: number) => [(1 - lm[i].x) * width, lm[i].y * height] as const;
       const handScale = dist2d(lm[WRIST], lm[MIDDLE_MCP]);
-      const pinched =
-        handScale > 1e-6 && dist2d(thumb, index) / handScale < PINCH_ON;
+      const pinched = handScale > 1e-6 && dist2d(lm[THUMB_TIP], lm[INDEX_TIP]) / handScale < PINCH_ON;
+      const fist = isFist(lm, false);
+      const live = pinched || fist;
 
-      const css = getComputedStyle(document.documentElement);
-      const hot = css.getPropertyValue("--accent-hot").trim() || "#ff3b30";
-      const rgb = css.getPropertyValue("--line-rgb").trim() || "220 226 235";
-      ctx.strokeStyle = pinched ? hot : `rgb(${rgb} / 0.55)`;
-      ctx.lineWidth = pinched ? 2 : 1;
+      // Neon skeleton: the whole hand, glowing hot while it pinches or makes a fist
+      ctx.save();
+      ctx.shadowColor = hot;
+      ctx.shadowBlur = live ? 12 : 6;
+      ctx.strokeStyle = live ? hot : `rgb(${rgb} / 0.7)`;
+      ctx.lineWidth = live ? 2 : 1.2;
+      ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(tx, ty);
-      ctx.lineTo(ix, iy);
+      for (const [a, b] of HAND_CONNECTIONS) {
+        const [ax, ay] = pt(a);
+        const [bx, by] = pt(b);
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+      }
       ctx.stroke();
 
-      ctx.fillStyle = pinched ? hot : `rgb(${rgb} / 0.75)`;
-      for (const [x, y] of [
-        [tx, ty],
-        [ix, iy],
-      ]) {
+      ctx.fillStyle = live ? hot : `rgb(${rgb} / 0.85)`;
+      for (let i = 0; i < lm.length; i++) {
+        const [x, y] = pt(i);
+        const tip = i === THUMB_TIP || i === INDEX_TIP;
         ctx.beginPath();
-        ctx.arc(x, y, pinched ? 5 : 3, 0, Math.PI * 2);
+        ctx.arc(x, y, tip && pinched ? 4.5 : 1.8, 0, Math.PI * 2);
         ctx.fill();
       }
+      ctx.restore();
     }
   }
 }

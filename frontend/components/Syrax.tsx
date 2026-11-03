@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createOrbScene, PALETTES, type OrbMode, type OrbSceneApi, type OrbTheme } from "@/lib/orbScene";
+import { createGestureFx, type GestureFx } from "@/lib/gestureFx";
 import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
 import {
   API_BASE,
@@ -148,6 +149,8 @@ export default function Syrax() {
   const feedRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<OrbSceneApi | null>(null);
   const trackerRef = useRef<HandTracker | null>(null);
+  const fxCanvasRef = useRef<HTMLCanvasElement>(null);
+  const fxRef = useRef<GestureFx | null>(null);
   const clientRef = useRef<SyraxClient | null>(null);
   const spokenRef = useRef("");
   const armedUntilRef = useRef(0);
@@ -705,6 +708,18 @@ export default function Syrax() {
     };
   }, [theme]);
 
+  // Gesture effects layer over the orb: a shockwave where a pinch starts, a burst when a fist closes
+  useEffect(() => {
+    const canvas = fxCanvasRef.current;
+    if (!canvas) return;
+    const fx = createGestureFx(canvas);
+    fxRef.current = fx;
+    return () => {
+      fx.dispose();
+      fxRef.current = null;
+    };
+  }, []);
+
   /** Send a control message; when the link is down say so (audit 2026-10-29: E-STOP, the level, AUTO and the rest
    * were dropped without a word while offline, and the operator could believe a stop had been sent). */
   const command = useCallback(
@@ -1034,6 +1049,15 @@ export default function Syrax() {
       onRotate: (dt, dp) => sceneRef.current?.rotateBy(dt, dp),
       onZoom: (f) => sceneRef.current?.zoomBy(f),
       onStatus: setTracker,
+      onPinch: (p) => {
+        fxRef.current?.ripple(p.x * window.innerWidth, p.y * window.innerHeight, 0.8);
+        sceneRef.current?.pulse(0.35);
+      },
+      onFist: () => {
+        // the power burst comes from the orb, at the middle of the screen
+        fxRef.current?.burst(window.innerWidth / 2, window.innerHeight / 2);
+        sceneRef.current?.pulse(1.6);
+      },
     });
     trackerRef.current = t;
     try {
@@ -1158,6 +1182,7 @@ export default function Syrax() {
   return (
     <>
       <div ref={containerRef} className="orb-root" />
+      <canvas ref={fxCanvasRef} className="gesture-fx" aria-hidden="true" />
 
       {dropping && <div className="drop-overlay">DROP THE FILE · SYRAX KEEPS IT IN THE WORKSPACE</div>}
       <div className="overlay-vignette" />
