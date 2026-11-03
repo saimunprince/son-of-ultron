@@ -636,6 +636,18 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
   greeting and the gesture journaling. The frontend matches `8886111` again.
 - **Kept:** "look at me": SYRAX takes one photo when asked. That feature is older than today's work.
 
+### 2026-11-03, night: a more modern HUD; red ULTRON and blue JARVIS
+
+- **Owner's call:** the same UI, more modern. The layout, controls and features are unchanged.
+  - Panels and buttons are rounded glass.
+  - The control rail is one dock.
+  - Chat messages are bubbles.
+  - The command bar is a pill, and the status is a chip.
+- **Themes:**
+  - ULTRON is fully red: lines, dust, text and core.
+  - A new JARVIS theme is a cyan hologram. While SYRAX acts it brightens instead of turning red.
+  - The amber classic theme is removed. A saved classic choice opens ULTRON.
+
 ## Open
 
 - **Needs the owner:**
