@@ -922,6 +922,10 @@ class Journal:
         if status in TERMINAL and type_ not in TERMINAL_OK:
             raise JournalError(f"task {row['task_id']} is {status}; refusing {type_}")
         upd: Dict[str, Any] = {"updated": ts, "last_event_id": ev_id}
+        if row["last_event_id"] is not None and row["last_event_id"] < 0:
+            # a task merged from another PC's journal is marked by its negative id; a late event (a reflection, a
+            # skill verdict) must not turn it into this PC's own (audit 2026-11-01, LIFE-7)
+            del upd["last_event_id"]
         new_status = status
         if type_ == "task.started":
             new_status = "IN_PROGRESS"
