@@ -297,6 +297,12 @@ def _shadowed_judge(path: str) -> Optional[str]:
     return None
 
 
+# Data the judges read, guarded like them (audit 2026-11-01, F18): the system map chooses which tests the release
+# preflight runs and holds the known limitations; as a docs file own work could drop a test mapping, and a docs-only
+# change lands by replay without a new gate. JUDGES stays the list of judge modules (repo_map names them).
+JUDGED_DATA = ("docs/system_map.json",)
+
+
 def judge_problems(files: Dict[str, str]) -> List[str]:
     """Changes SYRAX may not release in any task: the judges (the protected set,
     JUDGES above, which includes this definition), and any edit or deletion of an
@@ -308,6 +314,8 @@ def judge_problems(files: Dict[str, str]) -> List[str]:
         name = path.rsplit("/", 1)[-1]
         if path in JUDGES:
             problems.append(f"{path}: this file judges SYRAX's own work; only a human changes it")
+        elif path in JUDGED_DATA:
+            problems.append(f"{path}: the judges read this file (it picks the release tests); only a human changes it")
         elif name in TEST_CONFIG_NAMES:
             problems.append(f"{path}: this file configures the test run that judges SYRAX's work; only a human changes it")
         elif (shadowed := _shadowed_judge(path)):
@@ -579,7 +587,7 @@ class DevLoop:
 
     def _replay_docs_only(self, sha: str) -> Optional[Dict[str, Any]]:
         files = [f for f in _git(["diff", "--name-only", f"{sha}^", sha], self.live_root).stdout.split() if f]
-        if not files or not all(f.startswith("docs/") for f in files):
+        if not files or not all(f.startswith("docs/") for f in files) or any(f in JUDGES or f in JUDGED_DATA for f in files):
             return None
         onto = _git(["rev-parse", "HEAD"], self.live_root).stdout.strip()
         base = _git(["merge-base", onto, sha], self.live_root).stdout.strip()
