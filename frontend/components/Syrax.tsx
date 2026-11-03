@@ -1119,7 +1119,11 @@ export default function Syrax() {
 
   // What a gesture does (lib/gestureControl). Kept in a ref so the tracker always calls the latest closure.
   gestureActRef.current = (a: GestureAction) => {
-    const note = (text: string) => push({ kind: "notice", id: nextId++, text: `GESTURE · ${text}` });
+    const note = (text: string) => {
+      push({ kind: "notice", id: nextId++, text: `GESTURE · ${text}` });
+      // journaled as gesture.used, so SYRAX can tell what the human did with their hands
+      clientRef.current?.send({ type: "gesture", gesture: a.kind, detail: text.slice(0, 80) });
+    };
     switch (a.kind) {
       case "yes":
       case "no":
