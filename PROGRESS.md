@@ -564,11 +564,24 @@ SYRAX was given real tasks (sums, RAM, memory, files, logic, time) and its servi
 
   A fist never counts as a pinch. With reduced motion the effects are off.
 
+### 2026-11-03: three fixes in the protected files, with the owner's go-ahead
+
+The owner approved changes to `agent.py` and `brains.py` for these ("kore felo").
+
+- **Gemini HTTP 400:** OpenManus' memory kept its last 100 messages by slicing. In a long task this could leave a
+  tool result first with its call gone, and Gemini refused the request. The agent's memory now trims to a turn
+  start, and the brain sends any result without its call as a note.
+- **A false "I built the skill":** when no `skill_create` in the task passed, a claim that a skill was built is sent
+  back once, then replaced.
+- **"What can't you do?":** SYRAX reads `self_inspect` before it answers. An answer that still reads nothing carries
+  a note.
+- **Not a bug:** "a data query dropped a row" (11-01). The CSV had `pen` twice, and the answer summed it correctly.
+
 ## Open
 
 - **Needs the owner:**
   - **Review the protected files:** `agent.py` and `brains.py` were changed on 10-30 and 10-31 under "sob koro",
-    before the mission named them protected.
+    before the mission named them protected (the 11-03 changes were approved).
   - **Compact the journal:** about 130 MB of old checkpoint contexts, and VACUUM. Backup first.
   - **Unused dependencies:** gymnasium, browsergym (with a 1.1 GB torch), datasets.
   - **Linux packages:** `sudo apt install playerctl wl-clipboard` (media and clipboard).
