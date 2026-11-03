@@ -512,11 +512,14 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
   orbGroup.add(icoWire);
 
   // Glowing center sphere — subtle, see-through
+  // depthWrite off on every additive, see-through part (2026-11-03): writing depth made the glow sphere hide
+  // the lines behind it, a dark disc that grew with each surge, in both themes
   const coreSphereMat = new THREE.MeshBasicMaterial({
     color: C_HOT,
     transparent: true,
     opacity: 0.15,
     blending: THREE.AdditiveBlending,
+    depthWrite: false,
   });
   const coreSphere = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 16), coreSphereMat);
   orbGroup.add(coreSphere);
@@ -527,6 +530,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     transparent: true,
     opacity: 0.04,
     blending: THREE.AdditiveBlending,
+    depthWrite: false,
   });
   const glowSphere = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), glowSphereMat);
   orbGroup.add(glowSphere);
@@ -659,6 +663,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
       transparent: true,
       opacity: 0.3 + Math.random() * 0.6,
       blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
     const mesh = new THREE.Mesh(geo, mat);
     const orbitR = 1.2 + Math.random() * 4.0;
@@ -889,25 +894,18 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     icoWire.rotation.x += 0.008 * s;
     icoWire.rotation.y += 0.012 * s;
 
-    // Core pulse — dramatic surges but mostly transparent
+    // Core pulse: a calm breath, and a bounded response to work and speech. The periodic "mega surges" are gone
+    // (the owner, 2026-11-03: the core swelled into a red blob that covered the orb; keep it neat and clean).
     const wave1 = Math.sin(t * 1.2);
-    const wave3 = Math.pow(Math.max(0, Math.sin(t * 0.4)), 5); // rare big surge
-    const wave4 = Math.pow(Math.max(0, Math.sin(t * 0.7 + 2)), 8); // mega surge
-    const fadeOut = Math.pow(Math.max(0, Math.sin(t * 0.25)), 3); // periodic full transparency
-    const surge = wave3 * 1.5 + wave4 * 2.0 + energy * 0.6 + kick * 0.5 + speakWave;
-    const coreScale = 1 + surge + Math.sin(t * 5) * 0.05;
+    const surge = Math.min(1, energy * 0.35 + kick * 0.25 + speakWave * 0.6);
+    const coreScale = 1 + surge * 0.5 + Math.sin(t * 2) * 0.03;
     coreSphere.scale.setScalar(coreScale);
-    // Opacity: mostly very low (0-0.15), sometimes fully transparent, brief bright on surge
-    const coreOpacity = Math.max(
-      0,
-      (0.08 + wave1 * 0.05 + surge * 0.2) * (1 - fadeOut * 0.95 * (1 - energy)),
-    );
-    coreSphereMat.opacity = Math.min(0.6, coreOpacity);
-    glowSphere.scale.setScalar(1 + surge * 0.8);
-    glowSphereMat.opacity = Math.max(0, (0.03 + surge * 0.08) * (1 - fadeOut * 0.9));
-    // Icosahedron wireframe stays visible even when glow fades
-    icoWire.scale.setScalar(1 + surge * 0.6);
-    icoWireMat.opacity = Math.min(1, 0.5 + surge * 0.4);
+    coreSphereMat.opacity = Math.min(0.35, 0.1 + wave1 * 0.03 + surge * 0.15);
+    glowSphere.scale.setScalar(1 + surge * 0.25);
+    glowSphereMat.opacity = 0.02 + surge * 0.03;
+    // the wireframe heart stays crisp and readable
+    icoWire.scale.setScalar(1 + surge * 0.3);
+    icoWireMat.opacity = Math.min(1, 0.6 + surge * 0.3);
 
     // Debris orbits
     debris.forEach((d) => {
@@ -968,7 +966,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     }
 
     // Bloom pulse
-    bloom.strength = palette.bloom + Math.sin(t * 0.8) * 0.25 + energy * 0.6 + kick * 0.5;
+    bloom.strength = palette.bloom + Math.sin(t * 0.8) * 0.08 + energy * 0.3 + kick * 0.25;
     chromaticPass.uniforms.uHeat.value = heat;
     chromaticPass.uniforms.uIntensity.value = (0.003 + kick * 0.004 + heat * 0.002) * palette.chroma;
     // Ultron glitches now and then (more while it acts); a JARVIS hologram never does
