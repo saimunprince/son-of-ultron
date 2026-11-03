@@ -443,6 +443,11 @@ def _own_rows(c: sqlite3.Connection) -> None:
         c.execute(f"CREATE TEMP VIEW IF NOT EXISTS {table} AS SELECT * FROM main.{table} WHERE {own}")
 
 
+def _before_journal(first_ts: Optional[float], window_end: float) -> bool:
+    """Whether a window ends at or before the journal's first own event (an empty journal has no such window)."""
+    return first_ts is not None and window_end <= first_ts
+
+
 def measure(journal_path: Path = DEFAULT_FILE, now: Optional[float] = None) -> Dict[str, Any]:
     now = now or time.time()
     w = WINDOW_DAYS * 86400
@@ -453,7 +458,9 @@ def measure(journal_path: Path = DEFAULT_FILE, now: Optional[float] = None) -> D
         span = c.execute("SELECT MIN(ts), MAX(ts), COUNT(*) FROM events").fetchone()
         rows = []
         for m in METRICS:
-            vals = {k: m.fn(c, t0, t1) for k, (t0, t1) in windows.items()}
+            # audit 2026-11-01 (D15): a window that ends before this PC's first own event has no evidence, not zeros
+            vals = {k: ((None, "before this journal") if _before_journal(span[0], t1) else m.fn(c, t0, t1))
+                    for k, (t0, t1) in windows.items()}
             rows.append({"id": m.id, "pillar": m.pillar, "label": m.label, "better": m.better, "unit": m.unit,
                          "definition": m.definition, **{k: {"value": v, "detail": d} for k, (v, d) in vals.items()}})
     finally:
@@ -493,7 +500,8 @@ def drift(journal_path: Path = DEFAULT_FILE, now: Optional[float] = None, days: 
         for m in METRICS:
             if m.better not in ("higher", "lower"):
                 continue
-            vals = [m.fn(c, t0, t1)[0] for t0, t1 in windows]
+            first = c.execute("SELECT MIN(ts) FROM events").fetchone()[0]
+            vals = [None if _before_journal(first, t1) else m.fn(c, t0, t1)[0] for t0, t1 in windows]
             if any(v is None for v in vals):
                 continue
             a, b, z = vals
