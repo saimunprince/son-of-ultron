@@ -624,7 +624,17 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
   - the own-commit definition names the human's approval path (F16, in part).
 - **Not changed:** the HUD's `answer` case, and the ledger publish in "Releases that landed". Existing tests pin
   both.
-- **Gestures:** each one the HUD acts on is journaled as `gesture.used`.
+
+### 2026-11-03, evening: the camera is back to the original
+
+- **Owner's call:** today's gesture features were gimmicky. The camera does exactly what the original Ultron orb
+  did:
+  - one pinched hand turns the orb;
+  - two pinched hands zoom;
+  - `G` switches it on and off.
+- **Removed:** the hand commands, the effects, the magnet, the lightning, the cursor, the swipes, the presence
+  greeting and the gesture journaling. The frontend matches `8886111` again.
+- **Kept:** "look at me": SYRAX takes one photo when asked. That feature is older than today's work.
 
 ## Open
 
