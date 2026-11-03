@@ -648,6 +648,16 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
   - A new JARVIS theme is a cyan hologram. While SYRAX acts it brightens instead of turning red.
   - The amber classic theme is removed. A saved classic choice opens ULTRON.
 
+### 2026-11-03, night: ULTRON and JARVIS get a character; the orb stays neat
+
+- **ULTRON:** hostile. Deeper crimson, a faster spin, a visible flicker, a short glitch now and then, and sharp
+  cut-corner panels.
+- **JARVIS:** calm. A slow spin, no glitch, round cyan glass, a slow scan line over the log, and "AT YOUR
+  SERVICE".
+- **Fixed, in both themes:**
+  - the core no longer swells into a blob: the periodic surges are gone;
+  - the dark disc around the core is gone: the see-through glow wrote depth and hid the lines behind it.
+
 ## Open
 
 - **Needs the owner:**
