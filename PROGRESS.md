@@ -4,7 +4,7 @@ The short, current page: where SYRAX stands now, what was done, what is next. Up
 Detail lives in [docs/AUDIT_2026-10-28.md](docs/AUDIT_2026-10-28.md) (findings and the open list), the commit
 messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
-## Now (2026-11-01, 19:00 +0600)
+## Now (2026-11-03, +0600)
 
 - **Stage:** the 11-01 audit mission is merged and pushed; SYRAX runs on `main` as a login service. The evening was
   live testing: SYRAX was asked real tasks, and what went wrong outside the protected files was fixed.
@@ -554,6 +554,17 @@ SYRAX was given real tasks (sums, RAM, memory, files, logic, time) and its servi
   - Gemini rejects some tool-result turns with HTTP 400 (an empty function name), so the call fails over.
 - **Found, waiting for its gate:** asked the time in Tokyo, SYRAX was 11 hours off. Branch `fix-world-clock` reads
   it from the zone database.
+
+### 2026-11-03: the phone is the camera; gesture effects
+
+- **Camera:** the owner's Android phone is SYRAX's camera, through DroidCam. The `v4l2loopback` module was installed
+  but not loaded, so there was no `/dev/video0`, and hand tracking failed to start. It now loads at boot.
+- **Gesture effects:**
+  - the camera preview draws the whole hand as a neon skeleton;
+  - a pinch sends a shockwave ring from where it starts;
+  - a closed fist pulses the orb and throws a burst of sparks, once per fist.
+
+  A fist never counts as a pinch. With reduced motion the effects are off.
 
 ## Open
 
