@@ -1,0 +1,198 @@
+/* Brain chip: inline, right-aligned, for the top-right status area. */
+
+.root {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 10px 5px 9px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: var(--glass-shine), var(--glass);
+  backdrop-filter: blur(10px);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  text-align: left;
+  transition:
+    border-color 0.3s var(--ease),
+    background-color 0.3s var(--ease);
+}
+
+button.chip {
+  cursor: pointer;
+}
+
+button.chip:hover {
+  border-color: rgb(var(--accent-rgb) / 0.4);
+}
+
+button.chip:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgb(var(--line-rgb) / 0.35);
+  animation: ping 0.9s var(--ease) 1;
+}
+
+.dot[data-tone="fast"] {
+  background: var(--accent);
+  box-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.8);
+}
+
+.dot[data-tone="ok"] {
+  background: rgb(var(--accent-rgb) / 0.6);
+}
+
+.dot[data-tone="slow"] {
+  background: #ffb347;
+  box-shadow: 0 0 6px rgb(255 179 71 / 0.6);
+}
+
+.dot[data-tone="none"] {
+  animation: none;
+}
+
+.label {
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.model {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-code);
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.ms {
+  padding-left: 8px;
+  border-left: 1px solid rgb(var(--line-rgb) / 0.18);
+  font-family: var(--font-code);
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The 3 s failover warning: in, hold, out. Replays when `failover.at` changes. */
+.failover {
+  font-family: var(--font-code);
+  font-size: 9.5px;
+  line-height: 13px;
+  letter-spacing: 0.1em;
+  color: #ffb347;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  animation: flash 3s var(--ease) forwards;
+}
+
+@keyframes flash {
+  0% {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  8%,
+  82% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+    transform: none;
+    visibility: hidden;
+  }
+}
+
+@keyframes ping {
+  0% {
+    transform: scale(2.2);
+    opacity: 0.2;
+  }
+  100% {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* ——— ULTRON: cut corners, crisp ——— */
+:global([data-theme="ultron"]) .chip {
+  border-radius: 0;
+  clip-path: polygon(var(--cut-sm, 6px) 0, 100% 0, 100% calc(100% - var(--cut-sm, 6px)), calc(100% - var(--cut-sm, 6px)) 100%, 0 100%, 0 var(--cut-sm, 6px));
+}
+
+:global([data-theme="ultron"]) .dot {
+  border-radius: 0;
+  transform: rotate(45deg);
+}
+
+:global([data-theme="ultron"]) .dot:not([data-tone="none"]) {
+  animation-name: ping-cut;
+}
+
+:global([data-theme="ultron"]) .failover {
+  color: var(--accent-hot);
+}
+
+@keyframes ping-cut {
+  0% {
+    transform: rotate(45deg) scale(2.2);
+    opacity: 0.2;
+  }
+  100% {
+    transform: rotate(45deg);
+    opacity: 1;
+  }
+}
+
+/* ——— JARVIS: soft, rounded glass ——— */
+:global([data-theme="jarvis"]) .chip {
+  border-radius: 999px;
+  padding-inline: 11px 12px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.02);
+}
+
+:global([data-theme="jarvis"]) .model {
+  font-family: var(--font-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot,
+  :global([data-theme="ultron"]) .dot:not([data-tone="none"]) {
+    animation: none;
+  }
+
+  .failover {
+    animation: flash-still 3s steps(1, end) forwards;
+  }
+}
+
+@keyframes flash-still {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
