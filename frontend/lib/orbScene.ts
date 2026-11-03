@@ -905,11 +905,15 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
   let activityTarget = 0;
 
   // listening and speaking: a waveform ring around the core
-  const WAVE_PTS = 160;
+  // a radial equaliser: thin straight bars around the core, mirrored left/right, each easing to its own height
+  // (the owner, 2026-11-03: the wobbling waveform line looked poor)
+  const BARS = 96;
+  const WAVE_R = 0.62;
+  const barLen = new Float32Array(BARS);
   const waveGeo = new THREE.BufferGeometry();
-  waveGeo.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(WAVE_PTS * 3), 3));
+  waveGeo.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(BARS * 6), 3));
   const waveMat = lineMat(C_HOT, 0);
-  const wave = new THREE.LineLoop(waveGeo, waveMat);
+  const wave = new THREE.LineSegments(waveGeo, waveMat);
   faceGroup.add(wave);
 
   // JARVIS's core: an arc reactor (a triangle in rings) and data rings with live readings
@@ -1259,14 +1263,21 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     waveMat.opacity += ((voiceOn ? 0.75 : 0) - waveMat.opacity) * 0.1;
     if (waveMat.opacity > 0.01) {
       const arr = (waveGeo.getAttribute("position") as THREE.BufferAttribute).array as Float32Array;
-      const amp = 0.03 + levelSmooth * 0.16;
-      for (let i = 0; i < WAVE_PTS; i++) {
-        const a = (i / WAVE_PTS) * Math.PI * 2;
-        const n = reduced ? 0 : Math.sin(a * 6 + t * 7) * 0.5 + Math.sin(a * 11 - t * 5) * 0.3 + Math.sin(a * 17 + t * 9) * 0.2;
-        const r = 0.6 + amp * n;
-        arr[i * 3] = Math.cos(a) * r;
-        arr[i * 3 + 1] = Math.sin(a) * r;
-        arr[i * 3 + 2] = 0;
+      const half = BARS / 2;
+      for (let i = 0; i < BARS; i++) {
+        // mirror: bar i and its partner across the vertical axis share a height, so the shape is symmetric
+        const k = i < half ? i : BARS - 1 - i;
+        const f = k / half; // 0 at the top, 1 at the bottom
+        const shape = 0.35 + 0.65 * Math.pow(Math.sin(f * Math.PI), 1.5); // tallest at the sides
+        const motion = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(t * 6.2 + k * 0.55) * Math.sin(t * 2.3 + k * 0.21);
+        const want = 0.012 + levelSmooth * 0.2 * shape * (0.55 + 0.45 * motion);
+        barLen[i] += (want - barLen[i]) * 0.25;
+        const a = Math.PI / 2 - (i / BARS) * Math.PI * 2;
+        const c = Math.cos(a);
+        const s2 = Math.sin(a);
+        const r0 = WAVE_R;
+        const r1 = WAVE_R + barLen[i];
+        arr.set([c * r0, s2 * r0, 0, c * r1, s2 * r1, 0], i * 6);
       }
       waveGeo.getAttribute("position").needsUpdate = true;
     }
