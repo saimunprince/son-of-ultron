@@ -10,7 +10,7 @@ export type OrbMode = "idle" | "listening" | "thinking" | "acting" | "speaking" 
 interface ModeProfile {
   speed: number; // rotation speed multiplier
   energy: number; // core surge + bloom boost
-  heat: number; // 0 = amber, 1 = Ultron red
+  heat: number; // 0 = the palette, 1 = fully its heat colour
 }
 
 const MODE_PROFILE: Record<OrbMode, ModeProfile> = {
@@ -35,6 +35,8 @@ export interface OrbPalette {
   grade: [number, number, number];
   /** per-channel weights after chromatic split */
   channels: [number, number, number];
+  /** the colour the orb bleeds into while SYRAX acts (luminance multipliers) */
+  heat: [number, number, number];
   bloom: number;
   exposure: number;
   /** returns a CSS colour for a floating code sprite */
@@ -43,40 +45,44 @@ export interface OrbPalette {
 }
 
 export const PALETTES = {
-  /** Chrome body, red heart: what Ultron's own interface would look like */
+  /** Red Ultron: crimson lines, a burning core (the owner, 2026-11-03: "ekdom red ultron") */
   ultron: {
-    bright: 0xb4bcc8,
-    mid: 0x747c88,
-    dim: 0x464c55,
-    faint: 0x2a2e33,
-    hot: 0xff3b30,
-    glow: 0xff2a1f,
-    grade: [0.98, 1.0, 1.04],
-    channels: [1.0, 1.0, 1.0],
-    bloom: 0.72,
-    exposure: 0.62,
+    bright: 0xff5a4a,
+    mid: 0xc8352b,
+    dim: 0x7a1c17,
+    faint: 0x3f0e0b,
+    hot: 0xff2a1f,
+    glow: 0xff1a10,
+    grade: [1.18, 0.82, 0.8],
+    channels: [1.0, 0.86, 0.84],
+    bloom: 1.05,
+    exposure: 0.7,
+    heat: [1.9, 0.22, 0.14],
     text: (a: number) => {
-      if (Math.random() < 0.12) return `rgba(255, 70, 55, ${a})`;
-      const v = (165 + Math.random() * 70) | 0;
-      return `rgba(${v}, ${v + 5}, ${Math.min(255, v + 14)}, ${a})`;
+      const r = (210 + Math.random() * 45) | 0;
+      const g = (40 + Math.random() * 60) | 0;
+      return `rgba(${r}, ${g}, ${(g * 0.8) | 0}, ${a})`;
     },
-    dust: ["rgba(235,240,248,1)", "rgba(190,198,210,0.55)", "rgba(120,128,140,0.14)", "rgba(60,64,70,0)"],
+    dust: ["rgba(255,120,105,1)", "rgba(230,60,45,0.55)", "rgba(150,25,18,0.15)", "rgba(70,10,8,0)"],
   },
-  /** The original amber ULTRON orb */
-  classic: {
-    bright: 0xffaa30,
-    mid: 0xdd7700,
-    dim: 0x884400,
-    faint: 0x553300,
-    hot: 0xffcc66,
-    glow: 0xdd7700,
-    grade: [1.15, 0.85, 0.55],
-    channels: [1.0, 1.05, 0.6],
-    bloom: 1.6,
-    exposure: 0.8,
-    text: (a: number) =>
-      `rgba(255, ${(130 + Math.random() * 80) | 0}, ${(20 + Math.random() * 30) | 0}, ${a})`,
-    dust: ["rgba(255,170,48,1)", "rgba(255,120,20,0.6)", "rgba(200,80,0,0.15)", "rgba(100,40,0,0)"],
+  /** Blue JARVIS: a cyan hologram; acting brightens it instead of turning it red */
+  jarvis: {
+    bright: 0x8fe3ff,
+    mid: 0x2fa9e0,
+    dim: 0x195f86,
+    faint: 0x0c2f47,
+    hot: 0xb5f6ff,
+    glow: 0x22b8ff,
+    grade: [0.78, 1.0, 1.18],
+    channels: [0.82, 1.0, 1.1],
+    bloom: 1.25,
+    exposure: 0.74,
+    heat: [0.55, 1.45, 1.9],
+    text: (a: number) => {
+      const g = (170 + Math.random() * 70) | 0;
+      return `rgba(${(g * 0.45) | 0}, ${g}, 255, ${a})`;
+    },
+    dust: ["rgba(170,235,255,1)", "rgba(60,180,240,0.55)", "rgba(20,90,140,0.15)", "rgba(8,40,70,0)"],
   },
 } satisfies Record<string, OrbPalette>;
 
@@ -138,6 +144,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
       uTime: { value: 0 },
       uIntensity: { value: 0.003 },
       uHeat: { value: 0 },
+      uHeatColor: { value: new THREE.Vector3(...palette.heat) },
       uGrade: { value: new THREE.Vector3(...palette.grade) },
       uChannels: { value: new THREE.Vector3(...palette.channels) },
     },
@@ -153,6 +160,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
       uniform float uTime;
       uniform float uIntensity;
       uniform float uHeat;
+      uniform vec3 uHeatColor;
       uniform vec3 uGrade;
       uniform vec3 uChannels;
       varying vec2 vUv;
@@ -168,10 +176,9 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
         gl_FragColor = vec4(vec3(cr.r, cg.g, cb.b) * uChannels, 1.0) * flicker;
         // Palette colour grade
         gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * uGrade, 0.3);
-        // Ultron heat: the whole orb bleeds into red while SYRAX is acting
+        // heat: the whole orb bleeds into the palette's heat colour while SYRAX is acting
         float lum = dot(gl_FragColor.rgb, vec3(0.45, 0.45, 0.1));
-        vec3 crimson = vec3(lum * 1.9, lum * 0.28, lum * 0.18);
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, crimson, uHeat);
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, lum * uHeatColor, uHeat);
       }
     `,
   };

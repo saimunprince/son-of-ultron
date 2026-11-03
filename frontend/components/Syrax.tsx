@@ -1595,10 +1595,10 @@ export default function Syrax() {
           <button
             type="button"
             className="hud-btn"
-            onClick={() => setTheme((t) => (t === "ultron" ? "classic" : "ultron"))}
+            onClick={() => setTheme((t) => (t === "ultron" ? "jarvis" : "ultron"))}
             title="Switch look"
           >
-            {theme === "ultron" ? "ULTRON" : "CLASSIC"}
+            {theme === "ultron" ? "ULTRON" : "JARVIS"}
           </button>
           <button type="button" className="hud-btn" aria-pressed={voiceOn} onClick={() => setVoiceOn((v) => !v)}>
             {voiceOn ? "SPEAK ON" : "SPEAK OFF"}

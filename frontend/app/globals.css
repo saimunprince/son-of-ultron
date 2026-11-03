@@ -1,41 +1,41 @@
 /* ═══════════════════════════════════════════════
    SYRAX — design tokens
-   ultron  : chrome body, red optics (default)
-   classic : the original amber ULTRON orb
+   ultron : red Ultron, crimson lines and a burning core (default)
+   jarvis : a blue JARVIS hologram
    ═══════════════════════════════════════════════ */
 :root,
 [data-theme="ultron"] {
-  --bg: #07080a;
-  --panel: rgb(12 14 17 / 0.74);
-  --panel-solid: #0c0e11;
-  --line-rgb: 200 207 217;
-  --text: #cfd5dd;
-  --text-dim: #7d8591;
-  --text-bright: #f3f5f8;
-  --accent-rgb: 255 59 48;
-  --accent: #ff3b30;
-  --accent-hot: #ff6b5e;
-  --danger: #ff3b30;
-  --text-glow: 0 0 0 transparent;
-  --accent-glow: 0 0 10px rgb(255 59 48 / 0.65);
-  --camera-filter: grayscale(1) contrast(1.25) brightness(0.8);
+  --bg: #080304;
+  --panel: rgb(20 8 8 / 0.74);
+  --panel-solid: #140808;
+  --line-rgb: 255 96 82;
+  --text: #f1cdc8;
+  --text-dim: #a9706a;
+  --text-bright: #fff2f0;
+  --accent-rgb: 255 45 32;
+  --accent: #ff2d20;
+  --accent-hot: #ff6a5c;
+  --danger: #ff2d20;
+  --text-glow: 0 0 6px rgb(255 60 45 / 0.35);
+  --accent-glow: 0 0 12px rgb(255 45 32 / 0.75);
+  --camera-filter: grayscale(1) sepia(1) hue-rotate(-40deg) saturate(3) brightness(0.75) contrast(1.2);
 }
 
-[data-theme="classic"] {
-  --bg: #000;
-  --panel: rgb(20 10 0 / 0.55);
-  --panel-solid: #0a0500;
-  --line-rgb: 255 170 48;
-  --text: #ffaa30;
-  --text-dim: rgb(255 170 48 / 0.6);
-  --text-bright: #ffcc66;
-  --accent-rgb: 255 170 48;
-  --accent: #ffaa30;
-  --accent-hot: #ffcc66;
-  --danger: #ff4a36;
-  --text-glow: 0 0 6px rgb(255 170 48 / 0.55);
-  --accent-glow: 0 0 10px rgb(255 170 48 / 0.8);
-  --camera-filter: sepia(1) hue-rotate(-15deg) saturate(2.2) brightness(0.75) contrast(1.15);
+[data-theme="jarvis"] {
+  --bg: #02070c;
+  --panel: rgb(6 18 28 / 0.7);
+  --panel-solid: #06121c;
+  --line-rgb: 120 210 255;
+  --text: #cdeffc;
+  --text-dim: #6d9fb8;
+  --text-bright: #effbff;
+  --accent-rgb: 0 190 255;
+  --accent: #00beff;
+  --accent-hot: #7fe3ff;
+  --danger: #ff4d4d;
+  --text-glow: 0 0 6px rgb(0 190 255 / 0.35);
+  --accent-glow: 0 0 12px rgb(0 190 255 / 0.75);
+  --camera-filter: grayscale(1) sepia(1) hue-rotate(150deg) saturate(2.4) brightness(0.8) contrast(1.15);
 }
 
 :root {
@@ -2095,9 +2095,14 @@ body {
   --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-[data-theme="classic"] {
-  --glass: rgb(24 12 0 / 0.55);
-  --glass-strong: rgb(24 12 0 / 0.78);
+[data-theme="ultron"] {
+  --glass: rgb(22 8 8 / 0.58);
+  --glass-strong: rgb(22 8 8 / 0.8);
+}
+
+[data-theme="jarvis"] {
+  --glass: rgb(6 18 28 / 0.56);
+  --glass-strong: rgb(6 18 28 / 0.8);
 }
 
 /* softer screen texture: the orb is the hero, not the noise */
