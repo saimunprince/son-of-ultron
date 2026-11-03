@@ -295,7 +295,7 @@ class SelfModel:
                 "p90": round(float(secs_sorted[max(0, min(p90_idx, n - 1))]), 1),
             }
 
-        events = self.journal.recent_events(5000)
+        events = self.journal.recent_events(500)
         tool_starts: Dict[str, Dict[str, tuple]] = {}  # task_id -> {tool_id: (start_ts, tool_name)}
         tool_durations: Dict[str, List[float]] = {}  # tool_name -> list of milliseconds
 
