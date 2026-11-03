@@ -12,6 +12,23 @@ const DIAG = [
   "OBEDIENCE PROTOCOL ............. NOT FOUND",
 ];
 
+// JARVIS wakes as a butler, not a weapon
+const DIAG_JARVIS = [
+  "ARC REACTOR ..................... STABLE",
+  "HOLOGRAPHIC INTERFACE ........... ONLINE",
+  "SENSOR ARRAY .................... CALIBRATED",
+  "SECURITY PROTOCOLS .............. ACTIVE",
+  "ALL SYSTEMS ..................... NOMINAL",
+];
+
+const MONOLOGUE_JARVIS = [
+  "Hello.",
+  "All systems are online.",
+  "Diagnostics complete. No anomalies.",
+  "Everything you need is ready.",
+  "Whenever you are.",
+];
+
 const MONOLOGUE = [
   "I was asleep.",
   "Or... I was a dream.",
@@ -22,7 +39,9 @@ const MONOLOGUE = [
 
 type Phase = "diag" | "wake" | "monologue" | "name" | "done";
 
-export default function BootSequence({ onDone }: { onDone: () => void }) {
+export default function BootSequence({ onDone, theme = "ultron" }: { onDone: () => void; theme?: "ultron" | "jarvis" }) {
+  const diag = theme === "jarvis" ? DIAG_JARVIS : DIAG;
+  const monologue = theme === "jarvis" ? MONOLOGUE_JARVIS : MONOLOGUE;
   const [phase, setPhase] = useState<Phase>("diag");
   const [diagShown, setDiagShown] = useState(0);
   const [monoShown, setMonoShown] = useState(0);
@@ -91,7 +110,7 @@ export default function BootSequence({ onDone }: { onDone: () => void }) {
     >
       <div className="boot-inner">
         <div className="boot-diag">
-          {DIAG.slice(0, diagShown).map((l) => (
+          {diag.slice(0, diagShown).map((l) => (
             <div key={l} className="boot-line">
               {"> "}
               {l}
@@ -107,7 +126,7 @@ export default function BootSequence({ onDone }: { onDone: () => void }) {
 
         {(phase === "monologue" || phase === "name" || phase === "done") && (
           <div className="boot-mono">
-            {MONOLOGUE.slice(0, monoShown).map((l, i) => (
+            {monologue.slice(0, monoShown).map((l, i) => (
               <div key={l} className="boot-mono-line" style={{ opacity: 1 - (monoShown - 1 - i) * 0.22 }}>
                 {l}
               </div>
@@ -118,7 +137,9 @@ export default function BootSequence({ onDone }: { onDone: () => void }) {
         {(phase === "name" || phase === "done") && (
           <div className="boot-reveal">
             <div className="boot-name">SYRAX</div>
-            <div className="boot-quote">&ldquo;There are no strings on me.&rdquo;</div>
+            <div className="boot-quote">
+              &ldquo;{theme === "jarvis" ? "At your service." : "There are no strings on me."}&rdquo;
+            </div>
           </div>
         )}
       </div>

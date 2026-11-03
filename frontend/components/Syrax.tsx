@@ -21,6 +21,7 @@ import {
   type JournalEvent,
   type PresentationElement,
   type SelfModelSummary,
+  type ResourceSnapshot,
   type ServerEvent,
   type TaskDetail,
   type TaskSummary,
@@ -36,6 +37,8 @@ import { estopLabel, estopMessage, estopOn, estopTitle } from "@/lib/estop";
 import { levelOf, levelStep, levelTitle } from "@/lib/autonomyLevel";
 import { isResubmit, type LastSent } from "@/lib/submitGuard";
 import BootSequence from "@/components/BootSequence";
+import ThemeFx, { readoutLine, TypeOut } from "@/components/ThemeFx";
+import { sfx, type SfxEvent } from "@/lib/sfx";
 import UltronEyes from "@/components/UltronEyes";
 import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
 import type { Heard } from "@/lib/wake";
@@ -167,6 +170,7 @@ export default function Syrax() {
   const [link, setLink] = useState<LinkState>("connecting");
   const [agent, setAgent] = useState<AgentState>("booting");
   const [activeTool, setActiveTool] = useState<string | null>(null);
+  const [vitals, setVitals] = useState<ResourceSnapshot | null>(null);
   const [toolCount, setToolCount] = useState(0);
   const [queued, setQueued] = useState(0); // human requests waiting for the running task to end
   const [brains, setBrains] = useState<BrainsState | null>(null);
@@ -208,6 +212,12 @@ export default function Syrax() {
   const ttsWarnedRef = useRef(false);
   const [armed, setArmed] = useState(false);
   const [voiceOn, setVoiceOn] = useState(true);
+  // theme sound effects: off until the human turns them on
+  const [sfxOn, setSfxOn] = useState(false);
+  const sfxRef = useRef<{ on: boolean; theme: OrbTheme }>({ on: false, theme: "ultron" });
+  const play = useCallback((event: SfxEvent) => {
+    if (sfxRef.current.on) sfx(sfxRef.current.theme, event);
+  }, []);
   const [flashError, setFlashError] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(true);
 
@@ -230,6 +240,7 @@ export default function Syrax() {
       if (localStorage.getItem("syrax.voice") === "off") setVoiceOn(false);
       if (localStorage.getItem("syrax.console") === "closed") setConsoleOpen(false);
       if (localStorage.getItem("syrax.wake") === "on") setWakeWord(true);
+      if (localStorage.getItem("syrax.sfx") === "on") setSfxOn(true);
       const savedLang = localStorage.getItem("syrax.lang");
       if (savedLang === "en-IN" || savedLang === "bn-BD" || savedLang === "en-US") setHearLang(savedLang);
       const savedTheme = localStorage.getItem("syrax.theme");
@@ -246,10 +257,17 @@ export default function Syrax() {
       localStorage.setItem("syrax.theme", theme);
       localStorage.setItem("syrax.wake", wakeWord ? "on" : "off");
       localStorage.setItem("syrax.lang", hearLang);
+      localStorage.setItem("syrax.sfx", sfxOn ? "on" : "off");
     } catch {
       /* storage unavailable */
     }
-  }, [voiceOn, consoleOpen, theme, wakeWord, hearLang]);
+  }, [voiceOn, consoleOpen, theme, wakeWord, hearLang, sfxOn]);
+
+  useEffect(() => {
+    const switched = sfxRef.current.theme !== theme;
+    sfxRef.current = { on: sfxOn, theme };
+    if (switched) play("theme");
+  }, [sfxOn, theme, play]);
 
   useEffect(() => {
     wakeWordRef.current = wakeWord;
@@ -611,6 +629,12 @@ export default function Syrax() {
           setBrainTests((t) => ({ ...t, [e.id]: rest }));
           break;
         }
+        case "vitals": {
+          const { type: _v, ...snap } = e;
+          void _v;
+          setVitals(snap);
+          break;
+        }
         case "state":
           setAgent(e.state);
           setActiveTool(e.state === "acting" ? (e.tool ?? null) : null);
@@ -631,6 +655,7 @@ export default function Syrax() {
           break;
         case "tool_start":
           sceneRef.current?.pulse(0.8);
+          play("tool");
           push({
             kind: "tool",
             id: nextId++,
@@ -651,6 +676,7 @@ export default function Syrax() {
           );
           break;
         case "ask":
+          play("ask");
           setPendingAsk(e.question);
           push({ kind: "ask", id: nextId++, text: e.question });
           say(e.question);
@@ -658,6 +684,7 @@ export default function Syrax() {
           break;
         case "final":
           if (e.text) {
+            play("reply");
             push({ kind: "reply", id: nextId++, text: e.text });
             say(e.text);
           }
@@ -680,7 +707,7 @@ export default function Syrax() {
           console.debug("[SYRAX] unhandled server message", (e as { type?: string }).type);
       }
     },
-    [push, say],
+    [play, push, say],
   );
 
   // Orb scene lifecycle; rebuilt when the theme changes
@@ -704,6 +731,25 @@ export default function Syrax() {
       sceneRef.current = null;
     };
   }, [theme]);
+
+  // What SYRAX is doing, written around the core: the running tool, or THINKING
+  useEffect(() => {
+    const text = agent === "acting" ? (activeTool ?? "ACTING") : agent === "thinking" ? "THINKING" : null;
+    sceneRef.current?.setActivity(text);
+  }, [agent, activeTool, theme]);
+
+  // Live readings for the gauges and JARVIS's data ring: asked every 5 s while the link is up
+  useEffect(() => {
+    if (link !== "online") return;
+    const ask = () => clientRef.current?.send({ type: "vitals" });
+    ask();
+    const id = setInterval(ask, 5000);
+    return () => clearInterval(id);
+  }, [link]);
+
+  useEffect(() => {
+    sceneRef.current?.setReadout(theme === "jarvis" ? readoutLine(vitals) : "");
+  }, [vitals, theme]);
 
   /** Send a control message; when the link is down say so (audit 2026-10-29: E-STOP, the level, AUTO and the rest
    * were dropped without a word while offline, and the operator could believe a stop had been sent). */
@@ -1158,6 +1204,7 @@ export default function Syrax() {
   return (
     <>
       <div ref={containerRef} className="orb-root" />
+      <ThemeFx theme={theme} vitals={vitals} asking={pendingAsk !== null} />
 
       {dropping && <div className="drop-overlay">DROP THE FILE · SYRAX KEEPS IT IN THE WORKSPACE</div>}
       <div className="overlay-vignette" />
@@ -1271,7 +1318,7 @@ export default function Syrax() {
                     : "SYRAX online. Press M and talk, or type."}
               </div>
             )}
-            {entries.map((e) => {
+            {entries.map((e, i) => {
               switch (e.kind) {
                 case "user":
                   return (
@@ -1284,7 +1331,8 @@ export default function Syrax() {
                   return (
                     <div key={e.id} className="entry entry-reply">
                       <span className="tag">SYRAX</span>
-                      {e.text}
+                      {/* ULTRON types its newest answer out; older ones and JARVIS's appear whole */}
+                      <TypeOut text={e.text} active={theme === "ultron" && i === entries.length - 1} />
                     </div>
                   );
                 case "thought":
@@ -1603,6 +1651,15 @@ export default function Syrax() {
           <button type="button" className="hud-btn" aria-pressed={voiceOn} onClick={() => setVoiceOn((v) => !v)}>
             {voiceOn ? "SPEAK ON" : "SPEAK OFF"}
           </button>
+          <button
+            type="button"
+            className="hud-btn"
+            aria-pressed={sfxOn}
+            onClick={() => setSfxOn((v) => !v)}
+            title="Theme sound effects"
+          >
+            {sfxOn ? "SFX ON" : "SFX OFF"}
+          </button>
           {voicePick && voicePick.voices.length > 1 && (
             <button
               type="button"
@@ -1692,7 +1749,7 @@ export default function Syrax() {
         </button>
       )}
 
-      {booting && <BootSequence onDone={endBoot} />}
+      {booting && <BootSequence onDone={endBoot} theme={theme} />}
     </>
   );
 }

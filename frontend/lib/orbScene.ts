@@ -47,6 +47,8 @@ export interface OrbPalette {
   threshold: number;
   /** 0 = none, 1 = Ultron's menace: a heartbeat in the core, a target-lock reticle and a radar sweep */
   menace: number;
+  /** the colour the orb bleeds into on an error */
+  errorHeat: [number, number, number];
   bloom: number;
   exposure: number;
   /** returns a CSS colour for a floating code sprite */
@@ -73,6 +75,7 @@ export const PALETTES = {
     glitch: 1,
     threshold: 0.32,
     menace: 1,
+    errorHeat: [2.1, 0.12, 0.08],
     text: (a: number) => {
       const r = (210 + Math.random() * 45) | 0;
       const g = (40 + Math.random() * 60) | 0;
@@ -90,14 +93,15 @@ export const PALETTES = {
     glow: 0x22b8ff,
     grade: [0.78, 1.0, 1.18],
     channels: [0.82, 1.0, 1.1],
-    bloom: 1.0,
-    exposure: 0.7,
+    bloom: 0.85,
+    exposure: 0.66,
     heat: [0.55, 1.45, 1.9],
     spin: 0.8,
     chroma: 0.5,
     glitch: 0,
     threshold: 0.26,
     menace: 0,
+    errorHeat: [1.9, 0.85, 0.15],
     text: (a: number) => {
       const g = (170 + Math.random() * 70) | 0;
       return `rgba(${(g * 0.45) | 0}, ${g}, 255, ${a})`;
@@ -122,6 +126,10 @@ export interface OrbSceneApi {
   zoomIn(): void;
   zoomOut(): void;
   resetView(): void;
+  /** What SYRAX is doing right now (a tool's name), written in a ring around the core; null clears it. */
+  setActivity(text: string | null): void;
+  /** Live readings (CPU, RAM, temperature ...) for JARVIS's data ring. */
+  setReadout(text: string): void;
   dispose(): void;
 }
 
@@ -502,6 +510,13 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
   }
 
   orbGroup.add(innerCore);
+  // JARVIS's heart is the arc reactor: the spiral core stays as a faint echo behind it, not a knot in front
+  if (palette.menace === 0) {
+    innerCore.traverse((o) => {
+      const m = (o as THREE.Line).material as THREE.LineBasicMaterial | undefined;
+      if (m && "opacity" in m) m.opacity *= 0.3;
+    });
+  }
 
   // ═══════════════════════════════════════════════
   // LAYER 5: INNERMOST CORE — bright hot center
@@ -513,6 +528,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
   const icoEdges = new THREE.EdgesGeometry(icoGeo);
   const icoWireMat = lineMat(C_HOT, 0.9);
   const icoWire = new THREE.LineSegments(icoEdges, icoWireMat);
+  icoWire.visible = palette.menace > 0;
   orbGroup.add(icoWire);
 
   // Glowing center sphere — subtle, see-through
@@ -826,6 +842,142 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
   ]), edgeMat));
   menaceGroup.add(sweep);
 
+  // ═══════════════════════════════════════════════
+  // FACE: camera-facing parts for both themes (state rings) and each theme's own core
+  // ═══════════════════════════════════════════════
+  const faceGroup = new THREE.Group();
+  scene.add(faceGroup);
+  const hex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
+
+  /** Text written around a circle on a canvas, drawn on a camera-facing plane. */
+  function makeTextRing(radius: number, px: number, color: number) {
+    const size = 1024;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext("2d")!;
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const span = radius * 2.3;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mat);
+    const rPx = (radius / span) * size;
+    let current = "";
+    function set(text: string) {
+      if (text === current) return;
+      current = text;
+      ctx.clearRect(0, 0, size, size);
+      if (!text) {
+        tex.needsUpdate = true;
+        return;
+      }
+      ctx.font = `600 ${px}px ui-monospace, monospace`;
+      ctx.fillStyle = hex(color);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const unit = `${text}   ◆   `;
+      const circumference = 2 * Math.PI * rPx;
+      const reps = Math.max(1, Math.floor(circumference / ctx.measureText(unit).width));
+      const line = unit.repeat(reps);
+      const step = (2 * Math.PI) / [...line].length;
+      ctx.save();
+      ctx.translate(size / 2, size / 2);
+      [...line].forEach((ch, i) => {
+        ctx.save();
+        ctx.rotate(i * step);
+        ctx.fillText(ch, 0, -rPx);
+        ctx.restore();
+      });
+      ctx.restore();
+      tex.needsUpdate = true;
+    }
+    return { mesh, mat, set };
+  }
+
+  // what SYRAX is doing: the running tool's name circles the core
+  const activityRing = makeTextRing(1.25, 22, palette.hot);
+  faceGroup.add(activityRing.mesh);
+  let activityTarget = 0;
+
+  // listening and speaking: a waveform ring around the core
+  const WAVE_PTS = 160;
+  const waveGeo = new THREE.BufferGeometry();
+  waveGeo.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(WAVE_PTS * 3), 3));
+  const waveMat = lineMat(C_HOT, 0);
+  const wave = new THREE.LineLoop(waveGeo, waveMat);
+  faceGroup.add(wave);
+
+  // JARVIS's core: an arc reactor (a triangle in rings) and data rings with live readings
+  const reactor = new THREE.Group();
+  const reactorMat = lineMat(C_HOT, 0.9);
+  const reactorDim = lineMat(C_HOT, 0.7);
+  reactor.add(new THREE.LineLoop(arc(0.5, 0, Math.PI * 2, 96), reactorMat));
+  reactor.add(new THREE.LineLoop(arc(0.24, 0, Math.PI * 2, 64), reactorDim));
+  reactor.add(new THREE.LineLoop(arc(0.08, 0, Math.PI * 2, 32), reactorMat));
+  const tri: THREE.Vector3[] = [];
+  for (let i = 0; i < 3; i++) {
+    const a = Math.PI / 2 + (i * Math.PI * 2) / 3;
+    tri.push(new THREE.Vector3(Math.cos(a) * 0.44, Math.sin(a) * 0.44, 0));
+  }
+  reactor.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(tri), reactorMat));
+  const reactorSegs = new THREE.Group();
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    reactorSegs.add(new THREE.Line(arc(0.64, a + 0.06, a + 0.5, 10), reactorMat));
+  }
+  reactor.add(reactorSegs);
+  const dataRings = new THREE.Group();
+  const dataMat = lineMat(C_BRIGHT, 0.35);
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2;
+    dataRings.add(new THREE.Line(arc(R1 * 0.74, a, a + 0.24, 8), dataMat));
+  }
+  const dataRings2 = new THREE.Group();
+  dataRings2.add(new THREE.LineLoop(arc(R1 * 0.8, 0, Math.PI * 2, 128), lineMat(C_MID, 0.4)));
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    dataRings2.add(new THREE.Line(arc(R1 * 0.84, a - 0.15, a + 0.15, 12), reactorMat));
+  }
+  const readoutRing = makeTextRing(R1 * 0.68, 17, palette.bright);
+  const jarvisParts = [reactor, dataRings, dataRings2, readoutRing.mesh];
+  for (const part of jarvisParts) {
+    part.visible = palette.menace === 0;
+    faceGroup.add(part);
+  }
+
+  // thinking: neural sparks, short bright links that flash between points inside the orb
+  const SPARKS = 28;
+  const sparkPos = new Float32Array(SPARKS * 6);
+  const sparkCol = new Float32Array(SPARKS * 6);
+  const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute("position", new THREE.BufferAttribute(sparkPos, 3));
+  sparkGeo.setAttribute("color", new THREE.BufferAttribute(sparkCol, 3));
+  const sparkMat = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  orbGroup.add(new THREE.LineSegments(sparkGeo, sparkMat));
+  const sparkLife = new Float32Array(SPARKS);
+  const sparkRgb = new THREE.Color(C_HOT);
+  function randomOnSphere(r: number, out: Float32Array, at: number) {
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    out[at] = r * Math.sin(ph) * Math.cos(th);
+    out[at + 1] = r * Math.cos(ph);
+    out[at + 2] = r * Math.sin(ph) * Math.sin(th);
+  }
+
+  // performance guard: if frames get slow, the extras step down
+  let frameAvg = 1 / 60;
+  let lastFrame = performance.now();
+  let lowPower = false;
+
   const scanRing1 = makeScanRing(R1, 0.01);
   const scanRing2 = makeScanRing(R1 * 0.7, 0.008);
   orbGroup.add(scanRing1, scanRing2);
@@ -1010,6 +1162,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     }
 
     // Menace: the reticle faces the camera, turns, and locks tighter while SYRAX acts; the core beats
+    if (lowPower) sweep.visible = false;
     if (menaceGroup.visible) {
       menaceGroup.quaternion.copy(camera.quaternion);
       const m = reduced ? 0.2 : 1;
@@ -1028,6 +1181,69 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
       icoWireMat.opacity = Math.min(1, icoWireMat.opacity + beat * 0.25);
       coreSphereMat.opacity = Math.min(0.4, coreSphereMat.opacity + beat * 0.08);
     }
+
+    // ——— performance guard ———
+    const nowMs = performance.now();
+    frameAvg += ((nowMs - lastFrame) / 1000 - frameAvg) * 0.02;
+    lastFrame = nowMs;
+    if (!lowPower && frameAvg > 1 / 35 && t > 6) {
+      lowPower = true; // slow machine: drop the extras, keep the orb
+      renderer.setPixelRatio(1);
+    }
+
+    faceGroup.quaternion.copy(camera.quaternion);
+
+    // ——— what SYRAX is doing: the activity ring ———
+    activityRing.mat.opacity += (activityTarget - activityRing.mat.opacity) * 0.08;
+    activityRing.mesh.rotation.z -= 0.004 * (reduced ? 0.2 : 1);
+
+    // ——— listening / speaking: a waveform around the core ———
+    const voiceOn = mode === "listening" || mode === "speaking";
+    waveMat.opacity += ((voiceOn ? 0.75 : 0) - waveMat.opacity) * 0.1;
+    if (waveMat.opacity > 0.01) {
+      const arr = (waveGeo.getAttribute("position") as THREE.BufferAttribute).array as Float32Array;
+      const amp = 0.03 + levelSmooth * 0.16;
+      for (let i = 0; i < WAVE_PTS; i++) {
+        const a = (i / WAVE_PTS) * Math.PI * 2;
+        const n = reduced ? 0 : Math.sin(a * 6 + t * 7) * 0.5 + Math.sin(a * 11 - t * 5) * 0.3 + Math.sin(a * 17 + t * 9) * 0.2;
+        const r = 0.6 + amp * n;
+        arr[i * 3] = Math.cos(a) * r;
+        arr[i * 3 + 1] = Math.sin(a) * r;
+        arr[i * 3 + 2] = 0;
+      }
+      waveGeo.getAttribute("position").needsUpdate = true;
+    }
+
+    // ——— JARVIS: the reactor turns, the data rings turn against each other ———
+    if (reactor.visible) {
+      const m = reduced ? 0.2 : 1;
+      reactor.rotation.z += 0.002 * m;
+      reactorSegs.rotation.z -= 0.01 * m * (1 + heat * 2);
+      dataRings.rotation.z += 0.0012 * m * (1 + heat);
+      dataRings2.rotation.z -= 0.0008 * m;
+      readoutRing.mesh.rotation.z += 0.0006 * m;
+      reactorMat.opacity = 1;
+      reactor.scale.setScalar(1 + Math.sin(t * 2) * 0.015 + heat * 0.05);
+    }
+
+    // ——— thinking: neural sparks ———
+    const sparkRate = lowPower || reduced ? 0 : mode === "thinking" ? 0.45 : mode === "acting" ? 0.25 : 0.015;
+    for (let i = 0; i < SPARKS; i++) {
+      if (sparkLife[i] <= 0 && Math.random() < sparkRate / 4) {
+        sparkLife[i] = 1;
+        randomOnSphere(0.5 + Math.random() * 1.0, sparkPos, i * 6);
+        randomOnSphere(0.5 + Math.random() * 1.0, sparkPos, i * 6 + 3);
+      }
+      sparkLife[i] = Math.max(0, sparkLife[i] - 0.06);
+      const k = sparkLife[i];
+      for (let v = 0; v < 2; v++) {
+        sparkCol[i * 6 + v * 3] = sparkRgb.r * k;
+        sparkCol[i * 6 + v * 3 + 1] = sparkRgb.g * k;
+        sparkCol[i * 6 + v * 3 + 2] = sparkRgb.b * k;
+      }
+    }
+    sparkGeo.getAttribute("position").needsUpdate = true;
+    sparkGeo.getAttribute("color").needsUpdate = true;
 
     // Scan rings sweeping
     const scanY1 = Math.sin(t * 0.4) * R1;
@@ -1059,6 +1275,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     // Bloom pulse
     bloom.strength = palette.bloom + Math.sin(t * 0.8) * 0.08 + energy * 0.3 + kick * 0.25;
     chromaticPass.uniforms.uHeat.value = heat;
+    (chromaticPass.uniforms.uHeatColor.value as THREE.Vector3).set(...(mode === "error" ? palette.errorHeat : palette.heat));
     chromaticPass.uniforms.uIntensity.value = (0.003 + kick * 0.004 + heat * 0.002) * palette.chroma;
     // Ultron glitches now and then (more while it acts); a JARVIS hologram never does
     if (!reduced && palette.glitch > 0) {
@@ -1124,6 +1341,14 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     zoomIn: () => zoomBy(0.65),
     zoomOut: () => zoomBy(1.55),
     resetView,
+    setActivity(text: string | null) {
+      if (text) activityRing.set(text.toUpperCase());
+      activityTarget = text ? 0.85 : 0;
+    },
+    setReadout(text: string) {
+      readoutRing.set(text);
+      readoutRing.mat.opacity = text ? 0.8 : 0;
+    },
     dispose,
   };
 }

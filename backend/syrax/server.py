@@ -27,9 +27,9 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     presentation_feedback {presentation_id, action?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
-                    brain_models {id, api_key?} | brain_test {id}
+                    brain_models {id, api_key?} | brain_test {id} | vitals
   server -> client: hello {name, tools, interrupted, running, queue, recent} | state | queue {items} |
-                    user | think | tool_start | tool_result | ask | final |
+                    user | think | tool_start | tool_result | ask | final | vitals |
                     task {event} | checkpoint | recovery {event} | verification |
                     history | task_events | verifications | self_model |
                     objectives | autonomy_status | autonomy {event} | objective {event} | cycle {event} |
@@ -548,6 +548,11 @@ class Session:
 
         if kind == "ping":
             await self.send({"type": "pong"})
+        elif kind == "vitals":
+            # live readings for the HUD's gauges (2026-11-03, the JARVIS theme): CPU load, memory, disk, temperatures
+            from syrax import resources
+
+            await self.send({"type": "vitals", **await asyncio.to_thread(resources.snapshot)})
         elif kind == "task" and presence.parse_command(text):
             # "hide" / "show" / "go minimal": a visibility change, never a task, allowed while one runs
             visibility = presence.parse_command(text)

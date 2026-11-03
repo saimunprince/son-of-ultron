@@ -209,6 +209,8 @@ export interface ResourceSnapshot {
   disk: { free_gb: number; total_gb: number } | null;
   battery: { percent: number; status: string; discharging: boolean } | null;
   quiet_hours: { window: [number, number] | null; active: boolean };
+  /** sysinfo.temperatures(): one reading per sensor, in degrees C */
+  temperatures?: { sensor: string; c: number; crit: number | null }[];
 }
 
 /** The voice SYRAX speaks with (backend/syrax/voice.py VOICES), picked in the UI. */
@@ -500,6 +502,7 @@ export type ServerEvent =
   | { type: "briefing"; text: string }
   | { type: "proposals"; proposals: Proposal[] }
   | ({ type: "autonomy_status" } & AutonomyStatus)
+  | ({ type: "vitals" } & ResourceSnapshot)
   | ({ type: "startup_status" } & StartupStatus)
   | ({ type: "voice_status" } & VoiceStatus)
   | { type: "memories"; facts: MemoryFact[] }
@@ -567,6 +570,7 @@ export type ClientMessage =
   | { type: "stop"; reason?: string }
   | { type: "reset" }
   | { type: "ping" }
+  | { type: "vitals" }
   | { type: "history"; limit?: number }
   | { type: "task_events"; task_id: string }
   | { type: "verifications"; limit?: number }
