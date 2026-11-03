@@ -45,6 +45,8 @@ export interface OrbPalette {
   glitch: number;
   /** bloom threshold: higher keeps the core's detail instead of a blown-out glow */
   threshold: number;
+  /** 0 = none, 1 = Ultron's menace: a heartbeat in the core, a target-lock reticle and a radar sweep */
+  menace: number;
   bloom: number;
   exposure: number;
   /** returns a CSS colour for a floating code sprite */
@@ -70,6 +72,7 @@ export const PALETTES = {
     chroma: 2.4,
     glitch: 1,
     threshold: 0.32,
+    menace: 1,
     text: (a: number) => {
       const r = (210 + Math.random() * 45) | 0;
       const g = (40 + Math.random() * 60) | 0;
@@ -94,6 +97,7 @@ export const PALETTES = {
     chroma: 0.5,
     glitch: 0,
     threshold: 0.26,
+    menace: 0,
     text: (a: number) => {
       const g = (170 + Math.random() * 70) | 0;
       return `rgba(${(g * 0.45) | 0}, ${g}, 255, ${a})`;
@@ -755,6 +759,73 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     return mesh;
   }
 
+  // ═══════════════════════════════════════════════
+  // MENACE (Ultron only): a target-lock reticle and a radar sweep, drawn facing the camera, thin and bounded
+  // ═══════════════════════════════════════════════
+  const menaceGroup = new THREE.Group();
+  menaceGroup.visible = palette.menace > 0;
+  scene.add(menaceGroup);
+
+  function arc(radius: number, from: number, to: number, segments = 32) {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= segments; i++) {
+      const a = from + ((to - from) * i) / segments;
+      pts.push(new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, 0));
+    }
+    return new THREE.BufferGeometry().setFromPoints(pts);
+  }
+
+  // tick ring: a short tick every 5 degrees, a long one every 30
+  const tickRing = new THREE.Group();
+  const tickPts: THREE.Vector3[] = [];
+  for (let i = 0; i < 72; i++) {
+    const a = (i / 72) * Math.PI * 2;
+    const r0 = R1 * 1.16;
+    const r1 = r0 + (i % 6 === 0 ? 0.14 : 0.05);
+    tickPts.push(new THREE.Vector3(Math.cos(a) * r0, Math.sin(a) * r0, 0), new THREE.Vector3(Math.cos(a) * r1, Math.sin(a) * r1, 0));
+  }
+  const tickMat = lineMat(C_BRIGHT, 0.6);
+  tickRing.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(tickPts), tickMat));
+  // a broken outer ring: 12 dashes
+  const dashMat = lineMat(C_BRIGHT, 0.5);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    tickRing.add(new THREE.Line(arc(R1 * 1.24, a, a + 0.32, 12), dashMat));
+  }
+  menaceGroup.add(tickRing);
+
+  // lock brackets: four hot arcs that turn the other way and close in while SYRAX acts
+  const lock = new THREE.Group();
+  const lockMat = lineMat(C_HOT, 0.85);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    lock.add(new THREE.Line(arc(R1 * 1.32, a - 0.22, a + 0.22, 16), lockMat));
+    // a small inward notch at the middle of each bracket
+    lock.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(Math.cos(a) * R1 * 1.32, Math.sin(a) * R1 * 1.32, 0),
+      new THREE.Vector3(Math.cos(a) * R1 * 1.25, Math.sin(a) * R1 * 1.25, 0),
+    ]), lockMat));
+  }
+  menaceGroup.add(lock);
+
+  // radar sweep: a faint wedge with a bright leading edge
+  const sweep = new THREE.Group();
+  const sweepMat = new THREE.MeshBasicMaterial({
+    color: C_HOT,
+    transparent: true,
+    opacity: 0.05,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  sweep.add(new THREE.Mesh(new THREE.RingGeometry(R1 * 0.25, R1 * 1.1, 48, 1, 0, 0.5), sweepMat));
+  const edgeMat = lineMat(C_HOT, 0.9);
+  sweep.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(Math.cos(0.5) * R1 * 0.25, Math.sin(0.5) * R1 * 0.25, 0),
+    new THREE.Vector3(Math.cos(0.5) * R1 * 1.1, Math.sin(0.5) * R1 * 1.1, 0),
+  ]), edgeMat));
+  menaceGroup.add(sweep);
+
   const scanRing1 = makeScanRing(R1, 0.01);
   const scanRing2 = makeScanRing(R1 * 0.7, 0.008);
   orbGroup.add(scanRing1, scanRing2);
@@ -936,6 +1007,26 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
           u.r * Math.sin(u.phi) * Math.sin(u.theta),
         );
       });
+    }
+
+    // Menace: the reticle faces the camera, turns, and locks tighter while SYRAX acts; the core beats
+    if (menaceGroup.visible) {
+      menaceGroup.quaternion.copy(camera.quaternion);
+      const m = reduced ? 0.2 : 1;
+      tickRing.rotation.z += 0.0015 * m * (1 + heat * 2);
+      lock.rotation.z -= 0.004 * m * (1 + heat * 3);
+      const tighten = 1 - heat * 0.08 - kick * 0.02;
+      lock.scale.setScalar(tighten);
+      lockMat.opacity = 0.75 + heat * 0.2 + Math.abs(Math.sin(t * 3)) * 0.05;
+      sweep.rotation.z = reduced ? 0 : -t * (1.2 + heat * 2.5);
+      sweepMat.opacity = 0.07 + heat * 0.05;
+      // heartbeat: lub-dub every 1.6 s (faster while acting), small and bounded
+      const period = 1.6 - heat * 0.6;
+      const p = t % period;
+      const beat = reduced ? 0 : Math.exp(-((p * p) / 0.003)) + 0.6 * Math.exp(-(((p - 0.22) * (p - 0.22)) / 0.003));
+      icoWire.scale.multiplyScalar(1 + beat * 0.1);
+      icoWireMat.opacity = Math.min(1, icoWireMat.opacity + beat * 0.25);
+      coreSphereMat.opacity = Math.min(0.4, coreSphereMat.opacity + beat * 0.08);
     }
 
     // Scan rings sweeping

@@ -2549,3 +2549,118 @@ body {
     display: none;
   }
 }
+
+/* ═══════════════════════════════════════════════
+   ULTRON menace (2026-11-03, the owner: "more animation, a more dangerous UI")
+   Bounded, thin and red: the screen's edge breathes, a scan line runs over the panels, the title glitches more
+   often, and the E-STOP glows like a live wire. JARVIS stays calm. Reduced motion turns all of it off.
+   ═══════════════════════════════════════════════ */
+[data-theme="ultron"] .overlay-vignette {
+  background:
+    radial-gradient(ellipse at center, transparent 48%, rgb(90 0 0 / 0.35) 82%, rgb(0 0 0 / 0.85) 100%);
+  animation: danger-breathe 4.8s ease-in-out infinite;
+}
+
+@keyframes danger-breathe {
+  0%,
+  100% {
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+[data-theme="ultron"] .title-name {
+  animation-duration: 3.6s;
+}
+
+/* a hard red scan line over the log and the dock */
+[data-theme="ultron"] .hud-console,
+[data-theme="ultron"] .rail-main {
+  overflow: hidden;
+}
+
+[data-theme="ultron"] .hud-console::after,
+[data-theme="ultron"] .rail-main::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -6px;
+  height: 2px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.75), transparent);
+  box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.6);
+  animation: red-scan 3.2s cubic-bezier(0.6, 0, 0.4, 1) infinite;
+}
+
+[data-theme="ultron"] .rail-main {
+  position: relative;
+}
+
+[data-theme="ultron"] .rail-main::after {
+  animation-duration: 4.4s;
+  animation-delay: 1.1s;
+}
+
+@keyframes red-scan {
+  0% {
+    top: -6px;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0;
+  }
+}
+
+/* the E-STOP glows like a live wire */
+[data-theme="ultron"] .rail-main .hud-btn[title^="Emergency stop"] {
+  animation: live-wire 2.4s ease-in-out infinite;
+}
+
+@keyframes live-wire {
+  50% {
+    box-shadow: 0 0 16px rgb(var(--accent-rgb) / 0.45), inset 0 0 10px rgb(var(--accent-rgb) / 0.2);
+  }
+}
+
+/* the optics stare harder */
+[data-theme="ultron"] .ultron-eyes .eye {
+  animation-duration: 2.6s;
+}
+
+/* a new answer lands with a short red flare */
+[data-theme="ultron"] .entry-reply {
+  animation: entry-in 0.32s var(--ease) both, reply-flare 1.2s ease-out both;
+}
+
+@keyframes reply-flare {
+  from {
+    box-shadow: 0 0 22px rgb(var(--accent-rgb) / 0.55);
+  }
+  to {
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="ultron"] .overlay-vignette,
+  [data-theme="ultron"] .title-name,
+  [data-theme="ultron"] .rail-main .hud-btn,
+  [data-theme="ultron"] .entry-reply {
+    animation: none;
+  }
+
+  [data-theme="ultron"] .hud-console::after,
+  [data-theme="ultron"] .rail-main::after {
+    display: none;
+  }
+}
