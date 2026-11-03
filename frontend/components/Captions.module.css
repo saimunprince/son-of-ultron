@@ -1,0 +1,236 @@
+/* Cinematic captions: film subtitles just above the command bar.
+   Decorative overlay; never takes a click. */
+
+.captions {
+  position: fixed;
+  left: 50%;
+  /* command bar: bottom gutter + ~56px tall, plus breathing room */
+  bottom: calc(var(--gutter, 24px) + 56px + 30px);
+  transform: translateX(-50%);
+  z-index: 19; /* under the HUD panels (20), over the stage */
+  width: min(760px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  user-select: none;
+  text-align: center;
+  animation: cap-in 360ms var(--ease, ease-out) both;
+  transition: opacity 650ms var(--ease, ease-out);
+}
+
+/* A soft dark pool behind the words, for legibility over the orb; no box edges. */
+.captions::before {
+  content: "";
+  position: absolute;
+  inset: -18px -40px -14px;
+  z-index: -1;
+  background: radial-gradient(ellipse at 50% 60%, rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.22) 45%, transparent 72%);
+}
+
+.closing {
+  opacity: 0;
+}
+
+.label {
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.32em;
+  text-indent: 0.32em; /* optically center the tracked caps */
+  color: rgb(var(--accent-rgb) / 0.72);
+  text-shadow: 0 0 10px rgb(var(--accent-rgb) / 0.35);
+}
+
+.stack {
+  display: grid;
+  align-items: end;
+  justify-items: center;
+  width: 100%;
+}
+
+.line {
+  grid-area: 1 / 1;
+  max-width: 100%;
+  font-family: var(--font-text);
+  font-size: clamp(17px, 1.6vw + 6px, 22px);
+  font-weight: 450;
+  line-height: 1.42;
+  letter-spacing: 0.005em;
+  color: var(--text-bright);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  text-shadow:
+    0 1px 2px rgb(0 0 0 / 0.9),
+    0 0 14px rgb(0 0 0 / 0.75),
+    0 0 30px rgb(var(--accent-rgb) / 0.16);
+  animation: line-in 420ms var(--ease, ease-out) both;
+}
+
+.leaving {
+  animation: line-out 420ms var(--ease, ease-out) both;
+}
+
+.more {
+  margin-left: 0.18em;
+  color: rgb(var(--accent-rgb) / 0.85);
+  letter-spacing: 0.1em;
+}
+
+/* The accent rule under the caption; a hairline fills over the chunk's reading time. */
+.rule {
+  position: relative;
+  width: 132px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.35), transparent);
+}
+
+.progress {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  transform-origin: center;
+  opacity: 0.85;
+  animation: fill var(--cap-ms, 3000ms) linear both;
+}
+
+@keyframes cap-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes line-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+    filter: blur(4px);
+  }
+}
+
+@keyframes line-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+    filter: blur(3px);
+  }
+}
+
+@keyframes fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ULTRON: crisp, sharper, hotter red; no blur, a hard cut rule with notched ends. */
+:global([data-theme="ultron"]) .line {
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-shadow:
+    0 1px 1px rgb(0 0 0 / 0.95),
+    0 0 12px rgb(0 0 0 / 0.8),
+    0 0 22px rgb(var(--accent-rgb) / 0.22);
+  animation-name: line-in-sharp;
+  animation-duration: 300ms;
+}
+
+:global([data-theme="ultron"]) .leaving {
+  animation-name: line-out-sharp;
+  animation-duration: 260ms;
+}
+
+:global([data-theme="ultron"]) .rule {
+  width: 156px;
+  background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.5) 18% 82%, transparent);
+}
+
+:global([data-theme="ultron"]) .rule::before,
+:global([data-theme="ultron"]) .rule::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  width: 1px;
+  height: 5px;
+  background: var(--accent);
+  box-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.8);
+}
+
+:global([data-theme="ultron"]) .rule::before {
+  left: 18%;
+}
+
+:global([data-theme="ultron"]) .rule::after {
+  right: 18%;
+}
+
+:global([data-theme="ultron"]) .progress {
+  background: var(--accent);
+  box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.9);
+  inset: 0 18%;
+}
+
+@keyframes line-in-sharp {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+}
+
+@keyframes line-out-sharp {
+  to {
+    opacity: 0;
+    transform: translateX(6px);
+  }
+}
+
+/* JARVIS: calm glass light; softer, wider glow under the line. */
+:global([data-theme="jarvis"]) .line {
+  font-weight: 400;
+  text-shadow:
+    0 1px 2px rgb(0 0 0 / 0.85),
+    0 0 16px rgb(0 0 0 / 0.65),
+    0 0 34px rgb(var(--accent-rgb) / 0.2);
+}
+
+:global([data-theme="jarvis"]) .rule {
+  width: 180px;
+  height: 2px;
+  border-radius: 2px;
+  filter: blur(0.4px);
+}
+
+:global([data-theme="jarvis"]) .progress {
+  border-radius: 2px;
+  box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.55);
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .captions,
+  .line,
+  .leaving,
+  .progress,
+  :global([data-theme="ultron"]) .line,
+  :global([data-theme="ultron"]) .leaving {
+    animation: none;
+    transition: none;
+  }
+
+  .leaving {
+    visibility: hidden;
+  }
+
+  .progress {
+    transform: none;
+    opacity: 0.5;
+  }
+}
