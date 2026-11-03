@@ -96,8 +96,6 @@ export interface OrbSceneApi {
   zoomIn(): void;
   zoomOut(): void;
   resetView(): void;
-  /** Pull the dust toward a point on screen (x, y as fractions of the view) with strength 0..1; null lets it go. */
-  setAttractor(at: { x: number; y: number; strength: number } | null): void;
   dispose(): void;
 }
 
@@ -701,12 +699,6 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
   });
   const dustPoints = new THREE.Points(dustGeo, dustMat);
   orbGroup.add(dustPoints);
-  const dustHome = dustPos.slice(); // where each grain rests; the magnet pulls from here and lets it spring back
-  let attractor: { x: number; y: number; strength: number } | null = null;
-  let magnet = 0; // eased strength, so the pull grows and lets go smoothly
-  const magnetWorld = new THREE.Vector3();
-  const magnetLocal = new THREE.Vector3();
-  let dustMoved = false;
 
   // ═══════════════════════════════════════════════
   // SCANNING RINGS
@@ -931,37 +923,6 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     // Dust rotation
     dustPoints.rotation.y += 0.0002;
 
-    // Hand magnet: the dust leans toward the hand, more the closer it is (reduced motion: none)
-    magnet += ((attractor && !reduced ? attractor.strength : 0) - magnet) * 0.08;
-    if (magnet > 0.002 || attractor) {
-      const pos = dustGeo.getAttribute("position") as THREE.BufferAttribute;
-      const arr = pos.array as Float32Array;
-      if (attractor) {
-        // the hand's point on the plane through the orb's centre that faces the camera
-        magnetWorld.set(attractor.x * 2 - 1, -(attractor.y * 2 - 1), 0.5).unproject(camera).sub(camera.position).normalize();
-        magnetWorld.multiplyScalar(camera.position.distanceTo(controls.target)).add(camera.position);
-      }
-      magnetLocal.copy(magnetWorld);
-      dustPoints.worldToLocal(magnetLocal);
-      for (let i = 0; i < dustCount; i++) {
-        const k = i * 3;
-        const dx = magnetLocal.x - dustHome[k];
-        const dy = magnetLocal.y - dustHome[k + 1];
-        const dz = magnetLocal.z - dustHome[k + 2];
-        const pull = Math.min(0.85, (magnet * 1.4) / (1 + (dx * dx + dy * dy + dz * dz) * 0.12));
-        arr[k] = dustHome[k] + dx * pull;
-        arr[k + 1] = dustHome[k + 1] + dy * pull;
-        arr[k + 2] = dustHome[k + 2] + dz * pull;
-      }
-      pos.needsUpdate = true;
-      dustMoved = true;
-    } else if (dustMoved) {
-      const pos = dustGeo.getAttribute("position") as THREE.BufferAttribute;
-      (pos.array as Float32Array).set(dustHome);
-      pos.needsUpdate = true;
-      dustMoved = false;
-    }
-
     // Random flicker on some panels
     flickerTimer += 0.016;
     if (flickerTimer > 0.1) {
@@ -1027,9 +988,6 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     setLevel,
     rotateBy,
     zoomBy,
-    setAttractor(at: { x: number; y: number; strength: number } | null) {
-      attractor = at;
-    },
     zoomIn: () => zoomBy(0.65),
     zoomOut: () => zoomBy(1.55),
     resetView,

@@ -1,22 +1,13 @@
 import {
-  FaceDetector,
   FilesetResolver,
   HandLandmarker,
   type NormalizedLandmark,
 } from "@mediapipe/tasks-vision";
 
-import type { HandInfo } from "./gestureControl.ts";
-import { HAND_CONNECTIONS, fistFires, isFist, palmCenter, pose } from "./gestures.ts";
-
 const WASM_CDN =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-const FACE_MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
-// Presence: a face (or a hand) is looked for this often; nobody seen for AWAY_MS means the human left
-const FACE_EVERY_MS = 700;
-const AWAY_MS = 20_000;
 
 // Landmark indices (MediaPipe hand model)
 const WRIST = 0;
@@ -46,24 +37,15 @@ export interface HandTrackerCallbacks {
   /** Called when both hands pinch and spread/close: multiply camera distance by factor. */
   onZoom(factor: number): void;
   onStatus(status: TrackerStatus): void;
-  /** A pinch just closed, at this point (mirrored normalized coords). */
-  onPinch?(at: Point): void;
-  /** A fist just closed (once per fist, with a cooldown), at the palm (mirrored normalized coords). */
-  onFist?(at: Point): void;
-  /** Every tracked frame: each hand's palm, index tip and pose (mirrored), first hand first. */
-  onFrame?(hands: HandInfo[], t: number): void;
-  /** Someone is in front of the camera (true), or nobody has been for a while (false). */
-  onPresence?(present: boolean): void;
 }
 
-export interface Point {
+interface Point {
   x: number;
   y: number;
 }
 
 interface HandState {
   pinching: boolean;
-  fist: boolean;
   grab: Point; // smoothed pinch midpoint, mirrored
 }
 
@@ -72,11 +54,6 @@ export class HandTracker {
   private overlay: HTMLCanvasElement;
   private callbacks: HandTrackerCallbacks;
   private landmarker: HandLandmarker | null = null;
-  private faces: FaceDetector | null = null;
-  private lastFaceAt = 0;
-  private lastSeenAt = 0;
-  private present: boolean | null = null;
-  private startedAt = 0;
   private stream: MediaStream | null = null;
   private rafId = 0;
   private running = false;
@@ -88,7 +65,6 @@ export class HandTracker {
   private prevSpinGrab: Point | null = null;
   private prevZoomDist: number | null = null;
   private lastStatus: TrackerStatus = { hands: 0, mode: "idle" };
-  private lastFistAt = -Infinity;
 
   constructor(
     video: HTMLVideoElement,
@@ -127,18 +103,6 @@ export class HandTracker {
       });
     }
 
-    // presence is a bonus: tracking runs without it when the face model cannot load
-    try {
-      this.faces = await FaceDetector.createFromOptions(fileset, {
-        baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: "CPU" as const },
-        runningMode: "VIDEO" as const,
-        minDetectionConfidence: 0.6,
-      });
-    } catch (err) {
-      console.warn("SYRAX: face detector unavailable; presence is off.", err);
-      this.faces = null;
-    }
-
     this.running = true;
     this.loop();
   }
@@ -148,11 +112,6 @@ export class HandTracker {
     cancelAnimationFrame(this.rafId);
     this.landmarker?.close();
     this.landmarker = null;
-    this.faces?.close();
-    this.faces = null;
-    this.present = null;
-    this.startedAt = 0;
-    this.lastSeenAt = 0;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
     this.video.srcObject = null;
@@ -160,7 +119,6 @@ export class HandTracker {
     this.prevMode = "idle";
     this.prevSpinGrab = null;
     this.prevZoomDist = null;
-    this.lastFistAt = -Infinity;
     const ctx = this.overlay.getContext("2d");
     ctx?.clearRect(0, 0, this.overlay.width, this.overlay.height);
     this.emitStatus({ hands: 0, mode: "idle" });
@@ -174,45 +132,10 @@ export class HandTracker {
     if (this.video.currentTime === this.lastVideoTime) return;
     this.lastVideoTime = this.video.currentTime;
 
-    const now = performance.now();
-    const result = this.landmarker.detectForVideo(this.video, now);
+    const result = this.landmarker.detectForVideo(this.video, performance.now());
     this.processHands(result.landmarks, result.handedness.map((h) => h[0]?.categoryName ?? "?"));
     this.drawOverlay(result.landmarks);
-    this.callbacks.onFrame?.(
-      result.landmarks.map((lm, i) => {
-        const c = palmCenter(lm);
-        return {
-          palm: { x: 1 - c.x, y: c.y },
-          index: { x: 1 - lm[INDEX_TIP].x, y: lm[INDEX_TIP].y },
-          pose: pose(lm),
-          pinching: this.handStates.get(result.handedness[i]?.[0]?.categoryName ?? "?")?.pinching ?? false,
-        };
-      }),
-      now,
-    );
-    this.watchPresence(now, result.landmarks.length > 0);
   };
-
-  private watchPresence(now: number, hands: boolean): void {
-    if (!this.callbacks.onPresence) return;
-    if (!this.startedAt) this.startedAt = now;
-    if (hands) this.lastSeenAt = now;
-    if (this.faces && now - this.lastFaceAt >= FACE_EVERY_MS) {
-      this.lastFaceAt = now;
-      try {
-        if (this.faces.detectForVideo(this.video, now).detections.length > 0) this.lastSeenAt = now;
-      } catch {
-        // one bad frame is not an absence
-      }
-    }
-    const seen = this.lastSeenAt > 0 && now - this.lastSeenAt < AWAY_MS;
-    // nobody yet since the camera started counts as away only after AWAY_MS
-    const present = seen ? true : this.present === null && now - this.startedAt < AWAY_MS ? null : false;
-    if (present !== null && present !== this.present) {
-      this.present = present;
-      this.callbacks.onPresence(present);
-    }
-  }
 
   private processHands(
     landmarks: NormalizedLandmark[][],
@@ -237,27 +160,13 @@ export class HandTracker {
 
       let state = this.handStates.get(label);
       if (!state) {
-        state = { pinching: false, fist: false, grab: raw };
+        state = { pinching: false, grab: raw };
         this.handStates.set(label, state);
       }
 
-      // A fist is its own gesture: its thumb and index are close too, but it never pinches. A thumbs up has curled
-      // fingers too: only a closed hand with the thumb tucked is a fist.
-      const fist = isFist(lm, state.fist) && pose(lm) === "fist";
-      const now = performance.now();
-      if (fistFires(state.fist, fist, this.lastFistAt, now)) {
-        this.lastFistAt = now;
-        const c = palmCenter(lm);
-        this.callbacks.onFist?.({ x: 1 - c.x, y: c.y });
-      }
-      state.fist = fist;
-
       // Hysteresis so the pinch doesn't flicker on/off at the threshold
-      const wasPinching = state.pinching;
-      if (fist) state.pinching = false;
-      else if (state.pinching && pinchRatio > PINCH_OFF) state.pinching = false;
+      if (state.pinching && pinchRatio > PINCH_OFF) state.pinching = false;
       else if (!state.pinching && pinchRatio < PINCH_ON) state.pinching = true;
-      if (state.pinching && !wasPinching) this.callbacks.onPinch?.(raw);
 
       state.grab = {
         x: state.grab.x + (raw.x - state.grab.x) * SMOOTHING,
@@ -323,43 +232,39 @@ export class HandTracker {
     if (!ctx) return;
     const { width, height } = this.overlay;
     ctx.clearRect(0, 0, width, height);
-    const css = getComputedStyle(document.documentElement);
-    const hot = css.getPropertyValue("--accent-hot").trim() || "#ff3b30";
-    const rgb = css.getPropertyValue("--line-rgb").trim() || "220 226 235";
 
     for (const lm of landmarks) {
+      const thumb = lm[THUMB_TIP];
+      const index = lm[INDEX_TIP];
       // Overlay canvas sits on the mirrored video preview, so mirror x here too
-      const pt = (i: number) => [(1 - lm[i].x) * width, lm[i].y * height] as const;
-      const handScale = dist2d(lm[WRIST], lm[MIDDLE_MCP]);
-      const pinched = handScale > 1e-6 && dist2d(lm[THUMB_TIP], lm[INDEX_TIP]) / handScale < PINCH_ON;
-      const fist = isFist(lm, false);
-      const live = pinched || fist;
+      const tx = (1 - thumb.x) * width;
+      const ty = thumb.y * height;
+      const ix = (1 - index.x) * width;
+      const iy = index.y * height;
 
-      // Neon skeleton: the whole hand, glowing hot while it pinches or makes a fist
-      ctx.save();
-      ctx.shadowColor = hot;
-      ctx.shadowBlur = live ? 12 : 6;
-      ctx.strokeStyle = live ? hot : `rgb(${rgb} / 0.7)`;
-      ctx.lineWidth = live ? 2 : 1.2;
-      ctx.lineCap = "round";
+      const handScale = dist2d(lm[WRIST], lm[MIDDLE_MCP]);
+      const pinched =
+        handScale > 1e-6 && dist2d(thumb, index) / handScale < PINCH_ON;
+
+      const css = getComputedStyle(document.documentElement);
+      const hot = css.getPropertyValue("--accent-hot").trim() || "#ff3b30";
+      const rgb = css.getPropertyValue("--line-rgb").trim() || "220 226 235";
+      ctx.strokeStyle = pinched ? hot : `rgb(${rgb} / 0.55)`;
+      ctx.lineWidth = pinched ? 2 : 1;
       ctx.beginPath();
-      for (const [a, b] of HAND_CONNECTIONS) {
-        const [ax, ay] = pt(a);
-        const [bx, by] = pt(b);
-        ctx.moveTo(ax, ay);
-        ctx.lineTo(bx, by);
-      }
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(ix, iy);
       ctx.stroke();
 
-      ctx.fillStyle = live ? hot : `rgb(${rgb} / 0.85)`;
-      for (let i = 0; i < lm.length; i++) {
-        const [x, y] = pt(i);
-        const tip = i === THUMB_TIP || i === INDEX_TIP;
+      ctx.fillStyle = pinched ? hot : `rgb(${rgb} / 0.75)`;
+      for (const [x, y] of [
+        [tx, ty],
+        [ix, iy],
+      ]) {
         ctx.beginPath();
-        ctx.arc(x, y, tip && pinched ? 4.5 : 1.8, 0, Math.PI * 2);
+        ctx.arc(x, y, pinched ? 5 : 3, 0, Math.PI * 2);
         ctx.fill();
       }
-      ctx.restore();
     }
   }
 }

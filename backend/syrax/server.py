@@ -716,12 +716,6 @@ class Session:
                 return
             brains = [str(b) for b in msg.get("brains")] if isinstance(msg.get("brains"), list) else None
             self.spawn(self._codebench(brains), detached=True)
-        elif kind == "gesture":
-            # a hand gesture the HUD acted on (thumbs up, swipe, E-STOP ...): journaled, so SYRAX can tell what the
-            # human did with their hands; the action itself was already taken by the UI (yes/no go as `answer`)
-            g = re.sub(r"[^a-z_]", "", str(msg.get("gesture") or "").lower())[:30]
-            if g:
-                await self.core.journal.record("gesture.used", {"gesture": g, "detail": str(msg.get("detail") or "")[:80]})
         elif kind == "presentation_feedback":
             pid = str(msg.get("presentation_id") or "")
             if not await self.core.presentation.feedback(pid, str(msg.get("action") or "dismiss")):

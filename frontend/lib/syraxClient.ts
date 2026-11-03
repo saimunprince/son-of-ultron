@@ -561,7 +561,6 @@ export type ObjectiveCheck = { kind: string } & Record<string, string>;
 export type ClientMessage =
   /** queue: a request made while a task runs waits for it instead of being refused */
   | { type: "task"; text: string; voice?: boolean; queue?: boolean }
-  | { type: "gesture"; gesture: string; detail?: string }
   | { type: "queue" }
   | { type: "queue_cancel"; task_id: string; note?: string }
   | { type: "answer"; text: string }
