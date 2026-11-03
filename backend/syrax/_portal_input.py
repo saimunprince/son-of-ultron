@@ -50,9 +50,14 @@ def main():
         conn.call_sync(BUS, PATH, IFACE, method, params, None, Gio.DBusCallFlags.NONE, -1, None)
         if not expect_response:
             return None
-        GLib.timeout_add_seconds(TIMEOUT_S, loop.quit)
-        loop.run()
+        # this request's own timer, removed once it is answered (audit 2026-11-01, I-13: the timers piled up, and
+        # CreateSession's cut short Start's wait for the permission dialog); a timer that fired is gone already
+        timer = GLib.timeout_add_seconds(TIMEOUT_S, loop.quit)
+        if "code" not in box:
+            loop.run()
         conn.signal_unsubscribe(sub)
+        if "code" in box:
+            GLib.source_remove(timer)
         if "code" not in box:
             raise RuntimeError(f"{method}: no answer from the portal in {TIMEOUT_S} s (was the permission dialog answered?)")
         if box["code"] != 0:
