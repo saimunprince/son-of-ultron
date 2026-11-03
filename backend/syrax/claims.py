@@ -498,6 +498,17 @@ SELF_NUDGE = (
     "your measured limits. Keep your voice; drop any claim the evidence does not support."
 )
 SELF_NOTE = " (Not verified: nothing in this task read SYRAX's self-model, which lists measured limits.)"
+# Live 2026-11-01: "What can't you do? Give two real limits." was answered with two generic lines and no tool call;
+# the measured limits are in self_inspect. A question about SYRAX's limits or weaknesses is answered from them.
+LIMITS_ASKED = re.compile(
+    r"\bwhat (?:can't|cannot|can not|can ?not) you\b|\byour (?:own )?(?:limit|weakness|weak (?:spot|point)|shortcoming|flaw)"
+    r"|\bwhat are you (?:bad|weak|worst) at\b|\b(?:your|you) (?:weakest|worst)\b|\bwhat is your weakest\b"
+    r"|\bwhere do you (?:fail|struggle)\b|\bwhat do you (?:fail|struggle) (?:at|with)\b", re.I)
+LIMITS_NUDGE = (
+    "[SYRAX check, not a new request] The human asked about your limits or weaknesses, and nothing in this task read "
+    "them. Call `self_inspect` and answer from the limits it measured (tools that fail, what is missing on this PC), "
+    "with numbers. Keep your voice."
+)
 # live 2026-10-26 16:02: sent back, the brain read self_inspect and repeated "I control everything ... bends to my command"
 SELF_NOTE_READ = " (Not supported: SYRAX's self-model, read in this task, lists measured limits.)"
 # Live 2026-10-25 (Prince): "system check ." -> "Peace in our time. All systems are operational." with no tool call.

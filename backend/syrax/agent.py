@@ -39,7 +39,7 @@ from syrax.claims import (  # noqa: F401
     CLAIM_FALLBACK, NOT_RELEASED_NOTE, UNPROVEN_SOFT, NUMBER, FORM_ASK, FORM_FINAL_ASK, exact_form, meets_form,
     GIVEN_PATCH_REFUSED, diff_changed_lines, given_patch, CLAIM, OWN_WORK_CLAIM, WORLD_CLAIM, CHANGE_ASKED,
     WORLD_NUDGE, SEND_CLAIM, DESKTOP_CLAIM, BROWSER_CLAIM, PLAYING_CLAIM, PLAYING_READ, PLAYING_NOTE, OUTCOME_CLAIMS,
-    BOAST, SELF_ASKED, without_boasts, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
+    BOAST, SELF_ASKED, LIMITS_ASKED, LIMITS_NUDGE, without_boasts, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
     OUTCOME_NUDGE, OUTCOME_NOTE, DISPUTE_MAX, DISPUTE_NO, DISPUTE, DISPUTE_NUDGE, DISPUTE_NOTE, DISPUTE_ACTS,
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
     SKILL_CLAIM, SKILL_HONEST, SKILL_CLAIM_ASK, SKILL_FALLBACK, skill_claimed, skill_state,
@@ -730,6 +730,18 @@ class SyraxAgent(Manus):
             if BOAST.search(self.last_reply or "") and not (read and re.search(r"\d", self.last_reply or "")):
                 self.last_reply = self.last_reply.rstrip() + (SELF_NOTE_READ if read else SELF_NOTE)
                 self.unproven = self.unproven or ("self_read" if read else "self")
+        if (self.last_reply and LIMITS_ASKED.search(self.task_goal or "") and self.task_kind != "autonomous"
+                and "self_inspect" not in self.called and "self_inspect" in self.available_tools.tool_map
+                and not self.step_limit_hit and not self.loop_stopped):
+            # live 2026-11-01: "What can't you do?" answered with two generic lines; the measured limits are read
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._send({"type": "notice", "text": "Asked about SYRAX's limits, the answer read none: asking once to read self_inspect."})
+            result += "\n" + await BaseAgent.run(self, LIMITS_NUDGE)
+            if self.last_reply.startswith("SYRAX:"):
+                self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+            if "self_inspect" not in self.called:
+                self.last_reply = (self.last_reply or "").rstrip() + SELF_NOTE
+                self.unproven = self.unproven or "self"
         if (self._status_unread() and "self_inspect" in self.available_tools.tool_map
                 and not self.step_limit_hit and not self.loop_stopped):
             # the human asked for a check and the answer reports the systems fine unread: once to read, then the note
