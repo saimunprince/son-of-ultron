@@ -1364,6 +1364,13 @@ class Journal:
             state = "RESUMABLE"
         else:
             state = "UNCERTAIN"
+        if state == "RESUMABLE" and cur.execute(
+                "SELECT 1 FROM events WHERE task_id=? AND type='final' LIMIT 1", (row["task_id"],)).fetchone():
+            # Audit 2026-11-01 (LIFE-9): the task gave its final answer but its end was never written (the terminal
+            # mark failed); a resume would redo finished work, sends included
+            state, verdict = "UNCERTAIN", {**verdict, "checks": {
+                **verdict.get("checks", {}), "reason": "it finished (its final answer is journaled) but its end was "
+                "not recorded; check the result before running it again"}}
         if state == "RESUMABLE" and not verdict.get("intent"):
             # Audit 2026-11-01 (LIFE-2): a send left open by an earlier step (it timed out, the task went on) made no
             # difference when the crash came during another call; (LIFE-1) a send that finished after the last
