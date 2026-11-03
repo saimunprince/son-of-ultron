@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createOrbScene, PALETTES, type OrbMode, type OrbSceneApi, type OrbTheme } from "@/lib/orbScene";
+import { GestureControl, type GestureAction } from "@/lib/gestureControl";
 import { createGestureFx, type GestureFx } from "@/lib/gestureFx";
+import { nextPanel, type Panel } from "@/lib/gestures";
 import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
 import {
   API_BASE,
@@ -97,6 +99,9 @@ function dismissAction(task_id: string): NoticeAction {
   return { label: "DISMISS", msg: { type: "dismiss", task_id, note: "dismissed in the UI" }, confirm: DISMISS_INTERRUPTED };
 }
 
+// Back in front of the camera after this long away, SYRAX greets the human
+const GREET_AFTER_MS = 5 * 60_000;
+
 const MODE_LABEL: Record<TrackerStatus["mode"], string> = {
   idle: "STANDBY",
   spin: "SPIN",
@@ -151,6 +156,11 @@ export default function Syrax() {
   const trackerRef = useRef<HandTracker | null>(null);
   const fxCanvasRef = useRef<HTMLCanvasElement>(null);
   const fxRef = useRef<GestureFx | null>(null);
+  const controlRef = useRef<GestureControl | null>(null);
+  const gestureActRef = useRef<(a: GestureAction) => void>(() => {});
+  const presenceRef = useRef<(present: boolean) => void>(() => {});
+  const awaySinceRef = useRef<number | null>(null);
+  const [present, setPresent] = useState<boolean | null>(null);
   const clientRef = useRef<SyraxClient | null>(null);
   const spokenRef = useRef("");
   const armedUntilRef = useRef(0);
@@ -1035,6 +1045,10 @@ export default function Syrax() {
   const stopGestures = useCallback(() => {
     trackerRef.current?.stop();
     trackerRef.current = null;
+    controlRef.current?.clear();
+    controlRef.current = null;
+    setPresent(null);
+    awaySinceRef.current = null;
     setCamera("off");
     setTracker({ hands: 0, mode: "idle" });
   }, []);
@@ -1045,6 +1059,27 @@ export default function Syrax() {
     if (!video || !overlay || trackerRef.current) return;
     setCamera("starting");
     setCamError(null);
+    const control = new GestureControl({
+      view: () => ({ w: window.innerWidth, h: window.innerHeight }),
+      pick: (x, y) => {
+        // a button under the fingertip; never one marked data-no-gesture (E-STOP, autonomy up, AUTO) or disabled
+        const el = document.elementFromPoint(x, y)?.closest("button");
+        return el && !el.disabled && !el.closest("[data-no-gesture]") ? el : null;
+      },
+      act: (a) => gestureActRef.current(a),
+      fx: {
+        cursor: (at) => fxRef.current?.cursor(at),
+        draw: (x, y) => fxRef.current?.draw(x, y),
+        arc: (a, b) => fxRef.current?.arc(a, b),
+        hold: (at) => fxRef.current?.hold(at),
+        label: (text, x, y) => fxRef.current?.label(text, x, y),
+      },
+      scene: {
+        pulse: (s) => sceneRef.current?.pulse(s),
+        setAttractor: (at) => sceneRef.current?.setAttractor(at),
+      },
+    });
+    controlRef.current = control;
     const t = new HandTracker(video, overlay, {
       onRotate: (dt, dp) => sceneRef.current?.rotateBy(dt, dp),
       onZoom: (f) => sceneRef.current?.zoomBy(f),
@@ -1058,6 +1093,8 @@ export default function Syrax() {
         fxRef.current?.burst(window.innerWidth / 2, window.innerHeight / 2);
         sceneRef.current?.pulse(1.6);
       },
+      onFrame: (hands, now) => control.frame(hands, now),
+      onPresence: (here) => presenceRef.current(here),
     });
     trackerRef.current = t;
     try {
@@ -1079,6 +1116,78 @@ export default function Syrax() {
     if (trackerRef.current) stopGestures();
     else void startGestures();
   }, [startGestures, stopGestures]);
+
+  // What a gesture does (lib/gestureControl). Kept in a ref so the tracker always calls the latest closure.
+  gestureActRef.current = (a: GestureAction) => {
+    const note = (text: string) => push({ kind: "notice", id: nextId++, text: `GESTURE · ${text}` });
+    switch (a.kind) {
+      case "yes":
+      case "no":
+        if (pendingAskRef.current !== null) {
+          note(`${a.kind === "yes" ? "THUMBS UP" : "THUMBS DOWN"} → answered "${a.kind}"`);
+          submit(a.kind);
+        } else {
+          note(`${a.kind === "yes" ? "THUMBS UP" : "THUMBS DOWN"} · no question is waiting`);
+        }
+        break;
+      case "hush":
+        stopSpeaking();
+        note("OPEN PALM → quiet");
+        break;
+      case "mic":
+        toggleHandsFree();
+        note("TWO FINGERS → microphone");
+        break;
+      case "console":
+        setConsoleOpen((v) => !v);
+        note("THREE FINGERS → log");
+        break;
+      case "estop":
+        // the gesture only ever stops; clearing the stop stays a deliberate click
+        if (!estopOn(autonomy)) {
+          command({ type: "estop", on: true, note: "two fists held (gesture)" }, "the emergency stop");
+          note("TWO FISTS → E-STOP");
+        }
+        break;
+      case "swipe": {
+        const now: Panel = brainOpen ? "brain" : selfOpen ? "self" : mindTab ? "mind" : "none";
+        const next = nextPanel(now, a.dir);
+        setBrainOpen(false);
+        setSelfOpen(false);
+        setMindTab(null);
+        if (next === "brain") openBrain();
+        else if (next === "self") openSelf();
+        else if (next === "mind") openMind("objectives");
+        note(`SWIPE ${a.dir.toUpperCase()} → ${next === "none" ? "orb" : next.toUpperCase()}`);
+        break;
+      }
+      case "click":
+        (a.target as HTMLElement).click();
+        note(`POINT → ${((a.target as HTMLElement).textContent || "button").trim().slice(0, 30)}`);
+        break;
+    }
+  };
+
+  // Presence: the camera sees the human come and go; back after a while, SYRAX greets them (one short task)
+  presenceRef.current = (here: boolean) => {
+    setPresent(here);
+    if (!here) {
+      awaySinceRef.current = Date.now();
+      return;
+    }
+    const since = awaySinceRef.current;
+    awaySinceRef.current = null;
+    if (since === null) return;
+    const minutes = Math.round((Date.now() - since) / 60_000);
+    if (Date.now() - since < GREET_AFTER_MS || link !== "online" || agent !== "idle") return;
+    push({ kind: "notice", id: nextId++, text: `PRESENCE · back after ${minutes} min` });
+    clientRef.current?.send({
+      type: "task",
+      text: `[presence] The human is back at the desk after ${minutes} minutes away. Greet them in one short line.`,
+      voice: voiceOn,
+      queue: false,
+    });
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1546,7 +1655,9 @@ export default function Syrax() {
           <div className="camera-status">
             {tracker.hands > 0
               ? `${tracker.hands} HAND${tracker.hands > 1 ? "S" : ""} · ${MODE_LABEL[tracker.mode]}`
-              : "SHOW HANDS"}
+              : present === false
+                ? "AWAY"
+                : "SHOW HANDS"}
           </div>
         </div>
 
@@ -1566,6 +1677,7 @@ export default function Syrax() {
             type="button"
             className="hud-btn"
             aria-pressed={estopOn(autonomy)}
+            data-no-gesture
             onClick={() => command(estopMessage(autonomy), "the emergency stop")}
             title={estopTitle(autonomy)}
             style={{ color: "#ff4d4d", borderColor: "#ff4d4d" }}
@@ -1585,6 +1697,7 @@ export default function Syrax() {
           <button
             type="button"
             className="hud-btn"
+            data-no-gesture
             onClick={() => command(levelStep(autonomy, 1), "the autonomy level")}
             title={levelTitle(autonomy)}
             disabled={levelOf(autonomy) >= 5}
@@ -1596,6 +1709,7 @@ export default function Syrax() {
             className="hud-btn"
             aria-pressed={!!autonomy?.enabled}
             disabled={estopOn(autonomy)}
+            data-no-gesture
             onClick={() => command({ type: "autonomy", enabled: !autonomy?.enabled }, "the autonomy switch")}
             title={autonomy?.pressure ? `Paused: ${autonomy.pressure}` : "Let SYRAX pursue its own objectives when idle"}
           >
@@ -1606,7 +1720,8 @@ export default function Syrax() {
               type="button"
               className="hud-btn"
               aria-pressed={startup.enabled}
-              onClick={() => command({ type: "startup", enabled: !startup.enabled }, "the start-at-login switch")}
+              data-no-gesture
+            onClick={() => command({ type: "startup", enabled: !startup.enabled }, "the start-at-login switch")}
               title="Start SYRAX when Windows starts (the next login; this run keeps going)"
             >
               {startup.enabled ? "BOOT ON" : "BOOT OFF"}

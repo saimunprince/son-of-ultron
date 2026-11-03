@@ -1,15 +1,22 @@
 import {
+  FaceDetector,
   FilesetResolver,
   HandLandmarker,
   type NormalizedLandmark,
 } from "@mediapipe/tasks-vision";
 
-import { HAND_CONNECTIONS, fistFires, isFist, palmCenter } from "./gestures";
+import type { HandInfo } from "./gestureControl.ts";
+import { HAND_CONNECTIONS, fistFires, isFist, palmCenter, pose } from "./gestures.ts";
 
 const WASM_CDN =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const FACE_MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite";
+// Presence: a face (or a hand) is looked for this often; nobody seen for AWAY_MS means the human left
+const FACE_EVERY_MS = 700;
+const AWAY_MS = 20_000;
 
 // Landmark indices (MediaPipe hand model)
 const WRIST = 0;
@@ -43,6 +50,10 @@ export interface HandTrackerCallbacks {
   onPinch?(at: Point): void;
   /** A fist just closed (once per fist, with a cooldown), at the palm (mirrored normalized coords). */
   onFist?(at: Point): void;
+  /** Every tracked frame: each hand's palm, index tip and pose (mirrored), first hand first. */
+  onFrame?(hands: HandInfo[], t: number): void;
+  /** Someone is in front of the camera (true), or nobody has been for a while (false). */
+  onPresence?(present: boolean): void;
 }
 
 export interface Point {
@@ -61,6 +72,11 @@ export class HandTracker {
   private overlay: HTMLCanvasElement;
   private callbacks: HandTrackerCallbacks;
   private landmarker: HandLandmarker | null = null;
+  private faces: FaceDetector | null = null;
+  private lastFaceAt = 0;
+  private lastSeenAt = 0;
+  private present: boolean | null = null;
+  private startedAt = 0;
   private stream: MediaStream | null = null;
   private rafId = 0;
   private running = false;
@@ -111,6 +127,18 @@ export class HandTracker {
       });
     }
 
+    // presence is a bonus: tracking runs without it when the face model cannot load
+    try {
+      this.faces = await FaceDetector.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: "CPU" as const },
+        runningMode: "VIDEO" as const,
+        minDetectionConfidence: 0.6,
+      });
+    } catch (err) {
+      console.warn("SYRAX: face detector unavailable; presence is off.", err);
+      this.faces = null;
+    }
+
     this.running = true;
     this.loop();
   }
@@ -120,6 +148,11 @@ export class HandTracker {
     cancelAnimationFrame(this.rafId);
     this.landmarker?.close();
     this.landmarker = null;
+    this.faces?.close();
+    this.faces = null;
+    this.present = null;
+    this.startedAt = 0;
+    this.lastSeenAt = 0;
     this.stream?.getTracks().forEach((t) => t.stop());
     this.stream = null;
     this.video.srcObject = null;
@@ -141,10 +174,45 @@ export class HandTracker {
     if (this.video.currentTime === this.lastVideoTime) return;
     this.lastVideoTime = this.video.currentTime;
 
-    const result = this.landmarker.detectForVideo(this.video, performance.now());
+    const now = performance.now();
+    const result = this.landmarker.detectForVideo(this.video, now);
     this.processHands(result.landmarks, result.handedness.map((h) => h[0]?.categoryName ?? "?"));
     this.drawOverlay(result.landmarks);
+    this.callbacks.onFrame?.(
+      result.landmarks.map((lm, i) => {
+        const c = palmCenter(lm);
+        return {
+          palm: { x: 1 - c.x, y: c.y },
+          index: { x: 1 - lm[INDEX_TIP].x, y: lm[INDEX_TIP].y },
+          pose: pose(lm),
+          pinching: this.handStates.get(result.handedness[i]?.[0]?.categoryName ?? "?")?.pinching ?? false,
+        };
+      }),
+      now,
+    );
+    this.watchPresence(now, result.landmarks.length > 0);
   };
+
+  private watchPresence(now: number, hands: boolean): void {
+    if (!this.callbacks.onPresence) return;
+    if (!this.startedAt) this.startedAt = now;
+    if (hands) this.lastSeenAt = now;
+    if (this.faces && now - this.lastFaceAt >= FACE_EVERY_MS) {
+      this.lastFaceAt = now;
+      try {
+        if (this.faces.detectForVideo(this.video, now).detections.length > 0) this.lastSeenAt = now;
+      } catch {
+        // one bad frame is not an absence
+      }
+    }
+    const seen = this.lastSeenAt > 0 && now - this.lastSeenAt < AWAY_MS;
+    // nobody yet since the camera started counts as away only after AWAY_MS
+    const present = seen ? true : this.present === null && now - this.startedAt < AWAY_MS ? null : false;
+    if (present !== null && present !== this.present) {
+      this.present = present;
+      this.callbacks.onPresence(present);
+    }
+  }
 
   private processHands(
     landmarks: NormalizedLandmark[][],
@@ -173,8 +241,9 @@ export class HandTracker {
         this.handStates.set(label, state);
       }
 
-      // A fist is its own gesture: its thumb and index are close too, but it never pinches
-      const fist = isFist(lm, state.fist);
+      // A fist is its own gesture: its thumb and index are close too, but it never pinches. A thumbs up has curled
+      // fingers too: only a closed hand with the thumb tucked is a fist.
+      const fist = isFist(lm, state.fist) && pose(lm) === "fist";
       const now = performance.now();
       if (fistFires(state.fist, fist, this.lastFistAt, now)) {
         this.lastFistAt = now;
