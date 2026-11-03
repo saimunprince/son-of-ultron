@@ -17,7 +17,6 @@ import {
   type StartupStatus,
   type VoiceStatus,
   type TaskPhase,
-  TASK_PHASES,
   type JournalEvent,
   type PresentationElement,
   type SelfModelSummary,
@@ -38,6 +37,14 @@ import { levelOf, levelStep, levelTitle } from "@/lib/autonomyLevel";
 import { isResubmit, type LastSent } from "@/lib/submitGuard";
 import BootSequence from "@/components/BootSequence";
 import ThemeFx, { readoutLine, TypeOut } from "@/components/ThemeFx";
+import BrainChip from "@/components/BrainChip";
+import Captions from "@/components/Captions";
+import CommandPalette, { usePaletteHotkey } from "@/components/CommandPalette";
+import TaskArc from "@/components/TaskArc";
+import Toasts from "@/components/Toasts";
+import { createLatencyTracker } from "@/lib/brainChip";
+import type { PaletteCommand } from "@/lib/palette";
+import { addToast, classifyError, classifyNotice, dismissToast, makeToast, type Toast } from "@/lib/toasts";
 import { sfx, type SfxEvent } from "@/lib/sfx";
 import UltronEyes from "@/components/UltronEyes";
 import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
@@ -187,6 +194,16 @@ export default function Syrax() {
   const [dropping, setDropping] = useState(false);
   const [voicePick, setVoicePick] = useState<VoiceStatus | null>(null);
   const [phase, setPhase] = useState<{ phase: TaskPhase; tool?: string; target?: string } | null>(null);
+  // the advanced HUD (2026-11-03): task arc, brain chip, captions, toasts, command palette
+  const [taskStep, setTaskStep] = useState<number | null>(null);
+  const [taskStart, setTaskStart] = useState<number | null>(null);
+  const [brainMs, setBrainMs] = useState<number | null>(null);
+  const [brainFailover, setBrainFailover] = useState<{ from: string; reason: string; at: number } | null>(null);
+  const latencyRef = useRef(createLatencyTracker());
+  const [caption, setCaption] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const dismissToastId = useCallback((id: number) => setToasts((l) => dismissToast(l, id)), []);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [consoleTab, setConsoleTab] = useState<ConsoleTab>("live");
   const [historyTasks, setHistoryTasks] = useState<TaskSummary[] | null>(null);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
@@ -282,6 +299,9 @@ export default function Syrax() {
       const next = [...prev, e];
       return next.length > MAX_ENTRIES ? next.slice(-MAX_ENTRIES) : next;
     });
+    // the notices that matter also appear as a toast (lib/toasts decides which)
+    const spec = e.kind === "notice" ? classifyNotice(e.text) : e.kind === "error" ? classifyError(e.text) : null;
+    if (spec) setToasts((l) => addToast(l, makeToast(e.id, spec, Date.now())));
   }, []);
 
   // Follow-up window: after SYRAX speaks, no wake word is needed for a bit.
@@ -407,7 +427,10 @@ export default function Syrax() {
           setStage(e.elements);
           break;
         case "phase":
-          if (e.event === "changed") setPhase({ phase: e.phase, tool: e.tool, target: e.target });
+          if (e.event === "changed") {
+            setPhase({ phase: e.phase, tool: e.tool, target: e.target });
+            if (e.step != null) setTaskStep(e.step);
+          }
           break;
         case "topic":
           if (e.event === "news" && e.items?.length) {
@@ -617,8 +640,14 @@ export default function Syrax() {
           break;
         }
         case "brain":
-          if (e.event === "answered") setActiveBrain({ label: e.label, model: e.model });
-          else push({ kind: "notice", id: nextId++, text: `FAILOVER · ${e.provider.toUpperCase()} · ${e.reason}` });
+          if (e.event === "answered") {
+            setActiveBrain({ label: e.label, model: e.model });
+            const ms = latencyRef.current.answered();
+            if (ms != null) setBrainMs(ms);
+          } else {
+            setBrainFailover({ from: e.provider, reason: e.reason, at: Date.now() });
+            push({ kind: "notice", id: nextId++, text: `FAILOVER · ${e.provider.toUpperCase()} · ${e.reason}` });
+          }
           break;
         case "brain_models":
           setBrainModels((m) => ({ ...m, [e.id]: { list: e.models, error: e.error, loading: false } }));
@@ -637,6 +666,14 @@ export default function Syrax() {
         }
         case "state":
           setAgent(e.state);
+          if (e.step != null) setTaskStep(e.step);
+          if (e.state === "idle") {
+            setTaskStart(null);
+            setTaskStep(null);
+            setBrainFailover(null);
+            latencyRef.current.reset();
+          } else if (e.state === "thinking" || e.state === "acting") setTaskStart((st) => st ?? Date.now());
+          if (e.state === "thinking") latencyRef.current.mark();
           setActiveTool(e.state === "acting" ? (e.tool ?? null) : null);
           if (settlesPendingAsk("state", { state: e.state })) setPendingAsk(null); // a timed-out question must not take the next command
           if (e.state === "idle") {
@@ -666,6 +703,7 @@ export default function Syrax() {
           });
           break;
         case "tool_result":
+          latencyRef.current.mark(); // the next brain call starts here
           sceneRef.current?.pulse(e.ok ? 0.4 : 1.2);
           setEntries((prev) =>
             prev.map((x) =>
@@ -686,6 +724,8 @@ export default function Syrax() {
           if (e.text) {
             play("reply");
             push({ kind: "reply", id: nextId++, text: e.text });
+            const said = e.text;
+            setCaption((c) => ({ text: said, nonce: c.nonce + 1 }));
             say(e.text);
           }
           break;
@@ -1104,7 +1144,7 @@ export default function Syrax() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (brainOpen || selfOpen || mindTab || booting) return; // the panel / boot screen own the keyboard
+      if (paletteOpen || brainOpen || selfOpen || mindTab || booting) return; // the panel / boot screen own the keyboard
       if (isTypingTarget(e.target)) {
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
@@ -1158,7 +1198,7 @@ export default function Syrax() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [booting, brainOpen, selfOpen, mindTab, openBrain, openMind, openSelf, stopTask, toggleGestures, toggleHandsFree]);
+  }, [booting, brainOpen, selfOpen, mindTab, paletteOpen, openBrain, openMind, openSelf, stopTask, toggleGestures, toggleHandsFree]);
 
   const cameraOn = camera === "on";
 
@@ -1166,13 +1206,131 @@ export default function Syrax() {
   const onlyFallbackBrains =
     enabledBrains.length > 0 && enabledBrains.every((p) => p.tier === "no-key" || p.tier === "local");
   const firstReady = enabledBrains.find((p) => p.status === "ready") ?? enabledBrains[0];
-  const brainLine = activeBrain
-    ? `${activeBrain.label.toUpperCase()} · ${activeBrain.model}`
-    : firstReady
-      ? `${firstReady.label.toUpperCase()} · ${firstReady.model}`
-      : brains
-        ? "NONE"
-        : "";
+  // before the first answer, the chip shows the brain that will answer first
+  const chipBrain = activeBrain ?? (firstReady ? { label: firstReady.label, model: firstReady.model } : null);
+
+  // ——— command palette (Ctrl+K): every HUD control in one searchable list ———
+  usePaletteHotkey(
+    useCallback(() => {
+      if (!booting) setPaletteOpen((o) => !o);
+    }, [booting]),
+  );
+  const paletteCommands = useMemo<PaletteCommand[]>(
+    () => [
+      { id: "panel.brain", label: "Open Brain settings", section: "Panels", hint: "B", keywords: ["model", "llm", "provider"] },
+      { id: "panel.self", label: "Open Self model", section: "Panels", hint: "S" },
+      { id: "mind.briefing", label: "MIND · Briefing", section: "Mind", keywords: ["today", "summary"] },
+      { id: "mind.objectives", label: "MIND · Objectives", section: "Mind", hint: "O", keywords: ["goals"] },
+      { id: "mind.proposals", label: "MIND · Proposals", section: "Mind" },
+      { id: "mind.skills", label: "MIND · Skills", section: "Mind" },
+      { id: "mind.memory", label: "MIND · Memory", section: "Mind" },
+      { id: "mind.brains", label: "MIND · Brains", section: "Mind" },
+      {
+        id: "safety.estop",
+        label: estopOn(autonomy) ? "Clear emergency stop" : "Emergency stop",
+        section: "Safety",
+        keywords: ["estop", "kill", "halt", "panic"],
+        danger: !estopOn(autonomy),
+      },
+      { id: "task.abort", label: "Abort current task", section: "Safety", hint: "Esc", danger: true, disabled: !busy },
+      { id: "auto.toggle", label: autonomy?.enabled ? "Autonomy off" : "Autonomy on", section: "Autonomy", keywords: ["autonomous"] },
+      { id: "auto.up", label: "Autonomy level up", section: "Autonomy", keywords: ["raise"] },
+      { id: "auto.down", label: "Autonomy level down", section: "Autonomy", keywords: ["lower"] },
+      { id: "theme.ultron", label: "Theme: ULTRON", section: "Appearance", keywords: ["red", "hostile"], disabled: theme === "ultron" },
+      { id: "theme.jarvis", label: "Theme: JARVIS", section: "Appearance", keywords: ["cyan", "blue", "calm"], disabled: theme === "jarvis" },
+      { id: "voice.speak", label: voiceOn ? "Speech off" : "Speech on", section: "Voice", keywords: ["tts", "mute", "speak"] },
+      { id: "voice.sfx", label: sfxOn ? "Sound effects off" : "Sound effects on", section: "Voice", keywords: ["sfx", "audio"] },
+      { id: "voice.mic", label: handsFree ? "Hands-free mic off" : "Hands-free mic on", section: "Voice", hint: "M", keywords: ["listen", "microphone"] },
+      { id: "voice.talk", label: talk === "on" ? "Stop live talk" : "Start live talk", section: "Voice", keywords: ["live", "conversation"], disabled: link !== "online" },
+      { id: "view.gestures", label: cameraOn ? "Gestures off" : "Gestures on", section: "View", hint: "G", keywords: ["camera", "hands"] },
+      { id: "view.console", label: consoleOpen ? "Hide log console" : "Show log console", section: "View", hint: "C", keywords: ["log"] },
+      { id: "view.zoomIn", label: "Zoom in", section: "View", hint: "+" },
+      { id: "view.zoomOut", label: "Zoom out", section: "View", hint: "−" },
+      { id: "view.reset", label: "Reset view", section: "View", hint: "R" },
+      { id: "log.live", label: "Log: Live", section: "Log" },
+      { id: "log.history", label: "Log: History", section: "Log", keywords: ["tasks", "past"] },
+      { id: "log.today", label: "Log: Today", section: "Log" },
+      { id: "log.wipe", label: "Wipe conversation memory", section: "Log", keywords: ["clear", "reset"], danger: true },
+    ],
+    [autonomy, busy, theme, voiceOn, sfxOn, handsFree, talk, link, cameraOn, consoleOpen],
+  );
+  const runPalette = useCallback(
+    (id: string) => {
+      if (id.startsWith("ask:")) {
+        submit(id.slice(4));
+        return;
+      }
+      if (id.startsWith("mind.")) {
+        openMind(id.slice(5) as MindTab);
+        return;
+      }
+      if (id.startsWith("log.")) {
+        if (id === "log.wipe") resetMemory();
+        else {
+          setConsoleOpen(true);
+          showTab(id.slice(4) as ConsoleTab);
+        }
+        return;
+      }
+      switch (id) {
+        case "panel.brain":
+          openBrain();
+          break;
+        case "panel.self":
+          openSelf();
+          break;
+        case "safety.estop":
+          command(estopMessage(autonomy), "the emergency stop");
+          break;
+        case "task.abort":
+          stopTask("command palette");
+          break;
+        case "auto.toggle":
+          command({ type: "autonomy", enabled: !autonomy?.enabled }, "the autonomy switch");
+          break;
+        case "auto.up":
+          command(levelStep(autonomy, 1), "the autonomy level");
+          break;
+        case "auto.down":
+          command(levelStep(autonomy, -1), "the autonomy level");
+          break;
+        case "theme.ultron":
+          setTheme("ultron");
+          break;
+        case "theme.jarvis":
+          setTheme("jarvis");
+          break;
+        case "voice.speak":
+          setVoiceOn((v) => !v);
+          break;
+        case "voice.sfx":
+          setSfxOn((v) => !v);
+          break;
+        case "voice.mic":
+          toggleHandsFree();
+          break;
+        case "voice.talk":
+          toggleTalk();
+          break;
+        case "view.gestures":
+          toggleGestures();
+          break;
+        case "view.console":
+          setConsoleOpen((v) => !v);
+          break;
+        case "view.zoomIn":
+          sceneRef.current?.zoomIn();
+          break;
+        case "view.zoomOut":
+          sceneRef.current?.zoomOut();
+          break;
+        case "view.reset":
+          sceneRef.current?.resetView();
+          break;
+      }
+    },
+    [autonomy, command, openBrain, openMind, openSelf, resetMemory, showTab, stopTask, submit, toggleGestures, toggleHandsFree, toggleTalk],
+  );
 
   const statusText =
     link !== "online"
@@ -1205,6 +1363,17 @@ export default function Syrax() {
     <>
       <div ref={containerRef} className="orb-root" />
       <ThemeFx theme={theme} vitals={vitals} asking={pendingAsk !== null} />
+      <TaskArc
+        active={link === "online" && (agent === "thinking" || agent === "acting")}
+        phase={phase?.phase ?? null}
+        step={taskStep}
+        tool={phase?.tool ?? activeTool ?? null}
+        target={phase?.target ?? null}
+        startedAt={taskStart}
+      />
+      <Captions text={caption.text} nonce={caption.nonce} enabled />
+      <Toasts toasts={toasts} onDismiss={dismissToastId} />
+      <CommandPalette open={paletteOpen} commands={paletteCommands} onRun={runPalette} onClose={() => setPaletteOpen(false)} />
 
       {dropping && <div className="drop-overlay">DROP THE FILE · SYRAX KEEPS IT IN THE WORKSPACE</div>}
       <div className="overlay-vignette" />
@@ -1224,25 +1393,19 @@ export default function Syrax() {
           <span className="status-dot" />
           {statusText}
         </div>
-        {link === "online" && phase && (
-          <div className="status-meta status-phase" aria-label={`task phase: ${phase.phase}`}>
-            {TASK_PHASES.map((p) => (
-              <span key={p} className={p === phase.phase ? "on" : undefined}>
-                {p.toUpperCase()}
-              </span>
-            ))}
-            {phase.target && (
-              <div className="phase-target">
-                {phase.tool ? `${phase.tool} · ` : ""}
-                {phase.target.length > 60 ? `…${phase.target.slice(-59)}` : phase.target}
-              </div>
-            )}
-          </div>
+        {link === "online" && (
+          <BrainChip
+            label={chipBrain?.label ?? null}
+            model={chipBrain?.model ?? null}
+            ms={brainMs}
+            failover={brainFailover}
+            onClick={openBrain}
+          />
         )}
-        {link === "online" && brainLine && (
-          <button type="button" className="status-meta status-brain" onClick={openBrain} title="Brain settings (B)">
-            BRAIN · {brainLine} · {toolCount} TOOLS{queued > 0 ? ` · QUEUE ${queued}` : ""}
-          </button>
+        {link === "online" && (toolCount > 0 || queued > 0) && (
+          <div className="status-meta">
+            {toolCount} TOOLS{queued > 0 ? ` · QUEUE ${queued}` : ""}
+          </div>
         )}
       </div>
 
