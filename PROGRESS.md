@@ -585,6 +585,23 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
   claim that something plays. No player open is now a reading, as on Windows, and "no media is playing" is not a
   claim.
 
+### 2026-11-03: hands control the HUD
+
+- **Commands:**
+  - thumbs up or down answers a waiting question;
+  - an open palm held still stops the voice;
+  - two fingers toggle the microphone, three the log;
+  - two fists held two seconds press the E-STOP. A gesture never clears it.
+- **Panels:** an open hand swiped sideways cycles BRAIN, SELF and MIND.
+- **Air cursor:** a pointing finger draws a fading neon trail. Dwelling 1.5 s on a button clicks it. The E-STOP,
+  autonomy-up, AUTO and BOOT buttons are never clicked this way.
+- **Effects:**
+  - an open hand pulls the orb's dust like a magnet;
+  - a fast hand stirs the orb;
+  - two open hands crackle with lightning.
+- **Presence:** the camera notices the human. Back after five minutes away, SYRAX greets them in one line.
+- **Tests:** the gesture logic is pure and tested with made-up frames. It has not yet been tried by hand.
+
 ## Open
 
 - **Needs the owner:**
