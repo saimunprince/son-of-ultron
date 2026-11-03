@@ -2439,3 +2439,113 @@ body {
   color: var(--text-bright);
   font-size: 11px;
 }
+
+/* ═══════════════════════════════════════════════
+   Theme character (2026-11-03, the owner: "red and blue more meaningful")
+   ULTRON is a weapon: sharp cut corners, hard red edges, a glitching title.
+   JARVIS is a butler: soft round glass, calm cyan light, a steady title and a slow scan.
+   ═══════════════════════════════════════════════ */
+
+/* ——— ULTRON: sharp and hostile ——— */
+[data-theme="ultron"] .hud-console,
+[data-theme="ultron"] .brain-panel,
+[data-theme="ultron"] .self-panel,
+[data-theme="ultron"] .mind-panel,
+[data-theme="ultron"] .rail-main,
+[data-theme="ultron"] .hud-status {
+  border-radius: 0;
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  border-color: rgb(var(--accent-rgb) / 0.28);
+  background:
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 0.95) 0 2px, transparent 2px) top left / 18px 18px no-repeat,
+    linear-gradient(315deg, rgb(var(--accent-rgb) / 0.95) 0 2px, transparent 2px) bottom right / 18px 18px no-repeat,
+    var(--glass);
+}
+
+[data-theme="ultron"] .command-row {
+  border-radius: 0;
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+  border-color: rgb(var(--accent-rgb) / 0.35);
+}
+
+[data-theme="ultron"] .hud-btn,
+[data-theme="ultron"] .hud-command .hud-btn,
+[data-theme="ultron"] .camera-panel {
+  border-radius: 0;
+  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+}
+
+[data-theme="ultron"] .entry-user,
+[data-theme="ultron"] .entry-reply,
+[data-theme="ultron"] .entry-ask,
+[data-theme="ultron"] .entry-tool,
+[data-theme="ultron"] .entry .tag,
+[data-theme="ultron"] .ask-banner {
+  border-radius: 2px;
+}
+
+[data-theme="ultron"] .entry-reply {
+  border-left: 2px solid var(--accent);
+}
+
+[data-theme="ultron"] .status-dot {
+  border-radius: 0;
+  transform: rotate(45deg);
+}
+
+[data-theme="ultron"] .title-name {
+  color: #fff;
+  text-shadow: 0 0 14px rgb(var(--accent-rgb) / 0.55);
+}
+
+/* ——— JARVIS: calm and precise ——— */
+[data-theme="jarvis"] .title-name {
+  animation: none;
+  text-shadow: 0 0 16px rgb(var(--accent-rgb) / 0.45);
+}
+
+[data-theme="jarvis"] .hud-subtitle {
+  color: rgb(var(--accent-rgb) / 0.75);
+}
+
+[data-theme="jarvis"] .hud-console,
+[data-theme="jarvis"] .rail-main,
+[data-theme="jarvis"] .command-row {
+  border-color: rgb(var(--accent-rgb) / 0.22);
+  box-shadow: var(--shadow), 0 0 24px rgb(var(--accent-rgb) / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+/* a slow scan line across the log, like a hologram being drawn */
+[data-theme="jarvis"] .hud-console {
+  position: fixed;
+  overflow: hidden;
+}
+
+[data-theme="jarvis"] .hud-console::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -40%;
+  height: 40%;
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent, rgb(var(--accent-rgb) / 0.05), transparent);
+  animation: holo-scan 7s linear infinite;
+}
+
+@keyframes holo-scan {
+  to {
+    top: 110%;
+  }
+}
+
+[data-theme="jarvis"] .status-dot {
+  box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.18), var(--accent-glow);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="jarvis"] .hud-console::after {
+    animation: none;
+    display: none;
+  }
+}

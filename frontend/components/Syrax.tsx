@@ -1168,7 +1168,7 @@ export default function Syrax() {
         <UltronEyes mode={orbMode} />
         <div className="title-text">
           <span className="title-name">SYRAX</span>
-          <span className="hud-subtitle">SON OF ULTRON</span>
+          <span className="hud-subtitle">{theme === "jarvis" ? "AT YOUR SERVICE" : "SON OF ULTRON"}</span>
         </div>
       </div>
 

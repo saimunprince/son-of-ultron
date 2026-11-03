@@ -37,6 +37,14 @@ export interface OrbPalette {
   channels: [number, number, number];
   /** the colour the orb bleeds into while SYRAX acts (luminance multipliers) */
   heat: [number, number, number];
+  /** character: rotation speed multiplier */
+  spin: number;
+  /** character: chromatic split multiplier */
+  chroma: number;
+  /** character: 0 = steady hologram, 1 = Ultron's glitches (flicker and tearing) */
+  glitch: number;
+  /** bloom threshold: higher keeps the core's detail instead of a blown-out glow */
+  threshold: number;
   bloom: number;
   exposure: number;
   /** returns a CSS colour for a floating code sprite */
@@ -47,17 +55,21 @@ export interface OrbPalette {
 export const PALETTES = {
   /** Red Ultron: crimson lines, a burning core (the owner, 2026-11-03: "ekdom red ultron") */
   ultron: {
-    bright: 0xff5a4a,
-    mid: 0xc8352b,
-    dim: 0x7a1c17,
-    faint: 0x3f0e0b,
-    hot: 0xff2a1f,
-    glow: 0xff1a10,
-    grade: [1.18, 0.82, 0.8],
-    channels: [1.0, 0.86, 0.84],
-    bloom: 1.05,
-    exposure: 0.7,
-    heat: [1.9, 0.22, 0.14],
+    bright: 0xf04a3c,
+    mid: 0xa8281f,
+    dim: 0x5e1511,
+    faint: 0x300b09,
+    hot: 0xff3322,
+    glow: 0xd8180c,
+    grade: [1.16, 0.8, 0.78],
+    channels: [1.0, 0.84, 0.82],
+    bloom: 0.78,
+    exposure: 0.6,
+    heat: [2.1, 0.12, 0.08],
+    spin: 1.2,
+    chroma: 2.4,
+    glitch: 1,
+    threshold: 0.32,
     text: (a: number) => {
       const r = (210 + Math.random() * 45) | 0;
       const g = (40 + Math.random() * 60) | 0;
@@ -75,9 +87,13 @@ export const PALETTES = {
     glow: 0x22b8ff,
     grade: [0.78, 1.0, 1.18],
     channels: [0.82, 1.0, 1.1],
-    bloom: 1.25,
-    exposure: 0.74,
+    bloom: 1.0,
+    exposure: 0.7,
     heat: [0.55, 1.45, 1.9],
+    spin: 0.8,
+    chroma: 0.5,
+    glitch: 0,
+    threshold: 0.26,
     text: (a: number) => {
       const g = (170 + Math.random() * 70) | 0;
       return `rgba(${(g * 0.45) | 0}, ${g}, 255, ${a})`;
@@ -133,7 +149,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     new THREE.Vector2(width, height),
     1.8, // strength
     0.4, // radius
-    0.2, // threshold
+    palette.threshold, // threshold
   );
   composer.addPass(bloom);
 
@@ -145,6 +161,9 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
       uIntensity: { value: 0.003 },
       uHeat: { value: 0 },
       uHeatColor: { value: new THREE.Vector3(...palette.heat) },
+      uFlicker: { value: 0.02 + palette.glitch * 0.03 },
+      uTear: { value: 0 },
+      uTearY: { value: 0.5 },
       uGrade: { value: new THREE.Vector3(...palette.grade) },
       uChannels: { value: new THREE.Vector3(...palette.channels) },
     },
@@ -161,18 +180,24 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
       uniform float uIntensity;
       uniform float uHeat;
       uniform vec3 uHeatColor;
+      uniform float uFlicker;
+      uniform float uTear;
+      uniform float uTearY;
       uniform vec3 uGrade;
       uniform vec3 uChannels;
       varying vec2 vUv;
       void main() {
-        vec2 dir = vUv - vec2(0.5);
+        // Ultron's glitch: a thin band of the picture slips sideways for a moment
+        vec2 uv = vUv;
+        uv.x += uTear * step(abs(uv.y - uTearY), 0.025);
+        vec2 dir = uv - vec2(0.5);
         float d = length(dir);
         float offset = uIntensity * d;
-        // Slight flicker
-        float flicker = 1.0 + 0.02 * sin(uTime * 30.0) * sin(uTime * 7.3);
-        vec4 cr = texture2D(tDiffuse, vUv + dir * offset);
-        vec4 cg = texture2D(tDiffuse, vUv);
-        vec4 cb = texture2D(tDiffuse, vUv - dir * offset * 0.5);
+        // flicker: a steady hologram barely, Ultron visibly
+        float flicker = 1.0 + uFlicker * sin(uTime * 30.0) * sin(uTime * 7.3);
+        vec4 cr = texture2D(tDiffuse, uv + dir * offset);
+        vec4 cg = texture2D(tDiffuse, uv);
+        vec4 cb = texture2D(tDiffuse, uv - dir * offset * 0.5);
         gl_FragColor = vec4(vec3(cr.r, cg.g, cb.b) * uChannels, 1.0) * flicker;
         // Palette colour grade
         gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * uGrade, 0.3);
@@ -801,6 +826,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
   let speed = 1;
   let energy = 0;
   let heat = 0;
+  let tearUntil = 0;
   let kick = 0;
 
   function setMode(next: OrbMode) {
@@ -831,7 +857,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     energy += (target.energy - energy) * 0.05;
     heat += (target.heat - heat) * 0.035;
     kick *= 0.93;
-    const s = reduced ? speed * 0.2 : speed;
+    const s = (reduced ? speed * 0.2 : speed) * palette.spin;
     levelSmooth += (level - levelSmooth) * 0.35;
     const speakWave =
       mode === "speaking"
@@ -944,7 +970,18 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     // Bloom pulse
     bloom.strength = palette.bloom + Math.sin(t * 0.8) * 0.25 + energy * 0.6 + kick * 0.5;
     chromaticPass.uniforms.uHeat.value = heat;
-    chromaticPass.uniforms.uIntensity.value = 0.003 + kick * 0.004 + heat * 0.002;
+    chromaticPass.uniforms.uIntensity.value = (0.003 + kick * 0.004 + heat * 0.002) * palette.chroma;
+    // Ultron glitches now and then (more while it acts); a JARVIS hologram never does
+    if (!reduced && palette.glitch > 0) {
+      if (t > tearUntil && Math.random() < 0.004 * palette.glitch * (1 + heat * 3)) {
+        tearUntil = t + 0.06 + Math.random() * 0.08;
+        chromaticPass.uniforms.uTearY.value = Math.random();
+        chromaticPass.uniforms.uTear.value = (Math.random() - 0.5) * 0.04;
+        kick = Math.min(2, kick + 0.25);
+      } else if (t > tearUntil) {
+        chromaticPass.uniforms.uTear.value = 0;
+      }
+    }
 
     // Update chromatic aberration time
     chromaticPass.uniforms.uTime.value = t;
