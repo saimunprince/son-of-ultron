@@ -12,7 +12,7 @@ from app.agent.manus import Manus
 from app.agent.toolcall import ToolCallAgent
 from app.config import config
 from app.logger import logger
-from app.schema import AgentState, Message, ToolCall, ToolChoice
+from app.schema import AgentState, Memory, Message, ToolCall, ToolChoice
 from app.tool import Terminate, ToolCollection
 from app.tool.mcp import MCPClientTool
 
@@ -418,6 +418,34 @@ def _call_key(command: ToolCall) -> str:
     return f"{command.function.name}:{json.dumps(_args_of(command), sort_keys=True, default=str)}"
 
 
+class PairSafeMemory(Memory):
+    """OpenManus' Memory, bounded without cutting a tool exchange. Its own limit slices to the last `max_messages`,
+    which can leave a tool result first with its call gone; live 2026-11-01 Gemini refused every such request (HTTP
+    400 "function_response.name: Name cannot be empty") and the brain failed over. System messages stay; the rest
+    starts at the first user message after the cut (past the results of a cut exchange when there is none)."""
+
+    def add_message(self, message: Message) -> None:
+        self.messages.append(message)
+        self._bound()
+
+    def add_messages(self, messages: List[Message]) -> None:
+        self.messages.extend(messages)
+        self._bound()
+
+    def _bound(self) -> None:
+        if len(self.messages) <= self.max_messages:
+            return
+        system = [m for m in self.messages if m.role == "system"]
+        rest = [m for m in self.messages if m.role != "system"]
+        cut = max(0, len(rest) - max(1, self.max_messages - len(system)))
+        turn = next((i for i in range(cut, len(rest)) if rest[i].role == "user"), None)
+        if turn is None:
+            turn = cut
+            while turn < len(rest) and rest[turn].role == "tool":
+                turn += 1
+        self.messages = system + rest[turn:]
+
+
 class SyraxAgent(Manus):
     """Manus agent that streams every step to the UI and keeps a live session.
 
@@ -430,6 +458,7 @@ class SyraxAgent(Manus):
 
     name: str = "SYRAX"
     description: str = "SYRAX personal AI operator built on OpenManus."
+    memory: Memory = Field(default_factory=PairSafeMemory, description="Agent's memory store")
     system_prompt: str = SYRAX_PERSONA.format(directory=config.workspace_root)
 
     emit: Optional[Emit] = Field(default=None, exclude=True)

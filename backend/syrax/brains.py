@@ -662,10 +662,22 @@ def _normalize_messages(messages: List[dict]) -> List[dict]:
     """
     systems = [m["content"] for m in messages if m.get("role") == "system" and m.get("content")]
     rest = []
+    calls: Dict[str, str] = {}  # tool_call_id -> tool name, from the assistant messages so far
     for m in messages:
         if m.get("role") == "system":
             continue
         m = dict(m)
+        if m.get("role") == "tool":
+            # live 2026-11-01: a result whose call was cut away made Gemini refuse the whole request (HTTP 400,
+            # "function_response.name: Name cannot be empty"); it goes as a note, and a result names its tool
+            name = calls.get(str(m.get("tool_call_id") or ""))
+            if name is None:
+                text = m.get("content")
+                text = text if isinstance(text, str) else json.dumps(text, ensure_ascii=False, default=str)
+                rest.append({"role": "user", "content": f"[An earlier tool result: {text}]"})
+                continue
+            if not m.get("name"):
+                m["name"] = name
         if m.get("role") == "assistant" and m.get("tool_calls"):
             if m.get("content") is None:
                 m["content"] = ""
@@ -677,6 +689,8 @@ def _normalize_messages(messages: List[dict]) -> List[dict]:
                 fn["arguments"] = _clean_arguments(fn["name"], fn.get("arguments"))
                 c["function"] = fn
                 fixed.append(c)
+                if c.get("id"):
+                    calls[str(c["id"])] = fn["name"]
             m["tool_calls"] = fixed
         if m.get("role") == "tool" and m.get("name"):
             m["name"] = _clean_tool_name(m["name"])
