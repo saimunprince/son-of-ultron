@@ -197,6 +197,8 @@
         // an answer from any UI (this HUD or the web UI) settles the question; a new request's echo has no task_id
         if (e.task_id) { if (s.pendingAsk !== null) mode(STATE_MODE[s.state] || 'IDLE'); s.waiting = null; s.pendingAsk = null; }
         break;
+      case 'answer':
+        s.waiting = null; break;
       case 'notice':
         if (e.text) log(short(e.text, 60).toUpperCase());
         break;
