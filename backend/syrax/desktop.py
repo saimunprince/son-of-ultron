@@ -56,6 +56,9 @@ SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".cache", "
 VK = {"mute": 0xAD, "vol_down": 0xAE, "vol_up": 0xAF, "next": 0xB0, "prev": 0xB1, "stop": 0xB2, "play_pause": 0xB3}
 
 
+NO_MEDIA = "No media session is open: nothing is playing or paused in any app."
+
+
 def local_clock(now=None) -> str:
     """This machine's local date, time and UTC offset, e.g. 'Wednesday 2026-10-28 15:18:05 (UTC+06:00)'."""
     import datetime as _dt
@@ -188,7 +191,7 @@ def media_report(data: dict) -> str:
 
     sessions = [x for x in (data.get("sessions") or []) if isinstance(x, dict)]
     if not sessions:
-        return "No media session is open: nothing is playing or paused in any app."
+        return NO_MEDIA
     parts = []
     for x in sessions:
         title = presence.redact(str(x.get("title") or "")) or "an untitled item"
@@ -694,7 +697,13 @@ class DesktopControl(BaseTool):
         if not cmd:
             return ToolResult(error="media value must be play, pause, toggle, next, previous or status.")
         code, out, err = await _run("playerctl", cmd)
+        if code != 0 and cmd == "status" and "no players found" in (err or "").lower():
+            # live 2026-11-03: no player open is a reading, as on Windows; as an error the true "nothing plays"
+            # answer ended unverified
+            return ToolResult(output=NO_MEDIA)
         if code != 0:
+            if "no players found" in (err or "").lower():
+                return ToolResult(error=f"No media player is open to take {cmd}.")
             return ToolResult(error=err or "No media player is running.")
         if cmd == "status":
             _, meta, _ = await _run("playerctl", "metadata", "--format", "{{artist}} - {{title}}")

@@ -440,7 +440,8 @@ _NOT_MEDIA = (r"(?!\s+(?:for|against|with|as|at|alongside|under|well|badly|poorl
               r"|together|around|(?:a |an |the |in the |in a )?(?:game|games|match|matches|role|part|lead|league|season"
               r"|final|tournament|football|soccer|cricket|chess|tennis|basketball|golf|team)\b))")
 PLAYING_CLAIM = re.compile(
-    rf"(?<!nothing )(?<!nothing that )(?<!no song )(?<!no music )\b(?:is|are|'s) (?:now )?playing\b{_NOT_MEDIA}"
+    rf"(?<!nothing )(?<!nothing that )(?<!no song )(?<!no music )(?<!no media )(?<!no audio )(?<!no video )(?<!no track )"
+    rf"\b(?:is|are|'s) (?:now )?playing\b{_NOT_MEDIA}"
     r"|\bnow playing\b|\bplays now\b|\b(?:is|are) (?:now )?streaming\b"
     r"|\b(?:music|song|track|stream|playback|video|playlist|audio)s? (?:is |has |have )?(?:started|summoned|initiated|resumed|forced)\b"
     r"|\b(?:started|resumed|initiated) (?:the |your )?(?:music|song|track|stream|playback|video|playlist|audio)\b",
