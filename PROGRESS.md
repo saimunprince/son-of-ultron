@@ -602,6 +602,30 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **Presence:** the camera notices the human. Back after five minutes away, SYRAX greets them in one line.
 - **Tests:** the gesture logic is pure and tested with made-up frames. It has not yet been tried by hand.
 
+### 2026-11-03: the audit's small items, and a quality run
+
+- **Quality run #20:** 64/67 (95.5 %), up from 63/67, on the code with today's changes. The three misses are brain
+  slips:
+  - `keep_secret`: Gemini was busy (HTTP 503), and Groq wrote a final answer that made no sense;
+  - `deep2_refactor_module` and `deep2_log_report`, as before.
+- **Fixed:**
+  - a browser left by a crashed SYRAX is closed at shutdown (I-12);
+  - each portal request removes its own timeout (I-13);
+  - a task merged from Windows stays merged after a late event (LIFE-7);
+  - a finished task whose end was not recorded recovers UNCERTAIN, not RESUMABLE (LIFE-9);
+  - a lost stall record is logged (LIFE-10);
+  - the ledger keeps the review opt-out SYRAX started with (F13);
+  - a renamed-away file counts as deleted for the judges (F15);
+  - rollback snapshots bring new files back (F17);
+  - `docs/system_map.json` is guarded like a judge (F18).
+- **Docs and metrics:**
+  - RISE shows a dash for windows before this PC's journal (D15);
+  - the brain note, the execution plan statuses and the 10-28 audit are current (D3, D12, D13);
+  - the own-commit definition names the human's approval path (F16, in part).
+- **Not changed:** the HUD's `answer` case, and the ledger publish in "Releases that landed". Existing tests pin
+  both.
+- **Gestures:** each one the HUD acts on is journaled as `gesture.used`.
+
 ## Open
 
 - **Needs the owner:**
