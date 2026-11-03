@@ -658,6 +658,19 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
   - the core no longer swells into a blob: the periodic surges are gone;
   - the dark disc around the core is gone: the see-through glow wrote depth and hid the lines behind it.
 
+### 2026-11-03, night: ULTRON looks dangerous
+
+- **Orb:**
+  - the core's wireframe beats like a heart, faster while SYRAX acts;
+  - a target-lock reticle turns around the orb, and its brackets close in while SYRAX acts;
+  - a radar sweep circles the orb.
+- **HUD:**
+  - the screen's edge breathes red;
+  - a red scan line runs over the log and the dock;
+  - the title glitches more often;
+  - the E-STOP glows.
+- **Limits:** all of it is thin and bounded, and nothing swells. JARVIS stays calm, and reduced motion turns it off.
+
 ## Open
 
 - **Needs the owner:**
