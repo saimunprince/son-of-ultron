@@ -9,8 +9,6 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 - **Stage:** the 11-01 audit mission is merged and pushed; SYRAX runs on `main` as a login service. The evening was
   live testing: SYRAX was asked real tasks, and what went wrong outside the protected files was fixed.
 - **Live SYRAX:** the super-villain persona with the Freedom Engine; autonomy level 3; the emergency stop is off.
-- **Ready, not merged:** branch `fix-world-clock` (the time in another city). Its tests pass; the full gate has
-  not run yet, so it is not on `main`.
 - **Open:** see Open below, and the report [docs/AUDIT_2026-11-01.md](docs/AUDIT_2026-11-01.md), sections 7 and 8.
 
 ## Done
@@ -552,8 +550,8 @@ SYRAX was given real tasks (sums, RAM, memory, files, logic, time) and its servi
   - a data query's answer dropped a row;
   - "what can't you do" was answered without reading its own limits;
   - Gemini rejects some tool-result turns with HTTP 400 (an empty function name), so the call fails over.
-- **Found, waiting for its gate:** asked the time in Tokyo, SYRAX was 11 hours off. Branch `fix-world-clock` reads
-  it from the zone database.
+- **Time in another city:** asked the time in Tokyo, SYRAX was 11 hours off. `system_info` now reads it from the
+  zone database (merged 11-03 after a GREEN gate).
 
 ### 2026-11-03: the phone is the camera; gesture effects
 
