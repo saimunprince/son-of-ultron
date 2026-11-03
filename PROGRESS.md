@@ -577,6 +577,14 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
   a note.
 - **Not a bug:** "a data query dropped a row" (11-01). The CSV had `pen` twice, and the answer summed it correctly.
 
+### 2026-11-03: media and clipboard on Linux
+
+- `playerctl` and `wl-clipboard` were already installed; SYRAX reads the clipboard and the media state live.
+- **Fixed:** asked "what is playing?" with no player open, SYRAX answered truly, "No media is playing", but the
+  task ended PARTIAL as unverified. The "no players" answer came back as an error, and the sentence was taken for a
+  claim that something plays. No player open is now a reading, as on Windows, and "no media is playing" is not a
+  claim.
+
 ## Open
 
 - **Needs the owner:**
@@ -584,7 +592,6 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
     before the mission named them protected (the 11-03 changes were approved).
   - **Compact the journal:** about 130 MB of old checkpoint contexts, and VACUUM. Backup first.
   - **Unused dependencies:** gymnasium, browsergym (with a 1.1 GB torch), datasets.
-  - **Linux packages:** `sudo apt install playerctl wl-clipboard` (media and clipboard).
   - **Offline Bengali speech:** `SYRAX_WHISPER_MODEL=small`, a 460 MB download.
   - **Start at login** (`--install-service`) and the **phone page** (`--phone on`).
   - **Objective #35:** say "play lo-fi on YouTube" once.
