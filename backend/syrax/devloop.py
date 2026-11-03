@@ -689,10 +689,16 @@ class DevLoop:
     def snapshot(self, info: Dict[str, Any]) -> Path:
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
         path = self.snapshot_dir / f"{int(time.time())}-{info['head'][:7]}.patch"
+        from syrax.review import new_file_diff
+
         body = info["diff"]
         for rel in info["untracked"]:
             try:
-                body += f"\n# untracked: {rel}\n" + (self.root / rel).read_text(encoding="utf-8", errors="replace")
+                # a /dev/null diff, so `git apply` recreates the new file (audit 2026-11-01, F17: it was plain text
+                # after the marker, and a rollback snapshot could not bring new files back); git skips the marker
+                if body and not body.endswith("\n"):
+                    body += "\n"
+                body += f"# untracked: {rel}\n" + new_file_diff(rel, (self.root / rel).read_text(encoding="utf-8", errors="replace"))
             except OSError:
                 pass
         path.write_text(body, encoding="utf-8", newline="\n")  # a diff holding "\u2190" could not be written as cp1252 (2026-10-19)
