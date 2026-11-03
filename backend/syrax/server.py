@@ -33,7 +33,7 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     task {event} | checkpoint | recovery {event} | verification |
                     history | task_events | verifications | self_model |
                     objectives | autonomy_status | autonomy {event} | objective {event} | cycle {event} |
-                    task_detail | replay | knowledge | research {event} | knowledge {event} |
+                    task_detail | replay | knowledge_list | research {event} | knowledge {event} |
                     skills | skill {event} | presentation {event} | presentation_plan |
                     benchmarks | experiments | benchmark {event} | experiment {event} |
                     quality_runs | quality {event} | brief {event: checked|filed|refused, proof?, problems?, objective_id?} |
