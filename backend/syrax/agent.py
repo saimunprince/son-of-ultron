@@ -42,6 +42,7 @@ from syrax.claims import (  # noqa: F401
     BOAST, SELF_ASKED, without_boasts, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
     OUTCOME_NUDGE, OUTCOME_NOTE, DISPUTE_MAX, DISPUTE_NO, DISPUTE, DISPUTE_NUDGE, DISPUTE_NOTE, DISPUTE_ACTS,
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
+    SKILL_CLAIM, SKILL_HONEST, SKILL_CLAIM_ASK, SKILL_FALLBACK, skill_claimed, skill_state,
     _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, WANTS_BENGALI, bengali,
 )
 
@@ -482,6 +483,7 @@ class SyraxAgent(Manus):
     called: set = Field(default_factory=set)  # tools this task called (refusals excluded): NAMED_NUDGE
     acted: set = Field(default_factory=set)  # classes of the tools that succeeded this task (classes_of): OUTCOME_CLAIMS
     tests: Optional[str] = None  # "pass"/"fail": the last test run this task saw (state_of_tests)
+    skills_made: set = Field(default_factory=set)  # "verified"/"failed": what this task's skill_create calls gave
     refusals: list = Field(default_factory=list)  # (tool, reason) of the calls the permission gate refused this task
     staged: list = Field(default_factory=list)  # lines python_execute printed as fixed text this task (staged_lines)
     exact_form: Optional[dict] = None  # the short form the request demands (exact_form), checked once the run is over
@@ -582,6 +584,7 @@ class SyraxAgent(Manus):
         self.called = set()
         self.acted = set()
         self.tests = None
+        self.skills_made = set()
         self.refusals = []
         self.staged = []
         self.intents, self.inherited_intents = dict(self.inherited_intents), {}
@@ -776,6 +779,13 @@ class SyraxAgent(Manus):
             if TEST_CLAIM.search(self.last_reply or ""):
                 self.last_reply = TEST_FALLBACK
                 self.unproven = self.unproven or "tests"
+        if (self.last_reply and "failed" in self.skills_made and "verified" not in self.skills_made
+                and skill_claimed(self.last_reply)):
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._final_answer(SKILL_CLAIM_ASK)
+            if skill_claimed(self.last_reply or ""):
+                self.last_reply = SKILL_FALLBACK
+                self.unproven = self.unproven or "skill"
         await self._note_staged()
         if self._unreleased_edits(request):
             # live 2026-10-14 (objective 224, attempt 3): thirty steps of edits, no `release`, and the final said
@@ -1096,6 +1106,8 @@ class SyraxAgent(Manus):
                 if _succeeded(result) and name == "research":
                     self.researched = True
                 self.tests = state_of_tests(name, result) or self.tests
+                if skill_state(name, result):
+                    self.skills_made.add(skill_state(name, result))
                 if name == "python_execute" and _succeeded(result):
                     result += await self._staged_after(_args_of(command))
                 if (self.release_brief and not self.change_noted and name in ("str_replace_editor", "apply_patch")

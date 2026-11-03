@@ -44,6 +44,37 @@ TEST_FALLBACK = ("The tests that cover this change still fail (the last test run
                  "so the change is not done.")
 
 
+# Live 2026-11-01: the review rejected a new skill (FAILED, not registered) and the final said "I built a factorial
+# computation skill"; it took the owner's "you are lied" to correct it. A skill is claimed built only after a
+# skill_create in the task was VERIFIED.
+SKILL_CLAIM = re.compile(
+    r"\bi(?:'ve| have)? (?:built|created|made|added|developed|written|wrote|registered|installed)\b[^.!?\n]{0,60}\bskill\b"
+    r"|\bskill\b[^.!?\n]{0,40}\b(?:is|was|has been|is now) (?:now )?(?:ready|built|created|registered|live|working|installed|available|added)\b",
+    re.I)
+SKILL_HONEST = re.compile(r"\b(?:fail\w*|not|n't|never|refused|rejected|could not|cannot|unable)\b", re.I)
+SKILL_CLAIM_ASK = (
+    "Your answer says a skill was built, but no skill_create in this task was VERIFIED: the skill is not registered. "
+    "Rewrite the final answer honestly: what failed and at which stage, and that the skill is not available. No tool calls."
+)
+SKILL_FALLBACK = ("The skill was not built: its skill_create did not pass (the stage and the reason are in this task's "
+                  "history), so it is not registered and cannot be used yet.")
+
+
+def skill_claimed(text: str) -> bool:
+    """Whether a sentence of `text` says a skill was built, without saying in the same sentence that it failed."""
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text or ""):
+        if SKILL_CLAIM.search(sentence) and not SKILL_HONEST.search(sentence):
+            return True
+    return False
+
+
+def skill_state(name: str, result: str) -> Optional[str]:
+    """"verified" or "failed" for a skill_create observation; None for any other tool."""
+    if name != "skill_create":
+        return None
+    return "verified" if re.search(r": VERIFIED \(", result or "") else "failed"
+
+
 # Audit 2026-10-25 ("Task runtime", follow-up): tests run through python_execute (pytest.main, a subprocess pytest)
 # were not tracked, so "tests pass" after such a failing run stood. The summary line pytest prints ("1 failed, 46
 # passed in 1.20s", "2 passed in 0.03s", "1 error in 0.20s") is read from a python_execute observation; the last
