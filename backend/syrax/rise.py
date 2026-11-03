@@ -193,6 +193,9 @@ def release_success(c, t0, t1) -> Value:
     """Every release that reaches the gate runs it exactly once (devloop._release), whether it was
     called as a tool or directly by the daily ledger publish; a release refused before the gate
     (scope, judge, test guard, preflight) is a failed tool call. Both are attempts."""
+    # Audit 2026-11-01 (F16) proposed counting code releases only; kept as is, because the 10-25 "RISE metrics
+    # truth" decision (test_rise_metrics, a contract) counts the ledger publish on both sides. Code commits alone are
+    # the separate row "Commits SYRAX made to itself".
     gated = _one(c, "SELECT COUNT(*) FROM events WHERE type='verification.completed' AND ts>=? AND ts<?", t0, t1)
     refused = _one(c, "SELECT COUNT(*) FROM events WHERE type='tool.failed' AND json_extract(payload,'$.name')='release' AND ts>=? AND ts<?", t0, t1)
     commits = _one(c, "SELECT COUNT(*) FROM events WHERE type='commit.created' AND ts>=? AND ts<?", t0, t1)
@@ -404,7 +407,7 @@ METRICS: List[Metric] = [
     Metric("tool_failures", "Brain", "Tool calls that failed", "lower", "%", "tool.failed out of all finished tool calls in the window; calls a guard refused and calls refused for the caller's own mistake (journal.misuse) are left out. This PC's own rows only.", tool_failure_share),
     Metric("unfinished", "Brain", "Own tasks left unfinished", "lower", "%", "Autonomous tasks that ended PARTIAL (step limit, loop stop) or FAILED, out of all finished ones.", unfinished_own_tasks),
     Metric("regressions", "Brain", "Quality runs that regressed", "lower", "%", "Quality runs in the window (full suite or a subset re-run) whose status was REGRESSION: a pass rate below the run they were compared to, out of all quality runs.", regression_rate),
-    Metric("own_commits", "Evolution", "Commits SYRAX made to itself", "higher", "count", "commit.created that changed a file outside docs/: code, tests or config that passed the gate and a second brain's review and was committed by SYRAX's release. The daily regeneration of the docs is counted apart.", _commits(docs_only=False)),
+    Metric("own_commits", "Evolution", "Commits SYRAX made to itself", "higher", "count", "commit.created that changed a file outside docs/: code, tests or config that passed the gate and was committed by SYRAX's release, after a second brain's review (or, for a change the human asked for in the chat, the human's own approval of the shown diff). The daily regeneration of the docs is counted apart.", _commits(docs_only=False)),
     Metric("docs_commits", "Evolution", "Commits that only regenerated docs", "-", "count", "commit.created whose files are all under docs/: the daily publish of the ledger, the devlog, the archive and the capability matrix through the same gate and review, with no code changed.", _commits(docs_only=True)),
     Metric("release_success", "Evolution", "Releases that landed", "higher", "%", "commit.created out of release attempts in the window: gate runs (verification.completed; every release that reaches the gate runs it once, the daily ledger publish included, which releases without a tool call) plus release calls refused before the gate (tool.failed).", release_success),
     Metric("live_tree_edits", "Evolution", "Own edits in the running tree", "lower", "count", "Editor edits by SYRAX's own tasks that landed in the running tree instead of the task's isolated worktree (M1; every edit before it counts).", live_tree_edits),
