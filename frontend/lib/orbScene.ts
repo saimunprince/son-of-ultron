@@ -4,6 +4,7 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { ease, targetTilt } from "./parallax";
 
 export type OrbMode = "idle" | "listening" | "thinking" | "acting" | "speaking" | "error";
 
@@ -1074,6 +1075,62 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     level = Math.max(0, Math.min(1, v));
   }
 
+  // ——— MOUSE PARALLAX ———
+  // The orb gently looks toward the cursor (max 5°, eased). Only orbGroup tilts, never the camera, so OrbitControls,
+  // gestures and resetView work as before; nothing else animates orbGroup's own rotation, and every child keeps its
+  // own spin underneath it. The tilt is built in camera space so it reads the same from any orbit angle. Off under
+  // prefers-reduced-motion, for touch, and while the user drags the orb (it eases back to centre).
+  const PARALLAX_MAX = (5 * Math.PI) / 180;
+  const PARALLAX_K = 0.06;
+  let tiltTargetX = 0;
+  let tiltTargetY = 0;
+  let tiltX = 0;
+  let tiltY = 0;
+  let dragging = false;
+  const tiltEuler = new THREE.Euler();
+  const tiltQuat = new THREE.Quaternion();
+  const camInv = new THREE.Quaternion();
+  function onPointerMove(e: PointerEvent) {
+    if (e.pointerType === "touch") return;
+    const rect = container.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const nx = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
+    const ny = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
+    const tilt = targetTilt(nx, ny, PARALLAX_MAX);
+    tiltTargetX = tilt.x;
+    tiltTargetY = tilt.y;
+  }
+  function onPointerAway() {
+    tiltTargetX = 0;
+    tiltTargetY = 0;
+  }
+  function onDragStart() {
+    dragging = true;
+  }
+  function onDragEnd() {
+    dragging = false;
+  }
+  if (!reduced) {
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    document.documentElement.addEventListener("pointerleave", onPointerAway);
+    window.addEventListener("blur", onPointerAway);
+    controls.addEventListener("start", onDragStart);
+    controls.addEventListener("end", onDragEnd);
+  }
+  function applyParallax() {
+    if (reduced) return;
+    tiltX = ease(tiltX, dragging ? 0 : tiltTargetX, PARALLAX_K);
+    tiltY = ease(tiltY, dragging ? 0 : tiltTargetY, PARALLAX_K);
+    if (tiltX === 0 && tiltY === 0) {
+      orbGroup.quaternion.identity();
+      return;
+    }
+    // world tilt = cam * localTilt * cam⁻¹: turn about the camera's right/up axes, whatever the orbit angle
+    tiltQuat.setFromEuler(tiltEuler.set(tiltX, tiltY, 0, "YXZ"));
+    camInv.copy(camera.quaternion).invert();
+    orbGroup.quaternion.copy(camera.quaternion).multiply(tiltQuat).multiply(camInv);
+  }
+
   function animate() {
     if (disposed) return;
     rafId = requestAnimationFrame(animate);
@@ -1293,6 +1350,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     chromaticPass.uniforms.uTime.value = t;
 
     controls.update();
+    applyParallax();
     composer.render();
   }
 
@@ -1315,6 +1373,11 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     cancelAnimationFrame(rafId);
     timer.dispose();
     window.removeEventListener("resize", onResize);
+    window.removeEventListener("pointermove", onPointerMove);
+    document.documentElement.removeEventListener("pointerleave", onPointerAway);
+    window.removeEventListener("blur", onPointerAway);
+    controls.removeEventListener("start", onDragStart);
+    controls.removeEventListener("end", onDragEnd);
     controls.dispose();
     scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
