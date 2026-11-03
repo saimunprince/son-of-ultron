@@ -68,7 +68,7 @@ CAPABILITIES: List[Capability] = [
                tests=["syrax.test_bridge::test_hello_and_brain_panel"], live=["process", "health", "ui"]),
     Capability("routing", "LLM provider routing and failover", CURRENT, "backend/syrax/brains.py, routing.py",
                tests=["syrax.test_brains::test_first_healthy_provider_answers", "syrax.test_brains::test_failover_on_rate_limit_then_cooldown", "syrax.test_routing::*"],
-               live=["brains_answered"], note="only providers with a journaled answer count; Pollinations and Ollama have none"),
+               live=["brains_answered"], note="only providers with a journaled answer in the window count"),
     Capability("agent", "Agent execution (task to final answer)", CURRENT, "backend/syrax/core.py, agent.py",
                tests=["syrax.test_bridge::test_tool_flow_streams_and_terminates", "syrax.test_bridge::test_chat_task_is_journaled_as_success_with_final_evidence"],
                quality_cases=["arith", "act_concise"], live=["tasks_recent"]),

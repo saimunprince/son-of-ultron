@@ -126,9 +126,9 @@ _none this run_
 - Click what it sees (UI Automation, then OCR) — no runtime success within 7 d
 - Visible Work Presence (visibility, hide/show, timeline) — no runtime success within 7 d
 
-Also unverified (no safe in-session check, unchanged since 2026-10-03):
-Pollinations and Ollama brains (never answered; the matrix counts only
-providers with a journaled answer), Linux/macOS launcher paths.
+Also unverified (no safe in-session check, unchanged since 2026-10-03): the
+macOS launcher path. (Corrected 2026-11-03: Pollinations and Ollama have
+answered since; the matrix counts every provider with a journaled answer.)
 
 ## Critical Risks
 
