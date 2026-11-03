@@ -1537,6 +1537,7 @@ export default function Syrax() {
           <button type="button" className="hud-btn" onClick={() => openMind("objectives")} title="Objectives, proposals, skills, briefing (O)">
             MIND
           </button>
+          <div className="rail-sep" aria-hidden="true" />
           <button
             type="button"
             className="hud-btn"
@@ -1547,6 +1548,8 @@ export default function Syrax() {
           >
             {estopLabel(autonomy)}
           </button>
+          <div className="rail-sep" aria-hidden="true" />
+          <div className="rail-level">
           <button
             type="button"
             className="hud-btn"
@@ -1566,6 +1569,7 @@ export default function Syrax() {
           >
             L+
           </button>
+          </div>
           <button
             type="button"
             className="hud-btn"
@@ -1587,6 +1591,7 @@ export default function Syrax() {
               {startup.enabled ? "BOOT ON" : "BOOT OFF"}
             </button>
           )}
+          <div className="rail-sep" aria-hidden="true" />
           <button
             type="button"
             className="hud-btn"
