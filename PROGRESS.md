@@ -671,6 +671,28 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
   - the E-STOP glows.
 - **Limits:** all of it is thin and bounded, and nothing swells. JARVIS stays calm, and reduced motion turns it off.
 
+### 2026-11-03, late night: ULTRON and JARVIS, fearsome and premium
+
+- **Owner's call:** make both fearsome, premium and not cheap. What moves shows SYRAX's state.
+- **Orb, both themes:**
+  - a waveform ring while listening or speaking;
+  - neural sparks while thinking;
+  - the running tool's name circling the core;
+  - an error colour of its own;
+  - fewer effects on a slow machine.
+- **JARVIS:**
+  - an arc reactor as the core, with data rings;
+  - live CPU, memory, temperature and disk around the orb, and in a DIAGNOSTICS panel;
+  - corner brackets.
+- **ULTRON:**
+  - the newest answer types itself out;
+  - a request for permission raises a THREAT band.
+- **Both:**
+  - each theme has its own switch transition and its own boot;
+  - optional sound effects, off by default.
+- **Tried and removed as cheap:** orbiting shards, eyes in the core, a hex grid, a cursor reticle.
+- **Backend:** a read-only `vitals` message.
+
 ## Open
 
 - **Needs the owner:**
