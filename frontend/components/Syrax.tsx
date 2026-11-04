@@ -1037,7 +1037,7 @@ export default function Syrax() {
           break;
       }
     },
-    [arm, push, say, stopTask, submit],
+    [arm, say, stopTask, submit],
   );
 
   const ear = useHandsFree({
