@@ -790,6 +790,13 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **How:** every JARVIS colour, in the orb and in the HUD, has its hue turned to red, with its saturation and
   brightness kept.
 
+### 2026-11-04: polish from a live look
+
+- **BRAIN:** pill switches, and dark dropdowns instead of the browser's white box.
+- **SELF:** capability status badges and confidence bars.
+- **MIND:** objectives merged from Windows read W#333, not #-9999667.
+- **Corner brackets:** they no longer sit on the logo or the shortcut hints.
+
 ## Open
 
 - **Needs the owner:**
