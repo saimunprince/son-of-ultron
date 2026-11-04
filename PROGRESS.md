@@ -831,6 +831,14 @@ The owner asked why SYRAX could not send a WhatsApp message, and whether it coul
 - **Limit:** adb types only English letters. For Bangla text, SYRAX opens a `wa.me` link with the text already
   written.
 
+### 2026-11-04: the local brain is the last resort
+
+- **The problem:** right after the PC started, there was no internet yet, and Ollama came up 96 s after SYRAX. Every
+  brain read "unreachable", and SYRAX answered "All brains failed".
+- **The owner's rule:** no brain may fail; one is always there.
+- **The fix:** when every brain fails, SYRAX waits up to 2 minutes for Ollama on this machine and lets it answer,
+  even if it is switched off in BRAIN. The owner approved this change to `brains.py`.
+
 ## Open
 
 - The Android phone link is built but not yet tried on the owner's phone.
