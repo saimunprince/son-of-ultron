@@ -77,10 +77,11 @@ export const PALETTES = {
     threshold: 0.32,
     menace: 1,
     errorHeat: [2.1, 0.12, 0.08],
+    // the floating code is dimmer in ULTRON, so the red that matters stands out of the dark
     text: (a: number) => {
-      const r = (210 + Math.random() * 45) | 0;
-      const g = (40 + Math.random() * 60) | 0;
-      return `rgba(${r}, ${g}, ${(g * 0.8) | 0}, ${a})`;
+      const r = (190 + Math.random() * 45) | 0;
+      const g = (30 + Math.random() * 45) | 0;
+      return `rgba(${r}, ${g}, ${(g * 0.8) | 0}, ${a * 0.55})`;
     },
     dust: ["rgba(255,120,105,1)", "rgba(230,60,45,0.55)", "rgba(150,25,18,0.15)", "rgba(70,10,8,0)"],
   },

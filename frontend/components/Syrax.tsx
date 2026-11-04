@@ -37,6 +37,7 @@ import { levelOf, levelStep, levelTitle } from "@/lib/autonomyLevel";
 import { isResubmit, type LastSent } from "@/lib/submitGuard";
 import BootSequence from "@/components/BootSequence";
 import ThemeFx, { readoutLine, TypeOut } from "@/components/ThemeFx";
+import Dread, { GlitchText } from "@/components/Dread";
 import BrainChip from "@/components/BrainChip";
 import Captions from "@/components/Captions";
 import CommandPalette, { usePaletteHotkey } from "@/components/CommandPalette";
@@ -1363,6 +1364,7 @@ export default function Syrax() {
     <>
       <div ref={containerRef} className="orb-root" />
       <ThemeFx theme={theme} vitals={vitals} asking={pendingAsk !== null} />
+      {theme === "ultron" && !booting && <Dread mode={orbMode} />}
       <TaskArc
         active={link === "online" && (agent === "thinking" || agent === "acting")}
         phase={phase?.phase ?? null}
@@ -1383,7 +1385,9 @@ export default function Syrax() {
       <div className="hud hud-title">
         <UltronEyes mode={orbMode} />
         <div className="title-text">
-          <span className="title-name">SYRAX</span>
+          <span className="title-name">
+            <GlitchText text="SYRAX" active={theme === "ultron"} />
+          </span>
           <span className="hud-subtitle">{theme === "jarvis" ? "AT YOUR SERVICE" : "SON OF ULTRON"}</span>
         </div>
       </div>

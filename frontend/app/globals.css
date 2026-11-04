@@ -2881,3 +2881,176 @@ body {
     display: none;
   }
 }
+
+/* ═══════════════════════════════════════════════
+   ULTRON dread (components/Dread.tsx, 2026-11-04): the optics in the orb, a heartbeat at the screen's edge,
+   a slow red scan, whispers, a darker ground. Reduced motion stills all of it.
+   ═══════════════════════════════════════════════ */
+[data-theme="ultron"] {
+  --bg: #040102;
+}
+
+/* the screen's edge beats with the core: lub-dub every 1.6 s */
+[data-theme="ultron"] .overlay-vignette {
+  background: radial-gradient(ellipse at center, transparent 46%, rgb(110 0 0 / 0.38) 80%, rgb(0 0 0 / 0.9) 100%);
+  animation: dread-beat 1.6s ease-out infinite;
+}
+
+@keyframes dread-beat {
+  0%,
+  30%,
+  100% {
+    opacity: 0.78;
+  }
+  6% {
+    opacity: 1;
+  }
+  14% {
+    opacity: 0.82;
+  }
+  20% {
+    opacity: 0.94;
+  }
+}
+
+/* the optics wake in the heart of the orb */
+.dread-eyes {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0.16;
+  transition: opacity 0.6s var(--ease);
+}
+
+.dread-eyes .eye-plate {
+  fill: rgb(255 40 30 / 0.04);
+  stroke: rgb(255 60 45 / 0.22);
+}
+
+.dread-eyes .eye {
+  fill: #ff6a55;
+}
+
+.dread-eyes svg {
+  display: block;
+  filter: drop-shadow(0 0 6px rgb(255 200 190 / 0.7)) drop-shadow(0 0 16px rgb(255 30 20 / 0.95)) drop-shadow(0 0 40px rgb(255 20 10 / 0.55));
+  animation: dread-blink 7.3s infinite;
+  transform-origin: 50% 55%;
+}
+
+.dread-eyes[data-mode="listening"] {
+  opacity: 0.55;
+}
+
+.dread-eyes[data-mode="thinking"],
+.dread-eyes[data-mode="speaking"] {
+  opacity: 0.85;
+}
+
+.dread-eyes[data-mode="acting"],
+.dread-eyes[data-mode="error"] {
+  opacity: 1;
+}
+
+@keyframes dread-blink {
+  0%,
+  95.5%,
+  100% {
+    transform: scaleY(1);
+  }
+  97% {
+    transform: scaleY(0.08);
+  }
+}
+
+/* a thin red scan crosses the whole screen, slowly; more often while SYRAX thinks */
+.dread-scan {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  z-index: 13;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(255 45 32 / 0.85) 30%, rgb(255 120 100 / 0.95) 50%, rgb(255 45 32 / 0.85) 70%, transparent);
+  box-shadow: 0 0 14px 2px rgb(255 30 20 / 0.45);
+  opacity: 0;
+  animation: dread-scan 24s linear infinite;
+}
+
+.dread-scan[data-mode="thinking"],
+.dread-scan[data-mode="acting"] {
+  animation-duration: 7s;
+}
+
+@keyframes dread-scan {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  2% {
+    opacity: 0.9;
+  }
+  26% {
+    transform: translateY(100vh);
+    opacity: 0.9;
+  }
+  27%,
+  100% {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+}
+
+/* a cold line surfaces below the orb, then sinks */
+.dread-whisper {
+  position: fixed;
+  left: 50%;
+  top: calc(50% + min(34vh, 300px));
+  z-index: 6;
+  transform: translateX(-50%);
+  pointer-events: none;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgb(255 90 75 / 0.75);
+  text-shadow: 0 0 12px rgb(255 30 20 / 0.6);
+  animation: dread-whisper 6s ease-in-out both;
+}
+
+@keyframes dread-whisper {
+  0% {
+    opacity: 0;
+    filter: blur(6px);
+    letter-spacing: 0.6em;
+  }
+  25%,
+  70% {
+    opacity: 0.85;
+    filter: blur(0);
+    letter-spacing: 0.42em;
+  }
+  100% {
+    opacity: 0;
+    filter: blur(4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="ultron"] .overlay-vignette,
+  .dread-eyes svg {
+    animation: none;
+  }
+
+  .dread-scan,
+  .dread-whisper {
+    display: none;
+  }
+}
