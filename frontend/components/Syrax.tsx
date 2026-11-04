@@ -21,6 +21,7 @@ import {
   type PresentationElement,
   type SelfModelSummary,
   type ResourceSnapshot,
+  type AndroidState,
   type ServerEvent,
   type TaskDetail,
   type TaskSummary,
@@ -29,6 +30,7 @@ import {
 type ConsoleTab = "live" | "history" | "today";
 import BrainPanel from "@/components/BrainPanel";
 import SelfPanel from "@/components/SelfPanel";
+import AndroidPanel from "@/components/AndroidPanel";
 import MindPanel, { mindRequest, type MindData, type MindTab } from "@/components/MindPanel";
 import { DISMISS_INTERRUPTED, HistoryList, ReplayView, UNCERTAIN_RESUME, WhyView } from "@/components/HistoryView";
 import Stage from "@/components/Stage";
@@ -185,6 +187,9 @@ export default function Syrax() {
   const [brainTests, setBrainTests] = useState<Record<string, BrainTestResult | "running">>({});
   const [brainOpen, setBrainOpen] = useState(false);
   const [selfOpen, setSelfOpen] = useState(false);
+  const [androidOpen, setAndroidOpen] = useState(false);
+  const [android, setAndroid] = useState<AndroidState | null>(null);
+  const [androidBusy, setAndroidBusy] = useState(false);
   const [mindTab, setMindTab] = useState<MindTab | null>(null);
   const [mind, setMind] = useState<MindData>({ briefing: null, objectives: null, proposals: null, skills: null, scorecard: null });
   const [autonomy, setAutonomy] = useState<AutonomyStatus | null>(null);
@@ -650,6 +655,13 @@ export default function Syrax() {
           setBrainTests((t) => ({ ...t, [e.id]: rest }));
           break;
         }
+        case "android": {
+          const { type: _a, ...st } = e;
+          void _a;
+          setAndroid(st);
+          setAndroidBusy(false);
+          break;
+        }
         case "vitals": {
           const { type: _v, ...snap } = e;
           void _v;
@@ -885,6 +897,14 @@ export default function Syrax() {
   const openMind = useCallback((tab: MindTab) => {
     setMindTab(tab);
     clientRef.current?.send(mindRequest(tab));
+  }, []);
+
+  const openAndroid = useCallback(() => {
+    clientRef.current?.send({ type: "android_status" });
+    setAndroidOpen(true);
+  }, []);
+  const androidSend = useCallback((msg: ClientMessage) => {
+    if (clientRef.current?.send(msg)) setAndroidBusy(true);
   }, []);
 
   const openBrain = useCallback(() => {
@@ -1132,7 +1152,7 @@ export default function Syrax() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (paletteOpen || brainOpen || selfOpen || mindTab || booting) return; // the panel / boot screen own the keyboard
+      if (paletteOpen || brainOpen || selfOpen || androidOpen || mindTab || booting) return; // the panel / boot screen own the keyboard
       if (isTypingTarget(e.target)) {
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
@@ -1186,7 +1206,7 @@ export default function Syrax() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [booting, brainOpen, selfOpen, mindTab, paletteOpen, openBrain, openMind, openSelf, stopTask, toggleGestures, toggleHandsFree]);
+  }, [booting, brainOpen, selfOpen, androidOpen, mindTab, paletteOpen, openBrain, openMind, openSelf, stopTask, toggleGestures, toggleHandsFree]);
 
   const cameraOn = camera === "on";
 
@@ -1726,6 +1746,9 @@ export default function Syrax() {
           <button type="button" className="hud-btn" onClick={() => openMind("objectives")} title="Objectives, proposals, skills, briefing (O)">
             MIND
           </button>
+          <button type="button" className="hud-btn" onClick={openAndroid} title="Connect your Android phone">
+            ANDROID
+          </button>
           <div className="rail-sep" aria-hidden="true" />
           <button
             type="button"
@@ -1862,6 +1885,19 @@ export default function Syrax() {
           onModels={loadModels}
           onTest={testBrain}
           onClose={() => setBrainOpen(false)}
+        />
+      )}
+
+      {androidOpen && (
+        <AndroidPanel
+          state={android}
+          busy={androidBusy}
+          onFind={() => androidSend({ type: "android_find" })}
+          onPair={(host, port, code) => androidSend({ type: "android_pair", host, port, code })}
+          onConnect={(host, port) => androidSend({ type: "android_connect", host, port })}
+          onDisconnect={() => androidSend({ type: "android_disconnect" })}
+          onRefresh={() => androidSend({ type: "android_status" })}
+          onClose={() => setAndroidOpen(false)}
         />
       )}
 

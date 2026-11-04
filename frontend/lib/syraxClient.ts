@@ -505,6 +505,7 @@ export type ServerEvent =
   | { type: "proposals"; proposals: Proposal[] }
   | ({ type: "autonomy_status" } & AutonomyStatus)
   | ({ type: "vitals" } & ResourceSnapshot)
+  | ({ type: "android" } & AndroidState)
   | ({ type: "startup_status" } & StartupStatus)
   | ({ type: "voice_status" } & VoiceStatus)
   | { type: "memories"; facts: MemoryFact[] }
@@ -563,6 +564,16 @@ export interface QueuedTask {
 /** How an objective is proven done: a machine check, never the task's own words. */
 export type ObjectiveCheck = { kind: string } & Record<string, string>;
 
+/** the ANDROID panel: phones adb sees, the last address, the last action's result */
+export interface AndroidState {
+  adb: boolean;
+  devices: { serial: string; state: string; model: string; wifi: boolean }[];
+  saved: string | null;
+  message: string;
+  result?: string;
+  ok?: boolean;
+}
+
 export type ClientMessage =
   /** queue: a request made while a task runs waits for it instead of being refused */
   | { type: "task"; text: string; voice?: boolean; queue?: boolean }
@@ -573,6 +584,12 @@ export type ClientMessage =
   | { type: "reset" }
   | { type: "ping" }
   | { type: "vitals" }
+  | { type: "android_status" }
+  | { type: "android_find" }
+  | { type: "android_disconnect" }
+  | { type: "android_connect"; host: string; port: string }
+  /** the code is the one the phone shows, typed by the human */
+  | { type: "android_pair"; host: string; port: string; code: string }
   | { type: "history"; limit?: number }
   | { type: "task_events"; task_id: string }
   | { type: "verifications"; limit?: number }

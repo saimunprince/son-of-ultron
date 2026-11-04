@@ -436,7 +436,7 @@ class DesktopControl(BaseTool):
         "(on Windows Microsoft Store apps such as WhatsApp included), never a file search. On Windows also: type text into the focused window "
         "(type_text), press keys (hotkey, e.g. ctrl+c, alt+tab), click at screen pixels (click) or on what the screen shows by its words (click_text: a button, menu, tab, link or text; find_text only says where it is), switch dark mode "
         "(dark_mode) and turn the display off (display_off); the human stops typing and clicking by moving the "
-        "mouse to the top-left corner. To delete the human's own files, use trash: it goes to the Recycle Bin and can be restored. camera takes one photo with the webcam when the human asks to be seen; you see the photo. (Use the browser_* tools only when YOU need to read or operate a web page.)"
+        "mouse to the top-left corner. To delete the human's own files, use trash: it goes to the Recycle Bin and can be restored. camera takes one photo with the webcam when the human asks to be seen; you see the photo. phone uses the human's Android phone (connected over adb, its apps already signed in, WhatsApp too) the way a human does: value status, screen (you see a picture), ui (what the screen shows and where, with x,y), tap (target: the words on it, e.g. Send, or 'x,y' in the picture's pixels), type (target: the text; English letters only), key (target: back, home, recents, enter, delete...), swipe (target: up, down, left, right), open (target: an app name or a link, e.g. https://wa.me/8801XXXXXXXXX?text=Hi opens that WhatsApp chat with the text written). Read the screen again after every step to see what happened. (Use the browser_* tools only when YOU need to read or operate a web page.)"
     )
     parameters: dict = {
         "type": "object",
@@ -446,11 +446,11 @@ class DesktopControl(BaseTool):
                 "enum": [
                     "open", "launch_app", "list_apps", "volume", "media", "screenshot",
                     "notify", "clipboard_get", "clipboard_set", "find_files", "system_info", "lock_screen", "window",
-                    "type_text", "hotkey", "click", "click_text", "find_text", "dark_mode", "display_off", "trash", "untrash", "camera",
+                    "type_text", "hotkey", "click", "click_text", "find_text", "dark_mode", "display_off", "trash", "untrash", "camera", "phone",
                 ],
             },
             "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name (Store apps included). find_files: name pattern. system_info: a city or time zone (Tokyo, Europe/London) to also read the time there. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin. untrash: the original path of a trashed file, to put it back (Linux)."},
-            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop; each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get."},
+            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop; each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get. phone: status, screen, ui, tap, type, key, swipe or open."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
         "required": ["action"],
@@ -466,6 +466,33 @@ class DesktopControl(BaseTool):
             return ToolResult(error=f"desktop {action} failed: {e}")
 
     # ——— actions ———
+    async def _do_phone(self, target: str, value: str, **_) -> ToolResult:
+        from syrax import android
+
+        cmd = (value or "status").lower()
+        try:
+            if cmd == "status":
+                return ToolResult(output=await android.describe())
+            if cmd == "screen":
+                path, data = await android.screenshot(Path(config.workspace_root) / "screenshots")
+                return ToolResult(output=f"Phone screen saved to {path}. Positions in this picture are what tap takes.",
+                                  base64_image=data)
+            if cmd == "ui":
+                return ToolResult(output=android.render_ui(await android.ui()))
+            if cmd == "tap":
+                return ToolResult(output=await android.tap(target))
+            if cmd == "type":
+                return ToolResult(output=await android.type_text(target))
+            if cmd == "key":
+                return ToolResult(output=await android.key(target))
+            if cmd == "swipe":
+                return ToolResult(output=await android.swipe(target))
+            if cmd == "open":
+                return ToolResult(output=await android.open_app(target))
+        except android.PhoneError as e:
+            return ToolResult(error=str(e))
+        return ToolResult(error=f"Unknown phone command '{value}': status, screen, ui, tap, type, key, swipe or open.")
+
     async def _do_open(self, target: str, **_) -> ToolResult:
         if not target:
             return ToolResult(error="open needs a target (URL, file or folder).")

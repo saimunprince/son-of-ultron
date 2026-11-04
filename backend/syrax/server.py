@@ -920,6 +920,9 @@ class Session:
                 problem = str(e)
             if problem:
                 await self.send({"type": "notice", "text": problem})
+        elif kind in ("android_status", "android_pair", "android_connect", "android_find", "android_disconnect"):
+            # the ANDROID panel (2026-11-04): link the human's phone over adb; the pairing code is typed by the human
+            self.spawn(self._android(kind, msg))
         elif kind == "brains_get":
             await self.send({"type": "brains", **get_router().describe()})
         elif kind == "brains_save":
@@ -938,6 +941,25 @@ class Session:
                 self.spawn(self._test(pid))
         else:
             await self.send({"type": "error", "message": f"Unknown message: {kind}"})
+
+    async def _android(self, kind: str, msg: dict) -> None:
+        from syrax import android
+
+        message, ok = "", True
+        try:
+            if kind == "android_pair":
+                message = await android.pair(msg.get("host"), msg.get("port"), str(msg.get("code") or ""))
+            elif kind == "android_connect":
+                message = await android.connect(msg.get("host"), msg.get("port"))
+            elif kind == "android_find":
+                message = await android.discover()
+            elif kind == "android_disconnect":
+                message = await android.disconnect()
+        except android.PhoneError as e:
+            message, ok = str(e), False
+        if kind != "android_status":
+            await get_journal().record("android." + kind.removeprefix("android_"), {"ok": ok, "message": message})
+        await self.send({"type": "android", **await android.status(), "result": message, "ok": ok})
 
     async def _compare_brains(self, a: str, b: str, only) -> None:
         from syrax.experiments import render as render_exp

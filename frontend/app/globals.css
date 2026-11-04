@@ -2887,3 +2887,31 @@ body {
 ::-webkit-scrollbar-button {
   display: none;
 }
+
+/* ——— ANDROID panel (2026-11-04): the brain panel's look, plus a short form ——— */
+.android-row .brain-name {
+  flex: 1;
+}
+.android-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0 4px;
+}
+.android-panel .brain-inline input {
+  min-width: 0;
+}
+.android-panel .brain-inline .android-port {
+  flex: 0 0 110px;
+  width: 110px;
+}
+.android-pair-open {
+  margin-top: 6px;
+}
+.android-steps {
+  margin: 14px 0 4px;
+  padding-left: 18px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--text-dim, rgba(255, 255, 255, 0.55));
+}
