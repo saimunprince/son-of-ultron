@@ -732,8 +732,7 @@ class Core:
         release objective's 30 steps, leaked into it, no brain was routed for it and the UI saw no phase): the brain
         routed for the work, ``current`` set in the "understand" phase and the UI told, and the agent's kind, the
         human's own words (not the brief) and a fresh step budget, the agent's default unless the caller sets one."""
-        await self._route(said or running.goal, running.task_id, release=running.kind == "autonomous" and _is_release(running.goal),
-                          task_kind=running.kind)
+        await self._route(said or running.goal, running.task_id, release=running.kind == "autonomous" and _is_release(running.goal))
         running.phase = "understand"
         self.current = running
         await self._record_phase({"phase": "understand", "from": None})
@@ -784,7 +783,7 @@ class Core:
         except Exception as e:  # a feature pack never stops SYRAX
             logger.warning(f"prebuilt skills not installed: {e}")
 
-    async def _route(self, text: str, task_id: str, release: bool = False, task_kind: str = "conversation") -> None:
+    async def _route(self, text: str, task_id: str, release: bool = False) -> None:
         """Phase 7: try first the brain measured best at this kind of work.
         M2: a release objective's task goes by the code benchmark instead."""
         from syrax import routing
@@ -812,6 +811,7 @@ class Core:
                 kind = routing.kind_of(text)
                 router.routed = await asyncio.to_thread(routing.preferred, self.journal, kind, order)
                 if router.routed is None:
+                    task_kind = (self.journal.task(task_id) or {}).get("kind") or "conversation"
                     saver = routing.quota_saver(task_kind, kind, order, router.usable)
                     if saver:
                         router.routed = saver
