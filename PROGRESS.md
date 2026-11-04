@@ -841,6 +841,15 @@ The owner asked why SYRAX could not send a WhatsApp message, and whether it coul
 - **Also, the camera preview:** it stacked into the left column and pushed the menu up over DIAGNOSTICS. It now sits
   beside the menu.
 
+### 2026-11-04: SYRAX sees the screen live
+
+- **The ask:** SYRAX should see the owner's screen in real time, not only through a screenshot taken on request.
+- **The SCREEN button:** it sits beside TALK. It shares a screen or a window, and starts live talk if it is off.
+  While it is on, about one picture a second goes to Gemini Live, so SYRAX sees and talks about the screen as it is now.
+- **Privacy:** pictures go to Google only while SCREEN is on. The browser's own "Stop sharing" also ends it.
+  Every start and stop is recorded in the journal.
+- **Checked live:** Gemini Live read the words on a shared picture correctly.
+
 ## Open
 
 - The Android phone link is built but not yet tried on the owner's phone.
