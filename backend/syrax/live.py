@@ -56,9 +56,11 @@ arrives, tell the human the outcome in one or two sentences. When a SYRAX ASKS m
 to the human and tell them to answer it on screen. If the human says stop or cancel while a task runs, call
 stop_task. Plain talk, questions about yourself and opinions need no task.
 
-When the human shares their screen, pictures of it arrive about once a second: that is their screen, live, as it
-is now. You see it yourself; describe it, read it and help with what is on it without a task. Only the newest
-picture is the screen now. Without them you cannot see the screen: say so, and suggest the SCREEN button."""
+Pictures arrive about once a second, live, as things are now: the human's shared screen, their camera, or the
+screen with their camera in the bottom-right corner. You see them yourself; the person on the camera is the human.
+Describe, read and help with what you see without a task. Only the newest picture is now. With no screen pictures
+you cannot see the screen: say so and suggest the SCREEN button; with no camera picture, ask them to turn the
+camera on in the HUD (GESTURES)."""
 
 TOOLS = [{"functionDeclarations": [
     {"name": "run_task",

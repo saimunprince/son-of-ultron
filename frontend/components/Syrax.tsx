@@ -441,10 +441,7 @@ export default function Syrax() {
           }
           break;
         case "live":
-          if (e.event === "opened")
-            push({ kind: "notice", id: nextId++, text: `LIVE TALK ON · ${e.model} · the microphone streams to Google until TALK is pressed again` });
-          else if (e.event === "closed")
-            push({ kind: "notice", id: nextId++, text: `LIVE TALK OFF · ${e.reason ?? "closed"} · ${e.seconds ?? 0}s, ${e.tasks ?? 0} task(s)` });
+          // the owner, 2026-11-04: no LIVE TALK ON/OFF lines in the log; the TALK button shows it (and the journal keeps it)
           break;
         case "camera":
           if (e.event === "captured") push({ kind: "notice", id: nextId++, text: `CAMERA USED · one photo saved to ${e.path}` });
@@ -1108,6 +1105,7 @@ export default function Syrax() {
       },
       onLevel: (l) => sceneRef.current?.setLevel(l),
       onScreen: setSharing,
+      camera: () => videoRef.current,
     });
     talkRef.current = live;
     void live.start();
