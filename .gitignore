@@ -6,6 +6,8 @@ backend/config/mcp.json
 backend/config/ws.token
 backend/config/journal.db.key
 backend/config/portal.token
+backend/config/phone.token
+backend/config/phone.json
 .env
 .env.*
 
