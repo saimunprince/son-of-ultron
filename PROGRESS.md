@@ -817,7 +817,23 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **Also, the brain chip:** the owner asked to remove the brain name, model and timing from the top-right corner. The
   status corner shows only the state and the tool count. Failovers still show in the live log.
 
+### 2026-11-04: SYRAX uses the owner's Android phone
+
+The owner asked why SYRAX could not send a WhatsApp message, and whether it could control his phone.
+- **The phone action:** the desktop tool's `phone` action works the phone over adb, as a human does. It reads the
+  screen (a picture, and a list of what is on it and where), taps by the words on a button or by position, types,
+  swipes, presses keys, and opens apps or links. The phone's own apps are already signed in, WhatsApp included.
+- **Safety:** reading the phone changes nothing. In a chat app, a tap on Send, a tap by position or Enter counts as
+  sending a message. SYRAX asks first, unless the owner's own words asked for that send.
+- **The ANDROID panel:** a new button in the left menu. It pairs with the phone's 6-digit code, connects, finds
+  the phone on the WiFi by itself, and disconnects. The last address stays in `backend/config/android.json`, which
+  is not in git.
+- **Limit:** adb types only English letters. For Bangla text, SYRAX opens a `wa.me` link with the text already
+  written.
+
 ## Open
+
+- The Android phone link is built but not yet tried on the owner's phone.
 
 - **Needs the owner:**
   - **Review the protected files:** `agent.py` and `brains.py` were changed on 10-30 and 10-31 under "sob koro",
