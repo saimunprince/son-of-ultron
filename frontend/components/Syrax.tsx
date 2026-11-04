@@ -44,6 +44,7 @@ import CommandPalette, { usePaletteHotkey } from "@/components/CommandPalette";
 import TaskArc from "@/components/TaskArc";
 import Toasts from "@/components/Toasts";
 import { createLatencyTracker } from "@/lib/brainChip";
+import { stageElements } from "@/lib/stageView";
 import type { PaletteCommand } from "@/lib/palette";
 import { addToast, classifyError, classifyNotice, dismissToast, makeToast, type Toast } from "@/lib/toasts";
 import { sfx, type SfxEvent } from "@/lib/sfx";
@@ -1469,7 +1470,7 @@ export default function Syrax() {
         )}
         {consoleOpen && consoleTab === "live" && (
           <Stage
-            elements={[...stage].sort((a, b) => b.priority - a.priority || a.created - b.created)}
+            elements={stageElements(stage)}
             onDismiss={(id) => clientRef.current?.send({ type: "presentation_feedback", presentation_id: id, action: "dismiss" })}
           />
         )}
