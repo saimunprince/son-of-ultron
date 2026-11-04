@@ -461,3 +461,35 @@ def test_free_params_sent_only_without_key_and_dropped_if_rejected(router, monke
     BEHAVIOR["gamma"] = "no-reasoning-param"
     assert ask(router).content == "plain ok"
     assert SEEN[0][1].get("reasoning_effort") == "low" and "reasoning_effort" not in SEEN[1][1]
+
+
+def _with_local(router, monkeypatch, base, ready):
+    local = brains.Provider(id="ollama", label="Ollama (local)", base_url=f"{base}/ollama/v1", tier="local",
+                            default_model="ollama-model", key_required=False)
+    monkeypatch.setitem(brains.PROVIDERS, "ollama", local)
+    calls = []
+
+    async def local_ready(self, wait_s):
+        calls.append(wait_s)
+        return ready
+
+    monkeypatch.setattr(brains.BrainRouter, "_local_ready", local_ready)
+    for p in ("alpha", "beta", "gamma", "omega"):
+        BEHAVIOR[p] = "401"
+    return calls
+
+
+def test_the_local_brain_answers_when_every_other_brain_fails(router, monkeypatch, base):
+    # the owner, 2026-11-04: no brain may fail. Ollama is off the human's order (disabled), and still the last resort
+    calls = _with_local(router, monkeypatch, base, ready=True)
+    msg = ask(router)
+    assert msg.content == "ollama says hi"
+    assert calls == [brains.LOCAL_WAIT_S]
+
+
+def test_no_local_brain_still_fails_readably_and_waits_once(router, monkeypatch, base):
+    calls = _with_local(router, monkeypatch, base, ready=False)
+    with pytest.raises(BrainError) as e:
+        ask(router)
+    assert "ALPHA: invalid API key" in str(e.value)
+    assert len(calls) == 1

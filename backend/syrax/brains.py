@@ -153,6 +153,12 @@ def _first_sentence(text: str, limit: int = 200) -> str:
 # Live 2026-10-31: 43 tools, and even their compact manual left a request at ~8,619 tokens, over Groq's 8,000.
 # For a brain the compact manual does not fit, the tools are chosen (select_tools): these always, then the tools whose
 # name or description shares words with the request, best first, while the request fits.
+# the brain on this machine, the last resort when every other brain fails (ask_tool); after a boot Ollama can start
+# a minute or two after SYRAX, so SYRAX waits for it this long before saying no brain answered
+LOCAL_BRAIN = "ollama"
+LOCAL_WAIT_S = float(os.getenv("SYRAX_LOCAL_WAIT_S", "120"))
+LOCAL_POLL_S = 3.0
+
 ESSENTIAL_TOOLS = frozenset({"terminate", "ask_human", "python_execute", "desktop", "recall", "remember", "research",
                              "know", "undo", "present"})
 _WORD = re.compile(r"[^\W\d_]{3,}", re.UNICODE)
@@ -934,7 +940,8 @@ class BrainRouter(LLM):
             raise BrainError("No brain enabled. Open BRAIN in the UI and add a key.")
 
         wait_rounds = 0
-        for attempt in range(3):
+        local_tried = False
+        for attempt in range(4):
             failures = []
             soonest = None
             for pid in chain:
@@ -1009,8 +1016,39 @@ class BrainRouter(LLM):
                 await self._emit({"type": "notice", "text": f"All brains busy. Retrying in {int(soonest) + 1}s."})
                 await asyncio.sleep(soonest + 0.5)
                 continue
+            # The owner, 2026-11-04: "no brain may fail; one is always there". Live that evening the PC had just
+            # started: no internet yet, and Ollama came up 96 s after SYRAX, so every brain read "unreachable". The
+            # brain on this machine is the last resort: wait for it to start, then try it, enabled or not.
+            if not local_tried and LOCAL_BRAIN in PROVIDERS:
+                local_tried = True
+                if await self._local_ready(LOCAL_WAIT_S):
+                    self.health[LOCAL_BRAIN] = Health()
+                    chain = [LOCAL_BRAIN]
+                    await self._emit({"type": "notice", "text": "No other brain answered: the local brain (Ollama) takes over."})
+                    continue
             raise BrainError("All brains failed. " + " | ".join(failures[:6]))
         raise BrainError("All brains failed.")
+
+    async def _local_ready(self, wait_s: float) -> bool:
+        """Whether Ollama answers on this machine, waiting up to wait_s for it to start (after a boot it comes up
+        later than SYRAX). False at once when it has no model to run."""
+        root = PROVIDERS[LOCAL_BRAIN].base_url.rstrip("/").removesuffix("/v1")
+        deadline = time.monotonic() + wait_s
+        told = False
+        while True:
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    r = await client.get(f"{root}/api/tags")
+                if r.status_code == 200:
+                    return bool(r.json().get("models"))
+            except (httpx.HTTPError, ValueError):
+                pass
+            if time.monotonic() >= deadline:
+                return False
+            if not told:
+                told = True
+                await self._emit({"type": "notice", "text": "No brain reachable: waiting for the local brain (Ollama) to start."})
+            await asyncio.sleep(LOCAL_POLL_S)
 
     def _format(self, messages, system_msgs, vision: bool) -> List[dict]:
         msgs = list(system_msgs or []) + list(messages)
