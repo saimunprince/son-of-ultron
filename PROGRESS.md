@@ -746,15 +746,27 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
   band, the typed answers and the red scan.
 - **Kept:** the names and the boot text.
 
+### 2026-11-04: maintenance, a lighter install, and a bad fallback caught
+
+- **Quality run #22:** 58/67. Gemini and Groq were rate limited, so Ollama took tasks mid-way. Yesterday's
+  last-resort plain answer let it say "the todo app has been created" with nothing on disk. Mid-task a tight
+  brain now hands over to the next one; the plain answer is only for a chat. "No result available." also counts
+  as a non-answer now.
+- **Journal compacted** after a verified backup: old checkpoint contexts emptied (6,214 rows), then VACUUM.
+  196 MB → 78 MB. Integrity is ok and the chain verifies.
+- **Unused dependencies removed:** datasets, gymnasium, browsergym, and with them torch, triton and the NVIDIA
+  CUDA wheels. Nothing imported them. The venv went from 6.7 GB to 1.5 GB, and the full gate is GREEN on it.
+- **UI fixes from a live look:**
+  - the task arc sits in the free top centre; under the orb it was behind the caption;
+  - the command hint stays on one line.
+- **Phone page:** turned on. `python syrax.py --phone show` prints its link.
+
 ## Open
 
 - **Needs the owner:**
   - **Review the protected files:** `agent.py` and `brains.py` were changed on 10-30 and 10-31 under "sob koro",
     before the mission named them protected (the 11-03 changes were approved).
-  - **Compact the journal:** about 130 MB of old checkpoint contexts, and VACUUM. Backup first.
-  - **Unused dependencies:** gymnasium, browsergym (with a 1.1 GB torch), datasets.
   - **Offline Bengali speech:** `SYRAX_WHISPER_MODEL=small`, a 460 MB download.
-  - **Start at login** (`--install-service`) and the **phone page** (`--phone on`).
   - **Objective #35:** say "play lo-fi on YouTube" once.
   - **3 plan items:** personality adaptation, visual tracking and sensor fusion.
   - **5 Windows skills** have no code here; and the **Windows PC** needs a `git pull`.
