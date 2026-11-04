@@ -9,8 +9,11 @@ action is SYSTEM level, so SYRAX's own (autonomous) work may not use it.
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import sys
-from typing import Any, Optional
+import uuid
+from typing import Any, Dict, Optional
 
 WARMUP_FRAMES = 5  # the first frames of many webcams are dark
 
@@ -35,3 +38,38 @@ def capture(index: int = 0, warmup: int = WARMUP_FRAMES, cv2: Optional[Any] = No
         return bytes(buf.tobytes())
     finally:
         cap.release()
+
+
+# ——— the HUD's camera (2026-11-04) ———
+# The HUD keeps the camera open for hand tracking, and then nothing else can open it: asked "can you see me?", the
+# camera action failed with "another app is using it". The HUD then gives one frame of what it already shows.
+HUD_TIMEOUT_S = 3.0
+HUD_MAX_CHARS = 4_000_000
+_waiting: Dict[str, "asyncio.Future"] = {}
+
+
+async def from_hud(broadcast, timeout: Optional[float] = None) -> Optional[bytes]:
+    """One JPEG frame from the camera the HUD shows, or None (no HUD, or its camera is off)."""
+    rid = uuid.uuid4().hex[:12]
+    fut = asyncio.get_running_loop().create_future()
+    _waiting[rid] = fut
+    try:
+        await broadcast({"type": "camera_frame_request", "id": rid})
+        data = await asyncio.wait_for(fut, HUD_TIMEOUT_S if timeout is None else timeout)
+    except asyncio.TimeoutError:
+        return None
+    finally:
+        _waiting.pop(rid, None)
+    try:
+        return base64.b64decode(data, validate=True)
+    except (ValueError, TypeError):
+        return None
+
+
+def hud_frame(rid: str, data: str) -> bool:
+    """A HUD's answer to from_hud; an empty one (its camera is off) is ignored, so another HUD may still answer."""
+    fut = _waiting.get(str(rid or ""))
+    if fut is None or fut.done() or not data or len(data) > HUD_MAX_CHARS:
+        return False
+    fut.set_result(data)
+    return True

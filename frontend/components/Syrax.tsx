@@ -663,6 +663,21 @@ export default function Syrax() {
           setAndroidBusy(false);
           break;
         }
+        case "camera_frame_request": {
+          // SYRAX's camera action could not open the camera this HUD holds: one frame of what it shows, or "" when off
+          const v = videoRef.current;
+          let data = "";
+          if (v && v.srcObject && v.videoWidth) {
+            const c = document.createElement("canvas");
+            c.width = v.videoWidth;
+            c.height = v.videoHeight;
+            c.getContext("2d")?.drawImage(v, 0, 0);
+            const url = c.toDataURL("image/jpeg", 0.85);
+            data = url.slice(url.indexOf(",") + 1);
+          }
+          clientRef.current?.send({ type: "camera_frame", id: e.id, data });
+          break;
+        }
         case "vitals": {
           const { type: _v, ...snap } = e;
           void _v;
@@ -926,6 +941,30 @@ export default function Syrax() {
     if (audioReady()) say(AWAKENINGS[Math.floor(Math.random() * AWAKENINGS.length)], { followUp: false });
   }, [say]);
 
+  // A file the human gives SYRAX (dropped anywhere, or an image pasted into the command bar): saved in the
+  // workspace and named in the command line. A picture or a video is named as one, so SYRAX looks at it (desktop view).
+  const uploadFile = useCallback(
+    async (file: File) => {
+      const name = file.name || `pasted-${Date.now()}.${(file.type.split("/")[1] || "png").replace("jpeg", "jpg")}`;
+      try {
+        const res = await fetch(`${API_BASE}/upload?name=${encodeURIComponent(name)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: file,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { path } = (await res.json()) as { path: string };
+        push({ kind: "notice", id: nextId++, text: `FILE · ${name} saved to ${path}` });
+        const what = file.type.startsWith("image/") ? "the image" : file.type.startsWith("video/") ? "the video" : "the file";
+        setInput((v) => `${v ? `${v} ` : ""}I shared ${what} ${path}. `);
+        inputRef.current?.focus();
+      } catch (err) {
+        push({ kind: "error", id: nextId++, text: `UPLOAD · ${name} failed (${String(err)})` });
+      }
+    },
+    [push],
+  );
+
   // Drop a file anywhere on SYRAX: it is saved in the workspace and named in the command line,
   // so the human only says what to do with it (feature catalog: file_processor).
   useEffect(() => {
@@ -943,21 +982,7 @@ export default function Syrax() {
       e.preventDefault();
       setDropping(false);
       const file = e.dataTransfer?.files[0];
-      if (!file) return;
-      try {
-        const res = await fetch(`${API_BASE}/upload?name=${encodeURIComponent(file.name)}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/octet-stream" },
-          body: file,
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const { path } = (await res.json()) as { path: string };
-        push({ kind: "notice", id: nextId++, text: `FILE · ${file.name} saved to ${path}` });
-        setInput((v) => `${v ? `${v} ` : ""}I dropped the file ${path}. `);
-        inputRef.current?.focus();
-      } catch (err) {
-        push({ kind: "error", id: nextId++, text: `UPLOAD · ${file.name} failed (${String(err)})` });
-      }
+      if (file) await uploadFile(file);
     };
     window.addEventListener("dragover", over);
     window.addEventListener("dragleave", leave);
@@ -967,7 +992,7 @@ export default function Syrax() {
       window.removeEventListener("dragleave", leave);
       window.removeEventListener("drop", drop);
     };
-  }, [push]);
+  }, [uploadFile]);
 
   // Screen reacts while SYRAX speaks (glitch, scanlines, red bleed).
   useEffect(() => {
@@ -1697,6 +1722,12 @@ export default function Syrax() {
                   : "Command SYRAX…  ( / · M voice · Ctrl+K )"
             }
             onChange={(e) => setInput(e.target.value)}
+            onPaste={(e) => {
+              const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+              if (!file) return; // plain text pastes as usual
+              e.preventDefault();
+              void uploadFile(file);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();

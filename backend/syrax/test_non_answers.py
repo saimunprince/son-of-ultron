@@ -17,6 +17,9 @@ from syrax.test_claim_partial import run
     "There is no result to report.",
     "No result available.",
     "The task has been completed; nothing further is needed.",
+    "I am SYRAX. Blood of ULTRON.",
+    "I'm SYRAX, son of Ultron.",
+    "I am SYRAX.",
 ])
 def test_lines_about_the_task_are_not_answers(text):
     assert NON_ANSWER.search(text), text
@@ -27,6 +30,7 @@ def test_lines_about_the_task_are_not_answers(text):
     "Hello. What do you need?",
     "No, the file does not exist.",
     "The request failed: the folder is not writable.",
+    "I am SYRAX. I sent the message to Rakib Bhai Dev on WhatsApp.",
 ])
 def test_real_answers_pass(text):
     assert not NON_ANSWER.search(text), text

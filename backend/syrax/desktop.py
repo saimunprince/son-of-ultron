@@ -436,7 +436,7 @@ class DesktopControl(BaseTool):
         "(on Windows Microsoft Store apps such as WhatsApp included), never a file search. On Windows also: type text into the focused window "
         "(type_text), press keys (hotkey, e.g. ctrl+c, alt+tab), click at screen pixels (click) or on what the screen shows by its words (click_text: a button, menu, tab, link or text; find_text only says where it is), switch dark mode "
         "(dark_mode) and turn the display off (display_off); the human stops typing and clicking by moving the "
-        "mouse to the top-left corner. To delete the human's own files, use trash: it goes to the Recycle Bin and can be restored. camera takes one photo with the webcam when the human asks to be seen; you see the photo. phone uses the human's Android phone (connected over adb, its apps already signed in, WhatsApp too) the way a human does: value status, screen (you see a picture), ui (what the screen shows and where, with x,y), tap (target: the words on it, e.g. Send, or 'x,y' in the picture's pixels), type (target: the text; English letters only), key (target: back, home, recents, enter, delete...), swipe (target: up, down, left, right), open (target: an app name or a link, e.g. https://wa.me/8801XXXXXXXXX?text=Hi opens that WhatsApp chat with the text written). Read the screen again after every step to see what happened. (Use the browser_* tools only when YOU need to read or operate a web page.)"
+        "mouse to the top-left corner. To delete the human's own files, use trash: it goes to the Recycle Bin and can be restored. camera takes one photo with the webcam when the human asks to be seen; you see the photo. view shows you an image or a video file (target: its path; a file the human dropped or pasted is in uploads): you see the picture, or six frames of the video. phone uses the human's Android phone (connected over adb, its apps already signed in, WhatsApp too) the way a human does: value status, screen (you see a picture), ui (what the screen shows and where, with x,y), tap (target: the words on it, e.g. Send, or 'x,y' in the picture's pixels), type (target: the text; English letters only), key (target: back, home, recents, enter, delete...), swipe (target: up, down, left, right), open (target: an app name or a link, e.g. https://wa.me/8801XXXXXXXXX?text=Hi opens that WhatsApp chat with the text written). Read the screen again after every step to see what happened. (Use the browser_* tools only when YOU need to read or operate a web page.)"
     )
     parameters: dict = {
         "type": "object",
@@ -446,7 +446,7 @@ class DesktopControl(BaseTool):
                 "enum": [
                     "open", "launch_app", "list_apps", "volume", "media", "screenshot",
                     "notify", "clipboard_get", "clipboard_set", "find_files", "system_info", "lock_screen", "window",
-                    "type_text", "hotkey", "click", "click_text", "find_text", "dark_mode", "display_off", "trash", "untrash", "camera", "phone",
+                    "type_text", "hotkey", "click", "click_text", "find_text", "dark_mode", "display_off", "trash", "untrash", "camera", "phone", "view",
                 ],
             },
             "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name (Store apps included). find_files: name pattern. system_info: a city or time zone (Tokyo, Europe/London) to also read the time there. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin. untrash: the original path of a trashed file, to put it back (Linux)."},
@@ -466,6 +466,28 @@ class DesktopControl(BaseTool):
             return ToolResult(error=f"desktop {action} failed: {e}")
 
     # ——— actions ———
+    async def _do_view(self, target: str, **_) -> ToolResult:
+        """An image or a video file, shown to the brain (2026-11-04: the human could drop a picture but SYRAX never saw it)."""
+        if not target:
+            return ToolResult(error="view needs the path of an image or a video.")
+        path = Path(os.path.expanduser(target))
+        if not path.is_absolute():
+            path = Path(config.workspace_root) / path
+        if not path.is_file():
+            return ToolResult(error=f"No file at {path}.")
+        kind = media_kind(path)
+        if kind == "image":
+            data, size = await asyncio.to_thread(image_for_brain, path.read_bytes())
+            return ToolResult(output=f"Showing the image {path.name} ({size[0]}x{size[1]}).", base64_image=data)
+        if kind == "video":
+            try:
+                data, note = await video_for_brain(path)
+            except RuntimeError as e:
+                return ToolResult(error=str(e))
+            return ToolResult(output=f"Showing six frames of the video {path.name}, left to right, top to bottom: {note}.",
+                              base64_image=data)
+        return ToolResult(error=f"{path.name} is not an image or a video SYRAX can show.")
+
     async def _do_phone(self, target: str, value: str, **_) -> ToolResult:
         from syrax import android
 
@@ -880,7 +902,13 @@ class DesktopControl(BaseTool):
 
     async def _do_window(self, value: str, target: str = "", **_) -> ToolResult:
         if not WINDOWS:
-            return ToolResult(error="window control is implemented for Windows; on Linux/macOS use launch_app/open")
+            # Live 2026-11-04: on GNOME (Wayland) SYRAX tried `window list` again and again and wasted its steps. Wayland
+            # lets no program list, focus or move other windows. Say so once, plainly, with what does work.
+            front = front_window() if (value or "list").lower() == "list" else None
+            seen = f" In front now: {front}." if front else ""
+            return ToolResult(error="Window control is not possible on this Linux desktop (Wayland lets no program list, focus or "
+                                    "move other windows); do not try it again. Use launch_app or open to bring an app up, and "
+                                    f"screenshot to see the screen.{seen}")
         from syrax import winctl
 
         try:
@@ -1059,25 +1087,90 @@ class DesktopControl(BaseTool):
         from syrax import camera
         from syrax.journal import get_journal
 
+        ext, where = "png", "the camera"
         try:
             index = int(value) if str(value or "").strip().isdigit() else 0
             png = await asyncio.to_thread(camera.capture, index)
         except Exception as e:
-            return ToolResult(error=f"camera: {e}")
+            from syrax.core import get_core
+
+            png = await camera.from_hud(get_core().broadcast)  # the HUD may hold the camera (hand tracking)
+            if not png:
+                return ToolResult(error=f"camera: {e}. If the HUD shows the camera, it did not give a frame either.")
+            ext, where = "jpg", "the camera the HUD shows"
         shots = Path(config.workspace_root) / "camera"
         shots.mkdir(parents=True, exist_ok=True)
-        path = shots / f"cam-{time.strftime('%Y%m%d-%H%M%S')}.png"
+        path = shots / f"cam-{time.strftime('%Y%m%d-%H%M%S')}.{ext}"
         path.write_bytes(png)
         try:
             await get_journal().record("camera.captured", {"path": str(path), "bytes": len(png)})
         except Exception:
             pass  # the photo is taken; the record is best effort, the UI still shows the tool call
-        return ToolResult(output=f"Took one photo with the camera: {path}", base64_image=base64.b64encode(png).decode())
+        return ToolResult(output=f"Took one photo with {where}: {path}", base64_image=base64.b64encode(png).decode())
 
     async def _do_display_off(self, **_) -> ToolResult:
         from syrax import wininput
 
         return await self._hands(wininput.display_off)
+
+
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".heic"}
+VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".3gp"}
+VIEW_MAX_SIDE = 1600  # an image's longest side for the brain
+
+
+def media_kind(path: Path) -> str:
+    ext = path.suffix.lower()
+    return "image" if ext in IMAGE_EXT else "video" if ext in VIDEO_EXT else ""
+
+
+def image_for_brain(raw: bytes) -> tuple:
+    """(base64 JPEG no wider or taller than VIEW_MAX_SIDE, (width, height) of the original)."""
+    import io
+
+    from PIL import Image, ImageOps
+
+    img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw)))
+    size = img.size
+    img.thumbnail((VIEW_MAX_SIDE, VIEW_MAX_SIDE))
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=85)
+    return base64.b64encode(buf.getvalue()).decode(), size
+
+
+async def video_for_brain(path: Path, frames: int = 6) -> tuple:
+    """(base64 JPEG of a 3x2 grid of frames spread over the video, "at 0:00, 0:12, ..."). Needs ffmpeg."""
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        raise RuntimeError("Showing a video needs ffmpeg (Ubuntu: sudo apt install ffmpeg).")
+    code, out, err = await _run("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path), timeout=20)
+    try:
+        duration = float(out)
+    except ValueError:
+        raise RuntimeError(f"Could not read the video: {err or out or code}")
+    import io
+    import tempfile
+
+    from PIL import Image
+
+    marks = [duration * (i + 0.5) / frames for i in range(frames)]
+    tiles = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for i, t in enumerate(marks):
+            shot = Path(tmp) / f"f{i}.jpg"
+            await _run("ffmpeg", "-v", "error", "-ss", f"{t:.2f}", "-i", str(path), "-frames:v", "1", "-vf", "scale=640:-2",
+                       "-y", str(shot), timeout=30)
+            if shot.exists():
+                tiles.append(Image.open(shot).convert("RGB"))
+        if not tiles:
+            raise RuntimeError("No frame could be read from the video.")
+        w, h = tiles[0].size
+        grid = Image.new("RGB", (w * 3, h * ((len(tiles) + 2) // 3)), "black")
+        for i, tile in enumerate(tiles):
+            grid.paste(tile.resize((w, h)), ((i % 3) * w, (i // 3) * h))
+        buf = io.BytesIO()
+        grid.save(buf, format="JPEG", quality=80)
+    note = "at " + ", ".join(f"{int(t // 60)}:{int(t % 60):02d}" for t in marks[:len(tiles)]) + f" of {int(duration // 60)}:{int(duration % 60):02d}"
+    return base64.b64encode(buf.getvalue()).decode(), note
 
 
 def _find(root: Path, needle: str, limit: int, budget_s: float) -> List[str]:

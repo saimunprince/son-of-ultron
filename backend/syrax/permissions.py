@@ -65,7 +65,7 @@ PREFIX_DEFAULTS: Tuple[Tuple[str, str], ...] = (("browser_", EXTERNAL_READ), ("m
 DEFAULT_UNKNOWN = SYSTEM  # an MCP tool the human configured, a skill nothing declared
 DECLARED: Dict[str, str] = {}  # dynamic skills, set by SkillFactory at registration
 
-DESKTOP_READ = {"list_apps", "system_info", "screenshot", "find_files", "clipboard_get", "find_text"}
+DESKTOP_READ = {"list_apps", "system_info", "screenshot", "find_files", "clipboard_get", "find_text", "view"}
 EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 
 # Live 2026-10-25 (audit): editor.resolve_path takes any absolute path, so the editor, apply_patch and a

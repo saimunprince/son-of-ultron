@@ -923,6 +923,10 @@ class Session:
         elif kind in ("android_status", "android_pair", "android_connect", "android_find", "android_disconnect"):
             # the ANDROID panel (2026-11-04): link the human's phone over adb; the pairing code is typed by the human
             self.spawn(self._android(kind, msg))
+        elif kind == "camera_frame":
+            from syrax import camera
+
+            camera.hud_frame(str(msg.get("id") or ""), str(msg.get("data") or ""))
         elif kind == "brains_get":
             await self.send({"type": "brains", **get_router().describe()})
         elif kind == "brains_save":

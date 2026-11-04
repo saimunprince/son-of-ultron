@@ -506,6 +506,7 @@ export type ServerEvent =
   | ({ type: "autonomy_status" } & AutonomyStatus)
   | ({ type: "vitals" } & ResourceSnapshot)
   | ({ type: "android" } & AndroidState)
+  | { type: "camera_frame_request"; id: string }
   | ({ type: "startup_status" } & StartupStatus)
   | ({ type: "voice_status" } & VoiceStatus)
   | { type: "memories"; facts: MemoryFact[] }
@@ -585,6 +586,8 @@ export type ClientMessage =
   | { type: "ping" }
   | { type: "vitals" }
   | { type: "android_status" }
+  /** one frame of the HUD's camera for SYRAX's camera action; "" when the HUD's camera is off */
+  | { type: "camera_frame"; id: string; data: string }
   | { type: "android_find" }
   | { type: "android_disconnect" }
   | { type: "android_connect"; host: string; port: string }
