@@ -797,6 +797,16 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **MIND:** objectives merged from Windows read W#333, not #-9999667.
 - **Corner brackets:** they no longer sit on the logo or the shortcut hints.
 
+### 2026-11-04: a blank page found in the browser and fixed
+
+- **The bug:** a question typed in the live UI blanked the whole page. The quota saver's `brain.routed` reached the
+  UI as a brain event, the UI took it for a failover, and the brain chip called `.trim()` on a missing name.
+- **The fix:**
+  - only failover events set the warning;
+  - the chip survives a missing name;
+  - each optional HUD part (diagnostics, task arc, captions, toasts, palette, chip) now sits in an error boundary,
+    so a crash in one part hides only that part.
+
 ## Open
 
 - **Needs the owner:**
