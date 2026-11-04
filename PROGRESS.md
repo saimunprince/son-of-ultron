@@ -849,6 +849,9 @@ The owner asked why SYRAX could not send a WhatsApp message, and whether it coul
 - **Privacy:** pictures go to Google only while SCREEN is on. The browser's own "Stop sharing" also ends it.
   Every start and stop is recorded in the journal.
 - **Checked live:** Gemini Live read the words on a shared picture correctly.
+- **Then, typed questions:** the owner typed "can you see my live screen?" with TALK on. It went to the agent, which
+  never sees the shared screen, so it answered no. Now, while TALK is on, a typed line joins the live talk, and the
+  command bar says so.
 
 ## Open
 
