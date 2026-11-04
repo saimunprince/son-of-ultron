@@ -772,6 +772,10 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **What changed:** SYRAX's own background work (not code releases) and small talk now try Groq first, when it can
   take a call. The human's requests, evals and code changes keep the human's brain order.
 - **Record:** each such choice is journaled as `brain.routed`, with the reason "quota saver".
+- **Re-run of run #22's 9 misses:** 5 pass now, so the suite stands at about 63/67, as before. The other 4 are the
+  brain's own slips: `research_cite`, `deep2_data_pipeline`, `deep2_log_report` and `deep2_spec_from_tests`.
+- **Waiting for the owner:** Ollama's context. It is 4,096 because the system service sets no
+  `OLLAMA_CONTEXT_LENGTH`, and raising it to 8,192 needs sudo.
 
 ## Open
 
