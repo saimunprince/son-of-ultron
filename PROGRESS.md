@@ -765,6 +765,14 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
   write, the limits question and the objectives count were right. Gemini and Groq were rate limited for a while,
   so a re-run of the quality misses waits for their quota.
 
+### 2026-11-04: a quota saver for the free brains
+
+- **Why:** Gemini's free quota ran out in the middle of quality run #22, and the human's tasks fell to slower
+  brains.
+- **What changed:** SYRAX's own background work (not code releases) and small talk now try Groq first, when it can
+  take a call. The human's requests, evals and code changes keep the human's brain order.
+- **Record:** each such choice is journaled as `brain.routed`, with the reason "quota saver".
+
 ## Open
 
 - **Needs the owner:**
