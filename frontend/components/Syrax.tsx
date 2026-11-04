@@ -1680,7 +1680,9 @@ export default function Syrax() {
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                submit();
+                // only blank lines: clear them, so the bar shrinks back to one line (live 2026-11-04 it stayed tall)
+                if (!input.trim()) setInput("");
+                else submit();
               }
             }}
             spellCheck={false}

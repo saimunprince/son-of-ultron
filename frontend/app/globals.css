@@ -2848,3 +2848,42 @@ body {
   background: rgb(var(--line-rgb) / 0.05);
 }
 
+
+/* ——— the command bar grows as a rounded box, not an oval; themed scrollbars everywhere (2026-11-04: a tall
+   input showed the browser's white scrollbar inside a stretched pill) ——— */
+.command-row {
+  border-radius: 28px;
+}
+
+.command-input {
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--line-rgb) / 0.3) transparent;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--line-rgb) / 0.25) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 6px;
+  background: rgb(var(--line-rgb) / 0.25);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--accent-rgb) / 0.5);
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
