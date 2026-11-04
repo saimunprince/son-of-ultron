@@ -719,6 +719,8 @@ Five agents built the parts in parallel, each as new files, and they were integr
   - the title corrupts for a moment and resolves;
   - the ground is darker and the floating code dimmer.
 - **Limits:** reduced motion stills all of it. JARVIS is unchanged.
+- **Then:** the owner found the red orb too light, so the shell lines are brighter and the bloom stronger. The
+  core is unchanged.
 
 ## Open
 
