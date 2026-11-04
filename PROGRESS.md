@@ -807,6 +807,12 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
   - each optional HUD part (diagnostics, task arc, captions, toasts, palette, chip) now sits in an error boundary,
     so a crash in one part hides only that part.
 
+### 2026-11-04: the answer once, not twice
+
+- **The problem:** beside the live log, the stage showed SYRAX's answer on a "reply" card, and the log showed it again
+  as a bubble.
+- **The fix:** the stage leaves the reply card out.
+
 ## Open
 
 - **Needs the owner:**
