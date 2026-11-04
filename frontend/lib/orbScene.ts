@@ -58,35 +58,31 @@ export interface OrbPalette {
 }
 
 export const PALETTES = {
-  /** Red Ultron: deep crimson lines around a white-hot heart, a few white sparks in the red (2026-11-04, the owner:
-   *  "red, but make it stunning"): contrast, not one flat red */
+  /** Red: JARVIS exactly, in red (2026-11-04, the owner: "the blue exactly as it is, the red the same, only
+   *  red"). Every colour is JARVIS's with its hue turned to red; saturation, brightness and the character stay. */
   ultron: {
-    bright: 0xff3a26,
-    mid: 0xb81f14,
-    dim: 0x62120b,
-    faint: 0x320806,
-    hot: 0xffe2d8,
-    glow: 0xff1e0e,
-    grade: [1.1, 0.9, 0.88],
-    channels: [1.0, 0.93, 0.92],
-    bloom: 1.05,
-    exposure: 0.7,
-    heat: [2.1, 0.12, 0.08],
-    // JARVIS's character in red: the arc reactor, data rings and readings, a calm spin, no glitch
+    bright: 0xff8f8f,
+    mid: 0xe02f2f,
+    dim: 0x861919,
+    faint: 0x470c0c,
+    hot: 0xffb5b5,
+    glow: 0xff2222,
+    grade: [1.18, 0.8, 0.78],
+    channels: [1.1, 0.82, 0.82],
+    bloom: 0.85,
+    exposure: 0.66,
+    heat: [1.9, 0.55, 0.5],
     spin: 0.8,
     chroma: 0.5,
     glitch: 0,
     threshold: 0.26,
     menace: 0,
-    errorHeat: [2.1, 0.12, 0.08],
-    // mostly red code, and now and then a white line, like sparks in a forge
+    errorHeat: [1.9, 0.85, 0.15],
     text: (a: number) => {
-      if (Math.random() < 0.14) return `rgba(255, 236, 228, ${a * 0.85})`;
-      const r = (200 + Math.random() * 55) | 0;
-      const g = (25 + Math.random() * 40) | 0;
-      return `rgba(${r}, ${g}, ${(g * 0.7) | 0}, ${a * 0.7})`;
+      const g = (170 + Math.random() * 70) | 0;
+      return `rgba(255, ${(g * 0.45) | 0}, ${(g * 0.45) | 0}, ${a})`;
     },
-    dust: ["rgba(255,235,228,1)", "rgba(255,60,40,0.6)", "rgba(150,20,12,0.16)", "rgba(60,6,4,0)"],
+    dust: ["rgba(255,170,170,1)", "rgba(240,60,60,0.55)", "rgba(140,20,20,0.15)", "rgba(70,8,8,0)"],
   },
   /** Blue JARVIS: a cyan hologram; acting brightens it instead of turning it red */
   jarvis: {
