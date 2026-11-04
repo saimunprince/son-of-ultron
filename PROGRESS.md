@@ -759,7 +759,11 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **UI fixes from a live look:**
   - the task arc sits in the free top centre; under the orb it was behind the caption;
   - the command hint stays on one line.
-- **Phone page:** turned on. `python syrax.py --phone show` prints its link.
+- **Phone page:** turned on. `python syrax.py --phone show` prints its link. Its token and settings are now in
+  `.gitignore`; they had shown up untracked in this public repository.
+- **Live check after the restart:** the integrity chain verifies and the emergency stop stayed off. A sum, a file
+  write, the limits question and the objectives count were right. Gemini and Groq were rate limited for a while,
+  so a re-run of the quality misses waits for their quota.
 
 ## Open
 
