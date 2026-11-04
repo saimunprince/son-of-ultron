@@ -32,8 +32,9 @@ export function latencyTone(ms: number | null | undefined): LatencyTone {
 }
 
 /** "GEMINI FAILED → GROQ", or "GEMINI FAILED" while the next brain is unknown. */
-export function failoverText(from: string, to?: string | null): string {
-  const a = from.trim().toUpperCase() || "BRAIN";
+export function failoverText(from: string | null | undefined, to?: string | null): string {
+  // live 2026-11-04: a brain event without a provider reached here and `from.trim()` took the whole page down
+  const a = (from ?? "").trim().toUpperCase() || "BRAIN";
   const b = to?.trim().toUpperCase();
   return b && b !== a ? `${a} FAILED → ${b}` : `${a} FAILED`;
 }

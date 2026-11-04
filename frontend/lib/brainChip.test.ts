@@ -59,3 +59,8 @@ test("tracker measures from the first open mark to the answer", () => {
   tr.mark(5000);
   assert.equal(tr.answered(4000), 0);
 });
+
+test("a failover without a provider still reads, it never throws (live 2026-11-04 the page went blank)", () => {
+  assert.equal(failoverText(undefined, "groq"), "BRAIN FAILED → GROQ");
+  assert.equal(failoverText(null), "BRAIN FAILED");
+});

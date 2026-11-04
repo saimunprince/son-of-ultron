@@ -37,6 +37,7 @@ import { levelOf, levelStep, levelTitle } from "@/lib/autonomyLevel";
 import { isResubmit, type LastSent } from "@/lib/submitGuard";
 import BootSequence from "@/components/BootSequence";
 import ThemeFx, { readoutLine } from "@/components/ThemeFx";
+import Guard from "@/components/Guard";
 import BrainChip from "@/components/BrainChip";
 import Captions from "@/components/Captions";
 import CommandPalette, { usePaletteHotkey } from "@/components/CommandPalette";
@@ -644,10 +645,11 @@ export default function Syrax() {
             setActiveBrain({ label: e.label, model: e.model });
             const ms = latencyRef.current.answered();
             if (ms != null) setBrainMs(ms);
-          } else {
-            setBrainFailover({ from: e.provider, reason: e.reason, at: Date.now() });
-            push({ kind: "notice", id: nextId++, text: `FAILOVER · ${e.provider.toUpperCase()} · ${e.reason}` });
+          } else if (e.event === "failover") {
+            setBrainFailover({ from: e.provider ?? "brain", reason: e.reason ?? "", at: Date.now() });
+            push({ kind: "notice", id: nextId++, text: `FAILOVER · ${(e.provider ?? "brain").toUpperCase()} · ${e.reason ?? ""}` });
           }
+          // other brain events (routed) are journal facts; they do not touch the chip
           break;
         case "brain_models":
           setBrainModels((m) => ({ ...m, [e.id]: { list: e.models, error: e.error, loading: false } }));
@@ -1362,8 +1364,8 @@ export default function Syrax() {
   return (
     <>
       <div ref={containerRef} className="orb-root" />
-      <ThemeFx theme={theme} vitals={vitals} />
-      <TaskArc
+      <Guard name="diagnostics"><ThemeFx theme={theme} vitals={vitals} /></Guard>
+      <Guard name="task arc"><TaskArc
         active={link === "online" && (agent === "thinking" || agent === "acting")}
         phase={phase?.phase ?? null}
         step={taskStep}
@@ -1371,10 +1373,10 @@ export default function Syrax() {
         target={phase?.target ?? null}
         startedAt={taskStart}
         top={18}
-      />
-      <Captions text={caption.text} nonce={caption.nonce} enabled />
-      <Toasts toasts={toasts} onDismiss={dismissToastId} />
-      <CommandPalette open={paletteOpen} commands={paletteCommands} onRun={runPalette} onClose={() => setPaletteOpen(false)} />
+      /></Guard>
+      <Guard name="captions"><Captions text={caption.text} nonce={caption.nonce} enabled /></Guard>
+      <Guard name="toasts"><Toasts toasts={toasts} onDismiss={dismissToastId} /></Guard>
+      <Guard name="command palette"><CommandPalette open={paletteOpen} commands={paletteCommands} onRun={runPalette} onClose={() => setPaletteOpen(false)} /></Guard>
 
       {dropping && <div className="drop-overlay">DROP THE FILE · SYRAX KEEPS IT IN THE WORKSPACE</div>}
       <div className="overlay-vignette" />
@@ -1395,13 +1397,13 @@ export default function Syrax() {
           {statusText}
         </div>
         {link === "online" && (
-          <BrainChip
+          <Guard name="brain chip"><BrainChip
             label={chipBrain?.label ?? null}
             model={chipBrain?.model ?? null}
             ms={brainMs}
             failover={brainFailover}
             onClick={openBrain}
-          />
+          /></Guard>
         )}
         {link === "online" && (toolCount > 0 || queued > 0) && (
           <div className="status-meta">

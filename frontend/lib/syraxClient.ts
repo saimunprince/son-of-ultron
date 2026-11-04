@@ -444,6 +444,8 @@ export type ServerEvent =
   | ({ type: "brains" } & BrainsState)
   | { type: "brain"; event: "answered"; provider: string; label: string; model: string }
   | { type: "brain"; event: "failover"; provider: string; reason: string }
+  // journal brain.routed (routing.py, the quota saver) reaches the UI as {type: "brain", event: "routed"}
+  | { type: "brain"; event: "routed"; brain?: string; kind?: string; instead_of?: string; reason?: string }
   | { type: "brain_models"; id: string; models: string[]; error?: string }
   | ({ type: "brain_test" } & BrainTestResult)
   | { type: "state"; state: "booting" | "idle" | "thinking" | "acting"; step?: number; tool?: string }
