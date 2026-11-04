@@ -2665,3 +2665,186 @@ body {
     display: none;
   }
 }
+
+/* ═══════════════════════════════════════════════
+   Polish (2026-11-04, a live look in the browser)
+   ═══════════════════════════════════════════════ */
+
+/* corner brackets: smaller and at the very edge, clear of the logo and the shortcut hints */
+.fx-corner {
+  width: 24px;
+  height: 24px;
+}
+
+.fx-corner.tl,
+.fx-corner.tr {
+  top: 6px;
+}
+
+.fx-corner.bl,
+.fx-corner.br {
+  bottom: 6px;
+}
+
+.fx-corner.tl,
+.fx-corner.bl {
+  left: 6px;
+}
+
+.fx-corner.tr,
+.fx-corner.br {
+  right: 6px;
+}
+
+/* the brain switches: a pill with a sliding knob */
+.brain-toggle {
+  width: 34px;
+  height: 18px;
+}
+
+.brain-toggle span {
+  border-radius: 999px;
+  background: rgb(var(--line-rgb) / 0.08);
+  border-color: rgb(var(--line-rgb) / 0.22);
+  transition:
+    background 0.2s var(--ease),
+    border-color 0.2s var(--ease);
+}
+
+.brain-toggle span::after {
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgb(var(--line-rgb) / 0.5);
+  transition:
+    transform 0.2s var(--ease),
+    background 0.2s var(--ease);
+}
+
+.brain-toggle input:checked + span {
+  background: rgb(var(--accent-rgb) / 0.22);
+  border-color: rgb(var(--accent-rgb) / 0.6);
+}
+
+.brain-toggle input:checked + span::after {
+  transform: translateX(16px);
+  background: var(--accent-hot);
+}
+
+.brain-toggle input:focus-visible + span {
+  outline: 2px solid rgb(var(--accent-rgb) / 0.8);
+}
+
+/* dropdowns in the panels: dark glass with the theme's arrow, never the browser's white box */
+.brain-panel select,
+.mind-panel select,
+.self-panel select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 34px;
+  padding: 0 32px 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-border);
+  background:
+    linear-gradient(45deg, transparent 50%, var(--accent-hot) 50%) calc(100% - 16px) 50% / 5px 5px no-repeat,
+    linear-gradient(135deg, var(--accent-hot) 50%, transparent 50%) calc(100% - 11px) 50% / 5px 5px no-repeat,
+    rgb(var(--line-rgb) / 0.05);
+  color: var(--text-bright);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: border-color 0.2s var(--ease);
+}
+
+.brain-panel select:hover,
+.mind-panel select:hover,
+.self-panel select:hover {
+  border-color: rgb(var(--accent-rgb) / 0.45);
+}
+
+.brain-panel select:focus-visible,
+.mind-panel select:focus-visible {
+  outline: 2px solid rgb(var(--accent-rgb) / 0.7);
+  outline-offset: 2px;
+}
+
+.brain-panel select option,
+.mind-panel select option {
+  background: var(--panel-solid);
+  color: var(--text-bright);
+}
+
+.brain-self-change {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 2px 0 10px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* SELF: status badges and confidence bars */
+.cap-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  border: 1px solid rgb(var(--line-rgb) / 0.25);
+  color: var(--text-dim);
+}
+
+.cap-badge-verified {
+  color: var(--accent-hot);
+  border-color: rgb(var(--accent-rgb) / 0.5);
+  background: rgb(var(--accent-rgb) / 0.1);
+}
+
+.cap-badge-failing {
+  color: #ffb066;
+  border-color: rgb(255 150 60 / 0.55);
+  background: rgb(255 150 60 / 0.1);
+}
+
+.cap-badge-missing,
+.cap-badge-not_tested {
+  opacity: 0.75;
+}
+
+.cap-conf {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.cap-bar {
+  display: inline-block;
+  width: 56px;
+  height: 3px;
+  margin-right: 8px;
+  vertical-align: middle;
+  border-radius: 3px;
+  background: rgb(var(--line-rgb) / 0.12);
+  overflow: hidden;
+}
+
+.cap-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, rgb(var(--accent-rgb) / 0.5), var(--accent-hot));
+}
+
+.self-table tr {
+  transition: background 0.15s var(--ease);
+}
+
+.self-table tr:hover {
+  background: rgb(var(--line-rgb) / 0.05);
+}
+

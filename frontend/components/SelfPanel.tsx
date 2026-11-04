@@ -85,10 +85,23 @@ export default function SelfPanel({ model, onRefresh, onClose }: Props) {
                   {model.capabilities.map((c) => (
                     <tr key={c.capability} className={`cap-${c.status.toLowerCase()}`}>
                       <td>{c.capability}</td>
-                      <td>{c.status}</td>
-                      <td className="self-kind">{c.level ?? "—"}</td>
+                      <td>
+                        <span className={`cap-badge cap-badge-${c.status.toLowerCase()}`}>{c.status.replace("_", " ")}</span>
+                      </td>
+                      {model.capabilities.some((x) => x.level) && <td className="self-kind">{c.level ?? ""}</td>}
                       <td>{c.uses} use{c.uses === 1 ? "" : "s"}</td>
-                      <td>{c.confidence == null ? "—" : `${Math.round(c.confidence * 100)}%`}</td>
+                      <td className="cap-conf">
+                        {c.confidence == null ? (
+                          "—"
+                        ) : (
+                          <>
+                            <span className="cap-bar">
+                              <span style={{ width: `${Math.round(c.confidence * 100)}%` }} />
+                            </span>
+                            {Math.round(c.confidence * 100)}%
+                          </>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
