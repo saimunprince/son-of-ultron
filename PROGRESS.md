@@ -784,6 +784,12 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **HUD:** text and lines are silver-white, and red marks the accents.
 - **Orb:** deep crimson lines around a white-hot core and arc reactor, with white sparks in the code and the dust.
 
+### 2026-11-04: the red theme is JARVIS exactly, in red
+
+- **Owner's call:** keep the blue exactly as it is, and make the red the same, only red.
+- **How:** every JARVIS colour, in the orb and in the HUD, has its hue turned to red, with its saturation and
+  brightness kept.
+
 ## Open
 
 - **Needs the owner:**
