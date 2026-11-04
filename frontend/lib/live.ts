@@ -103,6 +103,13 @@ export class LiveTalk {
     ws.onclose = () => this.finish("off");
   }
 
+  /** A typed line into the live conversation (it sees the shared screen); false when the session is not open. */
+  say(text: string): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({ type: "text", text }));
+    return true;
+  }
+
   get sharing() {
     return this.screen !== null;
   }

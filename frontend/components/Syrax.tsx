@@ -839,6 +839,14 @@ export default function Syrax() {
       const asking = pendingAskRef.current !== null;
       const now = Date.now();
       if (isResubmit(lastSentRef.current, text, now, asking)) return; // a double Enter or click: queued once
+      // Live 2026-11-04: with TALK on, a typed "can you see my live screen?" went to the agent, which never sees the
+      // shared screen, and it answered no. While live talk is open, typed lines join that conversation instead.
+      if (!asking && !voice && talkRef.current?.say(text)) {
+        push({ kind: "user", id: nextId++, text });
+        lastSentRef.current = { text, at: now };
+        setInput("");
+        return;
+      }
       const sent = asking
         ? client.send({ type: "answer", text })
         : client.send({ type: "task", text, voice, queue: true }); // never lost while SYRAX works: it waits its turn
@@ -1678,7 +1686,11 @@ export default function Syrax() {
             placeholder={
               pendingAsk
                 ? "Answer SYRAX…"
-                : handsFree
+                : talk === "on"
+                  ? sharing
+                    ? "Talk or type: SYRAX sees your screen live"
+                    : "Talk or type: live with SYRAX"
+                  : handsFree
                   ? wakeWord
                     ? 'Say "SYRAX, …" or type  ( / to focus )'
                     : "Just talk, or type  ( / to focus )"
