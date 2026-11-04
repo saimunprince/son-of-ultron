@@ -853,9 +853,21 @@ The owner asked why SYRAX could not send a WhatsApp message, and whether it coul
   never sees the shared screen, so it answered no. Now, while TALK is on, a typed line joins the live talk, and the
   command bar says so.
 
+### 2026-11-04: SYRAX sees what it is given, and sees the owner
+
+- **Pictures and videos:** a picture or video dropped on SYRAX, or pasted with Ctrl+V, is saved and named as one.
+  The new `desktop view` action shows a picture to the brain, or six frames of a video (ffmpeg).
+- **The camera:** when the HUD holds the camera for hand tracking, SYRAX's camera action takes one frame from the
+  HUD instead of failing with "another app is using it".
+- **Live talk:** the camera goes up too, with the shared screen (in its bottom-right corner) or alone, so SYRAX sees
+  the owner live. The LIVE TALK ON/OFF lines are gone from the log, as the owner asked; the journal still keeps them.
+- **Wayland windows:** window control off Windows now says once, plainly, that it cannot work there and what does.
+  The window in front is also named.
+- **Slogans:** a reply that is only "I am SYRAX. Blood of ULTRON." counts as a non-answer and is asked again.
+
 ## Open
 
-- The Android phone link is built but not yet tried on the owner's phone.
+- The Android phone link is built but not yet tried on the owner's phone (its USB connection keeps dropping).
 
 - **Needs the owner:**
   - **Review the protected files:** `agent.py` and `brains.py` were changed on 10-30 and 10-31 under "sob koro",
