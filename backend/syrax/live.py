@@ -38,6 +38,9 @@ LIVE_URL = ("wss://generativelanguage.googleapis.com/ws/"
 MODELS = ("gemini-3.1-flash-live-preview", "gemini-3.8-live", "gemini-2.5-flash-native-audio-latest")
 VOICE = os.getenv("SYRAX_LIVE_VOICE", "Charon")
 IN_MIME = "audio/pcm;rate=16000"
+FRAME_MIME = "image/jpeg"
+FRAME_MAX_CHARS = 600_000   # one base64 JPEG of the screen; a bigger one is dropped
+FRAME_MIN_GAP_S = 0.4       # the browser sends one a second; more than this is not relayed
 SETUP_TIMEOUT_S = 15.0
 RESULT_CHARS = 1500
 TASK_HINT = ("\n\n[Asked by voice in live talk; the live voice reads your answer aloud. "
@@ -51,7 +54,11 @@ or SYRAX's tools: call run_task with the human's request in their own words, the
 under way. Never say a task is done, and never invent its result, before a TASK RESULT message arrives. When it
 arrives, tell the human the outcome in one or two sentences. When a SYRAX ASKS message arrives, read the question
 to the human and tell them to answer it on screen. If the human says stop or cancel while a task runs, call
-stop_task. Plain talk, questions about yourself and opinions need no task."""
+stop_task. Plain talk, questions about yourself and opinions need no task.
+
+When the human shares their screen, pictures of it arrive about once a second: that is their screen, live, as it
+is now. You see it yourself; describe it, read it and help with what is on it without a task. Only the newest
+picture is the screen now. Without them you cannot see the screen: say so, and suggest the SCREEN button."""
 
 TOOLS = [{"functionDeclarations": [
     {"name": "run_task",
@@ -119,6 +126,8 @@ class LiveBridge:
         self.last_heard = ""
         self._up, self._down = asyncio.Lock(), asyncio.Lock()
         self._pending: Set[asyncio.Task] = set()
+        self.sharing = False  # the human's screen is shared (frames arrive)
+        self._last_frame = 0.0
 
     def _scrub(self, text: str) -> str:
         return text.replace(self.key, "***") if self.key else text
@@ -160,6 +169,22 @@ class LiveBridge:
 
     async def audio(self, pcm: bytes) -> None:
         await self._send({"realtimeInput": {"audio": {"data": base64.b64encode(pcm).decode(), "mimeType": IN_MIME}}})
+
+    async def frame(self, jpeg_b64: str) -> bool:
+        """One picture of the human's shared screen (live screen, 2026-11-04); False when it is dropped."""
+        now = time.monotonic()
+        if not jpeg_b64 or len(jpeg_b64) > FRAME_MAX_CHARS or now - self._last_frame < FRAME_MIN_GAP_S:
+            return False
+        self._last_frame = now
+        await self._send({"realtimeInput": {"video": {"data": jpeg_b64, "mimeType": FRAME_MIME}}})
+        return True
+
+    async def screen(self, on: bool) -> None:
+        """The human started or stopped sharing the screen: journaled, since the pictures go to Google."""
+        if on == self.sharing:
+            return
+        self.sharing = on
+        await self.core.journal.record("live.screen", {"session": self.id, "on": on})
 
     async def text(self, text: str) -> None:
         await self._send({"realtimeInput": {"text": text}})
@@ -297,7 +322,11 @@ async def _read(ws: Any, bridge: LiveBridge) -> str:
                 continue
             if m.get("type") == "stop":
                 return "the human ended it"
-            if m.get("type") == "text" and m.get("text"):
+            if m.get("type") == "frame" and isinstance(m.get("data"), str):
+                await bridge.frame(m["data"])
+            elif m.get("type") == "screen":
+                await bridge.screen(bool(m.get("on")))
+            elif m.get("type") == "text" and m.get("text"):
                 await bridge.text(str(m["text"])[:2000])
 
 

@@ -221,6 +221,7 @@ export default function Syrax() {
   const [speaking, setSpeaking] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
   const [talk, setTalk] = useState<LiveState>("off");
+  const [sharing, setSharing] = useState(false);
   const [audioLive, setAudioLive] = useState(false);
   const [wakeWord, setWakeWord] = useState(false);
   const [hearLang, setHearLang] = useState<"en-IN" | "bn-BD" | "en-US">("en-IN");
@@ -1052,7 +1053,7 @@ export default function Syrax() {
   const toggleTalk = useCallback(() => {
     if (talkRef.current) {
       talkRef.current.stop();
-      return;
+      return undefined;
     }
     stopSpeaking();
     if (handsFreeRef.current) {
@@ -1073,10 +1074,24 @@ export default function Syrax() {
         if (e.said) push({ kind: "reply", id: nextId++, text: e.said });
       },
       onLevel: (l) => sceneRef.current?.setLevel(l),
+      onScreen: setSharing,
     });
     talkRef.current = live;
     void live.start();
+    return live;
   }, [arm, earStop, push]);
+
+  // Live screen (2026-11-04): SYRAX sees the shared screen in live talk, about a picture a second. It starts
+  // live talk when it is off; both asks (microphone, screen picker) come from this one click.
+  const toggleScreen = useCallback(() => {
+    const now = talkRef.current;
+    if (now?.sharing) {
+      now.stopScreen();
+      return;
+    }
+    const live = now ?? toggleTalk();
+    if (live) void live.shareScreen();
+  }, [toggleTalk]);
 
   useEffect(() => {
     return () => {
@@ -1700,6 +1715,16 @@ export default function Syrax() {
             title="Live talk: a real-time conversation through Gemini Live; talk over it to interrupt. While it is on, the microphone streams to Google."
           >
             {talk === "connecting" ? "…" : talk === "on" ? "◉ TALKING" : "TALK"}
+          </button>
+          <button
+            type="button"
+            className={`hud-btn mic-btn${sharing ? " hearing" : ""}`}
+            aria-pressed={sharing}
+            disabled={link !== "online"}
+            onClick={toggleScreen}
+            title="Live screen: SYRAX sees your screen in real time while you talk (starts TALK). While it is on, about one picture a second goes to Google."
+          >
+            {sharing ? "◉ SCREEN" : "SCREEN"}
           </button>
           <button
             type="button"
