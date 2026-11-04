@@ -777,6 +777,13 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **Waiting for the owner:** Ollama's context. It is 4,096 because the system service sets no
   `OLLAMA_CONTEXT_LENGTH`, and raising it to 8,192 needs sudo.
 
+### 2026-11-04: ULTRON in chrome and fire
+
+- **Owner's call:** red stays, but it must be stunning. The all-red look (pinkish text, red lines, a red core) read
+  flat.
+- **HUD:** text and lines are silver-white, and red marks the accents.
+- **Orb:** deep crimson lines around a white-hot core and arc reactor, with white sparks in the code and the dust.
+
 ## Open
 
 - **Needs the owner:**
