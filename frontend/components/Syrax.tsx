@@ -38,12 +38,10 @@ import { isResubmit, type LastSent } from "@/lib/submitGuard";
 import BootSequence from "@/components/BootSequence";
 import ThemeFx, { readoutLine } from "@/components/ThemeFx";
 import Guard from "@/components/Guard";
-import BrainChip from "@/components/BrainChip";
 import Captions from "@/components/Captions";
 import CommandPalette, { usePaletteHotkey } from "@/components/CommandPalette";
 import TaskArc from "@/components/TaskArc";
 import Toasts from "@/components/Toasts";
-import { createLatencyTracker } from "@/lib/brainChip";
 import { stageElements } from "@/lib/stageView";
 import type { PaletteCommand } from "@/lib/palette";
 import { addToast, classifyError, classifyNotice, dismissToast, makeToast, type Toast } from "@/lib/toasts";
@@ -183,7 +181,6 @@ export default function Syrax() {
   const [toolCount, setToolCount] = useState(0);
   const [queued, setQueued] = useState(0); // human requests waiting for the running task to end
   const [brains, setBrains] = useState<BrainsState | null>(null);
-  const [activeBrain, setActiveBrain] = useState<{ label: string; model: string } | null>(null);
   const [brainModels, setBrainModels] = useState<Record<string, { list: string[]; error?: string; loading: boolean }>>({});
   const [brainTests, setBrainTests] = useState<Record<string, BrainTestResult | "running">>({});
   const [brainOpen, setBrainOpen] = useState(false);
@@ -199,9 +196,6 @@ export default function Syrax() {
   // the advanced HUD (2026-11-03): task arc, brain chip, captions, toasts, command palette
   const [taskStep, setTaskStep] = useState<number | null>(null);
   const [taskStart, setTaskStart] = useState<number | null>(null);
-  const [brainMs, setBrainMs] = useState<number | null>(null);
-  const [brainFailover, setBrainFailover] = useState<{ from: string; reason: string; at: number } | null>(null);
-  const latencyRef = useRef(createLatencyTracker());
   const [caption, setCaption] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const dismissToastId = useCallback((id: number) => setToasts((l) => dismissToast(l, id)), []);
@@ -642,15 +636,10 @@ export default function Syrax() {
           break;
         }
         case "brain":
-          if (e.event === "answered") {
-            setActiveBrain({ label: e.label, model: e.model });
-            const ms = latencyRef.current.answered();
-            if (ms != null) setBrainMs(ms);
-          } else if (e.event === "failover") {
-            setBrainFailover({ from: e.provider ?? "brain", reason: e.reason ?? "", at: Date.now() });
+          if (e.event === "failover") {
             push({ kind: "notice", id: nextId++, text: `FAILOVER · ${(e.provider ?? "brain").toUpperCase()} · ${e.reason ?? ""}` });
           }
-          // other brain events (routed) are journal facts; they do not touch the chip
+          // other brain events (answered, routed) are journal facts
           break;
         case "brain_models":
           setBrainModels((m) => ({ ...m, [e.id]: { list: e.models, error: e.error, loading: false } }));
@@ -673,10 +662,7 @@ export default function Syrax() {
           if (e.state === "idle") {
             setTaskStart(null);
             setTaskStep(null);
-            setBrainFailover(null);
-            latencyRef.current.reset();
           } else if (e.state === "thinking" || e.state === "acting") setTaskStart((st) => st ?? Date.now());
-          if (e.state === "thinking") latencyRef.current.mark();
           setActiveTool(e.state === "acting" ? (e.tool ?? null) : null);
           if (settlesPendingAsk("state", { state: e.state })) setPendingAsk(null); // a timed-out question must not take the next command
           if (e.state === "idle") {
@@ -706,7 +692,6 @@ export default function Syrax() {
           });
           break;
         case "tool_result":
-          latencyRef.current.mark(); // the next brain call starts here
           sceneRef.current?.pulse(e.ok ? 0.4 : 1.2);
           setEntries((prev) =>
             prev.map((x) =>
@@ -1208,9 +1193,6 @@ export default function Syrax() {
   const enabledBrains = brains?.providers.filter((p) => p.enabled) ?? [];
   const onlyFallbackBrains =
     enabledBrains.length > 0 && enabledBrains.every((p) => p.tier === "no-key" || p.tier === "local");
-  const firstReady = enabledBrains.find((p) => p.status === "ready") ?? enabledBrains[0];
-  // before the first answer, the chip shows the brain that will answer first
-  const chipBrain = activeBrain ?? (firstReady ? { label: firstReady.label, model: firstReady.model } : null);
 
   // ——— command palette (Ctrl+K): every HUD control in one searchable list ———
   usePaletteHotkey(
@@ -1397,15 +1379,6 @@ export default function Syrax() {
           <span className="status-dot" />
           {statusText}
         </div>
-        {link === "online" && (
-          <Guard name="brain chip"><BrainChip
-            label={chipBrain?.label ?? null}
-            model={chipBrain?.model ?? null}
-            ms={brainMs}
-            failover={brainFailover}
-            onClick={openBrain}
-          /></Guard>
-        )}
         {link === "online" && (toolCount > 0 || queued > 0) && (
           <div className="status-meta">
             {toolCount} TOOLS{queued > 0 ? ` · QUEUE ${queued}` : ""}
