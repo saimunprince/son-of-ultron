@@ -298,6 +298,7 @@ class SelfModel:
         events = self.journal.recent_events(5000)
         tool_starts: Dict[str, Dict[str, tuple]] = {}  # task_id -> {tool_id: (start_ts, tool_name)}
         tool_durations: Dict[str, List[float]] = {}  # tool_name -> list of milliseconds
+        brain_durations: Dict[str, List[int]] = {}
 
         for ev in events:
             ev_type = ev.get("type")
@@ -305,25 +306,32 @@ class SelfModel:
             task_id = ev.get("task_id")
             if not task_id:
                 continue
+
+            # Process tool events
             tool_id = payload.get("id")
             tool_name = payload.get("name")
             ts = ev.get("ts")
-            if not tool_id:
-                continue
-
-            if ev_type == "tool.started":
-                tool_starts.setdefault(task_id, {})[tool_id] = (ts, tool_name)
-            elif ev_type in ("tool.completed", "tool.failed"):
-                if payload.get("refused") is True:
+            if tool_id:  # Only process if tool_id exists
+                if ev_type == "tool.started":
+                    tool_starts.setdefault(task_id, {})[tool_id] = (ts, tool_name)
+                elif ev_type in ("tool.completed", "tool.failed"):
+                    if payload.get("refused") is True:
+                        if task_id in tool_starts and tool_id in tool_starts[task_id]:
+                            del tool_starts[task_id][tool_id]
+                        continue
                     if task_id in tool_starts and tool_id in tool_starts[task_id]:
-                        del tool_starts[task_id][tool_id]
-                    continue
-                if task_id in tool_starts and tool_id in tool_starts[task_id]:
-                    start_ts, registered_name = tool_starts[task_id].pop(tool_id)
-                    name = tool_name or registered_name
-                    if name and ts is not None and start_ts is not None:
-                        ms = (ts - start_ts) * 1000.0
-                        tool_durations.setdefault(name, []).append(ms)
+                        start_ts, registered_name = tool_starts[task_id].pop(tool_id)
+                        name = tool_name or registered_name
+                        if name and ts is not None and start_ts is not None:
+                            ms = (ts - start_ts) * 1000.0
+                            tool_durations.setdefault(name, []).append(ms)
+
+            # Process brain events
+            if ev_type == "brain.answered":
+                provider = payload.get("provider")
+                ms = payload.get("ms")
+                if provider and isinstance(ms, (int, float)):
+                    brain_durations.setdefault(str(provider), []).append(int(ms))
 
         tool_ms = {}
         for name, msecs in tool_durations.items():
@@ -338,15 +346,6 @@ class SelfModel:
                 "p50": int(round(msecs_sorted[max(0, min(p50_idx, n - 1))])),
                 "p90": int(round(msecs_sorted[max(0, min(p90_idx, n - 1))])),
             }
-
-        brain_durations: Dict[str, List[int]] = {}
-        for ev in events:
-            if ev.get("type") == "brain.answered":
-                payload = ev.get("payload", {})
-                provider = payload.get("provider")
-                ms = payload.get("ms")
-                if provider and isinstance(ms, (int, float)):
-                    brain_durations.setdefault(str(provider), []).append(int(ms))
 
         brain_ms = {}
         for provider, msecs in brain_durations.items():
