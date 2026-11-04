@@ -796,7 +796,8 @@ class SyraxAgent(Manus):
             if TEST_CLAIM.search(self.last_reply or ""):
                 self.last_reply = TEST_FALLBACK
                 self.unproven = self.unproven or "tests"
-        if (self.last_reply and NON_ANSWER.search(self.last_reply) and len(self.last_reply) < 240
+        if (self.last_reply and NON_ANSWER.search(self.last_reply)
+                and (len(self.last_reply) < 240 or NON_ANSWER.match(self.last_reply))
                 and not self.step_limit_hit and not self.loop_stopped):
             # live 2026-11-03: a reply about the task instead of an answer ("The request is complete and no further
             # action is required."); once more, with the human's own words

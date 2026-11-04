@@ -68,7 +68,9 @@ NON_ANSWER = re.compile(
     r"|\b(?:the )?(?:request|task|interaction) (?:is|has been|was) (?:complete|completed|done|finished)\b[^.!?]{0,40}"
     r"\b(?:no further|nothing (?:further|more|else))\b"
     # live 2026-11-04: Ollama answered a WhatsApp request with the persona's slogan alone
-    r"|^\W*(?:i am|i'm) syrax\W*(?:(?:son|blood) of ultron\W*)?$",
+    r"|^\W*(?:i am|i'm) syrax\W*(?:(?:son|blood) of ultron\W*)?$"
+    # live 2026-11-04: Groq answered "heyyy" with a report on the chat ("Original request: ... Observations: ...")
+    r"|^\W*(?:original )?request\s*:[^\n]*(?:\n|.)*?\bobservations?\s*:",
     re.I)
 NON_ANSWER_ASK = (
     "Your reply talked about the task instead of answering the human. Their request was: \"{request}\". "

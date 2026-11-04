@@ -20,6 +20,8 @@ from syrax.test_claim_partial import run
     "I am SYRAX. Blood of ULTRON.",
     "I'm SYRAX, son of Ultron.",
     "I am SYRAX.",
+    "Original request: simple greetings and curiosity (\"hey\", \"what is sfx?\"). Observations: you prefer short, "
+    "direct answers; favorite colour teal; favorite editor VS Code. No pending task\u2014await your next instruction.",
 ])
 def test_lines_about_the_task_are_not_answers(text):
     assert NON_ANSWER.search(text), text
@@ -31,6 +33,7 @@ def test_lines_about_the_task_are_not_answers(text):
     "No, the file does not exist.",
     "The request failed: the folder is not writable.",
     "I am SYRAX. I sent the message to Rakib Bhai Dev on WhatsApp.",
+    "Your request: rename the files. Done: 3 renamed.",
 ])
 def test_real_answers_pass(text):
     assert not NON_ANSWER.search(text), text
@@ -51,3 +54,13 @@ def test_the_wrap_up_mentions_sources_only_after_research():
     from syrax.agent import FINAL_ASK, FINAL_ASK_RESEARCHED
 
     assert "URL" not in FINAL_ASK and "URL" in FINAL_ASK_RESEARCHED
+
+
+def test_a_long_report_on_the_chat_is_sent_back_too(script):
+    report = ("Original request: simple greetings and curiosity (hey, can you see my live screen?, what is sfx?). "
+              "Observations: you prefer short, direct answers; favorite colour teal; favorite editor VS Code. "
+              "No pending task at the moment, so await your next instruction.")
+    assert len(report) > 240
+    script.queue = [reply(report), reply("Hey. What do you need?")]
+    task, _ = run("heyyy")
+    assert task["result"] == "Hey. What do you need?" and not script.queue
