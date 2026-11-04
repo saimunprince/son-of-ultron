@@ -36,11 +36,6 @@
 }
 
 /* ULTRON: the cut edge flashes red for an instant, then cools to its resting border */
-[data-theme="ultron"] .brain-backdrop > .brain-panel {
-  animation:
-    modal-panel-in 220ms var(--ease) backwards,
-    modal-edge-ultron 360ms linear backwards;
-}
 
 @keyframes modal-edge-ultron {
   0% {
@@ -62,7 +57,7 @@
 }
 
 /* JARVIS: a soft cyan glow that settles into the glass */
-[data-theme="jarvis"] .brain-backdrop > .brain-panel {
+[data-theme] .brain-backdrop > .brain-panel {
   animation:
     modal-panel-in 220ms var(--ease) backwards,
     modal-glow-jarvis 900ms cubic-bezier(0.25, 0.6, 0.3, 1) backwards;
@@ -109,10 +104,6 @@
   box-shadow: var(--accent-glow);
 }
 
-[data-theme="ultron"] .console-tab::after {
-  border-radius: 0;
-}
-
 /* text links (tabs, panel actions) fade their colour on hover instead of snapping */
 .hud-link {
   transition: color 0.2s var(--ease);
@@ -120,9 +111,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .brain-backdrop,
-  .brain-backdrop > .brain-panel,
-  [data-theme="ultron"] .brain-backdrop > .brain-panel,
-  [data-theme="jarvis"] .brain-backdrop > .brain-panel {
+.brain-backdrop > .brain-panel,
+[data-theme] .brain-backdrop > .brain-panel {
     animation: none;
   }
 

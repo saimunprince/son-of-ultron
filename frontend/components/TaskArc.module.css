@@ -163,39 +163,20 @@
 }
 
 /* ——— ULTRON: crisp, cut, hostile ——— */
-:global([data-theme="ultron"]) .segLine,
-:global([data-theme="ultron"]) .sweep {
-  stroke-linecap: butt;
-}
-
-:global([data-theme="ultron"]) .seg[data-state="current"] .segLine {
-  stroke-width: 2.5;
-  filter: drop-shadow(0 0 2px rgb(var(--accent-rgb) / 0.9));
-}
-
-:global([data-theme="ultron"]) .label {
-  letter-spacing: 0.18em;
-  font-weight: 600;
-}
-
-:global([data-theme="ultron"]) .meta > span + span::before {
-  border-radius: 0;
-  transform: rotate(45deg);
-}
 
 /* ——— JARVIS: calm, rounded glass ——— */
-:global([data-theme="jarvis"]) .seg[data-state="current"] .segLine {
+:global([data-theme]) .seg[data-state="current"] .segLine {
   filter: drop-shadow(0 0 5px rgb(var(--accent-rgb) / 0.55));
 }
 
-:global([data-theme="jarvis"]) .activity {
+:global([data-theme]) .activity {
   font-family: var(--font-text);
   letter-spacing: 0.01em;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .root,
-  .root[data-active="true"] {
+.root[data-active="true"] {
     transform: translate(-50%, 0);
     transition: opacity 0.2s linear, visibility 0s linear 0.2s;
   }

@@ -136,23 +136,6 @@ button.chip:focus-visible {
 }
 
 /* ——— ULTRON: cut corners, crisp ——— */
-:global([data-theme="ultron"]) .chip {
-  border-radius: 0;
-  clip-path: polygon(var(--cut-sm, 6px) 0, 100% 0, 100% calc(100% - var(--cut-sm, 6px)), calc(100% - var(--cut-sm, 6px)) 100%, 0 100%, 0 var(--cut-sm, 6px));
-}
-
-:global([data-theme="ultron"]) .dot {
-  border-radius: 0;
-  transform: rotate(45deg);
-}
-
-:global([data-theme="ultron"]) .dot:not([data-tone="none"]) {
-  animation-name: ping-cut;
-}
-
-:global([data-theme="ultron"]) .failover {
-  color: var(--accent-hot);
-}
 
 @keyframes ping-cut {
   0% {
@@ -166,19 +149,18 @@ button.chip:focus-visible {
 }
 
 /* ——— JARVIS: soft, rounded glass ——— */
-:global([data-theme="jarvis"]) .chip {
+:global([data-theme]) .chip {
   border-radius: 999px;
   padding-inline: 11px 12px;
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.02);
 }
 
-:global([data-theme="jarvis"]) .model {
+:global([data-theme]) .model {
   font-family: var(--font-text);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dot,
-  :global([data-theme="ultron"]) .dot:not([data-tone="none"]) {
+  .dot {
     animation: none;
   }
 

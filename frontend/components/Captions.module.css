@@ -132,51 +132,6 @@
 }
 
 /* ULTRON: crisp, sharper, hotter red; no blur, a hard cut rule with notched ends. */
-:global([data-theme="ultron"]) .line {
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  text-shadow:
-    0 1px 1px rgb(0 0 0 / 0.95),
-    0 0 12px rgb(0 0 0 / 0.8),
-    0 0 22px rgb(var(--accent-rgb) / 0.22);
-  animation-name: line-in-sharp;
-  animation-duration: 300ms;
-}
-
-:global([data-theme="ultron"]) .leaving {
-  animation-name: line-out-sharp;
-  animation-duration: 260ms;
-}
-
-:global([data-theme="ultron"]) .rule {
-  width: 156px;
-  background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.5) 18% 82%, transparent);
-}
-
-:global([data-theme="ultron"]) .rule::before,
-:global([data-theme="ultron"]) .rule::after {
-  content: "";
-  position: absolute;
-  top: -2px;
-  width: 1px;
-  height: 5px;
-  background: var(--accent);
-  box-shadow: 0 0 6px rgb(var(--accent-rgb) / 0.8);
-}
-
-:global([data-theme="ultron"]) .rule::before {
-  left: 18%;
-}
-
-:global([data-theme="ultron"]) .rule::after {
-  right: 18%;
-}
-
-:global([data-theme="ultron"]) .progress {
-  background: var(--accent);
-  box-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.9);
-  inset: 0 18%;
-}
 
 @keyframes line-in-sharp {
   from {
@@ -193,7 +148,7 @@
 }
 
 /* JARVIS: calm glass light; softer, wider glow under the line. */
-:global([data-theme="jarvis"]) .line {
+:global([data-theme]) .line {
   font-weight: 400;
   text-shadow:
     0 1px 2px rgb(0 0 0 / 0.85),
@@ -201,14 +156,14 @@
     0 0 34px rgb(var(--accent-rgb) / 0.2);
 }
 
-:global([data-theme="jarvis"]) .rule {
+:global([data-theme]) .rule {
   width: 180px;
   height: 2px;
   border-radius: 2px;
   filter: blur(0.4px);
 }
 
-:global([data-theme="jarvis"]) .progress {
+:global([data-theme]) .progress {
   border-radius: 2px;
   box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.55);
   opacity: 0.7;
@@ -216,11 +171,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   .captions,
-  .line,
-  .leaving,
-  .progress,
-  :global([data-theme="ultron"]) .line,
-  :global([data-theme="ultron"]) .leaving {
+.line,
+.leaving,
+.progress {
     animation: none;
     transition: none;
   }

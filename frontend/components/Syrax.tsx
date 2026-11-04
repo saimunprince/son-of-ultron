@@ -36,8 +36,7 @@ import { estopLabel, estopMessage, estopOn, estopTitle } from "@/lib/estop";
 import { levelOf, levelStep, levelTitle } from "@/lib/autonomyLevel";
 import { isResubmit, type LastSent } from "@/lib/submitGuard";
 import BootSequence from "@/components/BootSequence";
-import ThemeFx, { readoutLine, TypeOut } from "@/components/ThemeFx";
-import Dread, { GlitchText } from "@/components/Dread";
+import ThemeFx, { readoutLine } from "@/components/ThemeFx";
 import BrainChip from "@/components/BrainChip";
 import Captions from "@/components/Captions";
 import CommandPalette, { usePaletteHotkey } from "@/components/CommandPalette";
@@ -789,7 +788,7 @@ export default function Syrax() {
   }, [link]);
 
   useEffect(() => {
-    sceneRef.current?.setReadout(theme === "jarvis" ? readoutLine(vitals) : "");
+    sceneRef.current?.setReadout(readoutLine(vitals));
   }, [vitals, theme]);
 
   /** Send a control message; when the link is down say so (audit 2026-10-29: E-STOP, the level, AUTO and the rest
@@ -1237,8 +1236,8 @@ export default function Syrax() {
       { id: "auto.toggle", label: autonomy?.enabled ? "Autonomy off" : "Autonomy on", section: "Autonomy", keywords: ["autonomous"] },
       { id: "auto.up", label: "Autonomy level up", section: "Autonomy", keywords: ["raise"] },
       { id: "auto.down", label: "Autonomy level down", section: "Autonomy", keywords: ["lower"] },
-      { id: "theme.ultron", label: "Theme: ULTRON", section: "Appearance", keywords: ["red", "hostile"], disabled: theme === "ultron" },
-      { id: "theme.jarvis", label: "Theme: JARVIS", section: "Appearance", keywords: ["cyan", "blue", "calm"], disabled: theme === "jarvis" },
+      { id: "theme.ultron", label: "Theme: ULTRON", section: "Appearance", keywords: ["red"], disabled: theme === "ultron" },
+      { id: "theme.jarvis", label: "Theme: JARVIS", section: "Appearance", keywords: ["cyan", "blue"], disabled: theme === "jarvis" },
       { id: "voice.speak", label: voiceOn ? "Speech off" : "Speech on", section: "Voice", keywords: ["tts", "mute", "speak"] },
       { id: "voice.sfx", label: sfxOn ? "Sound effects off" : "Sound effects on", section: "Voice", keywords: ["sfx", "audio"] },
       { id: "voice.mic", label: handsFree ? "Hands-free mic off" : "Hands-free mic on", section: "Voice", hint: "M", keywords: ["listen", "microphone"] },
@@ -1363,8 +1362,7 @@ export default function Syrax() {
   return (
     <>
       <div ref={containerRef} className="orb-root" />
-      <ThemeFx theme={theme} vitals={vitals} asking={pendingAsk !== null} />
-      {theme === "ultron" && !booting && <Dread mode={orbMode} />}
+      <ThemeFx theme={theme} vitals={vitals} />
       <TaskArc
         active={link === "online" && (agent === "thinking" || agent === "acting")}
         phase={phase?.phase ?? null}
@@ -1385,9 +1383,7 @@ export default function Syrax() {
       <div className="hud hud-title">
         <UltronEyes mode={orbMode} />
         <div className="title-text">
-          <span className="title-name">
-            <GlitchText text="SYRAX" active={theme === "ultron"} />
-          </span>
+          <span className="title-name">SYRAX</span>
           <span className="hud-subtitle">{theme === "jarvis" ? "AT YOUR SERVICE" : "SON OF ULTRON"}</span>
         </div>
       </div>
@@ -1485,7 +1481,7 @@ export default function Syrax() {
                     : "SYRAX online. Press M and talk, or type."}
               </div>
             )}
-            {entries.map((e, i) => {
+            {entries.map((e) => {
               switch (e.kind) {
                 case "user":
                   return (
@@ -1498,8 +1494,7 @@ export default function Syrax() {
                   return (
                     <div key={e.id} className="entry entry-reply">
                       <span className="tag">SYRAX</span>
-                      {/* ULTRON types its newest answer out; older ones and JARVIS's appear whole */}
-                      <TypeOut text={e.text} active={theme === "ultron" && i === entries.length - 1} />
+                      {e.text}
                     </div>
                   );
                 case "thought":

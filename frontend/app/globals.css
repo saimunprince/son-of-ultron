@@ -1360,16 +1360,16 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .boot::after,
-  .boot.phase-wake,
-  .boot.phase-monologue,
-  .boot-eyes.igniting,
-  .title-name,
-  .boot-name,
-  .entry-error,
-  .status-dot,
-  .ultron-eyes .eye,
-  .entry-tool.status-running,
-  .brain-row.status-cooldown .brain-status {
+.boot.phase-wake,
+.boot.phase-monologue,
+.boot-eyes.igniting,
+.title-name,
+.boot-name,
+.entry-error,
+.status-dot,
+.ultron-eyes .eye,
+.entry-tool.status-running,
+.brain-row.status-cooldown .brain-status {
     animation: none !important;
   }
 }
@@ -1476,7 +1476,7 @@ body {
 
 @media (max-width: 760px) {
   .voice-meter,
-  .voice-heard {
+.voice-heard {
     display: none;
   }
 }
@@ -1547,8 +1547,8 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   [data-speaking="true"] .overlay-scanlines,
-  [data-speaking="true"] .overlay-vignette,
-  [data-speaking="true"] .title-name {
+[data-speaking="true"] .overlay-vignette,
+[data-speaking="true"] .title-name {
     animation: none;
   }
 }
@@ -2447,81 +2447,31 @@ body {
    ═══════════════════════════════════════════════ */
 
 /* ——— ULTRON: sharp and hostile ——— */
-[data-theme="ultron"] .hud-console,
-[data-theme="ultron"] .brain-panel,
-[data-theme="ultron"] .self-panel,
-[data-theme="ultron"] .mind-panel,
-[data-theme="ultron"] .rail-main,
-[data-theme="ultron"] .hud-status {
-  border-radius: 0;
-  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
-  border-color: rgb(var(--accent-rgb) / 0.28);
-  background:
-    linear-gradient(135deg, rgb(var(--accent-rgb) / 0.95) 0 2px, transparent 2px) top left / 18px 18px no-repeat,
-    linear-gradient(315deg, rgb(var(--accent-rgb) / 0.95) 0 2px, transparent 2px) bottom right / 18px 18px no-repeat,
-    var(--glass);
-}
-
-[data-theme="ultron"] .command-row {
-  border-radius: 0;
-  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
-  border-color: rgb(var(--accent-rgb) / 0.35);
-}
-
-[data-theme="ultron"] .hud-btn,
-[data-theme="ultron"] .hud-command .hud-btn,
-[data-theme="ultron"] .camera-panel {
-  border-radius: 0;
-  clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
-}
-
-[data-theme="ultron"] .entry-user,
-[data-theme="ultron"] .entry-reply,
-[data-theme="ultron"] .entry-ask,
-[data-theme="ultron"] .entry-tool,
-[data-theme="ultron"] .entry .tag,
-[data-theme="ultron"] .ask-banner {
-  border-radius: 2px;
-}
-
-[data-theme="ultron"] .entry-reply {
-  border-left: 2px solid var(--accent);
-}
-
-[data-theme="ultron"] .status-dot {
-  border-radius: 0;
-  transform: rotate(45deg);
-}
-
-[data-theme="ultron"] .title-name {
-  color: #fff;
-  text-shadow: 0 0 14px rgb(var(--accent-rgb) / 0.55);
-}
 
 /* ——— JARVIS: calm and precise ——— */
-[data-theme="jarvis"] .title-name {
+[data-theme] .title-name {
   animation: none;
   text-shadow: 0 0 16px rgb(var(--accent-rgb) / 0.45);
 }
 
-[data-theme="jarvis"] .hud-subtitle {
+[data-theme] .hud-subtitle {
   color: rgb(var(--accent-rgb) / 0.75);
 }
 
-[data-theme="jarvis"] .hud-console,
-[data-theme="jarvis"] .rail-main,
-[data-theme="jarvis"] .command-row {
+[data-theme] .hud-console,
+[data-theme] .rail-main,
+[data-theme] .command-row {
   border-color: rgb(var(--accent-rgb) / 0.22);
   box-shadow: var(--shadow), 0 0 24px rgb(var(--accent-rgb) / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
 
 /* a slow scan line across the log, like a hologram being drawn */
-[data-theme="jarvis"] .hud-console {
+[data-theme] .hud-console {
   position: fixed;
   overflow: hidden;
 }
 
-[data-theme="jarvis"] .hud-console::after {
+[data-theme] .hud-console::after {
   content: "";
   position: absolute;
   left: 0;
@@ -2539,128 +2489,13 @@ body {
   }
 }
 
-[data-theme="jarvis"] .status-dot {
+[data-theme] .status-dot {
   box-shadow: 0 0 0 3px rgb(var(--accent-rgb) / 0.18), var(--accent-glow);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [data-theme="jarvis"] .hud-console::after {
+  [data-theme] .hud-console::after {
     animation: none;
-    display: none;
-  }
-}
-
-/* ═══════════════════════════════════════════════
-   ULTRON menace (2026-11-03, the owner: "more animation, a more dangerous UI")
-   Bounded, thin and red: the screen's edge breathes, a scan line runs over the panels, the title glitches more
-   often, and the E-STOP glows like a live wire. JARVIS stays calm. Reduced motion turns all of it off.
-   ═══════════════════════════════════════════════ */
-[data-theme="ultron"] .overlay-vignette {
-  background:
-    radial-gradient(ellipse at center, transparent 48%, rgb(90 0 0 / 0.35) 82%, rgb(0 0 0 / 0.85) 100%);
-  animation: danger-breathe 4.8s ease-in-out infinite;
-}
-
-@keyframes danger-breathe {
-  0%,
-  100% {
-    opacity: 0.8;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-[data-theme="ultron"] .title-name {
-  animation-duration: 3.6s;
-}
-
-/* a hard red scan line over the log and the dock */
-[data-theme="ultron"] .hud-console,
-[data-theme="ultron"] .rail-main {
-  overflow: hidden;
-}
-
-[data-theme="ultron"] .hud-console::after,
-[data-theme="ultron"] .rail-main::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: -6px;
-  height: 2px;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, rgb(var(--accent-rgb) / 0.75), transparent);
-  box-shadow: 0 0 12px rgb(var(--accent-rgb) / 0.6);
-  animation: red-scan 3.2s cubic-bezier(0.6, 0, 0.4, 1) infinite;
-}
-
-[data-theme="ultron"] .rail-main {
-  position: relative;
-}
-
-[data-theme="ultron"] .rail-main::after {
-  animation-duration: 4.4s;
-  animation-delay: 1.1s;
-}
-
-@keyframes red-scan {
-  0% {
-    top: -6px;
-    opacity: 0;
-  }
-  10% {
-    opacity: 1;
-  }
-  90% {
-    opacity: 1;
-  }
-  100% {
-    top: 100%;
-    opacity: 0;
-  }
-}
-
-/* the E-STOP glows like a live wire */
-[data-theme="ultron"] .rail-main .hud-btn[title^="Emergency stop"] {
-  animation: live-wire 2.4s ease-in-out infinite;
-}
-
-@keyframes live-wire {
-  50% {
-    box-shadow: 0 0 16px rgb(var(--accent-rgb) / 0.45), inset 0 0 10px rgb(var(--accent-rgb) / 0.2);
-  }
-}
-
-/* the optics stare harder */
-[data-theme="ultron"] .ultron-eyes .eye {
-  animation-duration: 2.6s;
-}
-
-/* a new answer lands with a short red flare */
-[data-theme="ultron"] .entry-reply {
-  animation: entry-in 0.32s var(--ease) both, reply-flare 1.2s ease-out both;
-}
-
-@keyframes reply-flare {
-  from {
-    box-shadow: 0 0 22px rgb(var(--accent-rgb) / 0.55);
-  }
-  to {
-    box-shadow: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-theme="ultron"] .overlay-vignette,
-  [data-theme="ultron"] .title-name,
-  [data-theme="ultron"] .rail-main .hud-btn,
-  [data-theme="ultron"] .entry-reply {
-    animation: none;
-  }
-
-  [data-theme="ultron"] .hud-console::after,
-  [data-theme="ultron"] .rail-main::after {
     display: none;
   }
 }
@@ -2668,44 +2503,6 @@ body {
 /* ═══════════════════════════════════════════════
    Theme effects (components/ThemeFx.tsx, 2026-11-03)
    ═══════════════════════════════════════════════ */
-
-/* ——— ULTRON: when it asks for permission, the screen goes to threat ——— */
-.fx-threat {
-  position: fixed;
-  inset: 0;
-  z-index: 15;
-  pointer-events: none;
-  box-shadow: inset 0 0 0 2px rgb(var(--accent-rgb) / 0.8), inset 0 0 120px rgb(var(--accent-rgb) / 0.35);
-  animation: threat-pulse 1.1s ease-in-out infinite;
-}
-
-.fx-threat-band {
-  position: absolute;
-  top: 88px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 6px 18px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.3em;
-  color: #0a0000;
-  background: var(--accent);
-  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
-  box-shadow: 0 0 24px rgb(var(--accent-rgb) / 0.7);
-  white-space: nowrap;
-}
-
-@keyframes threat-pulse {
-  50% {
-    opacity: 0.55;
-  }
-}
-
-/* ——— ULTRON: the answer types itself out ——— */
-.fx-caret {
-  color: var(--accent-hot);
-  animation: syrax-blink 0.5s steps(2) infinite;
-}
 
 /* ——— JARVIS: corner brackets ——— */
 .fx-corner {
@@ -2823,7 +2620,7 @@ body {
   color: #ffb066;
 }
 
-/* ——— theme switch: ULTRON takes the screen over, JARVIS draws it anew ——— */
+/* ——— theme switch: a scan line draws the screen anew in the new colour ——— */
 .fx-wipe {
   position: fixed;
   inset: 0;
@@ -2831,24 +2628,8 @@ body {
   pointer-events: none;
 }
 
-.fx-wipe.ultron {
-  background: radial-gradient(ellipse at center, rgb(255 40 25 / 0.5), rgb(120 0 0 / 0.25) 45%, transparent 75%);
-  animation: wipe-ultron 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-@keyframes wipe-ultron {
-  from {
-    opacity: 1;
-    transform: scale(0.6);
-  }
-  to {
-    opacity: 0;
-    transform: scale(1.4);
-  }
-}
-
-.fx-wipe.jarvis {
-  background: linear-gradient(180deg, transparent 0%, rgb(0 190 255 / 0.18) 46%, rgb(160 235 255 / 0.9) 50%, rgb(0 190 255 / 0.18) 54%, transparent 100%);
+.fx-wipe {
+  background: linear-gradient(180deg, transparent 0%, rgb(var(--accent-rgb) / 0.18) 46%, rgb(var(--line-rgb) / 0.9) 50%, rgb(var(--accent-rgb) / 0.18) 54%, transparent 100%);
   background-size: 100% 300%;
   animation: wipe-jarvis 1s cubic-bezier(0.5, 0, 0.3, 1) both;
 }
@@ -2864,193 +2645,19 @@ body {
 
 @media (max-width: 760px) {
   .fx-gauges,
-  .fx-corner {
+.fx-corner {
     display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fx-threat,
-  .fx-wipe,
-  .fx-corner,
-  .fx-gauges {
+.fx-wipe,
+.fx-corner,
+.fx-gauges {
     animation: none;
   }
 
   .fx-wipe {
-    display: none;
-  }
-}
-
-/* ═══════════════════════════════════════════════
-   ULTRON dread (components/Dread.tsx, 2026-11-04): the optics in the orb, a heartbeat at the screen's edge,
-   a slow red scan, whispers, a darker ground. Reduced motion stills all of it.
-   ═══════════════════════════════════════════════ */
-[data-theme="ultron"] {
-  --bg: #040102;
-}
-
-/* the screen's edge beats with the core: lub-dub every 1.6 s */
-[data-theme="ultron"] .overlay-vignette {
-  background: radial-gradient(ellipse at center, transparent 46%, rgb(110 0 0 / 0.38) 80%, rgb(0 0 0 / 0.9) 100%);
-  animation: dread-beat 1.6s ease-out infinite;
-}
-
-@keyframes dread-beat {
-  0%,
-  30%,
-  100% {
-    opacity: 0.78;
-  }
-  6% {
-    opacity: 1;
-  }
-  14% {
-    opacity: 0.82;
-  }
-  20% {
-    opacity: 0.94;
-  }
-}
-
-/* the optics wake in the heart of the orb */
-.dread-eyes {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  z-index: 5;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  mix-blend-mode: screen;
-  opacity: 0.16;
-  transition: opacity 0.6s var(--ease);
-}
-
-.dread-eyes .eye-plate {
-  fill: rgb(255 40 30 / 0.04);
-  stroke: rgb(255 60 45 / 0.22);
-}
-
-.dread-eyes .eye {
-  fill: #ff6a55;
-}
-
-.dread-eyes svg {
-  display: block;
-  filter: drop-shadow(0 0 6px rgb(255 200 190 / 0.7)) drop-shadow(0 0 16px rgb(255 30 20 / 0.95)) drop-shadow(0 0 40px rgb(255 20 10 / 0.55));
-  animation: dread-blink 7.3s infinite;
-  transform-origin: 50% 55%;
-}
-
-.dread-eyes[data-mode="listening"] {
-  opacity: 0.55;
-}
-
-.dread-eyes[data-mode="thinking"],
-.dread-eyes[data-mode="speaking"] {
-  opacity: 0.85;
-}
-
-.dread-eyes[data-mode="acting"],
-.dread-eyes[data-mode="error"] {
-  opacity: 1;
-}
-
-@keyframes dread-blink {
-  0%,
-  95.5%,
-  100% {
-    transform: scaleY(1);
-  }
-  97% {
-    transform: scaleY(0.08);
-  }
-}
-
-/* a thin red scan crosses the whole screen, slowly; more often while SYRAX thinks */
-.dread-scan {
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  height: 1px;
-  z-index: 13;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, rgb(255 45 32 / 0.85) 30%, rgb(255 120 100 / 0.95) 50%, rgb(255 45 32 / 0.85) 70%, transparent);
-  box-shadow: 0 0 14px 2px rgb(255 30 20 / 0.45);
-  opacity: 0;
-  animation: dread-scan 24s linear infinite;
-}
-
-.dread-scan[data-mode="thinking"],
-.dread-scan[data-mode="acting"] {
-  animation-duration: 7s;
-}
-
-@keyframes dread-scan {
-  0% {
-    transform: translateY(0);
-    opacity: 0;
-  }
-  2% {
-    opacity: 0.9;
-  }
-  26% {
-    transform: translateY(100vh);
-    opacity: 0.9;
-  }
-  27%,
-  100% {
-    transform: translateY(100vh);
-    opacity: 0;
-  }
-}
-
-/* a cold line surfaces below the orb, then sinks */
-.dread-whisper {
-  position: fixed;
-  left: 50%;
-  top: calc(50% + min(34vh, 300px));
-  z-index: 6;
-  transform: translateX(-50%);
-  pointer-events: none;
-  font-family: var(--font-ui);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.42em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: rgb(255 90 75 / 0.75);
-  text-shadow: 0 0 12px rgb(255 30 20 / 0.6);
-  animation: dread-whisper 6s ease-in-out both;
-}
-
-@keyframes dread-whisper {
-  0% {
-    opacity: 0;
-    filter: blur(6px);
-    letter-spacing: 0.6em;
-  }
-  25%,
-  70% {
-    opacity: 0.85;
-    filter: blur(0);
-    letter-spacing: 0.42em;
-  }
-  100% {
-    opacity: 0;
-    filter: blur(4px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  [data-theme="ultron"] .overlay-vignette,
-  .dread-eyes svg {
-    animation: none;
-  }
-
-  .dread-scan,
-  .dread-whisper {
     display: none;
   }
 }

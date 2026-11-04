@@ -1,7 +1,7 @@
 "use client";
 
-// The HUD's theme character (2026-11-03, the owner: "make ULTRON and JARVIS look fearsome", "premium, not cheap"):
-// ULTRON raises a THREAT banner when it asks and types its answers out; JARVIS shows corner brackets and live gauges.
+// The HUD's diagnostics (2026-11-03): corner brackets and live gauges. Since 2026-11-04 both themes share the JARVIS
+// design ("the red UI is JARVIS's UI in red"); only the colour differs.
 // Everything is pointer-transparent and off under reduced motion where it moves.
 
 import { useEffect, useRef, useState } from "react";
@@ -77,7 +77,7 @@ function JarvisHud({ vitals }: { vitals: ResourceSnapshot | null }) {
   );
 }
 
-export default function ThemeFx({ theme, vitals, asking }: { theme: Theme; vitals: ResourceSnapshot | null; asking: boolean }) {
+export default function ThemeFx({ theme, vitals }: { theme: Theme; vitals: ResourceSnapshot | null }) {
   const [wipe, setWipe] = useState<{ theme: Theme; n: number } | null>(null);
   const first = useRef(true);
   useEffect(() => {
@@ -93,46 +93,8 @@ export default function ThemeFx({ theme, vitals, asking }: { theme: Theme; vital
 
   return (
     <>
-      {theme === "ultron" && (
-        <>
-          {asking && (
-            <div className="fx-threat" aria-hidden="true">
-              <div className="fx-threat-band">THREAT LEVEL ELEVATED · AUTHORIZATION REQUIRED</div>
-            </div>
-          )}
-        </>
-      )}
-      {theme === "jarvis" && <JarvisHud vitals={vitals} />}
-      {wipe && <div key={wipe.n} className={`fx-wipe ${wipe.theme}`} aria-hidden="true" />}
-    </>
-  );
-}
-
-/** ULTRON's answers type themselves out, like a machine taking the console. */
-export function TypeOut({ text, active }: { text: string; active: boolean }) {
-  const [shown, setShown] = useState(active ? 0 : text.length);
-  useEffect(() => {
-    if (!active) return;
-    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduced) {
-      setShown(text.length);
-      return;
-    }
-    const step = Math.max(1, Math.ceil(text.length / 90)); // long answers finish in about 1.5 s
-    const id = setInterval(() => {
-      setShown((n) => {
-        const next = Math.min(text.length, n + step);
-        if (next >= text.length) clearInterval(id);
-        return next;
-      });
-    }, 16);
-    return () => clearInterval(id);
-  }, [text, active]);
-  const done = shown >= text.length;
-  return (
-    <>
-      {text.slice(0, shown)}
-      {!done && <span className="fx-caret">▌</span>}
+      <JarvisHud vitals={vitals} />
+      {wipe && <div key={wipe.n} className="fx-wipe" aria-hidden="true" />}
     </>
   );
 }

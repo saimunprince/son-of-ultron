@@ -157,37 +157,9 @@
 }
 
 /* ——— ULTRON: a cut blade, red label ——— */
-:global([data-theme="ultron"]) .card {
-  border-radius: 0;
-  border-color: rgb(var(--accent-rgb) / 0.3);
-  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
-  background:
-    linear-gradient(135deg, rgb(var(--accent-rgb) / 0.95) 0 1.5px, transparent 1.5px) top left / 13px 13px no-repeat,
-    var(--glass-shine),
-    var(--glass-strong);
-}
-
-:global([data-theme="ultron"]) .card:hover,
-:global([data-theme="ultron"]) .card:focus-within {
-  border-color: rgb(var(--accent-rgb) / 0.6);
-}
-
-:global([data-theme="ultron"]) .card::before {
-  border-radius: 0;
-  top: 14px;
-}
-
-:global([data-theme="ultron"]) .label {
-  color: var(--accent);
-  text-shadow: 0 0 8px rgb(var(--accent-rgb) / 0.45);
-}
-
-:global([data-theme="ultron"]) .close {
-  border-radius: 0;
-}
 
 /* ——— JARVIS: round, calm cyan ——— */
-:global([data-theme="jarvis"]) .card {
+:global([data-theme]) .card {
   border-radius: 14px;
   border-color: rgb(var(--accent-rgb) / 0.18);
   box-shadow:
@@ -196,11 +168,11 @@
     inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
 
-:global([data-theme="jarvis"]) .label {
+:global([data-theme]) .label {
   color: var(--accent);
 }
 
-:global([data-theme="jarvis"]) .hairline {
+:global([data-theme]) .hairline {
   height: 2px;
   border-radius: 2px;
   left: 14px;
@@ -241,7 +213,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .card,
-  .leaving {
+.leaving {
     animation-duration: 1ms;
   }
 

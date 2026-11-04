@@ -71,11 +71,13 @@ export const PALETTES = {
     bloom: 0.98,
     exposure: 0.68,
     heat: [2.1, 0.12, 0.08],
-    spin: 1.2,
-    chroma: 2.4,
-    glitch: 1,
-    threshold: 0.32,
-    menace: 1,
+    // since 2026-11-04 ULTRON has JARVIS's character (the owner: "the red UI is JARVIS's UI in red"): the
+    // arc reactor, data rings and readings, a calm spin, no glitch; only the colour is its own
+    spin: 0.8,
+    chroma: 0.5,
+    glitch: 0,
+    threshold: 0.26,
+    menace: 0,
     errorHeat: [2.1, 0.12, 0.08],
     // the floating code is dimmer in ULTRON, so the red that matters stands out of the dark
     text: (a: number) => {
