@@ -693,6 +693,21 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **Tried and removed as cheap:** orbiting shards, eyes in the core, a hex grid, a cursor reticle.
 - **Backend:** a read-only `vitals` message.
 
+### 2026-11-04: a more advanced HUD
+
+Five agents built the parts in parallel, each as new files, and they were integrated after a GREEN gate.
+
+- **Task arc:** under the orb it shows the phase, the step, the time and the tool. It replaces the phase strip,
+  whose text was cut off.
+- **Brain chip:** the provider, the model and the measured latency, with a flash on a failover.
+- **Captions:** answers play as film-style captions above the command bar.
+- **Toasts:** reminders, alerts, finished objectives and news also appear as cards.
+- **Command palette (Ctrl+K):** every HUD control, and an "Ask SYRAX" fallback.
+- **Motion:**
+  - the panels and tabs move more smoothly;
+  - the orb leans gently toward the cursor;
+  - the voice is a mirrored radial equaliser instead of a wobbling line.
+
 ## Open
 
 - **Needs the owner:**
