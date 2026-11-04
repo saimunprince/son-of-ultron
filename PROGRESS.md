@@ -865,6 +865,16 @@ The owner asked why SYRAX could not send a WhatsApp message, and whether it coul
   The window in front is also named.
 - **Slogans:** a reply that is only "I am SYRAX. Blood of ULTRON." counts as a non-answer and is asked again.
 
+### 2026-11-04: a clean project
+
+- **Unused files:** the brain chip's component, styles, logic and tests are gone. They had no user left after the
+  chip was removed. An old, already-merged worktree is gone too.
+- **Lint:** the last frontend lint warning is fixed; lint is clean.
+- **Command bar:** the live-talk placeholder was cut off. It is now "Talk or type…".
+- **Chat reports:** Groq answered "heyyy" with a report on the chat ("Original request: … Observations: …"). It
+  was too long for the non-answer check. A reply that is a non-answer from its first word is now asked again, at
+  any length.
+
 ## Open
 
 - The Android phone link is built but not yet tried on the owner's phone (its USB connection keeps dropping).
