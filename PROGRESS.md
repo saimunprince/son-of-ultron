@@ -812,6 +812,8 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **The problem:** beside the live log, the stage showed SYRAX's answer on a "reply" card, and the log showed it again
   as a bubble.
 - **The fix:** the stage leaves the reply card out.
+- **Also, the command bar:** blank lines no longer stretch it into an oval with a white scrollbar. It grows as a
+  rounded box, and Enter on blank lines clears them. Every scrollbar is thin and themed.
 
 ## Open
 
