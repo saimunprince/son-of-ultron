@@ -1710,9 +1710,7 @@ export default function Syrax() {
               pendingAsk
                 ? "Answer SYRAX…"
                 : talk === "on"
-                  ? sharing
-                    ? "Talk or type: SYRAX sees your screen live"
-                    : "Talk or type: live with SYRAX"
+                  ? "Talk or type…"
                   : handsFree
                   ? wakeWord
                     ? 'Say "SYRAX, …" or type  ( / to focus )'
