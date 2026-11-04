@@ -708,6 +708,18 @@ Five agents built the parts in parallel, each as new files, and they were integr
   - the orb leans gently toward the cursor;
   - the voice is a mirrored radial equaliser instead of a wobbling line.
 
+### 2026-11-04: ULTRON dread
+
+- **Eyes:** Ultron's optics glow in the heart of the orb. They are faint while idle and burn while SYRAX thinks,
+  speaks or acts, and they blink now and then.
+- **Screen:**
+  - the red edge of the screen beats lub-dub, like the core;
+  - a thin red scan crosses the screen, more often while SYRAX works;
+  - while idle, a cold line surfaces below the orb now and then;
+  - the title corrupts for a moment and resolves;
+  - the ground is darker and the floating code dimmer.
+- **Limits:** reduced motion stills all of it. JARVIS is unchanged.
+
 ## Open
 
 - **Needs the owner:**
