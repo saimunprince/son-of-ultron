@@ -1370,6 +1370,7 @@ export default function Syrax() {
         tool={phase?.tool ?? activeTool ?? null}
         target={phase?.target ?? null}
         startedAt={taskStart}
+        top={18}
       />
       <Captions text={caption.text} nonce={caption.nonce} enabled />
       <Toasts toasts={toasts} onDismiss={dismissToastId} />
@@ -1670,7 +1671,7 @@ export default function Syrax() {
                   ? wakeWord
                     ? 'Say "SYRAX, …" or type  ( / to focus )'
                     : "Just talk, or type  ( / to focus )"
-                  : "Command SYRAX…  ( / to focus · M for voice )"
+                  : "Command SYRAX…  ( / · M voice · Ctrl+K )"
             }
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {

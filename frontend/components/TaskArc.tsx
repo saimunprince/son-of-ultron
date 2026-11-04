@@ -22,6 +22,9 @@ export interface TaskArcProps {
   startedAt: number | null;
   /** Distance from the viewport bottom in px (default 160: above the caption line and the command bar). */
   bottom?: number;
+  /** Distance from the viewport top in px; when set it wins over `bottom` (the HUD puts the arc in the free top
+   * centre, live 2026-11-04: under the orb it sat behind the caption). */
+  top?: number;
 }
 
 interface Snapshot {
@@ -33,7 +36,7 @@ interface Snapshot {
 }
 
 /** A thin five-segment arc under the orb: the task loop, the step, the clock and the current tool. */
-export default function TaskArc({ active, phase, step, tool, target, startedAt, bottom = 160 }: TaskArcProps) {
+export default function TaskArc({ active, phase, step, tool, target, startedAt, bottom = 160, top }: TaskArcProps) {
   // Keep the last live picture so the arc fades out showing what it showed, not blanks.
   const [shown, setShown] = useState<Snapshot>({ phase, step, tool, target, startedAt });
   if (
@@ -64,7 +67,7 @@ export default function TaskArc({ active, phase, step, tool, target, startedAt, 
     <div
       className={styles.root}
       data-active={active ? "true" : "false"}
-      style={{ bottom }}
+      style={top != null ? { top } : { bottom }}
       role="progressbar"
       aria-hidden={!active}
       aria-label="task progress"

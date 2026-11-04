@@ -670,6 +670,10 @@ body {
 
 .command-input::placeholder {
   color: var(--text-dim);
+  /* one line: live 2026-11-04 the hint wrapped and left its ")" alone on a second line */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hud-command .hud-btn {
