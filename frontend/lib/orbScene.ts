@@ -58,34 +58,35 @@ export interface OrbPalette {
 }
 
 export const PALETTES = {
-  /** Red Ultron: crimson lines, a burning core (the owner, 2026-11-03: "ekdom red ultron") */
+  /** Red Ultron: deep crimson lines around a white-hot heart, a few white sparks in the red (2026-11-04, the owner:
+   *  "red, but make it stunning"): contrast, not one flat red */
   ultron: {
-    bright: 0xff4a3a,
-    mid: 0xd0301f,
-    dim: 0x8c1d15,
-    faint: 0x4a120c,
-    hot: 0xff3322,
-    glow: 0xd8180c,
-    grade: [1.18, 0.78, 0.76],
-    channels: [1.0, 0.82, 0.8],
-    bloom: 0.98,
-    exposure: 0.68,
+    bright: 0xff3a26,
+    mid: 0xb81f14,
+    dim: 0x62120b,
+    faint: 0x320806,
+    hot: 0xffe2d8,
+    glow: 0xff1e0e,
+    grade: [1.1, 0.9, 0.88],
+    channels: [1.0, 0.93, 0.92],
+    bloom: 1.05,
+    exposure: 0.7,
     heat: [2.1, 0.12, 0.08],
-    // since 2026-11-04 ULTRON has JARVIS's character (the owner: "the red UI is JARVIS's UI in red"): the
-    // arc reactor, data rings and readings, a calm spin, no glitch; only the colour is its own
+    // JARVIS's character in red: the arc reactor, data rings and readings, a calm spin, no glitch
     spin: 0.8,
     chroma: 0.5,
     glitch: 0,
     threshold: 0.26,
     menace: 0,
     errorHeat: [2.1, 0.12, 0.08],
-    // the floating code is dimmer in ULTRON, so the red that matters stands out of the dark
+    // mostly red code, and now and then a white line, like sparks in a forge
     text: (a: number) => {
-      const r = (190 + Math.random() * 45) | 0;
-      const g = (30 + Math.random() * 45) | 0;
-      return `rgba(${r}, ${g}, ${(g * 0.8) | 0}, ${a * 0.55})`;
+      if (Math.random() < 0.14) return `rgba(255, 236, 228, ${a * 0.85})`;
+      const r = (200 + Math.random() * 55) | 0;
+      const g = (25 + Math.random() * 40) | 0;
+      return `rgba(${r}, ${g}, ${(g * 0.7) | 0}, ${a * 0.7})`;
     },
-    dust: ["rgba(255,120,105,1)", "rgba(230,60,45,0.55)", "rgba(150,25,18,0.15)", "rgba(70,10,8,0)"],
+    dust: ["rgba(255,235,228,1)", "rgba(255,60,40,0.6)", "rgba(150,20,12,0.16)", "rgba(60,6,4,0)"],
   },
   /** Blue JARVIS: a cyan hologram; acting brightens it instead of turning it red */
   jarvis: {

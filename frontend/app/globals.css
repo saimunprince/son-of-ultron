@@ -5,20 +5,22 @@
    ═══════════════════════════════════════════════ */
 :root,
 [data-theme="ultron"] {
-  --bg: #080304;
-  --panel: rgb(20 8 8 / 0.74);
-  --panel-solid: #140808;
-  --line-rgb: 255 96 82;
-  --text: #f1cdc8;
-  --text-dim: #a9706a;
-  --text-bright: #fff2f0;
-  --accent-rgb: 255 45 32;
-  --accent: #ff2d20;
-  --accent-hot: #ff6a5c;
-  --danger: #ff2d20;
-  --text-glow: 0 0 6px rgb(255 60 45 / 0.35);
-  --accent-glow: 0 0 12px rgb(255 45 32 / 0.75);
-  --camera-filter: grayscale(1) sepia(1) hue-rotate(-40deg) saturate(3) brightness(0.75) contrast(1.2);
+  /* Ultron: a chrome body and burning red optics. The HUD reads in silver-white; red marks what matters
+     (2026-11-04, the owner: "red, but stunning"; the all-red pinkish text looked flat) */
+  --bg: #050203;
+  --panel: rgb(12 8 9 / 0.74);
+  --panel-solid: #0c0809;
+  --line-rgb: 214 219 228;
+  --text: #d9dde4;
+  --text-dim: #8b9099;
+  --text-bright: #ffffff;
+  --accent-rgb: 255 36 22;
+  --accent: #ff2416;
+  --accent-hot: #ff5a40;
+  --danger: #ff2416;
+  --text-glow: 0 0 0 transparent;
+  --accent-glow: 0 0 14px rgb(255 36 22 / 0.8);
+  --camera-filter: grayscale(1) contrast(1.25) brightness(0.8);
 }
 
 [data-theme="jarvis"] {
@@ -2100,8 +2102,8 @@ body {
 }
 
 [data-theme="ultron"] {
-  --glass: rgb(22 8 8 / 0.58);
-  --glass-strong: rgb(22 8 8 / 0.8);
+  --glass: rgb(14 10 11 / 0.58);
+  --glass-strong: rgb(14 10 11 / 0.82);
 }
 
 [data-theme="jarvis"] {
