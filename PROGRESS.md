@@ -734,6 +734,18 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **Quality misses left as they are:** `deep2_refactor_module` and `deep2_log_report` are the brain's own data and
   refactoring mistakes, not code faults.
 
+### 2026-11-04: the red theme is JARVIS's design in red
+
+- **Owner's call:** the red UI becomes JARVIS's UI, and only the colour stays red.
+- **Shared by both themes:**
+  - round glass panels;
+  - the arc reactor with data rings and live readings;
+  - the DIAGNOSTICS gauges and corner brackets;
+  - a calm spin.
+- **Removed from ULTRON:** the cut corners, the glitches, the reticle and radar, the optics, the whispers, the THREAT
+  band, the typed answers and the red scan.
+- **Kept:** the names and the boot text.
+
 ## Open
 
 - **Needs the owner:**
