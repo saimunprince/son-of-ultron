@@ -1,0 +1,191 @@
+/* Task progress arc: a thin five-phase arc under the orb. Never takes a click. */
+
+.root {
+  position: fixed;
+  left: 50%;
+  z-index: 6;
+  width: min(360px, calc(100vw - 32px));
+  transform: translate(-50%, 6px);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 0.6s var(--ease),
+    transform 0.6s var(--ease),
+    visibility 0s linear 0.6s;
+}
+
+.root[data-active="true"] {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
+  transition:
+    opacity 0.45s var(--ease),
+    transform 0.45s var(--ease),
+    visibility 0s;
+}
+
+.arc {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.track {
+  fill: none;
+  stroke: rgb(var(--line-rgb) / 0.07);
+  stroke-width: 1;
+}
+
+.segLine {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition:
+    stroke 0.5s var(--ease),
+    opacity 0.5s var(--ease);
+}
+
+.seg[data-state="todo"] .segLine {
+  stroke: rgb(var(--line-rgb) / 0.16);
+}
+
+.seg[data-state="done"] .segLine {
+  stroke: rgb(var(--accent-rgb) / 0.55);
+}
+
+.seg[data-state="current"] .segLine {
+  stroke: var(--accent);
+  filter: drop-shadow(0 0 3px rgb(var(--accent-rgb) / 0.7));
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+/* A short bright dash that travels along the lit segment: work in progress. */
+.sweep {
+  fill: none;
+  stroke: var(--accent-hot);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 16 84;
+  animation: sweep 1.8s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+}
+
+.label {
+  font-family: var(--font-ui);
+  font-size: 7.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  fill: var(--text-dim);
+  opacity: 0.55;
+  transition:
+    fill 0.5s var(--ease),
+    opacity 0.5s var(--ease);
+}
+
+.seg[data-state="done"] .label {
+  opacity: 0.8;
+}
+
+.seg[data-state="current"] .label {
+  fill: var(--text-bright);
+  opacity: 1;
+}
+
+.meta {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 4px;
+  min-height: 14px;
+  font-family: var(--font-code);
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.meta > span + span::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin-right: 10px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: rgb(var(--line-rgb) / 0.35);
+}
+
+.step {
+  color: var(--text);
+}
+
+.clock {
+  color: var(--text-bright);
+}
+
+.activity {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  letter-spacing: 0.02em;
+}
+
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+@keyframes sweep {
+  from {
+    stroke-dashoffset: 100;
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  to {
+    stroke-dashoffset: -16;
+    opacity: 0;
+  }
+}
+
+/* ——— ULTRON: crisp, cut, hostile ——— */
+
+/* ——— JARVIS: calm, rounded glass ——— */
+:global([data-theme]) .seg[data-state="current"] .segLine {
+  filter: drop-shadow(0 0 5px rgb(var(--accent-rgb) / 0.55));
+}
+
+:global([data-theme]) .activity {
+  font-family: var(--font-text);
+  letter-spacing: 0.01em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root,
+.root[data-active="true"] {
+    transform: translate(-50%, 0);
+    transition: opacity 0.2s linear, visibility 0s linear 0.2s;
+  }
+
+  .seg[data-state="current"] .segLine {
+    animation: none;
+  }
+
+  .sweep {
+    display: none;
+  }
+}

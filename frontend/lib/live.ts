@@ -22,11 +22,19 @@ export interface LiveHandlers {
   onState: (s: LiveState, detail?: string) => void;
   onEvent?: (e: LiveEvent) => void;
   onLevel?: (level: number) => void;
+  /** the screen share started or stopped (also when the browser's own "Stop sharing" ends it) */
+  onScreen?: (on: boolean) => void;
+  /** the HUD's camera preview, when it shows one: SYRAX sees the human live too (in the screen's corner, or alone) */
+  camera?: () => HTMLVideoElement | null;
 }
 
 const IN_RATE = 16000;
 const OUT_RATE = 24000;
 const CHUNK_MS = 40;
+const FRAME_MS = 1000; // Gemini Live looks at about one picture a second
+const FRAME_WIDTH = 1280; // the picture's widest side; text on a 1080p screen stays readable
+const FRAME_QUALITY = 0.6;
+const CAMERA_WIDTH = 768; // the camera alone, when no screen is shared
 
 const WORKLET = `
 class LiveTap extends AudioWorkletProcessor {
@@ -50,6 +58,10 @@ export class LiveTalk {
   private playHead = 0;
   private playing = new Set<AudioBufferSourceNode>();
   private ended = false;
+  private screen: MediaStream | null = null;
+  private screenVideo: HTMLVideoElement | null = null;
+  private frameTimer: ReturnType<typeof setInterval> | null = null;
+  private canvas: HTMLCanvasElement | null = null;
 
   private url: string;
   private h: LiveHandlers;
@@ -92,7 +104,88 @@ export class LiveTalk {
       else this.play(ev.data as ArrayBuffer);
     };
     ws.onerror = () => this.finish("error", "the live connection to SYRAX failed");
+    ws.onopen = () => {
+      if (!this.ended) this.frameTimer ??= setInterval(() => this.sendFrame(), FRAME_MS);
+    };
     ws.onclose = () => this.finish("off");
+  }
+
+  /** A typed line into the live conversation (it sees the shared screen); false when the session is not open. */
+  say(text: string): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false;
+    this.ws.send(JSON.stringify({ type: "text", text }));
+    return true;
+  }
+
+  get sharing() {
+    return this.screen !== null;
+  }
+
+  /** Share the screen live (call from a click: the browser asks which screen or window). False when refused. */
+  async shareScreen(): Promise<boolean> {
+    if (this.screen || this.ended) return this.screen !== null;
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
+    } catch {
+      return false; // the human cancelled the picker
+    }
+    if (this.ended) {
+      stream.getTracks().forEach((t) => t.stop());
+      return false;
+    }
+    this.screen = stream;
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = stream;
+    void video.play().catch(() => {});
+    this.screenVideo = video;
+    stream.getVideoTracks()[0]?.addEventListener("ended", () => this.stopScreen());
+    this.sendJson({ type: "screen", on: true });
+    this.h.onScreen?.(true);
+    return true;
+  }
+
+  stopScreen() {
+    if (!this.screen) return;
+    this.screen.getTracks().forEach((t) => t.stop());
+    this.screen = null;
+    if (this.screenVideo) this.screenVideo.srcObject = null;
+    this.screenVideo = null;
+    this.sendJson({ type: "screen", on: false });
+    this.h.onScreen?.(false);
+  }
+
+  private sendJson(msg: object) {
+    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+  }
+
+  /** One picture a second: the shared screen with the camera in its corner, or the screen alone, or the camera alone. */
+  private sendFrame() {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    const screen = this.screenVideo?.videoWidth ? this.screenVideo : null;
+    const camEl = this.h.camera?.() ?? null;
+    const cam = camEl && camEl.srcObject && camEl.videoWidth ? camEl : null;
+    const main = screen ?? cam;
+    if (!main) return;
+    const canvas = (this.canvas ??= document.createElement("canvas"));
+    const k = Math.min(1, (screen ? FRAME_WIDTH : CAMERA_WIDTH) / Math.max(main.videoWidth, main.videoHeight));
+    canvas.width = Math.round(main.videoWidth * k);
+    canvas.height = Math.round(main.videoHeight * k);
+    const g = canvas.getContext("2d");
+    if (!g) return;
+    g.drawImage(main, 0, 0, canvas.width, canvas.height);
+    if (screen && cam) {
+      const w = Math.round(canvas.width * 0.24);
+      const h = Math.round((w * cam.videoHeight) / cam.videoWidth);
+      g.drawImage(cam, canvas.width - w - 8, canvas.height - h - 8, w, h);
+      g.strokeStyle = "#fff";
+      g.lineWidth = 2;
+      g.strokeRect(canvas.width - w - 8, canvas.height - h - 8, w, h);
+    }
+    const url = canvas.toDataURL("image/jpeg", FRAME_QUALITY);
+    this.sendJson({ type: "frame", data: url.slice(url.indexOf(",") + 1) });
   }
 
   /** End the conversation (the server journals it as closed). */
@@ -175,10 +268,14 @@ export class LiveTalk {
 
   /** Let go of the playback, the connection, the mic and the audio context: whatever exists by now. */
   private release() {
+    if (this.frameTimer) clearInterval(this.frameTimer);
+    this.frameTimer = null;
+    this.stopScreen();
     this.flush();
     if (this.ws) {
       this.ws.onclose = null;
       this.ws.onerror = null;
+      this.ws.onopen = null;
       if (this.ws.readyState <= WebSocket.OPEN) this.ws.close();
       this.ws = null;
     }

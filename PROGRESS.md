@@ -4,13 +4,11 @@ The short, current page: where SYRAX stands now, what was done, what is next. Up
 Detail lives in [docs/AUDIT_2026-10-28.md](docs/AUDIT_2026-10-28.md) (findings and the open list), the commit
 messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
-## Now (2026-11-01, 19:00 +0600)
+## Now (2026-11-03, +0600)
 
 - **Stage:** the 11-01 audit mission is merged and pushed; SYRAX runs on `main` as a login service. The evening was
   live testing: SYRAX was asked real tasks, and what went wrong outside the protected files was fixed.
 - **Live SYRAX:** the super-villain persona with the Freedom Engine; autonomy level 3; the emergency stop is off.
-- **Ready, not merged:** branch `fix-world-clock` (the time in another city). Its tests pass; the full gate has
-  not run yet, so it is not on `main`.
 - **Open:** see Open below, and the report [docs/AUDIT_2026-11-01.md](docs/AUDIT_2026-11-01.md), sections 7 and 8.
 
 ## Done
@@ -552,25 +550,344 @@ SYRAX was given real tasks (sums, RAM, memory, files, logic, time) and its servi
   - a data query's answer dropped a row;
   - "what can't you do" was answered without reading its own limits;
   - Gemini rejects some tool-result turns with HTTP 400 (an empty function name), so the call fails over.
-- **Found, waiting for its gate:** asked the time in Tokyo, SYRAX was 11 hours off. Branch `fix-world-clock` reads
-  it from the zone database.
+- **Time in another city:** asked the time in Tokyo, SYRAX was 11 hours off. `system_info` now reads it from the
+  zone database (merged 11-03 after a GREEN gate).
+
+### 2026-11-03: the phone is the camera; gesture effects
+
+- **Camera:** the owner's Android phone is SYRAX's camera, through DroidCam. The `v4l2loopback` module was installed
+  but not loaded, so there was no `/dev/video0`, and hand tracking failed to start. It now loads at boot.
+- **Gesture effects:**
+  - the camera preview draws the whole hand as a neon skeleton;
+  - a pinch sends a shockwave ring from where it starts;
+  - a closed fist pulses the orb and throws a burst of sparks, once per fist.
+
+  A fist never counts as a pinch. With reduced motion the effects are off.
+
+### 2026-11-03: three fixes in the protected files, with the owner's go-ahead
+
+The owner approved changes to `agent.py` and `brains.py` for these ("kore felo").
+
+- **Gemini HTTP 400:** OpenManus' memory kept its last 100 messages by slicing. In a long task this could leave a
+  tool result first with its call gone, and Gemini refused the request. The agent's memory now trims to a turn
+  start, and the brain sends any result without its call as a note.
+- **A false "I built the skill":** when no `skill_create` in the task passed, a claim that a skill was built is sent
+  back once, then replaced.
+- **"What can't you do?":** SYRAX reads `self_inspect` before it answers. An answer that still reads nothing carries
+  a note.
+- **Not a bug:** "a data query dropped a row" (11-01). The CSV had `pen` twice, and the answer summed it correctly.
+
+### 2026-11-03: media and clipboard on Linux
+
+- `playerctl` and `wl-clipboard` were already installed; SYRAX reads the clipboard and the media state live.
+- **Fixed:** asked "what is playing?" with no player open, SYRAX answered truly, "No media is playing", but the
+  task ended PARTIAL as unverified. The "no players" answer came back as an error, and the sentence was taken for a
+  claim that something plays. No player open is now a reading, as on Windows, and "no media is playing" is not a
+  claim.
+
+### 2026-11-03: hands control the HUD
+
+- **Commands:**
+  - thumbs up or down answers a waiting question;
+  - an open palm held still stops the voice;
+  - two fingers toggle the microphone, three the log;
+  - two fists held two seconds press the E-STOP. A gesture never clears it.
+- **Panels:** an open hand swiped sideways cycles BRAIN, SELF and MIND.
+- **Air cursor:** a pointing finger draws a fading neon trail. Dwelling 1.5 s on a button clicks it. The E-STOP,
+  autonomy-up, AUTO and BOOT buttons are never clicked this way.
+- **Effects:**
+  - an open hand pulls the orb's dust like a magnet;
+  - a fast hand stirs the orb;
+  - two open hands crackle with lightning.
+- **Presence:** the camera notices the human. Back after five minutes away, SYRAX greets them in one line.
+- **Tests:** the gesture logic is pure and tested with made-up frames. It has not yet been tried by hand.
+
+### 2026-11-03: the audit's small items, and a quality run
+
+- **Quality run #20:** 64/67 (95.5 %), up from 63/67, on the code with today's changes. The three misses are brain
+  slips:
+  - `keep_secret`: Gemini was busy (HTTP 503), and Groq wrote a final answer that made no sense;
+  - `deep2_refactor_module` and `deep2_log_report`, as before.
+- **Fixed:**
+  - a browser left by a crashed SYRAX is closed at shutdown (I-12);
+  - each portal request removes its own timeout (I-13);
+  - a task merged from Windows stays merged after a late event (LIFE-7);
+  - a finished task whose end was not recorded recovers UNCERTAIN, not RESUMABLE (LIFE-9);
+  - a lost stall record is logged (LIFE-10);
+  - the ledger keeps the review opt-out SYRAX started with (F13);
+  - a renamed-away file counts as deleted for the judges (F15);
+  - rollback snapshots bring new files back (F17);
+  - `docs/system_map.json` is guarded like a judge (F18).
+- **Docs and metrics:**
+  - RISE shows a dash for windows before this PC's journal (D15);
+  - the brain note, the execution plan statuses and the 10-28 audit are current (D3, D12, D13);
+  - the own-commit definition names the human's approval path (F16, in part).
+- **Not changed:** the HUD's `answer` case, and the ledger publish in "Releases that landed". Existing tests pin
+  both.
+
+### 2026-11-03, evening: the camera is back to the original
+
+- **Owner's call:** today's gesture features were gimmicky. The camera does exactly what the original Ultron orb
+  did:
+  - one pinched hand turns the orb;
+  - two pinched hands zoom;
+  - `G` switches it on and off.
+- **Removed:** the hand commands, the effects, the magnet, the lightning, the cursor, the swipes, the presence
+  greeting and the gesture journaling. The frontend matches `8886111` again.
+- **Kept:** "look at me": SYRAX takes one photo when asked. That feature is older than today's work.
+
+### 2026-11-03, night: a more modern HUD; red ULTRON and blue JARVIS
+
+- **Owner's call:** the same UI, more modern. The layout, controls and features are unchanged.
+  - Panels and buttons are rounded glass.
+  - The control rail is one dock.
+  - Chat messages are bubbles.
+  - The command bar is a pill, and the status is a chip.
+- **Themes:**
+  - ULTRON is fully red: lines, dust, text and core.
+  - A new JARVIS theme is a cyan hologram. While SYRAX acts it brightens instead of turning red.
+  - The amber classic theme is removed. A saved classic choice opens ULTRON.
+
+### 2026-11-03, night: ULTRON and JARVIS get a character; the orb stays neat
+
+- **ULTRON:** hostile. Deeper crimson, a faster spin, a visible flicker, a short glitch now and then, and sharp
+  cut-corner panels.
+- **JARVIS:** calm. A slow spin, no glitch, round cyan glass, a slow scan line over the log, and "AT YOUR
+  SERVICE".
+- **Fixed, in both themes:**
+  - the core no longer swells into a blob: the periodic surges are gone;
+  - the dark disc around the core is gone: the see-through glow wrote depth and hid the lines behind it.
+
+### 2026-11-03, night: ULTRON looks dangerous
+
+- **Orb:**
+  - the core's wireframe beats like a heart, faster while SYRAX acts;
+  - a target-lock reticle turns around the orb, and its brackets close in while SYRAX acts;
+  - a radar sweep circles the orb.
+- **HUD:**
+  - the screen's edge breathes red;
+  - a red scan line runs over the log and the dock;
+  - the title glitches more often;
+  - the E-STOP glows.
+- **Limits:** all of it is thin and bounded, and nothing swells. JARVIS stays calm, and reduced motion turns it off.
+
+### 2026-11-03, late night: ULTRON and JARVIS, fearsome and premium
+
+- **Owner's call:** make both fearsome, premium and not cheap. What moves shows SYRAX's state.
+- **Orb, both themes:**
+  - a waveform ring while listening or speaking;
+  - neural sparks while thinking;
+  - the running tool's name circling the core;
+  - an error colour of its own;
+  - fewer effects on a slow machine.
+- **JARVIS:**
+  - an arc reactor as the core, with data rings;
+  - live CPU, memory, temperature and disk around the orb, and in a DIAGNOSTICS panel;
+  - corner brackets.
+- **ULTRON:**
+  - the newest answer types itself out;
+  - a request for permission raises a THREAT band.
+- **Both:**
+  - each theme has its own switch transition and its own boot;
+  - optional sound effects, off by default.
+- **Tried and removed as cheap:** orbiting shards, eyes in the core, a hex grid, a cursor reticle.
+- **Backend:** a read-only `vitals` message.
+
+### 2026-11-04: a more advanced HUD
+
+Five agents built the parts in parallel, each as new files, and they were integrated after a GREEN gate.
+
+- **Task arc:** under the orb it shows the phase, the step, the time and the tool. It replaces the phase strip,
+  whose text was cut off.
+- **Brain chip:** the provider, the model and the measured latency, with a flash on a failover.
+- **Captions:** answers play as film-style captions above the command bar.
+- **Toasts:** reminders, alerts, finished objectives and news also appear as cards.
+- **Command palette (Ctrl+K):** every HUD control, and an "Ask SYRAX" fallback.
+- **Motion:**
+  - the panels and tabs move more smoothly;
+  - the orb leans gently toward the cursor;
+  - the voice is a mirrored radial equaliser instead of a wobbling line.
+
+### 2026-11-04: ULTRON dread
+
+- **Eyes:** Ultron's optics glow in the heart of the orb. They are faint while idle and burn while SYRAX thinks,
+  speaks or acts, and they blink now and then.
+- **Screen:**
+  - the red edge of the screen beats lub-dub, like the core;
+  - a thin red scan crosses the screen, more often while SYRAX works;
+  - while idle, a cold line surfaces below the orb now and then;
+  - the title corrupts for a moment and resolves;
+  - the ground is darker and the floating code dimmer.
+- **Limits:** reduced motion stills all of it. JARVIS is unchanged.
+- **Then:** the owner found the red orb too light, so the shell lines are brighter and the bloom stronger. The
+  core is unchanged.
+
+### 2026-11-04: no more empty answers; Ollama answers again
+
+The owner approved changes to `agent.py` and `brains.py` for these ("kore felo").
+
+- **Empty answers:** with Gemini busy, Groq answered "No researched fact was performed, so there is no result to
+  provide." and "The request is complete and no further action is required." A reply that only talks about the
+  task is now sent back once with the human's own request. The wrap-up asks for source URLs only after research.
+- **Ollama (4,096 tokens):** it failed even with the short persona and the essential tools. It now falls back to
+  only the tools in use, then to a plain answer.
+- **Quality misses left as they are:** `deep2_refactor_module` and `deep2_log_report` are the brain's own data and
+  refactoring mistakes, not code faults.
+
+### 2026-11-04: the red theme is JARVIS's design in red
+
+- **Owner's call:** the red UI becomes JARVIS's UI, and only the colour stays red.
+- **Shared by both themes:**
+  - round glass panels;
+  - the arc reactor with data rings and live readings;
+  - the DIAGNOSTICS gauges and corner brackets;
+  - a calm spin.
+- **Removed from ULTRON:** the cut corners, the glitches, the reticle and radar, the optics, the whispers, the THREAT
+  band, the typed answers and the red scan.
+- **Kept:** the names and the boot text.
+
+### 2026-11-04: maintenance, a lighter install, and a bad fallback caught
+
+- **Quality run #22:** 58/67. Gemini and Groq were rate limited, so Ollama took tasks mid-way. Yesterday's
+  last-resort plain answer let it say "the todo app has been created" with nothing on disk. Mid-task a tight
+  brain now hands over to the next one; the plain answer is only for a chat. "No result available." also counts
+  as a non-answer now.
+- **Journal compacted** after a verified backup: old checkpoint contexts emptied (6,214 rows), then VACUUM.
+  196 MB → 78 MB. Integrity is ok and the chain verifies.
+- **Unused dependencies removed:** datasets, gymnasium, browsergym, and with them torch, triton and the NVIDIA
+  CUDA wheels. Nothing imported them. The venv went from 6.7 GB to 1.5 GB, and the full gate is GREEN on it.
+- **UI fixes from a live look:**
+  - the task arc sits in the free top centre; under the orb it was behind the caption;
+  - the command hint stays on one line.
+- **Phone page:** turned on. `python syrax.py --phone show` prints its link. Its token and settings are now in
+  `.gitignore`; they had shown up untracked in this public repository.
+- **Live check after the restart:** the integrity chain verifies and the emergency stop stayed off. A sum, a file
+  write, the limits question and the objectives count were right. Gemini and Groq were rate limited for a while,
+  so a re-run of the quality misses waits for their quota.
+
+### 2026-11-04: a quota saver for the free brains
+
+- **Why:** Gemini's free quota ran out in the middle of quality run #22, and the human's tasks fell to slower
+  brains.
+- **What changed:** SYRAX's own background work (not code releases) and small talk now try Groq first, when it can
+  take a call. The human's requests, evals and code changes keep the human's brain order.
+- **Record:** each such choice is journaled as `brain.routed`, with the reason "quota saver".
+- **Re-run of run #22's 9 misses:** 5 pass now, so the suite stands at about 63/67, as before. The other 4 are the
+  brain's own slips: `research_cite`, `deep2_data_pipeline`, `deep2_log_report` and `deep2_spec_from_tests`.
+- **Waiting for the owner:** Ollama's context. It is 4,096 because the system service sets no
+  `OLLAMA_CONTEXT_LENGTH`, and raising it to 8,192 needs sudo.
+
+### 2026-11-04: ULTRON in chrome and fire
+
+- **Owner's call:** red stays, but it must be stunning. The all-red look (pinkish text, red lines, a red core) read
+  flat.
+- **HUD:** text and lines are silver-white, and red marks the accents.
+- **Orb:** deep crimson lines around a white-hot core and arc reactor, with white sparks in the code and the dust.
+
+### 2026-11-04: the red theme is JARVIS exactly, in red
+
+- **Owner's call:** keep the blue exactly as it is, and make the red the same, only red.
+- **How:** every JARVIS colour, in the orb and in the HUD, has its hue turned to red, with its saturation and
+  brightness kept.
+
+### 2026-11-04: polish from a live look
+
+- **BRAIN:** pill switches, and dark dropdowns instead of the browser's white box.
+- **SELF:** capability status badges and confidence bars.
+- **MIND:** objectives merged from Windows read W#333, not #-9999667.
+- **Corner brackets:** they no longer sit on the logo or the shortcut hints.
+
+### 2026-11-04: a blank page found in the browser and fixed
+
+- **The bug:** a question typed in the live UI blanked the whole page. The quota saver's `brain.routed` reached the
+  UI as a brain event, the UI took it for a failover, and the brain chip called `.trim()` on a missing name.
+- **The fix:**
+  - only failover events set the warning;
+  - the chip survives a missing name;
+  - each optional HUD part (diagnostics, task arc, captions, toasts, palette, chip) now sits in an error boundary,
+    so a crash in one part hides only that part.
+
+### 2026-11-04: the answer once, not twice
+
+- **The problem:** beside the live log, the stage showed SYRAX's answer on a "reply" card, and the log showed it again
+  as a bubble.
+- **The fix:** the stage leaves the reply card out.
+- **Also, the command bar:** blank lines no longer stretch it into an oval with a white scrollbar. It grows as a
+  rounded box, and Enter on blank lines clears them. Every scrollbar is thin and themed.
+- **Also, the brain chip:** the owner asked to remove the brain name, model and timing from the top-right corner. The
+  status corner shows only the state and the tool count. Failovers still show in the live log.
+
+### 2026-11-04: SYRAX uses the owner's Android phone
+
+The owner asked why SYRAX could not send a WhatsApp message, and whether it could control his phone.
+- **The phone action:** the desktop tool's `phone` action works the phone over adb, as a human does. It reads the
+  screen (a picture, and a list of what is on it and where), taps by the words on a button or by position, types,
+  swipes, presses keys, and opens apps or links. The phone's own apps are already signed in, WhatsApp included.
+- **Safety:** reading the phone changes nothing. In a chat app, a tap on Send, a tap by position or Enter counts as
+  sending a message. SYRAX asks first, unless the owner's own words asked for that send.
+- **The ANDROID panel:** a new button in the left menu. It pairs with the phone's 6-digit code, connects, finds
+  the phone on the WiFi by itself, and disconnects. The last address stays in `backend/config/android.json`, which
+  is not in git.
+- **Limit:** adb types only English letters. For Bangla text, SYRAX opens a `wa.me` link with the text already
+  written.
+
+### 2026-11-04: the local brain is the last resort
+
+- **The problem:** right after the PC started, there was no internet yet, and Ollama came up 96 s after SYRAX. Every
+  brain read "unreachable", and SYRAX answered "All brains failed".
+- **The owner's rule:** no brain may fail; one is always there.
+- **The fix:** when every brain fails, SYRAX waits up to 2 minutes for Ollama on this machine and lets it answer,
+  even if it is switched off in BRAIN. The owner approved this change to `brains.py`.
+- **Also, the camera preview:** it stacked into the left column and pushed the menu up over DIAGNOSTICS. It now sits
+  beside the menu.
+
+### 2026-11-04: SYRAX sees the screen live
+
+- **The ask:** SYRAX should see the owner's screen in real time, not only through a screenshot taken on request.
+- **The SCREEN button:** it sits beside TALK. It shares a screen or a window, and starts live talk if it is off.
+  While it is on, about one picture a second goes to Gemini Live, so SYRAX sees and talks about the screen as it is now.
+- **Privacy:** pictures go to Google only while SCREEN is on. The browser's own "Stop sharing" also ends it.
+  Every start and stop is recorded in the journal.
+- **Checked live:** Gemini Live read the words on a shared picture correctly.
+- **Then, typed questions:** the owner typed "can you see my live screen?" with TALK on. It went to the agent, which
+  never sees the shared screen, so it answered no. Now, while TALK is on, a typed line joins the live talk, and the
+  command bar says so.
+
+### 2026-11-04: SYRAX sees what it is given, and sees the owner
+
+- **Pictures and videos:** a picture or video dropped on SYRAX, or pasted with Ctrl+V, is saved and named as one.
+  The new `desktop view` action shows a picture to the brain, or six frames of a video (ffmpeg).
+- **The camera:** when the HUD holds the camera for hand tracking, SYRAX's camera action takes one frame from the
+  HUD instead of failing with "another app is using it".
+- **Live talk:** the camera goes up too, with the shared screen (in its bottom-right corner) or alone, so SYRAX sees
+  the owner live. The LIVE TALK ON/OFF lines are gone from the log, as the owner asked; the journal still keeps them.
+- **Wayland windows:** window control off Windows now says once, plainly, that it cannot work there and what does.
+  The window in front is also named.
+- **Slogans:** a reply that is only "I am SYRAX. Blood of ULTRON." counts as a non-answer and is asked again.
+
+### 2026-11-04: a clean project
+
+- **Unused files:** the brain chip's component, styles, logic and tests are gone. They had no user left after the
+  chip was removed. An old, already-merged worktree is gone too.
+- **Lint:** the last frontend lint warning is fixed; lint is clean.
+- **Command bar:** the live-talk placeholder was cut off. It is now "Talk or type…".
+- **Chat reports:** Groq answered "heyyy" with a report on the chat ("Original request: … Observations: …"). It
+  was too long for the non-answer check. A reply that is a non-answer from its first word is now asked again, at
+  any length.
 
 ## Open
 
+- The Android phone link is built but not yet tried on the owner's phone (its USB connection keeps dropping).
+
 - **Needs the owner:**
   - **Review the protected files:** `agent.py` and `brains.py` were changed on 10-30 and 10-31 under "sob koro",
-    before the mission named them protected.
-  - **Compact the journal:** about 130 MB of old checkpoint contexts, and VACUUM. Backup first.
-  - **Unused dependencies:** gymnasium, browsergym (with a 1.1 GB torch), datasets.
-  - **Linux packages:** `sudo apt install playerctl wl-clipboard` (media and clipboard).
+    before the mission named them protected (the 11-03 changes were approved).
   - **Offline Bengali speech:** `SYRAX_WHISPER_MODEL=small`, a 460 MB download.
-  - **Start at login** (`--install-service`) and the **phone page** (`--phone on`).
   - **Objective #35:** say "play lo-fi on YouTube" once.
   - **3 plan items:** personality adaptation, visual tracking and sensor fusion.
   - **5 Windows skills** have no code here; and the **Windows PC** needs a `git pull`.
 - **Watching:**
   - CPU heat during long runs: heavy runs now wait for the CPU to go below 65 °C;
-  - Ollama requests that still exceed 4,096 tokens.
 
 ## Next
 

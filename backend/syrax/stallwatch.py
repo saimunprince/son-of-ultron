@@ -60,8 +60,11 @@ class Watchdog:
     async def _record(self, payload: dict) -> None:
         try:
             await self.journal.record("stall.recovered", payload)
-        except Exception:
-            pass
+        except Exception as e:
+            # audit 2026-11-01 (LIFE-10): this write was lost without a trace
+            from app.logger import logger
+
+            logger.warning(f"stallwatch: stall.recovered ({payload.get('stuck_s')} s) not journaled: {e}")
 
     def _write_stacks(self) -> str:
         self.log_dir.mkdir(parents=True, exist_ok=True)

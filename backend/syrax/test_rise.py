@@ -95,3 +95,21 @@ def test_what_measures_syrax_is_out_of_its_own_reach():
 
 def test_the_principle_is_part_of_its_identity():
     assert any("Demonstrate it" in p and "Let the evidence speak" in p for p in PRINCIPLES)
+
+
+def test_a_window_before_the_first_own_row_is_no_evidence(tmp_path, monkeypatch):
+    """Audit 2026-11-01 (D15): this PC's own journal starts 10-28, so the previous window (10-17..10-24) was always 0
+    and every trend read 'worse' or 'better' against nothing. A window that ends before the first own event is a dash."""
+    now = time.time()
+    j = Journal(tmp_path / "j.db")
+    monkeypatch.setattr(jmod, "_now", lambda: now - 1 * DAY)
+    t = j.start_task_sync("[AUTONOMOUS OBJECTIVE] x", kind="autonomous")
+    j.record_sync("final", {"text": "ok"}, task_id=t)
+    j.record_sync("task.completed", {"status": "SUCCESS", "result": "ok"}, task_id=t)
+    j.close()
+    monkeypatch.setattr(jmod, "_now", time.time)
+    m = {r["id"]: r for r in rise.measure(tmp_path / "j.db", now)["metrics"]}
+    assert m["own_commits"]["previous"]["value"] is None and m["own_commits"]["last"]["value"] == 0
+    assert trend(m["own_commits"]) == "—"
+    text = rise.render(rise.measure(tmp_path / "j.db", now), head="x")
+    assert "| Commits SYRAX made to itself | 0 | — | 0 |" in text

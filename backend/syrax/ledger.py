@@ -103,7 +103,8 @@ async def write_matrix(journal: Journal, wt: Path, xml: Path, head: str, junit: 
 
 async def publish(journal: Journal, root: Path = REPO_ROOT, gates: Optional[Callable] = None,
                   reviewer: Optional[Callable] = None, now: Optional[float] = None, force: bool = False,
-                  matrix: bool = False, junit: Optional[Callable] = None, prober: Optional[Callable] = None) -> Dict[str, Any]:
+                  matrix: bool = False, junit: Optional[Callable] = None, prober: Optional[Callable] = None,
+                  review_opt_out: Optional[bool] = None) -> Dict[str, Any]:
     """Regenerate docs/RISE.md in an isolated worktree and release it. Returns the release report
     (outcome COMMITTED, ROLLED_BACK, REVIEW_REJECTED, COMMIT_FAILED, REFUSED or FAILED)."""
     from syrax import rise
@@ -118,6 +119,10 @@ async def publish(journal: Journal, root: Path = REPO_ROOT, gates: Optional[Call
     # its own worktree folder: an objective's task prunes .syrax/worktrees, never this one
     dl = DevLoop(journal, root=root, gates=gates, task_id_provider=lambda: t, worktrees_dir=root / ".syrax" / "maintenance")
     dl.reviewer = reviewer
+    if review_opt_out is not None:
+        # audit 2026-11-01 (F13): the opt-out is the environment at SYRAX's start (the core's DevLoop), never a
+        # later change to it, which a fresh DevLoop here would read
+        dl.review_opt_out = review_opt_out
     report: Dict[str, Any]
     try:
         await asyncio.to_thread(dl.begin_task)

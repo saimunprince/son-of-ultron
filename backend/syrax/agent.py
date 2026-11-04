@@ -12,7 +12,7 @@ from app.agent.manus import Manus
 from app.agent.toolcall import ToolCallAgent
 from app.config import config
 from app.logger import logger
-from app.schema import AgentState, Message, ToolCall, ToolChoice
+from app.schema import AgentState, Memory, Message, ToolCall, ToolChoice
 from app.tool import Terminate, ToolCollection
 from app.tool.mcp import MCPClientTool
 
@@ -39,9 +39,11 @@ from syrax.claims import (  # noqa: F401
     CLAIM_FALLBACK, NOT_RELEASED_NOTE, UNPROVEN_SOFT, NUMBER, FORM_ASK, FORM_FINAL_ASK, exact_form, meets_form,
     GIVEN_PATCH_REFUSED, diff_changed_lines, given_patch, CLAIM, OWN_WORK_CLAIM, WORLD_CLAIM, CHANGE_ASKED,
     WORLD_NUDGE, SEND_CLAIM, DESKTOP_CLAIM, BROWSER_CLAIM, PLAYING_CLAIM, PLAYING_READ, PLAYING_NOTE, OUTCOME_CLAIMS,
-    BOAST, SELF_ASKED, without_boasts, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
+    BOAST, SELF_ASKED, LIMITS_ASKED, LIMITS_NUDGE, without_boasts, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
     OUTCOME_NUDGE, OUTCOME_NOTE, DISPUTE_MAX, DISPUTE_NO, DISPUTE, DISPUTE_NUDGE, DISPUTE_NOTE, DISPUTE_ACTS,
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
+    SKILL_CLAIM, SKILL_HONEST, SKILL_CLAIM_ASK, SKILL_FALLBACK, skill_claimed, skill_state,
+    NON_ANSWER, NON_ANSWER_ASK,
     _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, WANTS_BENGALI, bengali,
 )
 
@@ -80,9 +82,13 @@ def mask_credentials(text: str, goal: str) -> str:
 
 FINAL_ASK = (
     "You finished using tools but gave the human no answer. Reply now with the final answer only: "
-    "the result itself (number, name, year, output), taken from the observations above, and the source "
-    "URL for any researched fact. No narration, no tool calls."
+    "the result itself (number, name, year, output), taken from the observations above. "
+    "No narration, no tool calls."
 )
+# Live 2026-11-03: the source clause in every wrap-up made Groq answer "No researched fact was performed, so there is
+# no result to provide."; it is asked only after the task researched something
+FINAL_ASK_RESEARCHED = FINAL_ASK.replace("taken from the observations above.",
+                                         "taken from the observations above, and the source URL for each researched fact.")
 
 
 TOOLS_GUIDE_SHORT = (
@@ -418,6 +424,34 @@ def _call_key(command: ToolCall) -> str:
     return f"{command.function.name}:{json.dumps(_args_of(command), sort_keys=True, default=str)}"
 
 
+class PairSafeMemory(Memory):
+    """OpenManus' Memory, bounded without cutting a tool exchange. Its own limit slices to the last `max_messages`,
+    which can leave a tool result first with its call gone; live 2026-11-01 Gemini refused every such request (HTTP
+    400 "function_response.name: Name cannot be empty") and the brain failed over. System messages stay; the rest
+    starts at the first user message after the cut (past the results of a cut exchange when there is none)."""
+
+    def add_message(self, message: Message) -> None:
+        self.messages.append(message)
+        self._bound()
+
+    def add_messages(self, messages: List[Message]) -> None:
+        self.messages.extend(messages)
+        self._bound()
+
+    def _bound(self) -> None:
+        if len(self.messages) <= self.max_messages:
+            return
+        system = [m for m in self.messages if m.role == "system"]
+        rest = [m for m in self.messages if m.role != "system"]
+        cut = max(0, len(rest) - max(1, self.max_messages - len(system)))
+        turn = next((i for i in range(cut, len(rest)) if rest[i].role == "user"), None)
+        if turn is None:
+            turn = cut
+            while turn < len(rest) and rest[turn].role == "tool":
+                turn += 1
+        self.messages = system + rest[turn:]
+
+
 class SyraxAgent(Manus):
     """Manus agent that streams every step to the UI and keeps a live session.
 
@@ -430,6 +464,7 @@ class SyraxAgent(Manus):
 
     name: str = "SYRAX"
     description: str = "SYRAX personal AI operator built on OpenManus."
+    memory: Memory = Field(default_factory=PairSafeMemory, description="Agent's memory store")
     system_prompt: str = SYRAX_PERSONA.format(directory=config.workspace_root)
 
     emit: Optional[Emit] = Field(default=None, exclude=True)
@@ -453,6 +488,7 @@ class SyraxAgent(Manus):
     called: set = Field(default_factory=set)  # tools this task called (refusals excluded): NAMED_NUDGE
     acted: set = Field(default_factory=set)  # classes of the tools that succeeded this task (classes_of): OUTCOME_CLAIMS
     tests: Optional[str] = None  # "pass"/"fail": the last test run this task saw (state_of_tests)
+    skills_made: set = Field(default_factory=set)  # "verified"/"failed": what this task's skill_create calls gave
     refusals: list = Field(default_factory=list)  # (tool, reason) of the calls the permission gate refused this task
     staged: list = Field(default_factory=list)  # lines python_execute printed as fixed text this task (staged_lines)
     exact_form: Optional[dict] = None  # the short form the request demands (exact_form), checked once the run is over
@@ -553,6 +589,7 @@ class SyraxAgent(Manus):
         self.called = set()
         self.acted = set()
         self.tests = None
+        self.skills_made = set()
         self.refusals = []
         self.staged = []
         self.intents, self.inherited_intents = dict(self.inherited_intents), {}
@@ -698,6 +735,18 @@ class SyraxAgent(Manus):
             if BOAST.search(self.last_reply or "") and not (read and re.search(r"\d", self.last_reply or "")):
                 self.last_reply = self.last_reply.rstrip() + (SELF_NOTE_READ if read else SELF_NOTE)
                 self.unproven = self.unproven or ("self_read" if read else "self")
+        if (self.last_reply and LIMITS_ASKED.search(self.task_goal or "") and self.task_kind != "autonomous"
+                and "self_inspect" not in self.called and "self_inspect" in self.available_tools.tool_map
+                and not self.step_limit_hit and not self.loop_stopped):
+            # live 2026-11-01: "What can't you do?" answered with two generic lines; the measured limits are read
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._send({"type": "notice", "text": "Asked about SYRAX's limits, the answer read none: asking once to read self_inspect."})
+            result += "\n" + await BaseAgent.run(self, LIMITS_NUDGE)
+            if self.last_reply.startswith("SYRAX:"):
+                self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+            if "self_inspect" not in self.called:
+                self.last_reply = (self.last_reply or "").rstrip() + SELF_NOTE
+                self.unproven = self.unproven or "self"
         if (self._status_unread() and "self_inspect" in self.available_tools.tool_map
                 and not self.step_limit_hit and not self.loop_stopped):
             # the human asked for a check and the answer reports the systems fine unread: once to read, then the note
@@ -747,6 +796,20 @@ class SyraxAgent(Manus):
             if TEST_CLAIM.search(self.last_reply or ""):
                 self.last_reply = TEST_FALLBACK
                 self.unproven = self.unproven or "tests"
+        if (self.last_reply and NON_ANSWER.search(self.last_reply)
+                and (len(self.last_reply) < 240 or NON_ANSWER.match(self.last_reply))
+                and not self.step_limit_hit and not self.loop_stopped):
+            # live 2026-11-03: a reply about the task instead of an answer ("The request is complete and no further
+            # action is required."); once more, with the human's own words
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._final_answer(NON_ANSWER_ASK.format(request=(self.task_goal or request or "")[:600]))
+        if (self.last_reply and "failed" in self.skills_made and "verified" not in self.skills_made
+                and skill_claimed(self.last_reply)):
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._final_answer(SKILL_CLAIM_ASK)
+            if skill_claimed(self.last_reply or ""):
+                self.last_reply = SKILL_FALLBACK
+                self.unproven = self.unproven or "skill"
         await self._note_staged()
         if self._unreleased_edits(request):
             # live 2026-10-14 (objective 224, attempt 3): thirty steps of edits, no `release`, and the final said
@@ -885,7 +948,7 @@ class SyraxAgent(Manus):
             if self.exact_form:
                 ask, self.form_asked = FORM_FINAL_ASK.format(form=self.exact_form["text"]), True
             else:
-                ask = FINAL_ASK
+                ask = FINAL_ASK_RESEARCHED if self.researched else FINAL_ASK
         try:
             msg = await self.llm.ask_tool(
                 messages=self.memory.messages + [Message.user_message(ask)],
@@ -1067,6 +1130,8 @@ class SyraxAgent(Manus):
                 if _succeeded(result) and name == "research":
                     self.researched = True
                 self.tests = state_of_tests(name, result) or self.tests
+                if skill_state(name, result):
+                    self.skills_made.add(skill_state(name, result))
                 if name == "python_execute" and _succeeded(result):
                     result += await self._staged_after(_args_of(command))
                 if (self.release_brief and not self.change_noted and name in ("str_replace_editor", "apply_patch")

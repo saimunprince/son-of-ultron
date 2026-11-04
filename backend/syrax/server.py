@@ -27,13 +27,13 @@ Protocol (JSON over ws://HOST:PORT/ws)
                     presentation_feedback {presentation_id, action?} |
                     autonomy {enabled?} | cycle_now |
                     brains_get | brains_save {providers, order} |
-                    brain_models {id, api_key?} | brain_test {id}
+                    brain_models {id, api_key?} | brain_test {id} | vitals
   server -> client: hello {name, tools, interrupted, running, queue, recent} | state | queue {items} |
-                    user | think | tool_start | tool_result | ask | final |
+                    user | think | tool_start | tool_result | ask | final | vitals |
                     task {event} | checkpoint | recovery {event} | verification |
                     history | task_events | verifications | self_model |
                     objectives | autonomy_status | autonomy {event} | objective {event} | cycle {event} |
-                    task_detail | replay | knowledge | research {event} | knowledge {event} |
+                    task_detail | replay | knowledge_list | research {event} | knowledge {event} |
                     skills | skill {event} | presentation {event} | presentation_plan |
                     benchmarks | experiments | benchmark {event} | experiment {event} |
                     quality_runs | quality {event} | brief {event: checked|filed|refused, proof?, problems?, objective_id?} |
@@ -548,6 +548,11 @@ class Session:
 
         if kind == "ping":
             await self.send({"type": "pong"})
+        elif kind == "vitals":
+            # live readings for the HUD's gauges (2026-11-03, the JARVIS theme): CPU load, memory, disk, temperatures
+            from syrax import resources
+
+            await self.send({"type": "vitals", **await asyncio.to_thread(resources.snapshot)})
         elif kind == "task" and presence.parse_command(text):
             # "hide" / "show" / "go minimal": a visibility change, never a task, allowed while one runs
             visibility = presence.parse_command(text)
@@ -915,6 +920,13 @@ class Session:
                 problem = str(e)
             if problem:
                 await self.send({"type": "notice", "text": problem})
+        elif kind in ("android_status", "android_pair", "android_connect", "android_find", "android_disconnect"):
+            # the ANDROID panel (2026-11-04): link the human's phone over adb; the pairing code is typed by the human
+            self.spawn(self._android(kind, msg))
+        elif kind == "camera_frame":
+            from syrax import camera
+
+            camera.hud_frame(str(msg.get("id") or ""), str(msg.get("data") or ""))
         elif kind == "brains_get":
             await self.send({"type": "brains", **get_router().describe()})
         elif kind == "brains_save":
@@ -933,6 +945,25 @@ class Session:
                 self.spawn(self._test(pid))
         else:
             await self.send({"type": "error", "message": f"Unknown message: {kind}"})
+
+    async def _android(self, kind: str, msg: dict) -> None:
+        from syrax import android
+
+        message, ok = "", True
+        try:
+            if kind == "android_pair":
+                message = await android.pair(msg.get("host"), msg.get("port"), str(msg.get("code") or ""))
+            elif kind == "android_connect":
+                message = await android.connect(msg.get("host"), msg.get("port"))
+            elif kind == "android_find":
+                message = await android.discover()
+            elif kind == "android_disconnect":
+                message = await android.disconnect()
+        except android.PhoneError as e:
+            message, ok = str(e), False
+        if kind != "android_status":
+            await get_journal().record("android." + kind.removeprefix("android_"), {"ok": ok, "message": message})
+        await self.send({"type": "android", **await android.status(), "result": message, "ok": ok})
 
     async def _compare_brains(self, a: str, b: str, only) -> None:
         from syrax.experiments import render as render_exp

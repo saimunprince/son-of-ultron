@@ -153,7 +153,10 @@ def changed_files(root: Path) -> Dict[str, str]:
             continue
         status, path = ln[:2].strip() or "M", ln[3:]
         if " -> " in path:
-            path = path.split(" -> ", 1)[1]
+            # a staged rename: the old path is gone, which the judges must see as a deletion (audit 2026-11-01, F15:
+            # renaming a test away hid it, since only the new path was kept)
+            old, path = path.split(" -> ", 1)
+            files[old] = "D"
         files[path] = status
     return files
 
@@ -294,6 +297,12 @@ def _shadowed_judge(path: str) -> Optional[str]:
     return None
 
 
+# Data the judges read, guarded like them (audit 2026-11-01, F18): the system map chooses which tests the release
+# preflight runs and holds the known limitations; as a docs file own work could drop a test mapping, and a docs-only
+# change lands by replay without a new gate. JUDGES stays the list of judge modules (repo_map names them).
+JUDGED_DATA = ("docs/system_map.json",)
+
+
 def judge_problems(files: Dict[str, str]) -> List[str]:
     """Changes SYRAX may not release in any task: the judges (the protected set,
     JUDGES above, which includes this definition), and any edit or deletion of an
@@ -305,6 +314,8 @@ def judge_problems(files: Dict[str, str]) -> List[str]:
         name = path.rsplit("/", 1)[-1]
         if path in JUDGES:
             problems.append(f"{path}: this file judges SYRAX's own work; only a human changes it")
+        elif path in JUDGED_DATA:
+            problems.append(f"{path}: the judges read this file (it picks the release tests); only a human changes it")
         elif name in TEST_CONFIG_NAMES:
             problems.append(f"{path}: this file configures the test run that judges SYRAX's work; only a human changes it")
         elif (shadowed := _shadowed_judge(path)):
@@ -576,7 +587,7 @@ class DevLoop:
 
     def _replay_docs_only(self, sha: str) -> Optional[Dict[str, Any]]:
         files = [f for f in _git(["diff", "--name-only", f"{sha}^", sha], self.live_root).stdout.split() if f]
-        if not files or not all(f.startswith("docs/") for f in files):
+        if not files or not all(f.startswith("docs/") for f in files) or any(f in JUDGES or f in JUDGED_DATA for f in files):
             return None
         onto = _git(["rev-parse", "HEAD"], self.live_root).stdout.strip()
         base = _git(["merge-base", onto, sha], self.live_root).stdout.strip()
@@ -686,10 +697,16 @@ class DevLoop:
     def snapshot(self, info: Dict[str, Any]) -> Path:
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
         path = self.snapshot_dir / f"{int(time.time())}-{info['head'][:7]}.patch"
+        from syrax.review import new_file_diff
+
         body = info["diff"]
         for rel in info["untracked"]:
             try:
-                body += f"\n# untracked: {rel}\n" + (self.root / rel).read_text(encoding="utf-8", errors="replace")
+                # a /dev/null diff, so `git apply` recreates the new file (audit 2026-11-01, F17: it was plain text
+                # after the marker, and a rollback snapshot could not bring new files back); git skips the marker
+                if body and not body.endswith("\n"):
+                    body += "\n"
+                body += f"# untracked: {rel}\n" + new_file_diff(rel, (self.root / rel).read_text(encoding="utf-8", errors="replace"))
             except OSError:
                 pass
         path.write_text(body, encoding="utf-8", newline="\n")  # a diff holding "\u2190" could not be written as cp1252 (2026-10-19)

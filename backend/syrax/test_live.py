@@ -229,3 +229,20 @@ def test_gemini_is_answered_before_the_task_starts_and_a_start_that_fails_is_spo
     spoken = [m["realtimeInput"]["text"] for m in gem.sent if "text" in m.get("realtimeInput", {})]
     assert spoken == ["TASK RESULT (failed): SYRAX was already busy with another task, so nothing was started."]
     assert bridge.tasks == set() and bridge.started == 0
+
+
+def test_the_shared_screen_goes_up_as_pictures_and_sharing_is_journaled():
+    # the owner, 2026-11-04: SYRAX sees the screen live, not by screenshot
+    bridge, core, gem, _ = opened()
+    assert "SCREEN button" in live.SYSTEM and "live" in live.SYSTEM
+    asyncio.run(bridge.screen(True))
+    asyncio.run(bridge.screen(True))  # said twice, journaled once
+    assert asyncio.run(bridge.frame("/9j/AAAA")) is True
+    assert gem.sent[-1] == {"realtimeInput": {"video": {"data": "/9j/AAAA", "mimeType": "image/jpeg"}}}
+    assert asyncio.run(bridge.frame("/9j/BBBB")) is False  # faster than one a FRAME_MIN_GAP_S: dropped
+    bridge._last_frame = 0.0
+    assert asyncio.run(bridge.frame("x" * (live.FRAME_MAX_CHARS + 1))) is False
+    assert asyncio.run(bridge.frame("")) is False
+    asyncio.run(bridge.screen(False))
+    shares = [(k, p["on"]) for k, p, _ in core.journal.events if k == "live.screen"]
+    assert shares == [("live.screen", True), ("live.screen", False)]

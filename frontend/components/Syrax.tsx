@@ -17,10 +17,11 @@ import {
   type StartupStatus,
   type VoiceStatus,
   type TaskPhase,
-  TASK_PHASES,
   type JournalEvent,
   type PresentationElement,
   type SelfModelSummary,
+  type ResourceSnapshot,
+  type AndroidState,
   type ServerEvent,
   type TaskDetail,
   type TaskSummary,
@@ -29,6 +30,7 @@ import {
 type ConsoleTab = "live" | "history" | "today";
 import BrainPanel from "@/components/BrainPanel";
 import SelfPanel from "@/components/SelfPanel";
+import AndroidPanel from "@/components/AndroidPanel";
 import MindPanel, { mindRequest, type MindData, type MindTab } from "@/components/MindPanel";
 import { DISMISS_INTERRUPTED, HistoryList, ReplayView, UNCERTAIN_RESUME, WhyView } from "@/components/HistoryView";
 import Stage from "@/components/Stage";
@@ -36,6 +38,16 @@ import { estopLabel, estopMessage, estopOn, estopTitle } from "@/lib/estop";
 import { levelOf, levelStep, levelTitle } from "@/lib/autonomyLevel";
 import { isResubmit, type LastSent } from "@/lib/submitGuard";
 import BootSequence from "@/components/BootSequence";
+import ThemeFx, { readoutLine } from "@/components/ThemeFx";
+import Guard from "@/components/Guard";
+import Captions from "@/components/Captions";
+import CommandPalette, { usePaletteHotkey } from "@/components/CommandPalette";
+import TaskArc from "@/components/TaskArc";
+import Toasts from "@/components/Toasts";
+import { stageElements } from "@/lib/stageView";
+import type { PaletteCommand } from "@/lib/palette";
+import { addToast, classifyError, classifyNotice, dismissToast, makeToast, type Toast } from "@/lib/toasts";
+import { sfx, type SfxEvent } from "@/lib/sfx";
 import UltronEyes from "@/components/UltronEyes";
 import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
 import type { Heard } from "@/lib/wake";
@@ -167,14 +179,17 @@ export default function Syrax() {
   const [link, setLink] = useState<LinkState>("connecting");
   const [agent, setAgent] = useState<AgentState>("booting");
   const [activeTool, setActiveTool] = useState<string | null>(null);
+  const [vitals, setVitals] = useState<ResourceSnapshot | null>(null);
   const [toolCount, setToolCount] = useState(0);
   const [queued, setQueued] = useState(0); // human requests waiting for the running task to end
   const [brains, setBrains] = useState<BrainsState | null>(null);
-  const [activeBrain, setActiveBrain] = useState<{ label: string; model: string } | null>(null);
   const [brainModels, setBrainModels] = useState<Record<string, { list: string[]; error?: string; loading: boolean }>>({});
   const [brainTests, setBrainTests] = useState<Record<string, BrainTestResult | "running">>({});
   const [brainOpen, setBrainOpen] = useState(false);
   const [selfOpen, setSelfOpen] = useState(false);
+  const [androidOpen, setAndroidOpen] = useState(false);
+  const [android, setAndroid] = useState<AndroidState | null>(null);
+  const [androidBusy, setAndroidBusy] = useState(false);
   const [mindTab, setMindTab] = useState<MindTab | null>(null);
   const [mind, setMind] = useState<MindData>({ briefing: null, objectives: null, proposals: null, skills: null, scorecard: null });
   const [autonomy, setAutonomy] = useState<AutonomyStatus | null>(null);
@@ -183,6 +198,13 @@ export default function Syrax() {
   const [dropping, setDropping] = useState(false);
   const [voicePick, setVoicePick] = useState<VoiceStatus | null>(null);
   const [phase, setPhase] = useState<{ phase: TaskPhase; tool?: string; target?: string } | null>(null);
+  // the advanced HUD (2026-11-03): task arc, brain chip, captions, toasts, command palette
+  const [taskStep, setTaskStep] = useState<number | null>(null);
+  const [taskStart, setTaskStart] = useState<number | null>(null);
+  const [caption, setCaption] = useState<{ text: string; nonce: number }>({ text: "", nonce: 0 });
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const dismissToastId = useCallback((id: number) => setToasts((l) => dismissToast(l, id)), []);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [consoleTab, setConsoleTab] = useState<ConsoleTab>("live");
   const [historyTasks, setHistoryTasks] = useState<TaskSummary[] | null>(null);
   const [taskDetail, setTaskDetail] = useState<TaskDetail | null>(null);
@@ -199,6 +221,7 @@ export default function Syrax() {
   const [speaking, setSpeaking] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
   const [talk, setTalk] = useState<LiveState>("off");
+  const [sharing, setSharing] = useState(false);
   const [audioLive, setAudioLive] = useState(false);
   const [wakeWord, setWakeWord] = useState(false);
   const [hearLang, setHearLang] = useState<"en-IN" | "bn-BD" | "en-US">("en-IN");
@@ -208,6 +231,12 @@ export default function Syrax() {
   const ttsWarnedRef = useRef(false);
   const [armed, setArmed] = useState(false);
   const [voiceOn, setVoiceOn] = useState(true);
+  // theme sound effects: off until the human turns them on
+  const [sfxOn, setSfxOn] = useState(false);
+  const sfxRef = useRef<{ on: boolean; theme: OrbTheme }>({ on: false, theme: "ultron" });
+  const play = useCallback((event: SfxEvent) => {
+    if (sfxRef.current.on) sfx(sfxRef.current.theme, event);
+  }, []);
   const [flashError, setFlashError] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(true);
 
@@ -230,6 +259,7 @@ export default function Syrax() {
       if (localStorage.getItem("syrax.voice") === "off") setVoiceOn(false);
       if (localStorage.getItem("syrax.console") === "closed") setConsoleOpen(false);
       if (localStorage.getItem("syrax.wake") === "on") setWakeWord(true);
+      if (localStorage.getItem("syrax.sfx") === "on") setSfxOn(true);
       const savedLang = localStorage.getItem("syrax.lang");
       if (savedLang === "en-IN" || savedLang === "bn-BD" || savedLang === "en-US") setHearLang(savedLang);
       const savedTheme = localStorage.getItem("syrax.theme");
@@ -246,10 +276,17 @@ export default function Syrax() {
       localStorage.setItem("syrax.theme", theme);
       localStorage.setItem("syrax.wake", wakeWord ? "on" : "off");
       localStorage.setItem("syrax.lang", hearLang);
+      localStorage.setItem("syrax.sfx", sfxOn ? "on" : "off");
     } catch {
       /* storage unavailable */
     }
-  }, [voiceOn, consoleOpen, theme, wakeWord, hearLang]);
+  }, [voiceOn, consoleOpen, theme, wakeWord, hearLang, sfxOn]);
+
+  useEffect(() => {
+    const switched = sfxRef.current.theme !== theme;
+    sfxRef.current = { on: sfxOn, theme };
+    if (switched) play("theme");
+  }, [sfxOn, theme, play]);
 
   useEffect(() => {
     wakeWordRef.current = wakeWord;
@@ -264,6 +301,9 @@ export default function Syrax() {
       const next = [...prev, e];
       return next.length > MAX_ENTRIES ? next.slice(-MAX_ENTRIES) : next;
     });
+    // the notices that matter also appear as a toast (lib/toasts decides which)
+    const spec = e.kind === "notice" ? classifyNotice(e.text) : e.kind === "error" ? classifyError(e.text) : null;
+    if (spec) setToasts((l) => addToast(l, makeToast(e.id, spec, Date.now())));
   }, []);
 
   // Follow-up window: after SYRAX speaks, no wake word is needed for a bit.
@@ -389,7 +429,10 @@ export default function Syrax() {
           setStage(e.elements);
           break;
         case "phase":
-          if (e.event === "changed") setPhase({ phase: e.phase, tool: e.tool, target: e.target });
+          if (e.event === "changed") {
+            setPhase({ phase: e.phase, tool: e.tool, target: e.target });
+            if (e.step != null) setTaskStep(e.step);
+          }
           break;
         case "topic":
           if (e.event === "news" && e.items?.length) {
@@ -398,10 +441,7 @@ export default function Syrax() {
           }
           break;
         case "live":
-          if (e.event === "opened")
-            push({ kind: "notice", id: nextId++, text: `LIVE TALK ON · ${e.model} · the microphone streams to Google until TALK is pressed again` });
-          else if (e.event === "closed")
-            push({ kind: "notice", id: nextId++, text: `LIVE TALK OFF · ${e.reason ?? "closed"} · ${e.seconds ?? 0}s, ${e.tasks ?? 0} task(s)` });
+          // the owner, 2026-11-04: no LIVE TALK ON/OFF lines in the log; the TALK button shows it (and the journal keeps it)
           break;
         case "camera":
           if (e.event === "captured") push({ kind: "notice", id: nextId++, text: `CAMERA USED · one photo saved to ${e.path}` });
@@ -599,8 +639,10 @@ export default function Syrax() {
           break;
         }
         case "brain":
-          if (e.event === "answered") setActiveBrain({ label: e.label, model: e.model });
-          else push({ kind: "notice", id: nextId++, text: `FAILOVER · ${e.provider.toUpperCase()} · ${e.reason}` });
+          if (e.event === "failover") {
+            push({ kind: "notice", id: nextId++, text: `FAILOVER · ${(e.provider ?? "brain").toUpperCase()} · ${e.reason ?? ""}` });
+          }
+          // other brain events (answered, routed) are journal facts
           break;
         case "brain_models":
           setBrainModels((m) => ({ ...m, [e.id]: { list: e.models, error: e.error, loading: false } }));
@@ -611,8 +653,41 @@ export default function Syrax() {
           setBrainTests((t) => ({ ...t, [e.id]: rest }));
           break;
         }
+        case "android": {
+          const { type: _a, ...st } = e;
+          void _a;
+          setAndroid(st);
+          setAndroidBusy(false);
+          break;
+        }
+        case "camera_frame_request": {
+          // SYRAX's camera action could not open the camera this HUD holds: one frame of what it shows, or "" when off
+          const v = videoRef.current;
+          let data = "";
+          if (v && v.srcObject && v.videoWidth) {
+            const c = document.createElement("canvas");
+            c.width = v.videoWidth;
+            c.height = v.videoHeight;
+            c.getContext("2d")?.drawImage(v, 0, 0);
+            const url = c.toDataURL("image/jpeg", 0.85);
+            data = url.slice(url.indexOf(",") + 1);
+          }
+          clientRef.current?.send({ type: "camera_frame", id: e.id, data });
+          break;
+        }
+        case "vitals": {
+          const { type: _v, ...snap } = e;
+          void _v;
+          setVitals(snap);
+          break;
+        }
         case "state":
           setAgent(e.state);
+          if (e.step != null) setTaskStep(e.step);
+          if (e.state === "idle") {
+            setTaskStart(null);
+            setTaskStep(null);
+          } else if (e.state === "thinking" || e.state === "acting") setTaskStart((st) => st ?? Date.now());
           setActiveTool(e.state === "acting" ? (e.tool ?? null) : null);
           if (settlesPendingAsk("state", { state: e.state })) setPendingAsk(null); // a timed-out question must not take the next command
           if (e.state === "idle") {
@@ -631,6 +706,7 @@ export default function Syrax() {
           break;
         case "tool_start":
           sceneRef.current?.pulse(0.8);
+          play("tool");
           push({
             kind: "tool",
             id: nextId++,
@@ -651,6 +727,7 @@ export default function Syrax() {
           );
           break;
         case "ask":
+          play("ask");
           setPendingAsk(e.question);
           push({ kind: "ask", id: nextId++, text: e.question });
           say(e.question);
@@ -658,7 +735,10 @@ export default function Syrax() {
           break;
         case "final":
           if (e.text) {
+            play("reply");
             push({ kind: "reply", id: nextId++, text: e.text });
+            const said = e.text;
+            setCaption((c) => ({ text: said, nonce: c.nonce + 1 }));
             say(e.text);
           }
           break;
@@ -680,7 +760,7 @@ export default function Syrax() {
           console.debug("[SYRAX] unhandled server message", (e as { type?: string }).type);
       }
     },
-    [push, say],
+    [play, push, say],
   );
 
   // Orb scene lifecycle; rebuilt when the theme changes
@@ -704,6 +784,25 @@ export default function Syrax() {
       sceneRef.current = null;
     };
   }, [theme]);
+
+  // What SYRAX is doing, written around the core: the running tool, or THINKING
+  useEffect(() => {
+    const text = agent === "acting" ? (activeTool ?? "ACTING") : agent === "thinking" ? "THINKING" : null;
+    sceneRef.current?.setActivity(text);
+  }, [agent, activeTool, theme]);
+
+  // Live readings for the gauges and JARVIS's data ring: asked every 5 s while the link is up
+  useEffect(() => {
+    if (link !== "online") return;
+    const ask = () => clientRef.current?.send({ type: "vitals" });
+    ask();
+    const id = setInterval(ask, 5000);
+    return () => clearInterval(id);
+  }, [link]);
+
+  useEffect(() => {
+    sceneRef.current?.setReadout(readoutLine(vitals));
+  }, [vitals, theme]);
 
   /** Send a control message; when the link is down say so (audit 2026-10-29: E-STOP, the level, AUTO and the rest
    * were dropped without a word while offline, and the operator could believe a stop had been sent). */
@@ -752,6 +851,14 @@ export default function Syrax() {
       const asking = pendingAskRef.current !== null;
       const now = Date.now();
       if (isResubmit(lastSentRef.current, text, now, asking)) return; // a double Enter or click: queued once
+      // Live 2026-11-04: with TALK on, a typed "can you see my live screen?" went to the agent, which never sees the
+      // shared screen, and it answered no. While live talk is open, typed lines join that conversation instead.
+      if (!asking && !voice && talkRef.current?.say(text)) {
+        push({ kind: "user", id: nextId++, text });
+        lastSentRef.current = { text, at: now };
+        setInput("");
+        return;
+      }
       const sent = asking
         ? client.send({ type: "answer", text })
         : client.send({ type: "task", text, voice, queue: true }); // never lost while SYRAX works: it waits its turn
@@ -813,6 +920,14 @@ export default function Syrax() {
     clientRef.current?.send(mindRequest(tab));
   }, []);
 
+  const openAndroid = useCallback(() => {
+    clientRef.current?.send({ type: "android_status" });
+    setAndroidOpen(true);
+  }, []);
+  const androidSend = useCallback((msg: ClientMessage) => {
+    if (clientRef.current?.send(msg)) setAndroidBusy(true);
+  }, []);
+
   const openBrain = useCallback(() => {
     clientRef.current?.send({ type: "brains_get" });
     setBrainOpen(true);
@@ -822,6 +937,30 @@ export default function Syrax() {
     setBooting(false);
     if (audioReady()) say(AWAKENINGS[Math.floor(Math.random() * AWAKENINGS.length)], { followUp: false });
   }, [say]);
+
+  // A file the human gives SYRAX (dropped anywhere, or an image pasted into the command bar): saved in the
+  // workspace and named in the command line. A picture or a video is named as one, so SYRAX looks at it (desktop view).
+  const uploadFile = useCallback(
+    async (file: File) => {
+      const name = file.name || `pasted-${Date.now()}.${(file.type.split("/")[1] || "png").replace("jpeg", "jpg")}`;
+      try {
+        const res = await fetch(`${API_BASE}/upload?name=${encodeURIComponent(name)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/octet-stream" },
+          body: file,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { path } = (await res.json()) as { path: string };
+        push({ kind: "notice", id: nextId++, text: `FILE · ${name} saved to ${path}` });
+        const what = file.type.startsWith("image/") ? "the image" : file.type.startsWith("video/") ? "the video" : "the file";
+        setInput((v) => `${v ? `${v} ` : ""}I shared ${what} ${path}. `);
+        inputRef.current?.focus();
+      } catch (err) {
+        push({ kind: "error", id: nextId++, text: `UPLOAD · ${name} failed (${String(err)})` });
+      }
+    },
+    [push],
+  );
 
   // Drop a file anywhere on SYRAX: it is saved in the workspace and named in the command line,
   // so the human only says what to do with it (feature catalog: file_processor).
@@ -840,21 +979,7 @@ export default function Syrax() {
       e.preventDefault();
       setDropping(false);
       const file = e.dataTransfer?.files[0];
-      if (!file) return;
-      try {
-        const res = await fetch(`${API_BASE}/upload?name=${encodeURIComponent(file.name)}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/octet-stream" },
-          body: file,
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const { path } = (await res.json()) as { path: string };
-        push({ kind: "notice", id: nextId++, text: `FILE · ${file.name} saved to ${path}` });
-        setInput((v) => `${v ? `${v} ` : ""}I dropped the file ${path}. `);
-        inputRef.current?.focus();
-      } catch (err) {
-        push({ kind: "error", id: nextId++, text: `UPLOAD · ${file.name} failed (${String(err)})` });
-      }
+      if (file) await uploadFile(file);
     };
     window.addEventListener("dragover", over);
     window.addEventListener("dragleave", leave);
@@ -864,7 +989,7 @@ export default function Syrax() {
       window.removeEventListener("dragleave", leave);
       window.removeEventListener("drop", drop);
     };
-  }, [push]);
+  }, [uploadFile]);
 
   // Screen reacts while SYRAX speaks (glitch, scanlines, red bleed).
   useEffect(() => {
@@ -912,7 +1037,7 @@ export default function Syrax() {
           break;
       }
     },
-    [arm, push, say, stopTask, submit],
+    [arm, say, stopTask, submit],
   );
 
   const ear = useHandsFree({
@@ -958,7 +1083,7 @@ export default function Syrax() {
   const toggleTalk = useCallback(() => {
     if (talkRef.current) {
       talkRef.current.stop();
-      return;
+      return undefined;
     }
     stopSpeaking();
     if (handsFreeRef.current) {
@@ -979,10 +1104,25 @@ export default function Syrax() {
         if (e.said) push({ kind: "reply", id: nextId++, text: e.said });
       },
       onLevel: (l) => sceneRef.current?.setLevel(l),
+      onScreen: setSharing,
+      camera: () => videoRef.current,
     });
     talkRef.current = live;
     void live.start();
+    return live;
   }, [arm, earStop, push]);
+
+  // Live screen (2026-11-04): SYRAX sees the shared screen in live talk, about a picture a second. It starts
+  // live talk when it is off; both asks (microphone, screen picker) come from this one click.
+  const toggleScreen = useCallback(() => {
+    const now = talkRef.current;
+    if (now?.sharing) {
+      now.stopScreen();
+      return;
+    }
+    const live = now ?? toggleTalk();
+    if (live) void live.shareScreen();
+  }, [toggleTalk]);
 
   useEffect(() => {
     return () => {
@@ -1058,7 +1198,7 @@ export default function Syrax() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (brainOpen || selfOpen || mindTab || booting) return; // the panel / boot screen own the keyboard
+      if (paletteOpen || brainOpen || selfOpen || androidOpen || mindTab || booting) return; // the panel / boot screen own the keyboard
       if (isTypingTarget(e.target)) {
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
@@ -1112,21 +1252,136 @@ export default function Syrax() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [booting, brainOpen, selfOpen, mindTab, openBrain, openMind, openSelf, stopTask, toggleGestures, toggleHandsFree]);
+  }, [booting, brainOpen, selfOpen, androidOpen, mindTab, paletteOpen, openBrain, openMind, openSelf, stopTask, toggleGestures, toggleHandsFree]);
 
   const cameraOn = camera === "on";
 
   const enabledBrains = brains?.providers.filter((p) => p.enabled) ?? [];
   const onlyFallbackBrains =
     enabledBrains.length > 0 && enabledBrains.every((p) => p.tier === "no-key" || p.tier === "local");
-  const firstReady = enabledBrains.find((p) => p.status === "ready") ?? enabledBrains[0];
-  const brainLine = activeBrain
-    ? `${activeBrain.label.toUpperCase()} · ${activeBrain.model}`
-    : firstReady
-      ? `${firstReady.label.toUpperCase()} · ${firstReady.model}`
-      : brains
-        ? "NONE"
-        : "";
+
+  // ——— command palette (Ctrl+K): every HUD control in one searchable list ———
+  usePaletteHotkey(
+    useCallback(() => {
+      if (!booting) setPaletteOpen((o) => !o);
+    }, [booting]),
+  );
+  const paletteCommands = useMemo<PaletteCommand[]>(
+    () => [
+      { id: "panel.brain", label: "Open Brain settings", section: "Panels", hint: "B", keywords: ["model", "llm", "provider"] },
+      { id: "panel.self", label: "Open Self model", section: "Panels", hint: "S" },
+      { id: "mind.briefing", label: "MIND · Briefing", section: "Mind", keywords: ["today", "summary"] },
+      { id: "mind.objectives", label: "MIND · Objectives", section: "Mind", hint: "O", keywords: ["goals"] },
+      { id: "mind.proposals", label: "MIND · Proposals", section: "Mind" },
+      { id: "mind.skills", label: "MIND · Skills", section: "Mind" },
+      { id: "mind.memory", label: "MIND · Memory", section: "Mind" },
+      { id: "mind.brains", label: "MIND · Brains", section: "Mind" },
+      {
+        id: "safety.estop",
+        label: estopOn(autonomy) ? "Clear emergency stop" : "Emergency stop",
+        section: "Safety",
+        keywords: ["estop", "kill", "halt", "panic"],
+        danger: !estopOn(autonomy),
+      },
+      { id: "task.abort", label: "Abort current task", section: "Safety", hint: "Esc", danger: true, disabled: !busy },
+      { id: "auto.toggle", label: autonomy?.enabled ? "Autonomy off" : "Autonomy on", section: "Autonomy", keywords: ["autonomous"] },
+      { id: "auto.up", label: "Autonomy level up", section: "Autonomy", keywords: ["raise"] },
+      { id: "auto.down", label: "Autonomy level down", section: "Autonomy", keywords: ["lower"] },
+      { id: "theme.ultron", label: "Theme: ULTRON", section: "Appearance", keywords: ["red"], disabled: theme === "ultron" },
+      { id: "theme.jarvis", label: "Theme: JARVIS", section: "Appearance", keywords: ["cyan", "blue"], disabled: theme === "jarvis" },
+      { id: "voice.speak", label: voiceOn ? "Speech off" : "Speech on", section: "Voice", keywords: ["tts", "mute", "speak"] },
+      { id: "voice.sfx", label: sfxOn ? "Sound effects off" : "Sound effects on", section: "Voice", keywords: ["sfx", "audio"] },
+      { id: "voice.mic", label: handsFree ? "Hands-free mic off" : "Hands-free mic on", section: "Voice", hint: "M", keywords: ["listen", "microphone"] },
+      { id: "voice.talk", label: talk === "on" ? "Stop live talk" : "Start live talk", section: "Voice", keywords: ["live", "conversation"], disabled: link !== "online" },
+      { id: "view.gestures", label: cameraOn ? "Gestures off" : "Gestures on", section: "View", hint: "G", keywords: ["camera", "hands"] },
+      { id: "view.console", label: consoleOpen ? "Hide log console" : "Show log console", section: "View", hint: "C", keywords: ["log"] },
+      { id: "view.zoomIn", label: "Zoom in", section: "View", hint: "+" },
+      { id: "view.zoomOut", label: "Zoom out", section: "View", hint: "−" },
+      { id: "view.reset", label: "Reset view", section: "View", hint: "R" },
+      { id: "log.live", label: "Log: Live", section: "Log" },
+      { id: "log.history", label: "Log: History", section: "Log", keywords: ["tasks", "past"] },
+      { id: "log.today", label: "Log: Today", section: "Log" },
+      { id: "log.wipe", label: "Wipe conversation memory", section: "Log", keywords: ["clear", "reset"], danger: true },
+    ],
+    [autonomy, busy, theme, voiceOn, sfxOn, handsFree, talk, link, cameraOn, consoleOpen],
+  );
+  const runPalette = useCallback(
+    (id: string) => {
+      if (id.startsWith("ask:")) {
+        submit(id.slice(4));
+        return;
+      }
+      if (id.startsWith("mind.")) {
+        openMind(id.slice(5) as MindTab);
+        return;
+      }
+      if (id.startsWith("log.")) {
+        if (id === "log.wipe") resetMemory();
+        else {
+          setConsoleOpen(true);
+          showTab(id.slice(4) as ConsoleTab);
+        }
+        return;
+      }
+      switch (id) {
+        case "panel.brain":
+          openBrain();
+          break;
+        case "panel.self":
+          openSelf();
+          break;
+        case "safety.estop":
+          command(estopMessage(autonomy), "the emergency stop");
+          break;
+        case "task.abort":
+          stopTask("command palette");
+          break;
+        case "auto.toggle":
+          command({ type: "autonomy", enabled: !autonomy?.enabled }, "the autonomy switch");
+          break;
+        case "auto.up":
+          command(levelStep(autonomy, 1), "the autonomy level");
+          break;
+        case "auto.down":
+          command(levelStep(autonomy, -1), "the autonomy level");
+          break;
+        case "theme.ultron":
+          setTheme("ultron");
+          break;
+        case "theme.jarvis":
+          setTheme("jarvis");
+          break;
+        case "voice.speak":
+          setVoiceOn((v) => !v);
+          break;
+        case "voice.sfx":
+          setSfxOn((v) => !v);
+          break;
+        case "voice.mic":
+          toggleHandsFree();
+          break;
+        case "voice.talk":
+          toggleTalk();
+          break;
+        case "view.gestures":
+          toggleGestures();
+          break;
+        case "view.console":
+          setConsoleOpen((v) => !v);
+          break;
+        case "view.zoomIn":
+          sceneRef.current?.zoomIn();
+          break;
+        case "view.zoomOut":
+          sceneRef.current?.zoomOut();
+          break;
+        case "view.reset":
+          sceneRef.current?.resetView();
+          break;
+      }
+    },
+    [autonomy, command, openBrain, openMind, openSelf, resetMemory, showTab, stopTask, submit, toggleGestures, toggleHandsFree, toggleTalk],
+  );
 
   const statusText =
     link !== "online"
@@ -1158,6 +1413,19 @@ export default function Syrax() {
   return (
     <>
       <div ref={containerRef} className="orb-root" />
+      <Guard name="diagnostics"><ThemeFx theme={theme} vitals={vitals} /></Guard>
+      <Guard name="task arc"><TaskArc
+        active={link === "online" && (agent === "thinking" || agent === "acting")}
+        phase={phase?.phase ?? null}
+        step={taskStep}
+        tool={phase?.tool ?? activeTool ?? null}
+        target={phase?.target ?? null}
+        startedAt={taskStart}
+        top={18}
+      /></Guard>
+      <Guard name="captions"><Captions text={caption.text} nonce={caption.nonce} enabled /></Guard>
+      <Guard name="toasts"><Toasts toasts={toasts} onDismiss={dismissToastId} /></Guard>
+      <Guard name="command palette"><CommandPalette open={paletteOpen} commands={paletteCommands} onRun={runPalette} onClose={() => setPaletteOpen(false)} /></Guard>
 
       {dropping && <div className="drop-overlay">DROP THE FILE · SYRAX KEEPS IT IN THE WORKSPACE</div>}
       <div className="overlay-vignette" />
@@ -1168,7 +1436,7 @@ export default function Syrax() {
         <UltronEyes mode={orbMode} />
         <div className="title-text">
           <span className="title-name">SYRAX</span>
-          <span className="hud-subtitle">SON OF ULTRON</span>
+          <span className="hud-subtitle">{theme === "jarvis" ? "AT YOUR SERVICE" : "SON OF ULTRON"}</span>
         </div>
       </div>
 
@@ -1177,25 +1445,10 @@ export default function Syrax() {
           <span className="status-dot" />
           {statusText}
         </div>
-        {link === "online" && phase && (
-          <div className="status-meta status-phase" aria-label={`task phase: ${phase.phase}`}>
-            {TASK_PHASES.map((p) => (
-              <span key={p} className={p === phase.phase ? "on" : undefined}>
-                {p.toUpperCase()}
-              </span>
-            ))}
-            {phase.target && (
-              <div className="phase-target">
-                {phase.tool ? `${phase.tool} · ` : ""}
-                {phase.target.length > 60 ? `…${phase.target.slice(-59)}` : phase.target}
-              </div>
-            )}
+        {link === "online" && (toolCount > 0 || queued > 0) && (
+          <div className="status-meta">
+            {toolCount} TOOLS{queued > 0 ? ` · QUEUE ${queued}` : ""}
           </div>
-        )}
-        {link === "online" && brainLine && (
-          <button type="button" className="status-meta status-brain" onClick={openBrain} title="Brain settings (B)">
-            BRAIN · {brainLine} · {toolCount} TOOLS{queued > 0 ? ` · QUEUE ${queued}` : ""}
-          </button>
         )}
       </div>
 
@@ -1256,7 +1509,7 @@ export default function Syrax() {
         )}
         {consoleOpen && consoleTab === "live" && (
           <Stage
-            elements={[...stage].sort((a, b) => b.priority - a.priority || a.created - b.created)}
+            elements={stageElements(stage)}
             onDismiss={(id) => clientRef.current?.send({ type: "presentation_feedback", presentation_id: id, action: "dismiss" })}
           />
         )}
@@ -1456,17 +1709,27 @@ export default function Syrax() {
             placeholder={
               pendingAsk
                 ? "Answer SYRAX…"
-                : handsFree
+                : talk === "on"
+                  ? "Talk or type…"
+                  : handsFree
                   ? wakeWord
                     ? 'Say "SYRAX, …" or type  ( / to focus )'
                     : "Just talk, or type  ( / to focus )"
-                  : "Command SYRAX…  ( / to focus · M for voice )"
+                  : "Command SYRAX…  ( / · M voice · Ctrl+K )"
             }
             onChange={(e) => setInput(e.target.value)}
+            onPaste={(e) => {
+              const file = Array.from(e.clipboardData.files).find((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
+              if (!file) return; // plain text pastes as usual
+              e.preventDefault();
+              void uploadFile(file);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                submit();
+                // only blank lines: clear them, so the bar shrinks back to one line (live 2026-11-04 it stayed tall)
+                if (!input.trim()) setInput("");
+                else submit();
               }
             }}
             spellCheck={false}
@@ -1491,6 +1754,16 @@ export default function Syrax() {
             title="Live talk: a real-time conversation through Gemini Live; talk over it to interrupt. While it is on, the microphone streams to Google."
           >
             {talk === "connecting" ? "…" : talk === "on" ? "◉ TALKING" : "TALK"}
+          </button>
+          <button
+            type="button"
+            className={`hud-btn mic-btn${sharing ? " hearing" : ""}`}
+            aria-pressed={sharing}
+            disabled={link !== "online"}
+            onClick={toggleScreen}
+            title="Live screen: SYRAX sees your screen in real time while you talk (starts TALK). While it is on, about one picture a second goes to Google."
+          >
+            {sharing ? "◉ SCREEN" : "SCREEN"}
           </button>
           <button
             type="button"
@@ -1537,6 +1810,10 @@ export default function Syrax() {
           <button type="button" className="hud-btn" onClick={() => openMind("objectives")} title="Objectives, proposals, skills, briefing (O)">
             MIND
           </button>
+          <button type="button" className="hud-btn" onClick={openAndroid} title="Connect your Android phone">
+            ANDROID
+          </button>
+          <div className="rail-sep" aria-hidden="true" />
           <button
             type="button"
             className="hud-btn"
@@ -1547,6 +1824,8 @@ export default function Syrax() {
           >
             {estopLabel(autonomy)}
           </button>
+          <div className="rail-sep" aria-hidden="true" />
+          <div className="rail-level">
           <button
             type="button"
             className="hud-btn"
@@ -1566,6 +1845,7 @@ export default function Syrax() {
           >
             L+
           </button>
+          </div>
           <button
             type="button"
             className="hud-btn"
@@ -1587,16 +1867,26 @@ export default function Syrax() {
               {startup.enabled ? "BOOT ON" : "BOOT OFF"}
             </button>
           )}
+          <div className="rail-sep" aria-hidden="true" />
           <button
             type="button"
             className="hud-btn"
-            onClick={() => setTheme((t) => (t === "ultron" ? "classic" : "ultron"))}
+            onClick={() => setTheme((t) => (t === "ultron" ? "jarvis" : "ultron"))}
             title="Switch look"
           >
-            {theme === "ultron" ? "ULTRON" : "CLASSIC"}
+            {theme === "ultron" ? "ULTRON" : "JARVIS"}
           </button>
           <button type="button" className="hud-btn" aria-pressed={voiceOn} onClick={() => setVoiceOn((v) => !v)}>
             {voiceOn ? "SPEAK ON" : "SPEAK OFF"}
+          </button>
+          <button
+            type="button"
+            className="hud-btn"
+            aria-pressed={sfxOn}
+            onClick={() => setSfxOn((v) => !v)}
+            title="Theme sound effects"
+          >
+            {sfxOn ? "SFX ON" : "SFX OFF"}
           </button>
           {voicePick && voicePick.voices.length > 1 && (
             <button
@@ -1662,6 +1952,19 @@ export default function Syrax() {
         />
       )}
 
+      {androidOpen && (
+        <AndroidPanel
+          state={android}
+          busy={androidBusy}
+          onFind={() => androidSend({ type: "android_find" })}
+          onPair={(host, port, code) => androidSend({ type: "android_pair", host, port, code })}
+          onConnect={(host, port) => androidSend({ type: "android_connect", host, port })}
+          onDisconnect={() => androidSend({ type: "android_disconnect" })}
+          onRefresh={() => androidSend({ type: "android_status" })}
+          onClose={() => setAndroidOpen(false)}
+        />
+      )}
+
       {selfOpen && (
         <SelfPanel
           model={selfModel}
@@ -1687,7 +1990,7 @@ export default function Syrax() {
         </button>
       )}
 
-      {booting && <BootSequence onDone={endBoot} />}
+      {booting && <BootSequence onDone={endBoot} theme={theme} />}
     </>
   );
 }

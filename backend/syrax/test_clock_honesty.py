@@ -36,3 +36,21 @@ def test_every_task_s_brain_gets_the_start_time_and_the_rule(script):
     system = core_mod.get_core().agent.system_prompt
     assert re.search(r"This task started at " + CLOCK.pattern, system)
     assert "never state a time or date you did not read" in system
+
+
+def test_the_time_in_another_place_is_read_not_computed():
+    """Live 2026-11-01: "What time is it now in Tokyo?" read the local clock and answered "Tokyo is currently 14 hours
+    and 43 minutes ahead of UTC+06:00". The brain did zone arithmetic and got it wrong; the zone database does it now."""
+    from syrax.desktop import resolve_zone, zone_clock
+
+    assert resolve_zone("Tokyo") == "Asia/Tokyo" and resolve_zone("new york") == "America/New_York"
+    assert resolve_zone("Europe/London") == "Europe/London" and resolve_zone("utc") == "UTC"
+    assert resolve_zone("Atlantis") is None
+    t = dt.datetime(2026, 11, 1, 18, 0, 0, tzinfo=dt.timezone(dt.timedelta(hours=6)))
+    assert zone_clock("Asia/Tokyo", t) == "Sunday 2026-11-01 21:00:00 (UTC+09:00)"
+    loop = asyncio.new_event_loop()
+    out = loop.run_until_complete(DesktopControl().execute(action="system_info", target="Tokyo")).output
+    first, second = out.splitlines()[:2]
+    assert first.startswith("Local time: ") and second.startswith("Time in Asia/Tokyo: ") and "(UTC+09:00)" in second
+    bad = loop.run_until_complete(DesktopControl().execute(action="system_info", target="Atlantis"))
+    assert bad.error and "Atlantis" in bad.error and "zone" in bad.error

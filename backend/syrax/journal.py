@@ -922,6 +922,10 @@ class Journal:
         if status in TERMINAL and type_ not in TERMINAL_OK:
             raise JournalError(f"task {row['task_id']} is {status}; refusing {type_}")
         upd: Dict[str, Any] = {"updated": ts, "last_event_id": ev_id}
+        if row["last_event_id"] is not None and row["last_event_id"] < 0:
+            # a task merged from another PC's journal is marked by its negative id; a late event (a reflection, a
+            # skill verdict) must not turn it into this PC's own (audit 2026-11-01, LIFE-7)
+            del upd["last_event_id"]
         new_status = status
         if type_ == "task.started":
             new_status = "IN_PROGRESS"
@@ -1360,6 +1364,13 @@ class Journal:
             state = "RESUMABLE"
         else:
             state = "UNCERTAIN"
+        if state == "RESUMABLE" and cur.execute(
+                "SELECT 1 FROM events WHERE task_id=? AND type='final' LIMIT 1", (row["task_id"],)).fetchone():
+            # Audit 2026-11-01 (LIFE-9): the task gave its final answer but its end was never written (the terminal
+            # mark failed); a resume would redo finished work, sends included
+            state, verdict = "UNCERTAIN", {**verdict, "checks": {
+                **verdict.get("checks", {}), "reason": "it finished (its final answer is journaled) but its end was "
+                "not recorded; check the result before running it again"}}
         if state == "RESUMABLE" and not verdict.get("intent"):
             # Audit 2026-11-01 (LIFE-2): a send left open by an earlier step (it timed out, the task went on) made no
             # difference when the crash came during another call; (LIFE-1) a send that finished after the last

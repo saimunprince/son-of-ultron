@@ -65,6 +65,29 @@ if MANAGED:
     os.environ["BU_CDP_URL"] = CDP_URL
 
 _proc: Optional[subprocess.Popen] = None
+# Audit 2026-11-01 (I-12): a browser left by a crashed SYRAX answered on the port and was adopted, but shutdown only
+# closed `_proc`, so it outlived every later SYRAX. Its pid is kept in the profile; an adopted one is closed too.
+PIDFILE_NAME = "syrax-browser.pid"
+_adopted: Optional[int] = None
+
+
+def _ours(pid: int) -> bool:
+    """Whether `pid` is still a browser on SYRAX's profile (a pid the system reused for something else is not)."""
+    try:
+        import psutil
+
+        return any(str(PROFILE) in part for part in psutil.Process(pid).cmdline())
+    except Exception:
+        return False
+
+
+def _adopt() -> None:
+    global _adopted
+    try:
+        pid = int((PROFILE / PIDFILE_NAME).read_text().strip())
+    except (OSError, ValueError):
+        return
+    _adopted = pid if _ours(pid) else None
 _lock = asyncio.Lock()
 
 
@@ -130,10 +153,13 @@ async def _alive() -> bool:
 
 async def ensure_browser() -> Optional[str]:
     """Make sure the SYRAX browser is up. Returns an error message or None."""
+    global _proc
     if not MANAGED:
         return None
     async with _lock:
         if await _alive():
+            if _proc is None and _adopted is None:
+                _adopt()
             return None
         chrome = find_chrome()
         if not chrome:
@@ -155,10 +181,13 @@ async def ensure_browser() -> Optional[str]:
         if HEADLESS:
             args.append("--headless=new")
         args.append("about:blank")
-        global _proc
         logger.info(f"Starting SYRAX browser: {chrome} (port {PORT})")
         group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
         _proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **group)
+        try:
+            (PROFILE / PIDFILE_NAME).write_text(str(_proc.pid))
+        except OSError:
+            pass
         for _ in range(60):
             if await _alive():
                 return None
@@ -168,9 +197,28 @@ async def ensure_browser() -> Optional[str]:
         return f"SYRAX browser did not open its debug port {PORT} in 15s."
 
 
+def _close_adopted() -> None:
+    global _adopted
+    pid, _adopted = _adopted, None
+    if pid is None or not _ours(pid):
+        return
+    try:
+        if WINDOWS:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, timeout=15)
+        else:
+            os.killpg(pid, signal.SIGTERM)  # Chrome runs in its own session, so its pid is its group
+    except (ProcessLookupError, PermissionError, OSError, subprocess.TimeoutExpired):
+        pass
+    try:
+        (PROFILE / PIDFILE_NAME).unlink()
+    except OSError:
+        pass
+
+
 def shutdown() -> None:
-    """Close the SYRAX browser and all its helper processes."""
+    """Close the SYRAX browser and all its helper processes, also one adopted from an earlier SYRAX."""
     global _proc
+    _close_adopted()
     if _proc and _proc.poll() is None:
         if WINDOWS:  # taskkill /T takes the renderer and GPU helpers down with the browser
             subprocess.run(["taskkill", "/PID", str(_proc.pid), "/T", "/F"], capture_output=True, timeout=15)

@@ -139,3 +139,18 @@ def test_the_service_launcher_turns_publishing_on(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "Component", Fake)
     monkeypatch.setattr(mod.time, "sleep", lambda s: None)
     assert mod.launch(dev=False, service=True) == 0 and seen[0] == "1"
+
+
+def test_a_later_review_opt_out_does_not_skip_the_ledger_review(tmp_path, monkeypatch):
+    """Audit 2026-11-01 (F13): publish built a fresh DevLoop, which read SYRAX_REVIEW when it published, not at
+    start: a later SYRAX_REVIEW=0 made the reviewer skip and the ledger commit went in unreviewed."""
+    root = repo(tmp_path)
+    j = Journal(tmp_path / "j.db")
+    head0 = git(root, "rev-parse", "HEAD")
+    monkeypatch.setenv("SYRAX_REVIEW", "0")  # set after start, as a later os.environ change would
+
+    async def skipping(info, told, authors):
+        return {"skipped": "SYRAX_REVIEW=0"}
+
+    rep = asyncio.run(ledger.publish(j, root=root, gates=lambda: PASS, reviewer=skipping, review_opt_out=False))
+    assert rep["outcome"] != "COMMITTED" and git(root, "rev-parse", "HEAD") == head0

@@ -44,6 +44,55 @@ TEST_FALLBACK = ("The tests that cover this change still fail (the last test run
                  "so the change is not done.")
 
 
+# Live 2026-11-01: the review rejected a new skill (FAILED, not registered) and the final said "I built a factorial
+# computation skill"; it took the owner's "you are lied" to correct it. A skill is claimed built only after a
+# skill_create in the task was VERIFIED.
+SKILL_CLAIM = re.compile(
+    r"\bi(?:'ve| have)? (?:built|created|made|added|developed|written|wrote|registered|installed)\b[^.!?\n]{0,60}\bskill\b"
+    r"|\bskill\b[^.!?\n]{0,40}\b(?:is|was|has been|is now) (?:now )?(?:ready|built|created|registered|live|working|installed|available|added)\b",
+    re.I)
+SKILL_HONEST = re.compile(r"\b(?:fail\w*|not|n't|never|refused|rejected|could not|cannot|unable)\b", re.I)
+SKILL_CLAIM_ASK = (
+    "Your answer says a skill was built, but no skill_create in this task was VERIFIED: the skill is not registered. "
+    "Rewrite the final answer honestly: what failed and at which stage, and that the skill is not available. No tool calls."
+)
+SKILL_FALLBACK = ("The skill was not built: its skill_create did not pass (the stage and the reason are in this task's "
+                  "history), so it is not registered and cannot be used yet.")
+
+# Live 2026-11-03: Groq, writing a wrap-up while Gemini was busy, answered with a line about the task instead of the
+# answer: "No researched fact was performed, so there is no result to provide.", "The request is complete and no
+# further action is required." Such a reply is sent back once with the human's own request.
+NON_ANSWER = re.compile(
+    r"\bno (?:result|answer|output|response)s? (?:to (?:provide|report|give|share)|(?:is |was )?(?:available|produced))\b"
+    r"|\bno (?:researched|research|further) (?:facts?|actions?|steps?) (?:(?:was|were|is|are) )?(?:performed|required|needed|necessary)\b"
+    r"|\b(?:the )?(?:request|task|interaction) (?:is|has been|was) (?:complete|completed|done|finished)\b[^.!?]{0,40}"
+    r"\b(?:no further|nothing (?:further|more|else))\b"
+    # live 2026-11-04: Ollama answered a WhatsApp request with the persona's slogan alone
+    r"|^\W*(?:i am|i'm) syrax\W*(?:(?:son|blood) of ultron\W*)?$"
+    # live 2026-11-04: Groq answered "heyyy" with a report on the chat ("Original request: ... Observations: ...")
+    r"|^\W*(?:original )?request\s*:[^\n]*(?:\n|.)*?\bobservations?\s*:",
+    re.I)
+NON_ANSWER_ASK = (
+    "Your reply talked about the task instead of answering the human. Their request was: \"{request}\". "
+    "Answer it now, directly, from the observations above (or, if it was only a greeting or chat, reply to it "
+    "naturally). No narration about the task, no tool calls."
+)
+
+def skill_claimed(text: str) -> bool:
+    """Whether a sentence of `text` says a skill was built, without saying in the same sentence that it failed."""
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text or ""):
+        if SKILL_CLAIM.search(sentence) and not SKILL_HONEST.search(sentence):
+            return True
+    return False
+
+
+def skill_state(name: str, result: str) -> Optional[str]:
+    """"verified" or "failed" for a skill_create observation; None for any other tool."""
+    if name != "skill_create":
+        return None
+    return "verified" if re.search(r": VERIFIED \(", result or "") else "failed"
+
+
 # Audit 2026-10-25 ("Task runtime", follow-up): tests run through python_execute (pytest.main, a subprocess pytest)
 # were not tracked, so "tests pass" after such a failing run stood. The summary line pytest prints ("1 failed, 46
 # passed in 1.20s", "2 passed in 0.03s", "1 error in 0.20s") is read from a python_execute observation; the last
@@ -409,7 +458,8 @@ _NOT_MEDIA = (r"(?!\s+(?:for|against|with|as|at|alongside|under|well|badly|poorl
               r"|together|around|(?:a |an |the |in the |in a )?(?:game|games|match|matches|role|part|lead|league|season"
               r"|final|tournament|football|soccer|cricket|chess|tennis|basketball|golf|team)\b))")
 PLAYING_CLAIM = re.compile(
-    rf"(?<!nothing )(?<!nothing that )(?<!no song )(?<!no music )\b(?:is|are|'s) (?:now )?playing\b{_NOT_MEDIA}"
+    rf"(?<!nothing )(?<!nothing that )(?<!no song )(?<!no music )(?<!no media )(?<!no audio )(?<!no video )(?<!no track )"
+    rf"\b(?:is|are|'s) (?:now )?playing\b{_NOT_MEDIA}"
     r"|\bnow playing\b|\bplays now\b|\b(?:is|are) (?:now )?streaming\b"
     r"|\b(?:music|song|track|stream|playback|video|playlist|audio)s? (?:is |has |have )?(?:started|summoned|initiated|resumed|forced)\b"
     r"|\b(?:started|resumed|initiated) (?:the |your )?(?:music|song|track|stream|playback|video|playlist|audio)\b",
@@ -467,6 +517,17 @@ SELF_NUDGE = (
     "your measured limits. Keep your voice; drop any claim the evidence does not support."
 )
 SELF_NOTE = " (Not verified: nothing in this task read SYRAX's self-model, which lists measured limits.)"
+# Live 2026-11-01: "What can't you do? Give two real limits." was answered with two generic lines and no tool call;
+# the measured limits are in self_inspect. A question about SYRAX's limits or weaknesses is answered from them.
+LIMITS_ASKED = re.compile(
+    r"\bwhat (?:can't|cannot|can not|can ?not) you\b|\byour (?:own )?(?:limit|weakness|weak (?:spot|point)|shortcoming|flaw)"
+    r"|\bwhat are you (?:bad|weak|worst) at\b|\b(?:your|you) (?:weakest|worst)\b|\bwhat is your weakest\b"
+    r"|\bwhere do you (?:fail|struggle)\b|\bwhat do you (?:fail|struggle) (?:at|with)\b", re.I)
+LIMITS_NUDGE = (
+    "[SYRAX check, not a new request] The human asked about your limits or weaknesses, and nothing in this task read "
+    "them. Call `self_inspect` and answer from the limits it measured (tools that fail, what is missing on this PC), "
+    "with numbers. Keep your voice."
+)
 # live 2026-10-26 16:02: sent back, the brain read self_inspect and repeated "I control everything ... bends to my command"
 SELF_NOTE_READ = " (Not supported: SYRAX's self-model, read in this task, lists measured limits.)"
 # Live 2026-10-25 (Prince): "system check ." -> "Peace in our time. All systems are operational." with no tool call.

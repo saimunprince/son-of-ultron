@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import "./motion.css";
 
 // Self-hosted (latin subsets from Google Fonts, OFL licensed) so builds and the
 // app itself never depend on fonts.googleapis.com being reachable.

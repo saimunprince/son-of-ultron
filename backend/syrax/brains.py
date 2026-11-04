@@ -153,6 +153,12 @@ def _first_sentence(text: str, limit: int = 200) -> str:
 # Live 2026-10-31: 43 tools, and even their compact manual left a request at ~8,619 tokens, over Groq's 8,000.
 # For a brain the compact manual does not fit, the tools are chosen (select_tools): these always, then the tools whose
 # name or description shares words with the request, best first, while the request fits.
+# the brain on this machine, the last resort when every other brain fails (ask_tool); after a boot Ollama can start
+# a minute or two after SYRAX, so SYRAX waits for it this long before saying no brain answered
+LOCAL_BRAIN = "ollama"
+LOCAL_WAIT_S = float(os.getenv("SYRAX_LOCAL_WAIT_S", "120"))
+LOCAL_POLL_S = 3.0
+
 ESSENTIAL_TOOLS = frozenset({"terminate", "ask_human", "python_execute", "desktop", "recall", "remember", "research",
                              "know", "undo", "present"})
 _WORD = re.compile(r"[^\W\d_]{3,}", re.UNICODE)
@@ -200,6 +206,18 @@ def select_tools(tools: List[dict], messages: List[dict], budget: int, max_token
         except BrainError:
             continue
     return [t for t in tools if name(t) in keep]
+
+
+def tools_in_use(tools: List[dict], messages: List[dict]) -> List[dict]:
+    """`terminate` and the tools the conversation's recent assistant turns called: the smallest set that lets a tight
+    brain carry on the work in hand (or finish it)."""
+    used = {"terminate"}
+    for m in messages[-12:]:
+        for c in m.get("tool_calls") or []:
+            name = ((c.get("function") if isinstance(c, dict) else None) or {}).get("name")
+            if name:
+                used.add(str(name))
+    return [t for t in tools if str((t.get("function") or {}).get("name") or "") in used]
 
 
 # A system prompt and its short version (agent.py registers both per task). A brain that cannot fit the full prompt
@@ -662,10 +680,22 @@ def _normalize_messages(messages: List[dict]) -> List[dict]:
     """
     systems = [m["content"] for m in messages if m.get("role") == "system" and m.get("content")]
     rest = []
+    calls: Dict[str, str] = {}  # tool_call_id -> tool name, from the assistant messages so far
     for m in messages:
         if m.get("role") == "system":
             continue
         m = dict(m)
+        if m.get("role") == "tool":
+            # live 2026-11-01: a result whose call was cut away made Gemini refuse the whole request (HTTP 400,
+            # "function_response.name: Name cannot be empty"); it goes as a note, and a result names its tool
+            name = calls.get(str(m.get("tool_call_id") or ""))
+            if name is None:
+                text = m.get("content")
+                text = text if isinstance(text, str) else json.dumps(text, ensure_ascii=False, default=str)
+                rest.append({"role": "user", "content": f"[An earlier tool result: {text}]"})
+                continue
+            if not m.get("name"):
+                m["name"] = name
         if m.get("role") == "assistant" and m.get("tool_calls"):
             if m.get("content") is None:
                 m["content"] = ""
@@ -677,6 +707,8 @@ def _normalize_messages(messages: List[dict]) -> List[dict]:
                 fn["arguments"] = _clean_arguments(fn["name"], fn.get("arguments"))
                 c["function"] = fn
                 fixed.append(c)
+                if c.get("id"):
+                    calls[str(c["id"])] = fn["name"]
             m["tool_calls"] = fixed
         if m.get("role") == "tool" and m.get("name"):
             m["name"] = _clean_tool_name(m["name"])
@@ -908,7 +940,8 @@ class BrainRouter(LLM):
             raise BrainError("No brain enabled. Open BRAIN in the UI and add a key.")
 
         wait_rounds = 0
-        for attempt in range(3):
+        local_tried = False
+        for attempt in range(4):
             failures = []
             soonest = None
             for pid in chain:
@@ -983,8 +1016,39 @@ class BrainRouter(LLM):
                 await self._emit({"type": "notice", "text": f"All brains busy. Retrying in {int(soonest) + 1}s."})
                 await asyncio.sleep(soonest + 0.5)
                 continue
+            # The owner, 2026-11-04: "no brain may fail; one is always there". Live that evening the PC had just
+            # started: no internet yet, and Ollama came up 96 s after SYRAX, so every brain read "unreachable". The
+            # brain on this machine is the last resort: wait for it to start, then try it, enabled or not.
+            if not local_tried and LOCAL_BRAIN in PROVIDERS:
+                local_tried = True
+                if await self._local_ready(LOCAL_WAIT_S):
+                    self.health[LOCAL_BRAIN] = Health()
+                    chain = [LOCAL_BRAIN]
+                    await self._emit({"type": "notice", "text": "No other brain answered: the local brain (Ollama) takes over."})
+                    continue
             raise BrainError("All brains failed. " + " | ".join(failures[:6]))
         raise BrainError("All brains failed.")
+
+    async def _local_ready(self, wait_s: float) -> bool:
+        """Whether Ollama answers on this machine, waiting up to wait_s for it to start (after a boot it comes up
+        later than SYRAX). False at once when it has no model to run."""
+        root = PROVIDERS[LOCAL_BRAIN].base_url.rstrip("/").removesuffix("/v1")
+        deadline = time.monotonic() + wait_s
+        told = False
+        while True:
+            try:
+                async with httpx.AsyncClient(timeout=3.0) as client:
+                    r = await client.get(f"{root}/api/tags")
+                if r.status_code == 200:
+                    return bool(r.json().get("models"))
+            except (httpx.HTTPError, ValueError):
+                pass
+            if time.monotonic() >= deadline:
+                return False
+            if not told:
+                told = True
+                await self._emit({"type": "notice", "text": "No brain reachable: waiting for the local brain (Ollama) to start."})
+            await asyncio.sleep(LOCAL_POLL_S)
 
     def _format(self, messages, system_msgs, vision: bool) -> List[dict]:
         msgs = list(system_msgs or []) + list(messages)
@@ -1028,13 +1092,32 @@ class BrainRouter(LLM):
                 try:
                     params["messages"], params["max_tokens"] = fit_request(messages, chosen, p.max_request_tokens, self.max_tokens)
                 except BrainError:
-                    shorter = shorten_system(messages)
-                    if shorter is None:
-                        raise
+                    shorter = shorten_system(messages) or messages
                     chosen = select_tools(small, shorter, p.max_request_tokens, self.max_tokens)
-                    params["messages"], params["max_tokens"] = fit_request(shorter, chosen, p.max_request_tokens, self.max_tokens)
-                    note = ", the short persona"
-                params["tools"] = chosen
+                    note = ", the short persona" if shorter is not messages else ""
+                    try:
+                        params["messages"], params["max_tokens"] = fit_request(shorter, chosen, p.max_request_tokens, self.max_tokens)
+                    except BrainError:
+                        # live 2026-11-03: Ollama (4,096) failed even with the short persona and the essential tools
+                        # (≈4,419). Last steps: only the tools this conversation is using, then a plain answer.
+                        chosen = tools_in_use(small, shorter)
+                        try:
+                            params["messages"], params["max_tokens"] = fit_request(shorter, chosen, p.max_request_tokens, self.max_tokens)
+                            note += ", only the tools in use"
+                        except BrainError:
+                            # a plain answer only before any tool ran (a chat): mid-task, a brain without tools
+                            # wrote "the todo app has been created" with nothing on disk (quality run #22,
+                            # 2026-11-04); there the next brain takes over, as before
+                            if any(m.get("role") == "tool" or m.get("tool_calls") for m in shorter):
+                                raise
+                            params["messages"], params["max_tokens"] = fit_request(shorter, None, p.max_request_tokens, self.max_tokens)
+                            chosen = []
+                            note += ", no tools (a plain answer)"
+                if chosen:
+                    params["tools"] = chosen
+                else:
+                    params.pop("tools", None)
+                    params.pop("tool_choice", None)
                 logger.info(f"brain {pid}: compact tool descriptions ({count_tokens(tools)} -> {count_tokens(small)} tokens)"
                             + (f", {len(chosen)} of {len(small)} tools chosen for this request" if len(chosen) < len(small) else "") + note)
             if len(params["messages"]) < before:

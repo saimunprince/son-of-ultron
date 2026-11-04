@@ -127,7 +127,7 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
       <div className="mind-obj-main">
         <span className="mind-badge">{o.status}</span>
         <span className="mind-obj-goal">
-          #{o.id} · {o.goal}
+          {objectiveLabel(o.id)} · {o.goal}
         </span>
         <span className="mind-obj-meta">
           P{o.priority} · {o.source} · {o.attempts} attempt{o.attempts === 1 ? "" : "s"} · {ago(o.updated)}
@@ -443,3 +443,10 @@ export default function MindPanel({ tab, data, onTab, send, onClose }: Props) {
     </div>
   );
 }
+
+/** An objective's number. Rows merged from the Windows journal keep ids shifted below zero (import_windows_journal:
+ * id - 10,000,000); they read as W#333, not #-9999667 (live look, 2026-11-04). */
+function objectiveLabel(id: number): string {
+  return id < 0 && id > -10_000_000 ? `W#${id + 10_000_000}` : `#${id}`;
+}
+

@@ -40,6 +40,15 @@ def fresh_journal_and_core(tmp_path):
     except Exception:
         pass
     try:
+        import syrax.brains as brains_mod
+
+        async def _no_local(self, wait_s):  # never wait for, or call, the real Ollama on this machine in a test
+            return False
+
+        monkeypatch.setattr(brains_mod.BrainRouter, "_local_ready", _no_local)
+    except Exception:
+        pass
+    try:
         import syrax.core as core_mod
     except Exception:  # core imports the agent stack; journal-only tests don't need it
         core_mod = None

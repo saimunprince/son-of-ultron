@@ -810,6 +810,14 @@ class Core:
             else:
                 kind = routing.kind_of(text)
                 router.routed = await asyncio.to_thread(routing.preferred, self.journal, kind, order)
+                if router.routed is None:
+                    task_kind = (self.journal.task(task_id) or {}).get("kind") or "conversation"
+                    saver = routing.quota_saver(task_kind, kind, order, router.usable)
+                    if saver:
+                        router.routed = saver
+                        await self.journal.record("brain.routed", {"kind": kind, "brain": saver, "instead_of": order[0],
+                                                                   "reason": f"quota saver ({task_kind})"}, task_id=task_id)
+                        return
         except Exception as e:  # routing is an optimisation; the human's order always works
             logger.warning(f"routing failed: {e}")
             router.routed = None

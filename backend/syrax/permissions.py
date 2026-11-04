@@ -65,7 +65,7 @@ PREFIX_DEFAULTS: Tuple[Tuple[str, str], ...] = (("browser_", EXTERNAL_READ), ("m
 DEFAULT_UNKNOWN = SYSTEM  # an MCP tool the human configured, a skill nothing declared
 DECLARED: Dict[str, str] = {}  # dynamic skills, set by SkillFactory at registration
 
-DESKTOP_READ = {"list_apps", "system_info", "screenshot", "find_files", "clipboard_get", "find_text"}
+DESKTOP_READ = {"list_apps", "system_info", "screenshot", "find_files", "clipboard_get", "find_text", "view"}
 EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
 
 # Live 2026-10-25 (audit): editor.resolve_path takes any absolute path, so the editor, apply_patch and a
@@ -125,6 +125,49 @@ def messaging_app(window: str) -> Optional[str]:
     """The messaging app a front window ("'Title' (Program.exe)") belongs to; None for any other window."""
     w = str(window or "").strip()
     return next((app for app, rx, _ in MESSAGING_APPS if rx.search(w)), None)
+
+
+PHONE_READ = {"status", "screen", "ui", ""}
+PHONE_TEXT_TAP = re.compile(r"^\s*\d+\s*,\s*\d+\s*$")
+
+
+def phone_submits(args: Any) -> bool:
+    """A phone call that may send what is typed in a chat app: a tap on a Send button or at bare coordinates (what
+    they hit is unknown), Enter, or typed text with a newline (android.type_text presses Enter for one)."""
+    a = args if isinstance(args, dict) else {}
+    cmd = str(a.get("value") or "").strip().lower()
+    target = str(a.get("target") or "")
+    if cmd == "tap":
+        return bool(SEND_BUTTON.search(target) or PHONE_TEXT_TAP.match(target))
+    if cmd == "key":
+        return target.strip().lower() == "enter"
+    if cmd == "type":
+        return "\n" in target or "\r" in target
+    return False
+
+
+def phone_front() -> Optional[str]:
+    """The package in front on the phone; None when no phone answers (and off the gate in tests)."""
+    try:
+        from syrax import android
+
+        return android.front_app_sync()
+    except Exception:
+        return None
+
+
+def _classify_phone(a: dict) -> "Decision":
+    cmd = str(a.get("value") or "").strip().lower()
+    target = str(a.get("target") or "")
+    if cmd in PHONE_READ:
+        return Decision("desktop", READ_ONLY, f"phone {cmd or 'status'}", [])
+    if phone_submits(a) and (pkg := phone_front()):
+        from syrax import android
+
+        if app := android.messaging_package(pkg):
+            # the target reads like a front window, so messaging_app and _names_desktop_send treat it as one
+            return Decision("desktop", EXTERNAL_WRITE, f"sends a message in {app}", [f"'{app}' ({pkg}) on the phone"])
+    return Decision("desktop", SYSTEM, f"phone {cmd}" + (f" {target[:60]}" if target else ""), [])
 
 
 def submits_text(args: Any) -> bool:
@@ -392,6 +435,8 @@ def classify(name: str, args: Any) -> Decision:
     if name == "desktop":
         action = str(a.get("action") or "")
         target = str(a.get("target") or "")
+        if action == "phone":
+            return _classify_phone(a)
         if action == "trash":  # recoverable, but it still takes a file away from the human
             return Decision(name, DESTRUCTIVE, f"moves {Path(target).name or '?'} to the Recycle Bin", [target] if target else [])
         if action not in DESKTOP_READ and (harm := guard.controls_self(_strings(a))):  # desktop open of the HUD (audit 2026-10-27)

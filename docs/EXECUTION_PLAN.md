@@ -20,6 +20,9 @@ get to edit the ruler.
 
 ## Starting line (RISE.md, 2026-10-10, journal of 12,793 events)
 
+This table is the Windows journal of 2026-10-10. The Linux journal starts on 2026-10-28; its numbers are in
+[RISE.md](RISE.md), which the statuses below quote.
+
 | Pillar | Metric | Last 7 days | 7 days before |
 |---|---|---|---|
 | Brain | Quality suite pass rate | 92.9 % | 85.7 % |
@@ -109,6 +112,9 @@ measures best (Phase 7 routing already chooses by kind).
   cases (`routing.preferred_for_code`, journaled as `brain.routed` with kind
   `code_change`). The service runs it weekly when the human has been quiet
   for 30 minutes (`SYRAX_CODEBENCH=1`), or on demand (`codebench_run`).
+- **Status 2026-11-03: exit not met.** RISE (2026-10-31, Linux journal): Releases that landed 0 % (0/2),
+  Machine-checked objectives done 76.7 % (33/43), Commits SYRAX made to itself 0 since 10-28. Releases since then
+  were made by the operator after a GREEN gate, not by SYRAX's own objectives.
 
 ### M3 · Evidence without gaps (Evidence)
 
@@ -131,6 +137,10 @@ measures best (Phase 7 routing already chooses by kind).
   live probes of the running service (`syrax/probe.py`: process, health, UI,
   a WebSocket hello that never takes the human's briefing, a voice round
   trip) and the journal's last verification for the gate rows.
+- **Status 2026-11-03: matrix live.** The capability matrix has been in the daily release since 10-11
+  (`5ae75ed` carries it). RISE (2026-10-31): Final answers claiming work not done 1 in 7 days (exit: 2 or fewer),
+  Objectives closed on words 0 % (0/33). Claim checks added since (a skill built, limits read, media state) send
+  more false claims back before they reach the human.
 
 ### F · Foundation first (added 2026-10-11, before M4)
 

@@ -4,13 +4,14 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
+import { ease, targetTilt } from "./parallax";
 
 export type OrbMode = "idle" | "listening" | "thinking" | "acting" | "speaking" | "error";
 
 interface ModeProfile {
   speed: number; // rotation speed multiplier
   energy: number; // core surge + bloom boost
-  heat: number; // 0 = amber, 1 = Ultron red
+  heat: number; // 0 = the palette, 1 = fully its heat colour
 }
 
 const MODE_PROFILE: Record<OrbMode, ModeProfile> = {
@@ -35,6 +36,20 @@ export interface OrbPalette {
   grade: [number, number, number];
   /** per-channel weights after chromatic split */
   channels: [number, number, number];
+  /** the colour the orb bleeds into while SYRAX acts (luminance multipliers) */
+  heat: [number, number, number];
+  /** character: rotation speed multiplier */
+  spin: number;
+  /** character: chromatic split multiplier */
+  chroma: number;
+  /** character: 0 = steady hologram, 1 = Ultron's glitches (flicker and tearing) */
+  glitch: number;
+  /** bloom threshold: higher keeps the core's detail instead of a blown-out glow */
+  threshold: number;
+  /** 0 = none, 1 = Ultron's menace: a heartbeat in the core, a target-lock reticle and a radar sweep */
+  menace: number;
+  /** the colour the orb bleeds into on an error */
+  errorHeat: [number, number, number];
   bloom: number;
   exposure: number;
   /** returns a CSS colour for a floating code sprite */
@@ -43,40 +58,56 @@ export interface OrbPalette {
 }
 
 export const PALETTES = {
-  /** Chrome body, red heart: what Ultron's own interface would look like */
+  /** Red: JARVIS exactly, in red (2026-11-04, the owner: "the blue exactly as it is, the red the same, only
+   *  red"). Every colour is JARVIS's with its hue turned to red; saturation, brightness and the character stay. */
   ultron: {
-    bright: 0xb4bcc8,
-    mid: 0x747c88,
-    dim: 0x464c55,
-    faint: 0x2a2e33,
-    hot: 0xff3b30,
-    glow: 0xff2a1f,
-    grade: [0.98, 1.0, 1.04],
-    channels: [1.0, 1.0, 1.0],
-    bloom: 0.72,
-    exposure: 0.62,
+    bright: 0xff8f8f,
+    mid: 0xe02f2f,
+    dim: 0x861919,
+    faint: 0x470c0c,
+    hot: 0xffb5b5,
+    glow: 0xff2222,
+    grade: [1.18, 0.8, 0.78],
+    channels: [1.1, 0.82, 0.82],
+    bloom: 0.85,
+    exposure: 0.66,
+    heat: [1.9, 0.55, 0.5],
+    spin: 0.8,
+    chroma: 0.5,
+    glitch: 0,
+    threshold: 0.26,
+    menace: 0,
+    errorHeat: [1.9, 0.85, 0.15],
     text: (a: number) => {
-      if (Math.random() < 0.12) return `rgba(255, 70, 55, ${a})`;
-      const v = (165 + Math.random() * 70) | 0;
-      return `rgba(${v}, ${v + 5}, ${Math.min(255, v + 14)}, ${a})`;
+      const g = (170 + Math.random() * 70) | 0;
+      return `rgba(255, ${(g * 0.45) | 0}, ${(g * 0.45) | 0}, ${a})`;
     },
-    dust: ["rgba(235,240,248,1)", "rgba(190,198,210,0.55)", "rgba(120,128,140,0.14)", "rgba(60,64,70,0)"],
+    dust: ["rgba(255,170,170,1)", "rgba(240,60,60,0.55)", "rgba(140,20,20,0.15)", "rgba(70,8,8,0)"],
   },
-  /** The original amber ULTRON orb */
-  classic: {
-    bright: 0xffaa30,
-    mid: 0xdd7700,
-    dim: 0x884400,
-    faint: 0x553300,
-    hot: 0xffcc66,
-    glow: 0xdd7700,
-    grade: [1.15, 0.85, 0.55],
-    channels: [1.0, 1.05, 0.6],
-    bloom: 1.6,
-    exposure: 0.8,
-    text: (a: number) =>
-      `rgba(255, ${(130 + Math.random() * 80) | 0}, ${(20 + Math.random() * 30) | 0}, ${a})`,
-    dust: ["rgba(255,170,48,1)", "rgba(255,120,20,0.6)", "rgba(200,80,0,0.15)", "rgba(100,40,0,0)"],
+  /** Blue JARVIS: a cyan hologram; acting brightens it instead of turning it red */
+  jarvis: {
+    bright: 0x8fe3ff,
+    mid: 0x2fa9e0,
+    dim: 0x195f86,
+    faint: 0x0c2f47,
+    hot: 0xb5f6ff,
+    glow: 0x22b8ff,
+    grade: [0.78, 1.0, 1.18],
+    channels: [0.82, 1.0, 1.1],
+    bloom: 0.85,
+    exposure: 0.66,
+    heat: [0.55, 1.45, 1.9],
+    spin: 0.8,
+    chroma: 0.5,
+    glitch: 0,
+    threshold: 0.26,
+    menace: 0,
+    errorHeat: [1.9, 0.85, 0.15],
+    text: (a: number) => {
+      const g = (170 + Math.random() * 70) | 0;
+      return `rgba(${(g * 0.45) | 0}, ${g}, 255, ${a})`;
+    },
+    dust: ["rgba(170,235,255,1)", "rgba(60,180,240,0.55)", "rgba(20,90,140,0.15)", "rgba(8,40,70,0)"],
   },
 } satisfies Record<string, OrbPalette>;
 
@@ -96,6 +127,10 @@ export interface OrbSceneApi {
   zoomIn(): void;
   zoomOut(): void;
   resetView(): void;
+  /** What SYRAX is doing right now (a tool's name), written in a ring around the core; null clears it. */
+  setActivity(text: string | null): void;
+  /** Live readings (CPU, RAM, temperature ...) for JARVIS's data ring. */
+  setReadout(text: string): void;
   dispose(): void;
 }
 
@@ -127,7 +162,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     new THREE.Vector2(width, height),
     1.8, // strength
     0.4, // radius
-    0.2, // threshold
+    palette.threshold, // threshold
   );
   composer.addPass(bloom);
 
@@ -138,6 +173,10 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
       uTime: { value: 0 },
       uIntensity: { value: 0.003 },
       uHeat: { value: 0 },
+      uHeatColor: { value: new THREE.Vector3(...palette.heat) },
+      uFlicker: { value: 0.02 + palette.glitch * 0.03 },
+      uTear: { value: 0 },
+      uTearY: { value: 0.5 },
       uGrade: { value: new THREE.Vector3(...palette.grade) },
       uChannels: { value: new THREE.Vector3(...palette.channels) },
     },
@@ -153,25 +192,31 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
       uniform float uTime;
       uniform float uIntensity;
       uniform float uHeat;
+      uniform vec3 uHeatColor;
+      uniform float uFlicker;
+      uniform float uTear;
+      uniform float uTearY;
       uniform vec3 uGrade;
       uniform vec3 uChannels;
       varying vec2 vUv;
       void main() {
-        vec2 dir = vUv - vec2(0.5);
+        // Ultron's glitch: a thin band of the picture slips sideways for a moment
+        vec2 uv = vUv;
+        uv.x += uTear * step(abs(uv.y - uTearY), 0.025);
+        vec2 dir = uv - vec2(0.5);
         float d = length(dir);
         float offset = uIntensity * d;
-        // Slight flicker
-        float flicker = 1.0 + 0.02 * sin(uTime * 30.0) * sin(uTime * 7.3);
-        vec4 cr = texture2D(tDiffuse, vUv + dir * offset);
-        vec4 cg = texture2D(tDiffuse, vUv);
-        vec4 cb = texture2D(tDiffuse, vUv - dir * offset * 0.5);
+        // flicker: a steady hologram barely, Ultron visibly
+        float flicker = 1.0 + uFlicker * sin(uTime * 30.0) * sin(uTime * 7.3);
+        vec4 cr = texture2D(tDiffuse, uv + dir * offset);
+        vec4 cg = texture2D(tDiffuse, uv);
+        vec4 cb = texture2D(tDiffuse, uv - dir * offset * 0.5);
         gl_FragColor = vec4(vec3(cr.r, cg.g, cb.b) * uChannels, 1.0) * flicker;
         // Palette colour grade
         gl_FragColor.rgb = mix(gl_FragColor.rgb, gl_FragColor.rgb * uGrade, 0.3);
-        // Ultron heat: the whole orb bleeds into red while SYRAX is acting
+        // heat: the whole orb bleeds into the palette's heat colour while SYRAX is acting
         float lum = dot(gl_FragColor.rgb, vec3(0.45, 0.45, 0.1));
-        vec3 crimson = vec3(lum * 1.9, lum * 0.28, lum * 0.18);
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, crimson, uHeat);
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, lum * uHeatColor, uHeat);
       }
     `,
   };
@@ -466,6 +511,13 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
   }
 
   orbGroup.add(innerCore);
+  // JARVIS's heart is the arc reactor: the spiral core stays as a faint echo behind it, not a knot in front
+  if (palette.menace === 0) {
+    innerCore.traverse((o) => {
+      const m = (o as THREE.Line).material as THREE.LineBasicMaterial | undefined;
+      if (m && "opacity" in m) m.opacity *= 0.3;
+    });
+  }
 
   // ═══════════════════════════════════════════════
   // LAYER 5: INNERMOST CORE — bright hot center
@@ -477,14 +529,18 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
   const icoEdges = new THREE.EdgesGeometry(icoGeo);
   const icoWireMat = lineMat(C_HOT, 0.9);
   const icoWire = new THREE.LineSegments(icoEdges, icoWireMat);
+  icoWire.visible = palette.menace > 0;
   orbGroup.add(icoWire);
 
   // Glowing center sphere — subtle, see-through
+  // depthWrite off on every additive, see-through part (2026-11-03): writing depth made the glow sphere hide
+  // the lines behind it, a dark disc that grew with each surge, in both themes
   const coreSphereMat = new THREE.MeshBasicMaterial({
     color: C_HOT,
     transparent: true,
     opacity: 0.15,
     blending: THREE.AdditiveBlending,
+    depthWrite: false,
   });
   const coreSphere = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 16), coreSphereMat);
   orbGroup.add(coreSphere);
@@ -495,6 +551,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     transparent: true,
     opacity: 0.04,
     blending: THREE.AdditiveBlending,
+    depthWrite: false,
   });
   const glowSphere = new THREE.Mesh(new THREE.SphereGeometry(0.5, 16, 16), glowSphereMat);
   orbGroup.add(glowSphere);
@@ -627,6 +684,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
       transparent: true,
       opacity: 0.3 + Math.random() * 0.6,
       blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
     const mesh = new THREE.Mesh(geo, mat);
     const orbitR = 1.2 + Math.random() * 4.0;
@@ -718,6 +776,213 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     return mesh;
   }
 
+  // ═══════════════════════════════════════════════
+  // MENACE (Ultron only): a target-lock reticle and a radar sweep, drawn facing the camera, thin and bounded
+  // ═══════════════════════════════════════════════
+  const menaceGroup = new THREE.Group();
+  menaceGroup.visible = palette.menace > 0;
+  scene.add(menaceGroup);
+
+  function arc(radius: number, from: number, to: number, segments = 32) {
+    const pts: THREE.Vector3[] = [];
+    for (let i = 0; i <= segments; i++) {
+      const a = from + ((to - from) * i) / segments;
+      pts.push(new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, 0));
+    }
+    return new THREE.BufferGeometry().setFromPoints(pts);
+  }
+
+  // tick ring: a short tick every 5 degrees, a long one every 30
+  const tickRing = new THREE.Group();
+  const tickPts: THREE.Vector3[] = [];
+  for (let i = 0; i < 72; i++) {
+    const a = (i / 72) * Math.PI * 2;
+    const r0 = R1 * 1.16;
+    const r1 = r0 + (i % 6 === 0 ? 0.14 : 0.05);
+    tickPts.push(new THREE.Vector3(Math.cos(a) * r0, Math.sin(a) * r0, 0), new THREE.Vector3(Math.cos(a) * r1, Math.sin(a) * r1, 0));
+  }
+  const tickMat = lineMat(C_BRIGHT, 0.6);
+  tickRing.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(tickPts), tickMat));
+  // a broken outer ring: 12 dashes
+  const dashMat = lineMat(C_BRIGHT, 0.5);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    tickRing.add(new THREE.Line(arc(R1 * 1.24, a, a + 0.32, 12), dashMat));
+  }
+  menaceGroup.add(tickRing);
+
+  // lock brackets: four hot arcs that turn the other way and close in while SYRAX acts
+  const lock = new THREE.Group();
+  const lockMat = lineMat(C_HOT, 0.85);
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    lock.add(new THREE.Line(arc(R1 * 1.32, a - 0.22, a + 0.22, 16), lockMat));
+    // a small inward notch at the middle of each bracket
+    lock.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(Math.cos(a) * R1 * 1.32, Math.sin(a) * R1 * 1.32, 0),
+      new THREE.Vector3(Math.cos(a) * R1 * 1.25, Math.sin(a) * R1 * 1.25, 0),
+    ]), lockMat));
+  }
+  menaceGroup.add(lock);
+
+  // radar sweep: a faint wedge with a bright leading edge
+  const sweep = new THREE.Group();
+  const sweepMat = new THREE.MeshBasicMaterial({
+    color: C_HOT,
+    transparent: true,
+    opacity: 0.05,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  sweep.add(new THREE.Mesh(new THREE.RingGeometry(R1 * 0.25, R1 * 1.1, 48, 1, 0, 0.5), sweepMat));
+  const edgeMat = lineMat(C_HOT, 0.9);
+  sweep.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(Math.cos(0.5) * R1 * 0.25, Math.sin(0.5) * R1 * 0.25, 0),
+    new THREE.Vector3(Math.cos(0.5) * R1 * 1.1, Math.sin(0.5) * R1 * 1.1, 0),
+  ]), edgeMat));
+  menaceGroup.add(sweep);
+
+  // ═══════════════════════════════════════════════
+  // FACE: camera-facing parts for both themes (state rings) and each theme's own core
+  // ═══════════════════════════════════════════════
+  const faceGroup = new THREE.Group();
+  scene.add(faceGroup);
+  const hex = (c: number) => `#${c.toString(16).padStart(6, "0")}`;
+
+  /** Text written around a circle on a canvas, drawn on a camera-facing plane. */
+  function makeTextRing(radius: number, px: number, color: number) {
+    const size = 1024;
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext("2d")!;
+    const tex = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const span = radius * 2.3;
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mat);
+    const rPx = (radius / span) * size;
+    let current = "";
+    function set(text: string) {
+      if (text === current) return;
+      current = text;
+      ctx.clearRect(0, 0, size, size);
+      if (!text) {
+        tex.needsUpdate = true;
+        return;
+      }
+      ctx.font = `600 ${px}px ui-monospace, monospace`;
+      ctx.fillStyle = hex(color);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const unit = `${text}   ◆   `;
+      const circumference = 2 * Math.PI * rPx;
+      const reps = Math.max(1, Math.floor(circumference / ctx.measureText(unit).width));
+      const line = unit.repeat(reps);
+      const step = (2 * Math.PI) / [...line].length;
+      ctx.save();
+      ctx.translate(size / 2, size / 2);
+      [...line].forEach((ch, i) => {
+        ctx.save();
+        ctx.rotate(i * step);
+        ctx.fillText(ch, 0, -rPx);
+        ctx.restore();
+      });
+      ctx.restore();
+      tex.needsUpdate = true;
+    }
+    return { mesh, mat, set };
+  }
+
+  // what SYRAX is doing: the running tool's name circles the core
+  const activityRing = makeTextRing(1.25, 22, palette.hot);
+  faceGroup.add(activityRing.mesh);
+  let activityTarget = 0;
+
+  // listening and speaking: a waveform ring around the core
+  // a radial equaliser: thin straight bars around the core, mirrored left/right, each easing to its own height
+  // (the owner, 2026-11-03: the wobbling waveform line looked poor)
+  const BARS = 96;
+  const WAVE_R = 0.62;
+  const barLen = new Float32Array(BARS);
+  const waveGeo = new THREE.BufferGeometry();
+  waveGeo.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(BARS * 6), 3));
+  const waveMat = lineMat(C_HOT, 0);
+  const wave = new THREE.LineSegments(waveGeo, waveMat);
+  faceGroup.add(wave);
+
+  // JARVIS's core: an arc reactor (a triangle in rings) and data rings with live readings
+  const reactor = new THREE.Group();
+  const reactorMat = lineMat(C_HOT, 0.9);
+  const reactorDim = lineMat(C_HOT, 0.7);
+  reactor.add(new THREE.LineLoop(arc(0.5, 0, Math.PI * 2, 96), reactorMat));
+  reactor.add(new THREE.LineLoop(arc(0.24, 0, Math.PI * 2, 64), reactorDim));
+  reactor.add(new THREE.LineLoop(arc(0.08, 0, Math.PI * 2, 32), reactorMat));
+  const tri: THREE.Vector3[] = [];
+  for (let i = 0; i < 3; i++) {
+    const a = Math.PI / 2 + (i * Math.PI * 2) / 3;
+    tri.push(new THREE.Vector3(Math.cos(a) * 0.44, Math.sin(a) * 0.44, 0));
+  }
+  reactor.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(tri), reactorMat));
+  const reactorSegs = new THREE.Group();
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    reactorSegs.add(new THREE.Line(arc(0.64, a + 0.06, a + 0.5, 10), reactorMat));
+  }
+  reactor.add(reactorSegs);
+  const dataRings = new THREE.Group();
+  const dataMat = lineMat(C_BRIGHT, 0.35);
+  for (let i = 0; i < 18; i++) {
+    const a = (i / 18) * Math.PI * 2;
+    dataRings.add(new THREE.Line(arc(R1 * 0.74, a, a + 0.24, 8), dataMat));
+  }
+  const dataRings2 = new THREE.Group();
+  dataRings2.add(new THREE.LineLoop(arc(R1 * 0.8, 0, Math.PI * 2, 128), lineMat(C_MID, 0.4)));
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    dataRings2.add(new THREE.Line(arc(R1 * 0.84, a - 0.15, a + 0.15, 12), reactorMat));
+  }
+  const readoutRing = makeTextRing(R1 * 0.68, 17, palette.bright);
+  const jarvisParts = [reactor, dataRings, dataRings2, readoutRing.mesh];
+  for (const part of jarvisParts) {
+    part.visible = palette.menace === 0;
+    faceGroup.add(part);
+  }
+
+  // thinking: neural sparks, short bright links that flash between points inside the orb
+  const SPARKS = 28;
+  const sparkPos = new Float32Array(SPARKS * 6);
+  const sparkCol = new Float32Array(SPARKS * 6);
+  const sparkGeo = new THREE.BufferGeometry();
+  sparkGeo.setAttribute("position", new THREE.BufferAttribute(sparkPos, 3));
+  sparkGeo.setAttribute("color", new THREE.BufferAttribute(sparkCol, 3));
+  const sparkMat = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  orbGroup.add(new THREE.LineSegments(sparkGeo, sparkMat));
+  const sparkLife = new Float32Array(SPARKS);
+  const sparkRgb = new THREE.Color(C_HOT);
+  function randomOnSphere(r: number, out: Float32Array, at: number) {
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    out[at] = r * Math.sin(ph) * Math.cos(th);
+    out[at + 1] = r * Math.cos(ph);
+    out[at + 2] = r * Math.sin(ph) * Math.sin(th);
+  }
+
+  // performance guard: if frames get slow, the extras step down
+  let frameAvg = 1 / 60;
+  let lastFrame = performance.now();
+  let lowPower = false;
+
   const scanRing1 = makeScanRing(R1, 0.01);
   const scanRing2 = makeScanRing(R1 * 0.7, 0.008);
   orbGroup.add(scanRing1, scanRing2);
@@ -794,6 +1059,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
   let speed = 1;
   let energy = 0;
   let heat = 0;
+  let tearUntil = 0;
   let kick = 0;
 
   function setMode(next: OrbMode) {
@@ -813,6 +1079,62 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     level = Math.max(0, Math.min(1, v));
   }
 
+  // ——— MOUSE PARALLAX ———
+  // The orb gently looks toward the cursor (max 5°, eased). Only orbGroup tilts, never the camera, so OrbitControls,
+  // gestures and resetView work as before; nothing else animates orbGroup's own rotation, and every child keeps its
+  // own spin underneath it. The tilt is built in camera space so it reads the same from any orbit angle. Off under
+  // prefers-reduced-motion, for touch, and while the user drags the orb (it eases back to centre).
+  const PARALLAX_MAX = (5 * Math.PI) / 180;
+  const PARALLAX_K = 0.06;
+  let tiltTargetX = 0;
+  let tiltTargetY = 0;
+  let tiltX = 0;
+  let tiltY = 0;
+  let dragging = false;
+  const tiltEuler = new THREE.Euler();
+  const tiltQuat = new THREE.Quaternion();
+  const camInv = new THREE.Quaternion();
+  function onPointerMove(e: PointerEvent) {
+    if (e.pointerType === "touch") return;
+    const rect = container.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const nx = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
+    const ny = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
+    const tilt = targetTilt(nx, ny, PARALLAX_MAX);
+    tiltTargetX = tilt.x;
+    tiltTargetY = tilt.y;
+  }
+  function onPointerAway() {
+    tiltTargetX = 0;
+    tiltTargetY = 0;
+  }
+  function onDragStart() {
+    dragging = true;
+  }
+  function onDragEnd() {
+    dragging = false;
+  }
+  if (!reduced) {
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    document.documentElement.addEventListener("pointerleave", onPointerAway);
+    window.addEventListener("blur", onPointerAway);
+    controls.addEventListener("start", onDragStart);
+    controls.addEventListener("end", onDragEnd);
+  }
+  function applyParallax() {
+    if (reduced) return;
+    tiltX = ease(tiltX, dragging ? 0 : tiltTargetX, PARALLAX_K);
+    tiltY = ease(tiltY, dragging ? 0 : tiltTargetY, PARALLAX_K);
+    if (tiltX === 0 && tiltY === 0) {
+      orbGroup.quaternion.identity();
+      return;
+    }
+    // world tilt = cam * localTilt * cam⁻¹: turn about the camera's right/up axes, whatever the orbit angle
+    tiltQuat.setFromEuler(tiltEuler.set(tiltX, tiltY, 0, "YXZ"));
+    camInv.copy(camera.quaternion).invert();
+    orbGroup.quaternion.copy(camera.quaternion).multiply(tiltQuat).multiply(camInv);
+  }
+
   function animate() {
     if (disposed) return;
     rafId = requestAnimationFrame(animate);
@@ -824,7 +1146,7 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     energy += (target.energy - energy) * 0.05;
     heat += (target.heat - heat) * 0.035;
     kick *= 0.93;
-    const s = reduced ? speed * 0.2 : speed;
+    const s = (reduced ? speed * 0.2 : speed) * palette.spin;
     levelSmooth += (level - levelSmooth) * 0.35;
     const speakWave =
       mode === "speaking"
@@ -856,25 +1178,18 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     icoWire.rotation.x += 0.008 * s;
     icoWire.rotation.y += 0.012 * s;
 
-    // Core pulse — dramatic surges but mostly transparent
+    // Core pulse: a calm breath, and a bounded response to work and speech. The periodic "mega surges" are gone
+    // (the owner, 2026-11-03: the core swelled into a red blob that covered the orb; keep it neat and clean).
     const wave1 = Math.sin(t * 1.2);
-    const wave3 = Math.pow(Math.max(0, Math.sin(t * 0.4)), 5); // rare big surge
-    const wave4 = Math.pow(Math.max(0, Math.sin(t * 0.7 + 2)), 8); // mega surge
-    const fadeOut = Math.pow(Math.max(0, Math.sin(t * 0.25)), 3); // periodic full transparency
-    const surge = wave3 * 1.5 + wave4 * 2.0 + energy * 0.6 + kick * 0.5 + speakWave;
-    const coreScale = 1 + surge + Math.sin(t * 5) * 0.05;
+    const surge = Math.min(1, energy * 0.35 + kick * 0.25 + speakWave * 0.6);
+    const coreScale = 1 + surge * 0.5 + Math.sin(t * 2) * 0.03;
     coreSphere.scale.setScalar(coreScale);
-    // Opacity: mostly very low (0-0.15), sometimes fully transparent, brief bright on surge
-    const coreOpacity = Math.max(
-      0,
-      (0.08 + wave1 * 0.05 + surge * 0.2) * (1 - fadeOut * 0.95 * (1 - energy)),
-    );
-    coreSphereMat.opacity = Math.min(0.6, coreOpacity);
-    glowSphere.scale.setScalar(1 + surge * 0.8);
-    glowSphereMat.opacity = Math.max(0, (0.03 + surge * 0.08) * (1 - fadeOut * 0.9));
-    // Icosahedron wireframe stays visible even when glow fades
-    icoWire.scale.setScalar(1 + surge * 0.6);
-    icoWireMat.opacity = Math.min(1, 0.5 + surge * 0.4);
+    coreSphereMat.opacity = Math.min(0.35, 0.1 + wave1 * 0.03 + surge * 0.15);
+    glowSphere.scale.setScalar(1 + surge * 0.25);
+    glowSphereMat.opacity = 0.02 + surge * 0.03;
+    // the wireframe heart stays crisp and readable
+    icoWire.scale.setScalar(1 + surge * 0.3);
+    icoWireMat.opacity = Math.min(1, 0.6 + surge * 0.3);
 
     // Debris orbits
     debris.forEach((d) => {
@@ -907,6 +1222,97 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
       });
     }
 
+    // Menace: the reticle faces the camera, turns, and locks tighter while SYRAX acts; the core beats
+    if (lowPower) sweep.visible = false;
+    if (menaceGroup.visible) {
+      menaceGroup.quaternion.copy(camera.quaternion);
+      const m = reduced ? 0.2 : 1;
+      tickRing.rotation.z += 0.0015 * m * (1 + heat * 2);
+      lock.rotation.z -= 0.004 * m * (1 + heat * 3);
+      const tighten = 1 - heat * 0.08 - kick * 0.02;
+      lock.scale.setScalar(tighten);
+      lockMat.opacity = 0.75 + heat * 0.2 + Math.abs(Math.sin(t * 3)) * 0.05;
+      sweep.rotation.z = reduced ? 0 : -t * (1.2 + heat * 2.5);
+      sweepMat.opacity = 0.07 + heat * 0.05;
+      // heartbeat: lub-dub every 1.6 s (faster while acting), small and bounded
+      const period = 1.6 - heat * 0.6;
+      const p = t % period;
+      const beat = reduced ? 0 : Math.exp(-((p * p) / 0.003)) + 0.6 * Math.exp(-(((p - 0.22) * (p - 0.22)) / 0.003));
+      icoWire.scale.multiplyScalar(1 + beat * 0.1);
+      icoWireMat.opacity = Math.min(1, icoWireMat.opacity + beat * 0.25);
+      coreSphereMat.opacity = Math.min(0.4, coreSphereMat.opacity + beat * 0.08);
+    }
+
+    // ——— performance guard ———
+    const nowMs = performance.now();
+    frameAvg += ((nowMs - lastFrame) / 1000 - frameAvg) * 0.02;
+    lastFrame = nowMs;
+    if (!lowPower && frameAvg > 1 / 35 && t > 6) {
+      lowPower = true; // slow machine: drop the extras, keep the orb
+      renderer.setPixelRatio(1);
+    }
+
+    faceGroup.quaternion.copy(camera.quaternion);
+
+    // ——— what SYRAX is doing: the activity ring ———
+    activityRing.mat.opacity += (activityTarget - activityRing.mat.opacity) * 0.08;
+    activityRing.mesh.rotation.z -= 0.004 * (reduced ? 0.2 : 1);
+
+    // ——— listening / speaking: a waveform around the core ———
+    const voiceOn = mode === "listening" || mode === "speaking";
+    waveMat.opacity += ((voiceOn ? 0.75 : 0) - waveMat.opacity) * 0.1;
+    if (waveMat.opacity > 0.01) {
+      const arr = (waveGeo.getAttribute("position") as THREE.BufferAttribute).array as Float32Array;
+      const half = BARS / 2;
+      for (let i = 0; i < BARS; i++) {
+        // mirror: bar i and its partner across the vertical axis share a height, so the shape is symmetric
+        const k = i < half ? i : BARS - 1 - i;
+        const f = k / half; // 0 at the top, 1 at the bottom
+        const shape = 0.35 + 0.65 * Math.pow(Math.sin(f * Math.PI), 1.5); // tallest at the sides
+        const motion = reduced ? 0.5 : 0.5 + 0.5 * Math.sin(t * 6.2 + k * 0.55) * Math.sin(t * 2.3 + k * 0.21);
+        const want = 0.012 + levelSmooth * 0.2 * shape * (0.55 + 0.45 * motion);
+        barLen[i] += (want - barLen[i]) * 0.25;
+        const a = Math.PI / 2 - (i / BARS) * Math.PI * 2;
+        const c = Math.cos(a);
+        const s2 = Math.sin(a);
+        const r0 = WAVE_R;
+        const r1 = WAVE_R + barLen[i];
+        arr.set([c * r0, s2 * r0, 0, c * r1, s2 * r1, 0], i * 6);
+      }
+      waveGeo.getAttribute("position").needsUpdate = true;
+    }
+
+    // ——— JARVIS: the reactor turns, the data rings turn against each other ———
+    if (reactor.visible) {
+      const m = reduced ? 0.2 : 1;
+      reactor.rotation.z += 0.002 * m;
+      reactorSegs.rotation.z -= 0.01 * m * (1 + heat * 2);
+      dataRings.rotation.z += 0.0012 * m * (1 + heat);
+      dataRings2.rotation.z -= 0.0008 * m;
+      readoutRing.mesh.rotation.z += 0.0006 * m;
+      reactorMat.opacity = 1;
+      reactor.scale.setScalar(1 + Math.sin(t * 2) * 0.015 + heat * 0.05);
+    }
+
+    // ——— thinking: neural sparks ———
+    const sparkRate = lowPower || reduced ? 0 : mode === "thinking" ? 0.45 : mode === "acting" ? 0.25 : 0.015;
+    for (let i = 0; i < SPARKS; i++) {
+      if (sparkLife[i] <= 0 && Math.random() < sparkRate / 4) {
+        sparkLife[i] = 1;
+        randomOnSphere(0.5 + Math.random() * 1.0, sparkPos, i * 6);
+        randomOnSphere(0.5 + Math.random() * 1.0, sparkPos, i * 6 + 3);
+      }
+      sparkLife[i] = Math.max(0, sparkLife[i] - 0.06);
+      const k = sparkLife[i];
+      for (let v = 0; v < 2; v++) {
+        sparkCol[i * 6 + v * 3] = sparkRgb.r * k;
+        sparkCol[i * 6 + v * 3 + 1] = sparkRgb.g * k;
+        sparkCol[i * 6 + v * 3 + 2] = sparkRgb.b * k;
+      }
+    }
+    sparkGeo.getAttribute("position").needsUpdate = true;
+    sparkGeo.getAttribute("color").needsUpdate = true;
+
     // Scan rings sweeping
     const scanY1 = Math.sin(t * 0.4) * R1;
     scanRing1.position.y = scanY1;
@@ -935,14 +1341,27 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     }
 
     // Bloom pulse
-    bloom.strength = palette.bloom + Math.sin(t * 0.8) * 0.25 + energy * 0.6 + kick * 0.5;
+    bloom.strength = palette.bloom + Math.sin(t * 0.8) * 0.08 + energy * 0.3 + kick * 0.25;
     chromaticPass.uniforms.uHeat.value = heat;
-    chromaticPass.uniforms.uIntensity.value = 0.003 + kick * 0.004 + heat * 0.002;
+    (chromaticPass.uniforms.uHeatColor.value as THREE.Vector3).set(...(mode === "error" ? palette.errorHeat : palette.heat));
+    chromaticPass.uniforms.uIntensity.value = (0.003 + kick * 0.004 + heat * 0.002) * palette.chroma;
+    // Ultron glitches now and then (more while it acts); a JARVIS hologram never does
+    if (!reduced && palette.glitch > 0) {
+      if (t > tearUntil && Math.random() < 0.004 * palette.glitch * (1 + heat * 3)) {
+        tearUntil = t + 0.06 + Math.random() * 0.08;
+        chromaticPass.uniforms.uTearY.value = Math.random();
+        chromaticPass.uniforms.uTear.value = (Math.random() - 0.5) * 0.04;
+        kick = Math.min(2, kick + 0.25);
+      } else if (t > tearUntil) {
+        chromaticPass.uniforms.uTear.value = 0;
+      }
+    }
 
     // Update chromatic aberration time
     chromaticPass.uniforms.uTime.value = t;
 
     controls.update();
+    applyParallax();
     composer.render();
   }
 
@@ -965,6 +1384,11 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     cancelAnimationFrame(rafId);
     timer.dispose();
     window.removeEventListener("resize", onResize);
+    window.removeEventListener("pointermove", onPointerMove);
+    document.documentElement.removeEventListener("pointerleave", onPointerAway);
+    window.removeEventListener("blur", onPointerAway);
+    controls.removeEventListener("start", onDragStart);
+    controls.removeEventListener("end", onDragEnd);
     controls.dispose();
     scene.traverse((obj) => {
       const mesh = obj as THREE.Mesh;
@@ -991,6 +1415,14 @@ export function createOrbScene(container: HTMLElement, palette: OrbPalette = PAL
     zoomIn: () => zoomBy(0.65),
     zoomOut: () => zoomBy(1.55),
     resetView,
+    setActivity(text: string | null) {
+      if (text) activityRing.set(text.toUpperCase());
+      activityTarget = text ? 0.85 : 0;
+    },
+    setReadout(text: string) {
+      readoutRing.set(text);
+      readoutRing.mat.opacity = text ? 0.8 : 0;
+    },
     dispose,
   };
 }

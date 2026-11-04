@@ -68,7 +68,8 @@ def test_a_missing_camera_is_an_error_and_own_work_may_not_use_it(monkeypatch):
         raise RuntimeError("no camera found, or another app is using it")
 
     monkeypatch.setattr(camera, "capture", none)
+    monkeypatch.setattr(camera, "HUD_TIMEOUT_S", 0.05)  # no HUD answers with a frame of its camera
     out = asyncio.run(DesktopControl().execute(action="camera"))
-    assert out.error == "camera: no camera found, or another app is using it"
+    assert out.error.startswith("camera: no camera found, or another app is using it.")
     d = permissions.classify("desktop", {"action": "camera"})
     assert d.level == permissions.SYSTEM and permissions.decide(d, "autonomous", "look at me").action == "refuse"

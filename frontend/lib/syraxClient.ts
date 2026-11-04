@@ -209,6 +209,8 @@ export interface ResourceSnapshot {
   disk: { free_gb: number; total_gb: number } | null;
   battery: { percent: number; status: string; discharging: boolean } | null;
   quiet_hours: { window: [number, number] | null; active: boolean };
+  /** sysinfo.temperatures(): one reading per sensor, in degrees C */
+  temperatures?: { sensor: string; c: number; crit: number | null }[];
 }
 
 /** The voice SYRAX speaks with (backend/syrax/voice.py VOICES), picked in the UI. */
@@ -442,6 +444,8 @@ export type ServerEvent =
   | ({ type: "brains" } & BrainsState)
   | { type: "brain"; event: "answered"; provider: string; label: string; model: string }
   | { type: "brain"; event: "failover"; provider: string; reason: string }
+  // journal brain.routed (routing.py, the quota saver) reaches the UI as {type: "brain", event: "routed"}
+  | { type: "brain"; event: "routed"; brain?: string; kind?: string; instead_of?: string; reason?: string }
   | { type: "brain_models"; id: string; models: string[]; error?: string }
   | ({ type: "brain_test" } & BrainTestResult)
   | { type: "state"; state: "booting" | "idle" | "thinking" | "acting"; step?: number; tool?: string }
@@ -500,6 +504,9 @@ export type ServerEvent =
   | { type: "briefing"; text: string }
   | { type: "proposals"; proposals: Proposal[] }
   | ({ type: "autonomy_status" } & AutonomyStatus)
+  | ({ type: "vitals" } & ResourceSnapshot)
+  | ({ type: "android" } & AndroidState)
+  | { type: "camera_frame_request"; id: string }
   | ({ type: "startup_status" } & StartupStatus)
   | ({ type: "voice_status" } & VoiceStatus)
   | { type: "memories"; facts: MemoryFact[] }
@@ -558,6 +565,16 @@ export interface QueuedTask {
 /** How an objective is proven done: a machine check, never the task's own words. */
 export type ObjectiveCheck = { kind: string } & Record<string, string>;
 
+/** the ANDROID panel: phones adb sees, the last address, the last action's result */
+export interface AndroidState {
+  adb: boolean;
+  devices: { serial: string; state: string; model: string; wifi: boolean }[];
+  saved: string | null;
+  message: string;
+  result?: string;
+  ok?: boolean;
+}
+
 export type ClientMessage =
   /** queue: a request made while a task runs waits for it instead of being refused */
   | { type: "task"; text: string; voice?: boolean; queue?: boolean }
@@ -567,6 +584,15 @@ export type ClientMessage =
   | { type: "stop"; reason?: string }
   | { type: "reset" }
   | { type: "ping" }
+  | { type: "vitals" }
+  | { type: "android_status" }
+  /** one frame of the HUD's camera for SYRAX's camera action; "" when the HUD's camera is off */
+  | { type: "camera_frame"; id: string; data: string }
+  | { type: "android_find" }
+  | { type: "android_disconnect" }
+  | { type: "android_connect"; host: string; port: string }
+  /** the code is the one the phone shows, typed by the human */
+  | { type: "android_pair"; host: string; port: string; code: string }
   | { type: "history"; limit?: number }
   | { type: "task_events"; task_id: string }
   | { type: "verifications"; limit?: number }

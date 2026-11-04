@@ -56,11 +56,43 @@ SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".cache", "
 VK = {"mute": 0xAD, "vol_down": 0xAE, "vol_up": 0xAF, "next": 0xB0, "prev": 0xB1, "stop": 0xB2, "play_pause": 0xB3}
 
 
+NO_MEDIA = "No media session is open: nothing is playing or paused in any app."
+
+
 def local_clock(now=None) -> str:
     """This machine's local date, time and UTC offset, e.g. 'Wednesday 2026-10-28 15:18:05 (UTC+06:00)'."""
     import datetime as _dt
 
     t = (now or _dt.datetime.now()).astimezone()
+    off = t.strftime("%z")
+    return f"{t.strftime('%A %Y-%m-%d %H:%M:%S')} (UTC{off[:3]}:{off[3:]})"
+
+
+def resolve_zone(place: str) -> Optional[str]:
+    """An IANA zone for a zone name or a city in one ('Tokyo' -> 'Asia/Tokyo'), or None. Live 2026-11-01: asked the
+    time in Tokyo, the brain did the zone arithmetic itself and was 11 hours off; the zone database knows."""
+    import zoneinfo
+
+    want = re.sub(r"\s+", "_", (place or "").strip()).lower()
+    if not want:
+        return None
+    try:
+        zones = sorted(zoneinfo.available_timezones())
+    except Exception:
+        return None
+    for z in zones:
+        if z.lower() == want:
+            return z
+    city = [z for z in zones if z.rsplit("/", 1)[-1].lower() == want and not z.startswith("Etc/")]
+    return city[0] if city else None
+
+
+def zone_clock(zone: str, now=None) -> str:
+    """The date, time and offset in `zone` now (or at `now`), in local_clock's form."""
+    import datetime as _dt
+    import zoneinfo
+
+    t = (now or _dt.datetime.now().astimezone()).astimezone(zoneinfo.ZoneInfo(zone))
     off = t.strftime("%z")
     return f"{t.strftime('%A %Y-%m-%d %H:%M:%S')} (UTC{off[:3]}:{off[3:]})"
 
@@ -159,7 +191,7 @@ def media_report(data: dict) -> str:
 
     sessions = [x for x in (data.get("sessions") or []) if isinstance(x, dict)]
     if not sessions:
-        return "No media session is open: nothing is playing or paused in any app."
+        return NO_MEDIA
     parts = []
     for x in sessions:
         title = presence.redact(str(x.get("title") or "")) or "an untitled item"
@@ -400,11 +432,11 @@ class DesktopControl(BaseTool):
         "Control the human's own computer (GNOME/Linux, Windows or macOS). Use this when they want something to happen "
         "on THEIR screen: open a website in their browser, open a file/folder/app, set volume, "
         "play/pause music, take a screenshot, show a notification, read/write the clipboard, find "
-        "files, check battery/CPU/RAM/disk, lock the screen. Whether an app is installed: list_apps with its name "
+        "files, check battery/CPU/RAM/disk and the time (here or in another city: system_info with that city as target), lock the screen. Whether an app is installed: list_apps with its name "
         "(on Windows Microsoft Store apps such as WhatsApp included), never a file search. On Windows also: type text into the focused window "
         "(type_text), press keys (hotkey, e.g. ctrl+c, alt+tab), click at screen pixels (click) or on what the screen shows by its words (click_text: a button, menu, tab, link or text; find_text only says where it is), switch dark mode "
         "(dark_mode) and turn the display off (display_off); the human stops typing and clicking by moving the "
-        "mouse to the top-left corner. To delete the human's own files, use trash: it goes to the Recycle Bin and can be restored. camera takes one photo with the webcam when the human asks to be seen; you see the photo. (Use the browser_* tools only when YOU need to read or operate a web page.)"
+        "mouse to the top-left corner. To delete the human's own files, use trash: it goes to the Recycle Bin and can be restored. camera takes one photo with the webcam when the human asks to be seen; you see the photo. view shows you an image or a video file (target: its path; a file the human dropped or pasted is in uploads): you see the picture, or six frames of the video. phone uses the human's Android phone (connected over adb, its apps already signed in, WhatsApp too) the way a human does: value status, screen (you see a picture), ui (what the screen shows and where, with x,y), tap (target: the words on it, e.g. Send, or 'x,y' in the picture's pixels), type (target: the text; English letters only), key (target: back, home, recents, enter, delete...), swipe (target: up, down, left, right), open (target: an app name or a link, e.g. https://wa.me/8801XXXXXXXXX?text=Hi opens that WhatsApp chat with the text written). Read the screen again after every step to see what happened. (Use the browser_* tools only when YOU need to read or operate a web page.)"
     )
     parameters: dict = {
         "type": "object",
@@ -414,11 +446,11 @@ class DesktopControl(BaseTool):
                 "enum": [
                     "open", "launch_app", "list_apps", "volume", "media", "screenshot",
                     "notify", "clipboard_get", "clipboard_set", "find_files", "system_info", "lock_screen", "window",
-                    "type_text", "hotkey", "click", "click_text", "find_text", "dark_mode", "display_off", "trash", "untrash", "camera",
+                    "type_text", "hotkey", "click", "click_text", "find_text", "dark_mode", "display_off", "trash", "untrash", "camera", "phone", "view",
                 ],
             },
-            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name (Store apps included). find_files: name pattern. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin. untrash: the original path of a trashed file, to put it back (Linux)."},
-            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop; each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get."},
+            "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name (Store apps included). find_files: name pattern. system_info: a city or time zone (Tokyo, Europe/London) to also read the time there. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin. untrash: the original path of a trashed file, to put it back (Linux)."},
+            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop; each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get. phone: status, screen, ui, tap, type, key, swipe or open."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
         "required": ["action"],
@@ -434,6 +466,55 @@ class DesktopControl(BaseTool):
             return ToolResult(error=f"desktop {action} failed: {e}")
 
     # ——— actions ———
+    async def _do_view(self, target: str, **_) -> ToolResult:
+        """An image or a video file, shown to the brain (2026-11-04: the human could drop a picture but SYRAX never saw it)."""
+        if not target:
+            return ToolResult(error="view needs the path of an image or a video.")
+        path = Path(os.path.expanduser(target))
+        if not path.is_absolute():
+            path = Path(config.workspace_root) / path
+        if not path.is_file():
+            return ToolResult(error=f"No file at {path}.")
+        kind = media_kind(path)
+        if kind == "image":
+            data, size = await asyncio.to_thread(image_for_brain, path.read_bytes())
+            return ToolResult(output=f"Showing the image {path.name} ({size[0]}x{size[1]}).", base64_image=data)
+        if kind == "video":
+            try:
+                data, note = await video_for_brain(path)
+            except RuntimeError as e:
+                return ToolResult(error=str(e))
+            return ToolResult(output=f"Showing six frames of the video {path.name}, left to right, top to bottom: {note}.",
+                              base64_image=data)
+        return ToolResult(error=f"{path.name} is not an image or a video SYRAX can show.")
+
+    async def _do_phone(self, target: str, value: str, **_) -> ToolResult:
+        from syrax import android
+
+        cmd = (value or "status").lower()
+        try:
+            if cmd == "status":
+                return ToolResult(output=await android.describe())
+            if cmd == "screen":
+                path, data = await android.screenshot(Path(config.workspace_root) / "screenshots")
+                return ToolResult(output=f"Phone screen saved to {path}. Positions in this picture are what tap takes.",
+                                  base64_image=data)
+            if cmd == "ui":
+                return ToolResult(output=android.render_ui(await android.ui()))
+            if cmd == "tap":
+                return ToolResult(output=await android.tap(target))
+            if cmd == "type":
+                return ToolResult(output=await android.type_text(target))
+            if cmd == "key":
+                return ToolResult(output=await android.key(target))
+            if cmd == "swipe":
+                return ToolResult(output=await android.swipe(target))
+            if cmd == "open":
+                return ToolResult(output=await android.open_app(target))
+        except android.PhoneError as e:
+            return ToolResult(error=str(e))
+        return ToolResult(error=f"Unknown phone command '{value}': status, screen, ui, tap, type, key, swipe or open.")
+
     async def _do_open(self, target: str, **_) -> ToolResult:
         if not target:
             return ToolResult(error="open needs a target (URL, file or folder).")
@@ -665,7 +746,13 @@ class DesktopControl(BaseTool):
         if not cmd:
             return ToolResult(error="media value must be play, pause, toggle, next, previous or status.")
         code, out, err = await _run("playerctl", cmd)
+        if code != 0 and cmd == "status" and "no players found" in (err or "").lower():
+            # live 2026-11-03: no player open is a reading, as on Windows; as an error the true "nothing plays"
+            # answer ended unverified
+            return ToolResult(output=NO_MEDIA)
         if code != 0:
+            if "no players found" in (err or "").lower():
+                return ToolResult(error=f"No media player is open to take {cmd}.")
             return ToolResult(error=err or "No media player is running.")
         if cmd == "status":
             _, meta, _ = await _run("playerctl", "metadata", "--format", "{{artist}} - {{title}}")
@@ -774,10 +861,16 @@ class DesktopControl(BaseTool):
         found = await asyncio.to_thread(_find, root, target.lower(), 25, 8.0)
         return ToolResult(output="\n".join(found) if found else f"No files matching '{target}' under {root}.")
 
-    async def _do_system_info(self, **_) -> ToolResult:
+    async def _do_system_info(self, target: str = "", **_) -> ToolResult:
         # 2026-10-28 live: asked for the time, the brain read this tool (which had no clock) and answered
         # "18:03" at 15:18. The clock is a reading like the others, so an answer about it has a source.
         lines = [f"Local time: {local_clock()}"]
+        if target:
+            zone = resolve_zone(target)
+            if zone is None:
+                return ToolResult(error=f"system_info: no time zone known for {target!r}; give a city in the zone "
+                                        "database or a zone name such as Asia/Tokyo or Europe/London")
+            lines.append(f"Time in {zone}: {zone_clock(zone)}")
         load = await asyncio.to_thread(sysinfo.loadavg)
         if load:
             lines.append(f"CPU load: {load[0]:.2f} {load[1]:.2f} {load[2]:.2f} ({os.cpu_count()} cores)")
@@ -809,7 +902,13 @@ class DesktopControl(BaseTool):
 
     async def _do_window(self, value: str, target: str = "", **_) -> ToolResult:
         if not WINDOWS:
-            return ToolResult(error="window control is implemented for Windows; on Linux/macOS use launch_app/open")
+            # Live 2026-11-04: on GNOME (Wayland) SYRAX tried `window list` again and again and wasted its steps. Wayland
+            # lets no program list, focus or move other windows. Say so once, plainly, with what does work.
+            front = front_window() if (value or "list").lower() == "list" else None
+            seen = f" In front now: {front}." if front else ""
+            return ToolResult(error="Window control is not possible on this Linux desktop (Wayland lets no program list, focus or "
+                                    "move other windows); do not try it again. Use launch_app or open to bring an app up, and "
+                                    f"screenshot to see the screen.{seen}")
         from syrax import winctl
 
         try:
@@ -988,25 +1087,90 @@ class DesktopControl(BaseTool):
         from syrax import camera
         from syrax.journal import get_journal
 
+        ext, where = "png", "the camera"
         try:
             index = int(value) if str(value or "").strip().isdigit() else 0
             png = await asyncio.to_thread(camera.capture, index)
         except Exception as e:
-            return ToolResult(error=f"camera: {e}")
+            from syrax.core import get_core
+
+            png = await camera.from_hud(get_core().broadcast)  # the HUD may hold the camera (hand tracking)
+            if not png:
+                return ToolResult(error=f"camera: {e}. If the HUD shows the camera, it did not give a frame either.")
+            ext, where = "jpg", "the camera the HUD shows"
         shots = Path(config.workspace_root) / "camera"
         shots.mkdir(parents=True, exist_ok=True)
-        path = shots / f"cam-{time.strftime('%Y%m%d-%H%M%S')}.png"
+        path = shots / f"cam-{time.strftime('%Y%m%d-%H%M%S')}.{ext}"
         path.write_bytes(png)
         try:
             await get_journal().record("camera.captured", {"path": str(path), "bytes": len(png)})
         except Exception:
             pass  # the photo is taken; the record is best effort, the UI still shows the tool call
-        return ToolResult(output=f"Took one photo with the camera: {path}", base64_image=base64.b64encode(png).decode())
+        return ToolResult(output=f"Took one photo with {where}: {path}", base64_image=base64.b64encode(png).decode())
 
     async def _do_display_off(self, **_) -> ToolResult:
         from syrax import wininput
 
         return await self._hands(wininput.display_off)
+
+
+IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".heic"}
+VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".3gp"}
+VIEW_MAX_SIDE = 1600  # an image's longest side for the brain
+
+
+def media_kind(path: Path) -> str:
+    ext = path.suffix.lower()
+    return "image" if ext in IMAGE_EXT else "video" if ext in VIDEO_EXT else ""
+
+
+def image_for_brain(raw: bytes) -> tuple:
+    """(base64 JPEG no wider or taller than VIEW_MAX_SIDE, (width, height) of the original)."""
+    import io
+
+    from PIL import Image, ImageOps
+
+    img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw)))
+    size = img.size
+    img.thumbnail((VIEW_MAX_SIDE, VIEW_MAX_SIDE))
+    buf = io.BytesIO()
+    img.convert("RGB").save(buf, format="JPEG", quality=85)
+    return base64.b64encode(buf.getvalue()).decode(), size
+
+
+async def video_for_brain(path: Path, frames: int = 6) -> tuple:
+    """(base64 JPEG of a 3x2 grid of frames spread over the video, "at 0:00, 0:12, ..."). Needs ffmpeg."""
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        raise RuntimeError("Showing a video needs ffmpeg (Ubuntu: sudo apt install ffmpeg).")
+    code, out, err = await _run("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(path), timeout=20)
+    try:
+        duration = float(out)
+    except ValueError:
+        raise RuntimeError(f"Could not read the video: {err or out or code}")
+    import io
+    import tempfile
+
+    from PIL import Image
+
+    marks = [duration * (i + 0.5) / frames for i in range(frames)]
+    tiles = []
+    with tempfile.TemporaryDirectory() as tmp:
+        for i, t in enumerate(marks):
+            shot = Path(tmp) / f"f{i}.jpg"
+            await _run("ffmpeg", "-v", "error", "-ss", f"{t:.2f}", "-i", str(path), "-frames:v", "1", "-vf", "scale=640:-2",
+                       "-y", str(shot), timeout=30)
+            if shot.exists():
+                tiles.append(Image.open(shot).convert("RGB"))
+        if not tiles:
+            raise RuntimeError("No frame could be read from the video.")
+        w, h = tiles[0].size
+        grid = Image.new("RGB", (w * 3, h * ((len(tiles) + 2) // 3)), "black")
+        for i, tile in enumerate(tiles):
+            grid.paste(tile.resize((w, h)), ((i % 3) * w, (i // 3) * h))
+        buf = io.BytesIO()
+        grid.save(buf, format="JPEG", quality=80)
+    note = "at " + ", ".join(f"{int(t // 60)}:{int(t % 60):02d}" for t in marks[:len(tiles)]) + f" of {int(duration // 60)}:{int(duration % 60):02d}"
+    return base64.b64encode(buf.getvalue()).decode(), note
 
 
 def _find(root: Path, needle: str, limit: int, budget_s: float) -> List[str]:
