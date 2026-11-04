@@ -838,6 +838,8 @@ The owner asked why SYRAX could not send a WhatsApp message, and whether it coul
 - **The owner's rule:** no brain may fail; one is always there.
 - **The fix:** when every brain fails, SYRAX waits up to 2 minutes for Ollama on this machine and lets it answer,
   even if it is switched off in BRAIN. The owner approved this change to `brains.py`.
+- **Also, the camera preview:** it stacked into the left column and pushed the menu up over DIAGNOSTICS. It now sits
+  beside the menu.
 
 ## Open
 
