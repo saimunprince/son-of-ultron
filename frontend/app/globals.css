@@ -2915,3 +2915,10 @@ body {
   line-height: 1.7;
   color: var(--text-dim, rgba(255, 255, 255, 0.55));
 }
+
+/* ——— camera preview beside the rail (2026-11-04): in the column it pushed the rail up over DIAGNOSTICS ——— */
+.hud-controls .camera-panel {
+  position: absolute;
+  left: 180px; /* the rail is 168px wide */
+  top: 0;
+}
