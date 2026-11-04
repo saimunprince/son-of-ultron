@@ -722,6 +722,18 @@ Five agents built the parts in parallel, each as new files, and they were integr
 - **Then:** the owner found the red orb too light, so the shell lines are brighter and the bloom stronger. The
   core is unchanged.
 
+### 2026-11-04: no more empty answers; Ollama answers again
+
+The owner approved changes to `agent.py` and `brains.py` for these ("kore felo").
+
+- **Empty answers:** with Gemini busy, Groq answered "No researched fact was performed, so there is no result to
+  provide." and "The request is complete and no further action is required." A reply that only talks about the
+  task is now sent back once with the human's own request. The wrap-up asks for source URLs only after research.
+- **Ollama (4,096 tokens):** it failed even with the short persona and the essential tools. It now falls back to
+  only the tools in use, then to a plain answer.
+- **Quality misses left as they are:** `deep2_refactor_module` and `deep2_log_report` are the brain's own data and
+  refactoring mistakes, not code faults.
+
 ## Open
 
 - **Needs the owner:**
@@ -736,7 +748,6 @@ Five agents built the parts in parallel, each as new files, and they were integr
   - **5 Windows skills** have no code here; and the **Windows PC** needs a `git pull`.
 - **Watching:**
   - CPU heat during long runs: heavy runs now wait for the CPU to go below 65 °C;
-  - Ollama requests that still exceed 4,096 tokens.
 
 ## Next
 
