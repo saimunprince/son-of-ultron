@@ -1067,6 +1067,11 @@ class BrainRouter(LLM):
                             params["messages"], params["max_tokens"] = fit_request(shorter, chosen, p.max_request_tokens, self.max_tokens)
                             note += ", only the tools in use"
                         except BrainError:
+                            # a plain answer only before any tool ran (a chat): mid-task, a brain without tools
+                            # wrote "the todo app has been created" with nothing on disk (quality run #22,
+                            # 2026-11-04); there the next brain takes over, as before
+                            if any(m.get("role") == "tool" or m.get("tool_calls") for m in shorter):
+                                raise
                             params["messages"], params["max_tokens"] = fit_request(shorter, None, p.max_request_tokens, self.max_tokens)
                             chosen = []
                             note += ", no tools (a plain answer)"

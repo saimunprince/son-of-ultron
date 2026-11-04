@@ -63,7 +63,7 @@ SKILL_FALLBACK = ("The skill was not built: its skill_create did not pass (the s
 # answer: "No researched fact was performed, so there is no result to provide.", "The request is complete and no
 # further action is required." Such a reply is sent back once with the human's own request.
 NON_ANSWER = re.compile(
-    r"\bno (?:result|answer|output|response)s? (?:to (?:provide|report|give|share)|(?:is|was) (?:available|produced))\b"
+    r"\bno (?:result|answer|output|response)s? (?:to (?:provide|report|give|share)|(?:is |was )?(?:available|produced))\b"
     r"|\bno (?:researched|research|further) (?:facts?|actions?|steps?) (?:(?:was|were|is|are) )?(?:performed|required|needed|necessary)\b"
     r"|\b(?:the )?(?:request|task|interaction) (?:is|has been|was) (?:complete|completed|done|finished)\b[^.!?]{0,40}"
     r"\b(?:no further|nothing (?:further|more|else))\b",

@@ -28,3 +28,23 @@ def test_a_tight_brain_falls_back_to_the_tools_in_use_then_to_plain_chat(router,
     sent = [t["function"]["name"] for t in body.get("tools") or []]
     assert len(sent) <= 3  # terminate and at most the tools in use, or none at all
     assert brains.count_tokens(body["messages"]) + brains.count_tokens(body.get("tools") or []) < 700
+
+
+def test_mid_task_a_tight_brain_hands_over_instead_of_answering_without_tools(router, monkeypatch):
+    """Quality run #22 (2026-11-04): with Gemini and Groq rate limited, Ollama got no tools mid-task and wrote
+    'The todo application has been created' with nothing on disk. Once a tool has run, the next brain takes over."""
+    from app.schema import ToolCall
+
+    alpha = dataclasses.replace(brains.PROVIDERS["alpha"], max_request_tokens=700)
+    monkeypatch.setattr(brains, "PROVIDERS", {**brains.PROVIDERS, "alpha": alpha})
+    call = ToolCall(id="c1", type="function", function={"name": "extra_3", "arguments": "{}"})
+    msgs = [Message.user_message("build the app " + "with care " * 160), Message.from_tool_calls([call]),
+            Message.tool_message("ok " * 50, name="extra_3", tool_call_id="c1")]
+    msg = ask(router, messages=msgs, tools=big_tools())
+    body = [b for pid, b, _ in SEEN if pid == msg.content.split()[0]][-1]
+    assert body.get("tools"), "mid-task a brain is never asked without tools"
+    # so tight that not even the tools in use fit: alpha hands over instead of answering bare
+    SEEN.clear()
+    alpha = dataclasses.replace(brains.PROVIDERS["alpha"], max_request_tokens=560)
+    monkeypatch.setattr(brains, "PROVIDERS", {**brains.PROVIDERS, "alpha": alpha})
+    assert ask(router, messages=msgs, tools=big_tools()).content == "beta says hi"

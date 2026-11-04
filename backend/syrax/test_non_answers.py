@@ -15,6 +15,7 @@ from syrax.test_claim_partial import run
     "No researched fact was performed, so there is no result to provide.",
     "The request is complete and no further action is required.",
     "There is no result to report.",
+    "No result available.",
     "The task has been completed; nothing further is needed.",
 ])
 def test_lines_about_the_task_are_not_answers(text):
