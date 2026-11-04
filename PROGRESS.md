@@ -814,6 +814,8 @@ The owner approved changes to `agent.py` and `brains.py` for these ("kore felo")
 - **The fix:** the stage leaves the reply card out.
 - **Also, the command bar:** blank lines no longer stretch it into an oval with a white scrollbar. It grows as a
   rounded box, and Enter on blank lines clears them. Every scrollbar is thin and themed.
+- **Also, the brain chip:** the owner asked to remove the brain name, model and timing from the top-right corner. The
+  status corner shows only the state and the tool count. Failovers still show in the live log.
 
 ## Open
 
