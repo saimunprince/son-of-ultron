@@ -106,3 +106,24 @@ def preferred_for_code(journal: Journal, order: List[str]) -> Optional[str]:
 
 def clear_cache() -> None:
     _cache.clear()
+
+
+# Quota saver (2026-11-04, quality run #22: Gemini's free quota ran out mid-suite and the human's tasks fell to slower
+# brains). The human's first brain is the best one and the scarcest: SYRAX's own background work and small talk try
+# a lighter brain first, so the quota is there for the work the human waits on. Code changes, evals and real requests
+# keep the human's order.
+SAVER_BRAINS = ("groq", "cerebras", "mistral", "github")
+
+
+def quota_saver(task_kind: str, kind: str, order: List[str], usable=None) -> Optional[str]:
+    """The lighter brain to try first for this task, or None to keep the human's order. `usable(pid)` returns
+    (ok, why); a saver that cannot take a call now is skipped."""
+    if not order:
+        return None
+    if not (task_kind == "autonomous" or (task_kind == "conversation" and kind == "chat")):
+        return None
+    for pid in SAVER_BRAINS:
+        if pid in order and pid != order[0] and (usable is None or usable(pid)[0]):
+            return pid
+    return None
+
