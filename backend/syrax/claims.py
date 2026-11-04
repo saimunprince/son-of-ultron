@@ -59,6 +59,20 @@ SKILL_CLAIM_ASK = (
 SKILL_FALLBACK = ("The skill was not built: its skill_create did not pass (the stage and the reason are in this task's "
                   "history), so it is not registered and cannot be used yet.")
 
+# Live 2026-11-03: Groq, writing a wrap-up while Gemini was busy, answered with a line about the task instead of the
+# answer: "No researched fact was performed, so there is no result to provide.", "The request is complete and no
+# further action is required." Such a reply is sent back once with the human's own request.
+NON_ANSWER = re.compile(
+    r"\bno (?:result|answer|output|response)s? (?:to (?:provide|report|give|share)|(?:is|was) (?:available|produced))\b"
+    r"|\bno (?:researched|research|further) (?:facts?|actions?|steps?) (?:(?:was|were|is|are) )?(?:performed|required|needed|necessary)\b"
+    r"|\b(?:the )?(?:request|task|interaction) (?:is|has been|was) (?:complete|completed|done|finished)\b[^.!?]{0,40}"
+    r"\b(?:no further|nothing (?:further|more|else))\b",
+    re.I)
+NON_ANSWER_ASK = (
+    "Your reply talked about the task instead of answering the human. Their request was: \"{request}\". "
+    "Answer it now, directly, from the observations above (or, if it was only a greeting or chat, reply to it "
+    "naturally). No narration about the task, no tool calls."
+)
 
 def skill_claimed(text: str) -> bool:
     """Whether a sentence of `text` says a skill was built, without saying in the same sentence that it failed."""

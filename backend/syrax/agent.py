@@ -43,6 +43,7 @@ from syrax.claims import (  # noqa: F401
     OUTCOME_NUDGE, OUTCOME_NOTE, DISPUTE_MAX, DISPUTE_NO, DISPUTE, DISPUTE_NUDGE, DISPUTE_NOTE, DISPUTE_ACTS,
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
     SKILL_CLAIM, SKILL_HONEST, SKILL_CLAIM_ASK, SKILL_FALLBACK, skill_claimed, skill_state,
+    NON_ANSWER, NON_ANSWER_ASK,
     _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, WANTS_BENGALI, bengali,
 )
 
@@ -81,9 +82,13 @@ def mask_credentials(text: str, goal: str) -> str:
 
 FINAL_ASK = (
     "You finished using tools but gave the human no answer. Reply now with the final answer only: "
-    "the result itself (number, name, year, output), taken from the observations above, and the source "
-    "URL for any researched fact. No narration, no tool calls."
+    "the result itself (number, name, year, output), taken from the observations above. "
+    "No narration, no tool calls."
 )
+# Live 2026-11-03: the source clause in every wrap-up made Groq answer "No researched fact was performed, so there is
+# no result to provide."; it is asked only after the task researched something
+FINAL_ASK_RESEARCHED = FINAL_ASK.replace("taken from the observations above.",
+                                         "taken from the observations above, and the source URL for each researched fact.")
 
 
 TOOLS_GUIDE_SHORT = (
@@ -791,6 +796,12 @@ class SyraxAgent(Manus):
             if TEST_CLAIM.search(self.last_reply or ""):
                 self.last_reply = TEST_FALLBACK
                 self.unproven = self.unproven or "tests"
+        if (self.last_reply and NON_ANSWER.search(self.last_reply) and len(self.last_reply) < 240
+                and not self.step_limit_hit and not self.loop_stopped):
+            # live 2026-11-03: a reply about the task instead of an answer ("The request is complete and no further
+            # action is required."); once more, with the human's own words
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._final_answer(NON_ANSWER_ASK.format(request=(self.task_goal or request or "")[:600]))
         if (self.last_reply and "failed" in self.skills_made and "verified" not in self.skills_made
                 and skill_claimed(self.last_reply)):
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
@@ -936,7 +947,7 @@ class SyraxAgent(Manus):
             if self.exact_form:
                 ask, self.form_asked = FORM_FINAL_ASK.format(form=self.exact_form["text"]), True
             else:
-                ask = FINAL_ASK
+                ask = FINAL_ASK_RESEARCHED if self.researched else FINAL_ASK
         try:
             msg = await self.llm.ask_tool(
                 messages=self.memory.messages + [Message.user_message(ask)],
