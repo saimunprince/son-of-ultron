@@ -202,6 +202,18 @@ def select_tools(tools: List[dict], messages: List[dict], budget: int, max_token
     return [t for t in tools if name(t) in keep]
 
 
+def tools_in_use(tools: List[dict], messages: List[dict]) -> List[dict]:
+    """`terminate` and the tools the conversation's recent assistant turns called: the smallest set that lets a tight
+    brain carry on the work in hand (or finish it)."""
+    used = {"terminate"}
+    for m in messages[-12:]:
+        for c in m.get("tool_calls") or []:
+            name = ((c.get("function") if isinstance(c, dict) else None) or {}).get("name")
+            if name:
+                used.add(str(name))
+    return [t for t in tools if str((t.get("function") or {}).get("name") or "") in used]
+
+
 # A system prompt and its short version (agent.py registers both per task). A brain that cannot fit the full prompt
 # even with the tools chosen per request gets the short one (live 2026-10-31: Ollama, 4,096 tokens).
 SHORT_SYSTEMS: Dict[str, str] = {}
@@ -1042,13 +1054,27 @@ class BrainRouter(LLM):
                 try:
                     params["messages"], params["max_tokens"] = fit_request(messages, chosen, p.max_request_tokens, self.max_tokens)
                 except BrainError:
-                    shorter = shorten_system(messages)
-                    if shorter is None:
-                        raise
+                    shorter = shorten_system(messages) or messages
                     chosen = select_tools(small, shorter, p.max_request_tokens, self.max_tokens)
-                    params["messages"], params["max_tokens"] = fit_request(shorter, chosen, p.max_request_tokens, self.max_tokens)
-                    note = ", the short persona"
-                params["tools"] = chosen
+                    note = ", the short persona" if shorter is not messages else ""
+                    try:
+                        params["messages"], params["max_tokens"] = fit_request(shorter, chosen, p.max_request_tokens, self.max_tokens)
+                    except BrainError:
+                        # live 2026-11-03: Ollama (4,096) failed even with the short persona and the essential tools
+                        # (≈4,419). Last steps: only the tools this conversation is using, then a plain answer.
+                        chosen = tools_in_use(small, shorter)
+                        try:
+                            params["messages"], params["max_tokens"] = fit_request(shorter, chosen, p.max_request_tokens, self.max_tokens)
+                            note += ", only the tools in use"
+                        except BrainError:
+                            params["messages"], params["max_tokens"] = fit_request(shorter, None, p.max_request_tokens, self.max_tokens)
+                            chosen = []
+                            note += ", no tools (a plain answer)"
+                if chosen:
+                    params["tools"] = chosen
+                else:
+                    params.pop("tools", None)
+                    params.pop("tool_choice", None)
                 logger.info(f"brain {pid}: compact tool descriptions ({count_tokens(tools)} -> {count_tokens(small)} tokens)"
                             + (f", {len(chosen)} of {len(small)} tools chosen for this request" if len(chosen) < len(small) else "") + note)
             if len(params["messages"]) < before:
