@@ -922,8 +922,10 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   one line, for example: "THIS COMPUTER: Ubuntu 26.04.1 LTS, GNOME on Wayland (x86_64). Desktop actions that do not
   work here (do not try them): click_text, display_off, find_text, window." `self_inspect` runtime shows the whole
   profile.
-- **Next, step 2:** more ways per system: window control on X11 (xdotool), KDE screenshots and input, PulseAudio
-  volume (pactl), xclip, and a fallback for each desktop action.
+- **Step 2, done:** on an X11 session with xdotool (KDE, Xfce, Cinnamon, MATE, GNOME on Xorg), typing, keys,
+  clicks and window control (list, focus, minimize, maximize, restore, left, right) go through `x11input.py`. GNOME
+  on Wayland keeps its portal, and Windows its own backend. The clipboard falls back to xclip, volume to pactl, and
+  screenshots to KDE's spectacle. The host profile says what each system can do.
 - **Then, step 3:** test runs on Windows and other Linux desktops (the office PC).
 
 ## Open
