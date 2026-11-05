@@ -875,6 +875,21 @@ The owner asked why SYRAX could not send a WhatsApp message, and whether it coul
   was too long for the non-answer check. A reply that is a non-answer from its first word is now asked again, at
   any length.
 
+### 2026-11-05: lessons from the owner's office log
+
+The owner had ChatGPT read a SYRAX log from the office PC. Checked against the repository:
+- **Push:** the night's push (9d8bea4) was the owner's own merge from the office PC. It carried two commits SYRAX
+  made there on its own. SYRAX did not push. The `reminders.py` edit and the probe files were quality cases, rolled
+  back by design.
+- **Live talk:** it heard Bangla as Hindi, Spanish and Japanese, asked the owner to speak English, and said it could
+  not open a file. It now takes such transcripts as Bangla and hands every action to its agent.
+- **Promises:** "push everything when your job is done" got "I will push all changes", which no tool of SYRAX does.
+  The agent is told never to promise what it will not do now, and that pushing is the owner's setting.
+- **Gate diagnosis:** a BLOCKED pytest gate was blamed on its warnings. The FAILED lines had fallen out of the
+  40-line evidence tail, behind the warnings. Failing tests now lead the evidence.
+- **Merge fallout:** after the merge, `test_release_attribution` failed on main. It read the live history as linear.
+  It now checks on a small repository of its own.
+
 ## Open
 
 - The Android phone link is built but not yet tried on the owner's phone (its USB connection keeps dropping).
