@@ -926,7 +926,12 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   clicks and window control (list, focus, minimize, maximize, restore, left, right) go through `x11input.py`. GNOME
   on Wayland keeps its portal, and Windows its own backend. The clipboard falls back to xclip, volume to pactl, and
   screenshots to KDE's spectacle. The host profile says what each system can do.
-- **Then, step 3:** test runs on Windows and other Linux desktops (the office PC).
+- **Step 3, the tool:** `python syrax.py --hostcheck` tries SYRAX's desktop actions on the computer it runs on and
+  compares each with what the host profile predicted. It writes a report to `docs/hostchecks/` with no private data
+  (no clipboard text, window titles, app names or pictures). Steps for a new PC are in
+  [docs/hostchecks/README.md](docs/hostchecks/README.md). Its first run, here, found a bug: setting the clipboard on
+  Wayland waited 15 seconds and then failed, because `wl-copy` stays behind holding the pipe. Fixed.
+- **Then:** run the host check on the office PC, on Windows, and on any other Linux desktop, and fix each MISMATCH.
 
 ## Open
 
