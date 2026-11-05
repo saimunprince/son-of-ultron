@@ -931,7 +931,16 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   (no clipboard text, window titles, app names or pictures). Steps for a new PC are in
   [docs/hostchecks/README.md](docs/hostchecks/README.md). Its first run, here, found a bug: setting the clipboard on
   Wayland waited 15 seconds and then failed, because `wl-copy` stays behind holding the pipe. Fixed.
-- **Then:** run the host check on the office PC, on Windows, and on any other Linux desktop, and fix each MISMATCH.
+- **Windows 11 (office PC), first run:**
+  - The host check matched everything except the clipboard, and the release gate was BLOCKED (13 new tests failed).
+  - Fixed:
+    - Windows clipboard writes retry when another program holds the clipboard.
+    - `open` takes `file:///C:/...` links.
+    - Drive paths such as `C:\shop\a.py` named in a request are watched, so a claimed change is checked there too.
+    - The host check tests the webcam alone, so the running SYRAX's journal no longer gets in the way.
+  - Linux-only tests are skipped on Windows. Two test helpers were fixed: one now closes the journal it opens, and one
+    writes files with `\n` line endings.
+- **Then:** run `python syrax.py --gate` and `--hostcheck` on Windows again, and on any other Linux desktop.
 
 ## Open
 

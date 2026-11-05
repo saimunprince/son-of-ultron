@@ -3,7 +3,10 @@ user manager does not read the shell's PATH, and node lives in ~/.local/bin. The
 shell's PATH, with the system folders kept."""
 
 import importlib.util
+import sys
 from pathlib import Path
+
+import pytest
 
 
 def launcher():
@@ -13,6 +16,7 @@ def launcher():
     return mod
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the systemd service path is POSIX")
 def test_the_service_path_keeps_the_shell_path_and_the_system_folders(tmp_path):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()

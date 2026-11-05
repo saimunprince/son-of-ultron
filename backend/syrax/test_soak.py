@@ -6,7 +6,11 @@ then checks what must hold after any amount of use: no worker left alive, every 
 intact, and memory growth bounded."""
 
 import os
-import resource
+import sys
+
+import pytest
+
+resource = pytest.importorskip("resource", reason="the resource module is POSIX only")
 
 import psutil
 

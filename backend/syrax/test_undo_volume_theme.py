@@ -4,6 +4,9 @@ before). A volume change now says the level before it, dark mode on Linux says t
 the exact call that puts each back."""
 
 import asyncio
+import sys
+
+import pytest
 
 from syrax import desktop, linuxinput, undo
 
@@ -67,6 +70,7 @@ def _trash(home, original, name):
     (info / f"{name}.trashinfo").write_text(f"[Trash Info]\nPath={quote(str(original))}\nDeletionDate=2026-10-31T10:00:00\n")
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="untrash is the freedesktop trash; Windows restores from the Recycle Bin")
 def test_a_trashed_file_names_untrash_and_untrash_puts_it_back(tmp_path, monkeypatch):
     r = undo.reverse_of("desktop", {"action": "trash", "target": "/home/p/a b.txt"},
                         "Moved /home/p/a b.txt to the Recycle Bin; restore it from there if it was a mistake.")

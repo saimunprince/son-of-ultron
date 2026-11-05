@@ -48,3 +48,11 @@ def test_a_correction_that_changed_a_named_file_stands(script, tmp_path):
     ]
     task, _ = run(f"The tests in {shop} fail. Fix the bugs.")
     assert task["result"] == "The bug in pricing.py has been corrected." and not script.queue
+
+
+def test_windows_paths_in_a_request_are_found():
+    """Windows test run 2026-11-05: a drive path named in the request was never watched."""
+    from syrax.claims import _GOAL_PATH
+
+    found = [m.group(1) for m in _GOAL_PATH.finditer(r"fix C:\shop\a.py and D:/x/y.md, not https://a.b/c or 3:4")]
+    assert found == [r"C:\shop\a.py", "D:/x/y.md"]

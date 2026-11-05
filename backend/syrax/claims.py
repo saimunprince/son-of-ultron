@@ -636,7 +636,8 @@ CLAIM_ASK = (
 # "The bugs in inv/pricing.py and inv/stock.py have been corrected" with no file changed. Any python code that may
 # write counts as a change (changes_something), so the claim passed. The files and folders the request names are now
 # read before the task and after it: when only python ran and none of them changed, a claimed change is not believed.
-_GOAL_PATH = re.compile(r"(?<![\w:/])(/(?:[\w.\-]+/)*[\w.\-]+)")
+# Windows test run 2026-11-05: "C:\\shop\\a.py" was not watched; a drive path counts too.
+_GOAL_PATH = re.compile(r"(?<![\w:/\\])((?:[A-Za-z]:[\\/]|/)(?:[\w.\-]+[\\/])*[\w.\-]+)")
 WATCH_MAX_FILES = 4000
 _WATCH_SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", ".next", ".pytest_cache"}
 

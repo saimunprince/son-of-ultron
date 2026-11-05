@@ -23,6 +23,7 @@ def own_work(monkeypatch):
     monkeypatch.setattr(tools, "WRITE_ROOTS", ())
 
 
+@needs_landlock
 def test_the_sealed_folder_is_left_out_of_what_own_code_may_read():
     roots = tools.read_roots()
     config = str(BACKEND_ROOT / "config")

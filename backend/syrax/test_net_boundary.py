@@ -5,6 +5,7 @@ web and DNS ports (SYRAX_OWN_TCP_PORTS, default 80,443,53) and binds none, enfor
 
 import asyncio
 import socket
+import sys
 import threading
 
 import pytest
@@ -62,6 +63,7 @@ def test_own_code_reaches_no_local_port_and_binds_none(listener, monkeypatch):
     assert "OPEN" not in out and out.count("refused") == 3, out
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the probe runs python3 with an empty environment")
 def test_a_human_request_keeps_the_network(listener, monkeypatch):
     monkeypatch.setattr(tools, "TASK_KIND", "conversation")
     out = run(PROBE.format(port=listener))["observation"]

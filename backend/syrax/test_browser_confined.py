@@ -16,6 +16,7 @@ from syrax import _confine
 CHROME = shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser")
 
 
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="RLIMIT_DATA is enforced on Linux")
 def test_the_data_cap_still_refuses_a_real_allocation_past_it():
     code = ("import resource; resource.setrlimit(resource.RLIMIT_DATA, (256 * 2**20, 256 * 2**20))\n"
             "try:\n    bytearray(512 * 2**20); print('ALLOWED')\nexcept MemoryError:\n    print('refused')")

@@ -52,6 +52,10 @@ def test_this_computer_is_read_and_self_inspect_shows_it():
     import tempfile, pathlib
 
     with tempfile.TemporaryDirectory() as d:
-        rt = SelfModel(Journal(pathlib.Path(d) / "j.db")).snapshot("runtime")
+        j = Journal(pathlib.Path(d) / "j.db")
+        try:
+            rt = SelfModel(j).snapshot("runtime")
+        finally:
+            j.close()  # Windows cannot remove an open file (WinError 32)
     system = rt.get("system") or rt.get("runtime", {}).get("system")
     assert system and system["os"] == p["os"] and "tools_found" in system

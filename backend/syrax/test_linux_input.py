@@ -6,6 +6,7 @@ human once, and a restore token kept in backend/config spares later questions. T
 import json
 import os
 import stat
+import sys
 
 import pytest
 
@@ -34,6 +35,7 @@ def test_keysyms_and_hotkeys():
         L.parse_hotkey("ctrl+nosuchkey")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no 0o600 file mode")
 def test_typing_presses_and_releases_each_character_and_keeps_the_token(token_file):
     seen = []
     assert L.type_text("hi", runner=fake(seen=seen)) == "Typed 2 characters into the focused window."
@@ -60,6 +62,7 @@ def test_a_refusal_is_said():
         L.type_text("x", runner=fake({"ok": False, "error": "Start: refused by the portal or the human (code 1)"}))
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the GNOME portal helper exists on Linux only")
 def test_the_desktop_tool_uses_it_off_windows(monkeypatch):
     from syrax import wininput
 

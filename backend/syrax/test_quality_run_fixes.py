@@ -17,7 +17,7 @@ def test_a_bare_hunk_header_is_a_hunk():
 
 def test_the_live_diff_now_applies_by_content(tmp_path):
     f = tmp_path / "reminders.py"
-    f.write_text('"""doc"""\n\nMAX_TEXT = 300\n\n\ndef f():\n    return MAX_TEXT\n', encoding="utf-8")
+    f.write_text('"""doc"""\n\nMAX_TEXT = 300\n\n\ndef f():\n    return MAX_TEXT\n', encoding="utf-8", newline="\n")
     out = apply_by_content(LIVE_DIFF, f)
     assert isinstance(out, tuple), out
     text, placed = out
@@ -32,6 +32,6 @@ def test_a_terminate_written_as_text_is_stripped():
 
 def test_a_deeper_indented_file_gets_the_new_line_at_its_own_depth(tmp_path):
     f = tmp_path / "m.py"
-    f.write_text("class A:\n    def f(self):\n        return 1\n", encoding="utf-8")
+    f.write_text("class A:\n    def f(self):\n        return 1\n", encoding="utf-8", newline="\n")
     text, placed = apply_by_content("--- a/m.py\n+++ b/m.py\n@@\n-return 1\n+return 2\n", f)
     assert placed == 1 and "        return 2\n" in text

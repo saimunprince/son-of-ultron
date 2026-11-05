@@ -129,7 +129,18 @@ async def run_checks(extras: Tuple[str, ...] = ()) -> List[dict]:
     if "hands" in extras:
         await go("hotkey", "hotkey", "pressed Shift once", value="shift")
     if "camera" in extras:
-        await go("camera", "camera")
+        # the webcam alone: the desktop action also journals the photo, and the running SYRAX owns the journal
+        # (Windows test run 2026-11-05: the row failed for that, not for the camera)
+        from syrax import camera
+
+        t0 = time.monotonic()
+        try:
+            png = await asyncio.wait_for(asyncio.to_thread(camera.capture, 0), timeout=30)
+            err = "" if png else "no picture"
+        except Exception as e:
+            err = f"{type(e).__name__}: {e}"
+        rows.append({"action": "camera", "predicted": acts.get("camera", "yes"), "worked": not err,
+                     "detail": private(err), "ms": int((time.monotonic() - t0) * 1000)})
     tried = {r["action"] for r in rows}
     for key, why in NOT_TRIED.items():
         rows.append({"action": key, "predicted": acts.get(key, "yes"), "worked": None, "detail": f"not tried: {why}", "ms": 0})

@@ -526,8 +526,12 @@ class DesktopControl(BaseTool):
         if t.lower().startswith("file://"):
             # quality case browser_read, 2026-11-01: "file:///…/page.html" was "not a URL, an existing path or an app"
             from urllib.parse import unquote, urlparse
+            from urllib.request import url2pathname
 
-            local = unquote(urlparse(t).path)
+            u = urlparse(t)  # Windows test run 2026-11-05: "/C:/x/page%20one.html" is no path there; url2pathname makes it C:\x\page one.html
+            local = url2pathname(u.path) if WINDOWS else unquote(u.path)
+            if WINDOWS and u.netloc and u.netloc != "localhost":
+                local = "\\\\" + u.netloc + local  # file://server/share/x
             if os.path.exists(local):
                 t = local
         if _looks_like_url(t) and not os.path.exists(t):
@@ -855,7 +859,13 @@ class DesktopControl(BaseTool):
 
     async def _do_clipboard_set(self, value: str, **_) -> ToolResult:
         if WINDOWS:
-            code, _, err = await _powershell("Set-Clipboard -Value $env:SYRAX_CLIP", extra_env={"SYRAX_CLIP": value})
+            # Host check 2026-11-05 (office PC): "Requested Clipboard operation did not succeed" 2 of 3 times while
+            # another program held the clipboard for a moment; a short retry covers it.
+            for attempt in range(3):
+                code, _, err = await _powershell("Set-Clipboard -Value $env:SYRAX_CLIP", extra_env={"SYRAX_CLIP": value})
+                if code == 0:
+                    break
+                await asyncio.sleep(0.4 * (attempt + 1))
             return ToolResult(output="Copied to clipboard.") if code == 0 else ToolResult(error=err or "clipboard write failed")
         env = session_env()
         if MACOS:
