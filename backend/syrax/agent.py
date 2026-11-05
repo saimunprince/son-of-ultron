@@ -138,6 +138,9 @@ TOOLS_GUIDE = (
     # live 2026-11-04: a BLOCKED pytest gate was blamed on its warnings
     "When a verification gate FAILed, name the failing tests from its evidence (the FAILED and ERROR lines); "
     "warnings never fail a gate. "
+    # quality run #24 (browser_read): asked what a page shows, the brain read the HTML file's source instead
+    "What a web page shows (a URL or a file:// page) is read with the browser_* tools, as the browser renders it, "
+    "never from its source file: scripts can change what it shows. "
 )
 from syrax import intent, permissions
 from syrax.prompt import SYRAX_PERSONA
@@ -265,6 +268,16 @@ PROMISE = re.compile(
     r"|\bi(?:'ll| will) (?:do|create|fix|try|make|write|run|apply|add|update|handle|redo|retry) (?:this|that|it)\b[^.\n]{0,40}"
     r"\b(?:next|now|shortly|right away|in a moment)\b"
     r"|\bin (?:the|my) next step,? i(?:'ll| will)\b", re.I,
+)
+# Quality run #24 (find_fact): "The launch code is in notes_tuesday.txt. I will retrieve the content of this file to
+# confirm the code." ended the task with no tool call: the file was never read. Work announced for later, in a reply
+# with no tool call, gets one nudge to do it now (think); FINAL_ASK cannot, it has no tools.
+UNDONE = re.compile(
+    r"\bi(?:'ll| will) (?:now |then |first )?(?:retrieve|read|open|check|confirm|look (?:at|into|for)|fetch|verify|inspect|"
+    r"search|find|run|fix|create|write|edit|update|apply|test|try)\b", re.I)
+UNDONE_ASK = (
+    "You said what you will do next, but called no tool, so nothing happened. Do it now with your tools, then give "
+    "the final answer."
 )
 REPEATED_CALL = (
     "Not run again: you already called {name} with exactly these arguments at step {step}; the result is above. "
@@ -486,6 +499,7 @@ class SyraxAgent(Manus):
     calls_spent: int = 0  # tool calls in this task (TOOL_BUDGET); not `tool_calls`, the base agent's list of this turn's calls
     fail_streak: list = Field(default_factory=list)  # tools of the consecutive calls that ran and failed (REPLAN_NOTE)
     loop_stopped: bool = False  # the task was ended because it kept repeating one call
+    undone_nudged: bool = False  # a reply announcing undone work was sent back once (UNDONE)
     release_called: bool = False  # `release` ran in this task (whatever its outcome)
     release_committed: bool = False  # and one of its runs committed
     release_brief: bool = False  # an autonomous task whose brief asks for a release (RELEASE_MARK): change.started
@@ -583,8 +597,8 @@ class SyraxAgent(Manus):
         self.seen_calls = {}
         self.repeats = 0
         self.calls_spent = 0
-        self.fail_streak = []
         self.loop_stopped = False
+        self.undone_nudged = False
         self.release_called = False
         self.release_committed = False
         from syrax.autonomy import RELEASE_MARK
@@ -676,7 +690,8 @@ class SyraxAgent(Manus):
         # written beside an action are what was about to happen, never the answer: ask once for the answer.
         # Review 2026-10-27: a loop stop's answer (LOOP_STOPPED) is the honest final; the words beside the repeated
         # call kept reply_before_action set, and FINAL_ASK replaced the stop with "Checking myself again."
-        if ((not self.last_reply or self.reply_before_action or PROMISE.search(self.last_reply))
+        if ((not self.last_reply or self.reply_before_action or PROMISE.search(self.last_reply)
+             or (self.undone_nudged and UNDONE.search(self.last_reply)))
                 and any(m.role == "tool" for m in self.memory.messages) and not self.loop_stopped):
             await self._final_answer()
         if self.last_reply and ECHO.search(self.last_reply):
@@ -997,6 +1012,13 @@ class SyraxAgent(Manus):
             }
         )
 
+        # work announced for later in a reply with no tool call (UNDONE): once, do it now instead of ending on it
+        if (not self.tool_calls and self.tool_choices == ToolChoice.AUTO and content and not self.undone_nudged
+                and UNDONE.search(content) and any(m.role == "tool" for m in self.memory.messages)
+                and self.current_step < self.max_steps):
+            self.undone_nudged = True
+            self.memory.add_message(Message.user_message(UNDONE_ASK))
+            return False
         # Chat mode: a plain answer with no tool call finishes the turn.
         if not self.tool_calls and self.tool_choices == ToolChoice.AUTO:
             self.state = AgentState.FINISHED
