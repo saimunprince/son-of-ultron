@@ -642,6 +642,13 @@ class SyraxAgent(Manus):
         # 2026-10-28 live: the brain invented a clock time ("18:03" at 15:18); nothing in the prompt said the time.
         clock = (f"This task started at {local_clock()} on this machine. For the time now (later in a long task), "
                  "read desktop system_info; never state a time or date you did not read.")
+        # the owner, 2026-11-05: SYRAX knows the computer it runs on and what its desktop actions can do there
+        try:
+            from syrax import hostprofile
+
+            clock += " " + hostprofile.summary()
+        except Exception as e:  # the profile is help, never a reason for a task to fail
+            logger.warning(f"host profile unavailable: {e}")
         rule_note = ""
         self.rule_conflicts = []
         if self.task_kind == "conversation":

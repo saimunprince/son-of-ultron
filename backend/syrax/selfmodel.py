@@ -199,6 +199,7 @@ class SelfModel:
         return {
             "host": platform.node(),
             "os": platform.platform(),
+            "system": _host_profile(),
             "python": sys.version.split()[0],
             "pid": os.getpid(),
             "cpu": {"cores": os.cpu_count(), "load_1_5_15": load_out},
@@ -648,3 +649,14 @@ def _calibration(journal) -> dict:
         return calibrate.summary(journal)
     except Exception as e:
         return {"error": str(e)[:120]}
+
+
+def _host_profile() -> dict:
+    """The computer SYRAX runs on and what its desktop actions can do there (hostprofile.py)."""
+    try:
+        from syrax import hostprofile
+
+        p = hostprofile.profile()
+        return {k: v for k, v in p.items() if k != "tools"} | {"tools_found": sorted(t for t, ok in p["tools"].items() if ok)}
+    except Exception as e:
+        return {"error": str(e)[:200]}

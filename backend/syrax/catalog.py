@@ -118,6 +118,10 @@ CATALOG: List[Feature] = [
             "Sees the phone's screen, taps, types, swipes and opens apps or links, the way the human does.",
             "android.py + desktop.py: phone (adb over WiFi or USB; the ANDROID panel pairs and connects; a send in a chat app "
             "is EXTERNAL_WRITE)", risk="SYSTEM"),
+    Feature("host_profile", "Knows the computer it runs on", "Computer control", HAVE,
+            "Knows the OS, its version, the desktop and display server, and which of its actions work on this computer.",
+            "hostprofile.py: read at start; one line in every task's prompt names the system and the desktop actions "
+            "that do not work there; self_inspect runtime shows the whole profile", risk="READ_ONLY"),
     Feature("clipboard", "Clipboard read and write", "Computer control", HAVE, "Reads or fills the clipboard.", "desktop.py: clipboard_get, clipboard_set", seen_in="Mark-LV"),
     Feature("screenshot", "Screenshots", "Computer control", HAVE, "Captures the screen.", "desktop.py: screenshot; browser_screenshot", seen_in="Mark-LV"),
     Feature("lock_notify", "Lock screen and notifications", "Computer control", HAVE, "Locks the PC; shows desktop notifications.",
