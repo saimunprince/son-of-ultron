@@ -73,8 +73,15 @@ CATALOG: List[Feature] = [
             "live.py + the TALK button: the browser streams the microphone over /live, SYRAX relays it to Gemini Live (raw "
             "websocket, no SDK, the key stays on the server), first audio in under a second, barge-in; anything to do goes "
             "through run_task into an ordinary task, judged on the human's own words; results and questions are spoken back, "
-            "questions answered on screen. The microphone streams to Google only while TALK is on (journaled)",
+            "questions answered on screen. The microphone streams to Google only while TALK is on (journaled). Typed lines "
+            "join the live talk while it is on. It understands Bangla and Banglish",
             risk="EXTERNAL_READ", seen_in="Mark-LV, Mark-XXXIX-OR"),
+    Feature("live_sight", "Sees the screen and the human live", "Voice", HAVE,
+            "In live talk, sees the shared screen and the human on the camera in real time and talks about them.",
+            "the SCREEN button (frontend/lib/live.ts shareScreen) shares a screen or window; about one picture a second goes "
+            "over /live to Gemini Live (live.py frame, rate- and size-capped), with the HUD's camera in its corner, or the "
+            "camera alone when no screen is shared. Sharing on/off is journaled; pictures go to Google only while it is on",
+            risk="EXTERNAL_READ"),
     Feature("speech_interrupt", "Stop speaking on command", "Voice", HAVE, "Saying 'stop' cuts SYRAX's speech at once.",
             "frontend/lib/wake.ts: stop, quiet, chup, thamo (also in Bangla script) while SYRAX speaks stop the voice or the task",
             seen_in="Mark-X family, Mark-LV"),
@@ -87,7 +94,8 @@ CATALOG: List[Feature] = [
     Feature("tool_calling", "Tools called by the model", "Brain", HAVE, "The model acts through tools instead of describing actions.",
             "OpenManus tool calls through SyraxAgent, every call journaled", seen_in="Mark-LV, Mark-XXXIX-OR"),
     Feature("brain_failover", "Model ladder with cooldowns", "Brain", HAVE, "Survives quota limits and outages by moving to the next brain.",
-            "brains.py BrainRouter: failover chain, per-error cooldowns, smaller-model fallback; routing.py per kind of work", seen_in="Mark-LV"),
+            "brains.py BrainRouter: failover chain, per-error cooldowns, smaller-model fallback; routing.py per kind of work; when "
+            "every brain fails, the local Ollama is the last resort, waited for up to 2 minutes after a boot", seen_in="Mark-LV"),
     Feature("free_model_pool", "Pool of free models", "Brain", HAVE, "More free requests by spreading them over many models.",
             "brains.py: when Gemini's or OpenRouter's chosen model is rate limited, up to three of the provider's other chat models are "
             "tried (each has its own free quota), with per-model cooldowns, before failing over to the next brain",
@@ -163,7 +171,13 @@ CATALOG: List[Feature] = [
             "openrouter, ...) read it. The image goes to that brain's provider", risk="EXTERNAL_READ", seen_in="Mark-LV, Mark-XXXIX-OR"),
     Feature("webcam", "Look through the camera", "Computer control", HAVE, "'Look at me' through the webcam.",
             "desktop action camera (camera.py, opencv-python-headless, approved 2026-10-12): one frame on request, released at "
-            "once, journaled as camera.captured and shown in the UI; SYSTEM, so never in SYRAX's own work", risk="SYSTEM", seen_in="Mark-LV"),
+            "once, journaled as camera.captured and shown in the UI; when the HUD holds the camera for hand tracking, the HUD "
+            "gives the frame (camera.from_hud); SYSTEM, so never in SYRAX's own work", risk="SYSTEM", seen_in="Mark-LV"),
+    Feature("see_media", "Sees pictures and videos it is given", "Computer control", HAVE,
+            "Looks at a picture or a video the human drops or pastes, and answers about it.",
+            "desktop action view (desktop.py image_for_brain, video_for_brain): an image scaled to 1600px, or six frames of a "
+            "video in one grid (ffmpeg); drop anywhere or paste with Ctrl+V into the command bar saves it in uploads",
+            risk="READ_ONLY"),
     Feature("screen_debug", "Explain the error on screen", "Coding", HAVE, "Reads an error on the screen and explains it.",
             "a screenshot reaches the brain, which explains the error; a fix goes through the editor and the gate, never a silent "
             "overwrite", risk="EXTERNAL_READ", seen_in="Mark-LV"),
