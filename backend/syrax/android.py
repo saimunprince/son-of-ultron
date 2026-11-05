@@ -177,7 +177,10 @@ async def connect(host: str, port) -> str:
     rc, out, err = await adb("connect", where, timeout=15)
     text = f"{out} {err}".strip()
     if rc != 0 or not re.search(r"\bconnected to\b", text) or "failed" in text.lower():
-        raise PhoneError(f"Could not connect to {where}: {text or rc}")
+        mine = local_ips()
+        hint = (f" This computer is on {', '.join(mine)}: the phone's IP must be on the same network."
+                if mine and not any(same_net(where.rpartition(':')[0], ip) for ip in mine) else "")
+        raise PhoneError(f"Could not connect to {where}: {text or rc}.{hint}")
     save(address=where)
     return f"Connected to {where}."
 
@@ -213,6 +216,20 @@ async def discover() -> str:
 async def disconnect() -> str:
     await adb("disconnect", timeout=10)
     return "Disconnected every phone on the WiFi (a USB cable stays connected until it is unplugged)."
+
+
+def local_ips() -> List[str]:
+    """This computer's IPv4 addresses on its networks (not loopback)."""
+    try:
+        out = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [a for a in out.split() if re.fullmatch(r"\d+\.\d+\.\d+\.\d+", a) and not a.startswith("127.")]
+
+
+def same_net(a: str, b: str) -> bool:
+    """Whether two IPv4 addresses share the first three numbers (a home /24 network)."""
+    return a.split(".")[:3] == b.split(".")[:3]
 
 
 # ——— the hands (desktop action `phone`) ———

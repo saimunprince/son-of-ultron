@@ -56,6 +56,9 @@ export default function AndroidPanel({ state, busy, onFind, onPair, onConnect, o
   };
 
   const ready = state?.devices.filter((d) => d.state === "device") ?? [];
+  // 2026-11-05: the owner typed the IP and port and pressed Enter, which did nothing; Enter connects (or pairs) now
+  const canConnect = !busy && !!host.trim() && !!port;
+  const canPair = !busy && !!host.trim() && !!pairPort && code.length === 6;
 
   return (
     <div className="brain-backdrop" onClick={onClose}>
@@ -119,6 +122,7 @@ export default function AndroidPanel({ state, busy, onFind, onPair, onConnect, o
                   placeholder="192.168.1.7"
                   value={host}
                   onChange={(e) => takeHost(e.target.value, setPort)}
+                  onKeyDown={(e) => e.key === "Enter" && canConnect && onConnect(host, port)}
                 />
                 <input
                   className="android-port"
@@ -128,8 +132,9 @@ export default function AndroidPanel({ state, busy, onFind, onPair, onConnect, o
                   aria-label="Connect port"
                   value={port}
                   onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
+                  onKeyDown={(e) => e.key === "Enter" && canConnect && onConnect(host, port)}
                 />
-                <button type="button" className="hud-btn" disabled={busy || !host.trim() || !port} onClick={() => onConnect(host, port)}>
+                <button type="button" className="hud-btn" disabled={!canConnect} onClick={() => onConnect(host, port)}>
                   CONNECT
                 </button>
               </div>
@@ -161,11 +166,17 @@ export default function AndroidPanel({ state, busy, onFind, onPair, onConnect, o
                     maxLength={6}
                     value={code}
                     onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && canPair) {
+                        onPair(host, pairPort, code);
+                        setCode("");
+                      }
+                    }}
                   />
                   <button
                     type="button"
                     className="hud-btn"
-                    disabled={busy || !host.trim() || !pairPort || code.length !== 6}
+                    disabled={!canPair}
                     onClick={() => {
                       onPair(host, pairPort, code);
                       setCode("");

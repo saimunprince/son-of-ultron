@@ -11,8 +11,9 @@ agent's state) and imports the rules from here; every name stays importable from
 nothing here touches the agent, its tools or a brain, and nothing imports syrax.agent."""
 
 import ast
+import os
 import re
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 from syrax import guard, permissions, redact
 
@@ -334,9 +335,9 @@ def given_patch(goal: str) -> Optional[dict]:
 # deleted" answers "delete the file".
 _HISTORY = r"(?![^.!?\n]*\b(?:since|ago|(?:in|as of|by) (?:1[89]|20)\d\d)\b)"
 CLAIM = re.compile(
-    r"(?:^|[.!]\s+)(?:fixed|resolved|repaired|patched|implemented)\b(?!-)(?!\s+(?:in|as)\s+(?-i:[A-Z]))"
-    rf"|\b(?:has|have) been (?:successfully )?(?:\w+ and )?(?:fixed|resolved|repaired|patched|implemented|updated|changed|modified)\b{_HISTORY}"
-    r"|\bi(?:'ve| have)? (?!(?:not|never|neither)\b)(?:\w+ )?(?:fixed|resolved|repaired|patched|implemented|updated|changed|modified|released)\b",
+    r"(?:^|[.!]\s+)(?:fixed|resolved|repaired|patched|implemented|corrected)\b(?!-)(?!\s+(?:in|as)\s+(?-i:[A-Z]))"
+    rf"|\b(?:has|have) been (?:successfully )?(?:\w+ and )?(?:fixed|resolved|repaired|patched|implemented|corrected|updated|changed|modified)\b{_HISTORY}"
+    r"|\bi(?:'ve| have)? (?!(?:not|never|neither)\b)(?:\w+ )?(?:fixed|resolved|repaired|patched|implemented|corrected|updated|changed|modified|released)\b",
     re.I,
 )
 # Live 2026-10-10: in one morning eight autonomous finals said a `release`
@@ -629,6 +630,46 @@ CLAIM_ASK = (
     "nothing was created, written or released. Rewrite the final answer honestly: what you found, and what "
     "is still not done. Never claim a change that did not happen. No tool calls."
 )
+
+
+# Quality run #24 (deep_two_bugs): the brain read the files, ran the failing tests through python_execute and answered
+# "The bugs in inv/pricing.py and inv/stock.py have been corrected" with no file changed. Any python code that may
+# write counts as a change (changes_something), so the claim passed. The files and folders the request names are now
+# read before the task and after it: when only python ran and none of them changed, a claimed change is not believed.
+_GOAL_PATH = re.compile(r"(?<![\w:/])(/(?:[\w.\-]+/)*[\w.\-]+)")
+WATCH_MAX_FILES = 4000
+_WATCH_SKIP = {".git", "node_modules", ".venv", "venv", "__pycache__", ".next", ".pytest_cache"}
+
+
+def goal_paths(goal: str) -> List[str]:
+    """Absolute paths named in a request that exist, or whose folder exists (a file to be created)."""
+    out = []
+    for m in _GOAL_PATH.finditer(goal or ""):
+        p = m.group(1).rstrip(".")
+        if os.path.exists(p):
+            out.append(p)
+        elif os.path.isdir(os.path.dirname(p)):
+            out.append(os.path.dirname(p))
+    return list(dict.fromkeys(out))
+
+
+def file_state(paths: List[str]) -> Dict[str, tuple]:
+    """{file: (mtime_ns, size)} for the files under `paths` (folders walked, junk skipped, at most WATCH_MAX_FILES)."""
+    state: Dict[str, tuple] = {}
+    for p in paths:
+        walk = [(p, [], [""])] if os.path.isfile(p) else os.walk(p)
+        for root, dirs, files in walk:
+            dirs[:] = [d for d in dirs if d not in _WATCH_SKIP]
+            for f in files:
+                fp = os.path.join(root, f) if f else root
+                try:
+                    st = os.stat(fp)
+                except OSError:
+                    continue
+                state[fp] = (st.st_mtime_ns, st.st_size)
+                if len(state) >= WATCH_MAX_FILES:
+                    return state
+    return state
 
 
 def changes_something(name: str, args: Any) -> bool:

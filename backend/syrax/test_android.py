@@ -130,3 +130,18 @@ def test_a_tap_lands_in_phone_pixels(monkeypatch):
     assert "Send" in asyncio.run(android.tap("Send"))
     asyncio.run(android.tap("10,20"))
     assert sent == [("input", "tap", "990", "2250"), ("input", "tap", "20", "40")]
+
+
+def test_a_failed_connect_names_this_computers_network(monkeypatch):
+    # 2026-11-05: the owner's PC is on 192.168.10.x by cable; a phone on another network never connects
+    async def refused(*args, timeout=20, binary=False):
+        return 1, "failed to connect to '192.168.0.5:37000': No route to host", ""
+
+    monkeypatch.setattr(android, "adb", refused)
+    monkeypatch.setattr(android, "local_ips", lambda: ["192.168.10.249"])
+    with pytest.raises(android.PhoneError, match="This computer is on 192.168.10.249"):
+        asyncio.run(android.connect("192.168.0.5", "37000"))
+    with pytest.raises(android.PhoneError) as same:
+        asyncio.run(android.connect("192.168.10.40", "37000"))
+    assert "This computer is on" not in str(same.value)
+    assert android.same_net("192.168.10.40", "192.168.10.249") and not android.same_net("10.0.0.2", "192.168.10.249")

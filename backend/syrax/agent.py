@@ -37,7 +37,7 @@ from syrax.memory import ForgetTool, RecallTool, RememberTool, get_memory
 from syrax.claims import (  # noqa: F401
     TEST_CLAIM, TEST_CLAIM_ASK, TEST_FALLBACK, PYTEST_SUMMARY, PYTEST_COUNT, state_of_tests, REFUSAL_ACK, REFUSAL_ASK,
     CLAIM_FALLBACK, NOT_RELEASED_NOTE, UNPROVEN_SOFT, NUMBER, FORM_ASK, FORM_FINAL_ASK, exact_form, meets_form,
-    GIVEN_PATCH_REFUSED, diff_changed_lines, given_patch, CLAIM, OWN_WORK_CLAIM, WORLD_CLAIM, CHANGE_ASKED,
+    GIVEN_PATCH_REFUSED, diff_changed_lines, given_patch, goal_paths, file_state, CLAIM, OWN_WORK_CLAIM, WORLD_CLAIM, CHANGE_ASKED,
     WORLD_NUDGE, SEND_CLAIM, DESKTOP_CLAIM, BROWSER_CLAIM, PLAYING_CLAIM, PLAYING_READ, PLAYING_NOTE, OUTCOME_CLAIMS,
     BOAST, SELF_ASKED, LIMITS_ASKED, LIMITS_NUDGE, without_boasts, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
     OUTCOME_NUDGE, OUTCOME_NOTE, DISPUTE_MAX, DISPUTE_NO, DISPUTE, DISPUTE_NUDGE, DISPUTE_NOTE, DISPUTE_ACTS,
@@ -505,6 +505,9 @@ class SyraxAgent(Manus):
     release_brief: bool = False  # an autonomous task whose brief asks for a release (RELEASE_MARK): change.started
     change_noted: bool = False  # its first repository edit was journaled change.started and named its tests (once)
     changed: bool = False  # a tool that changes the world succeeded this turn
+    changed_by: set = Field(default_factory=set)  # the tools that set `changed`
+    watched: list = Field(default_factory=list)  # files and folders the request names (claims.goal_paths)
+    watch_before: dict = Field(default_factory=dict)  # their state when the task began (claims.file_state)
     researched: bool = False  # `research` succeeded this task: the answer owes a source URL
     called: set = Field(default_factory=set)  # tools this task called (refusals excluded): NAMED_NUDGE
     acted: set = Field(default_factory=set)  # classes of the tools that succeeded this task (classes_of): OUTCOME_CLAIMS
@@ -606,6 +609,7 @@ class SyraxAgent(Manus):
         self.release_brief = self.task_kind == "autonomous" and RELEASE_MARK in (request or "")
         self.change_noted = False
         self.changed = False
+        self.changed_by = set()
         self.researched = False
         self.called = set()
         self.acted = set()
@@ -623,6 +627,8 @@ class SyraxAgent(Manus):
         self.exact_form = None if self.task_kind == "autonomous" else exact_form(self.task_goal)
         self.form_asked = False
         self.given_patch = None if self.task_kind == "autonomous" else given_patch(self.task_goal)
+        self.watched = goal_paths(self.task_goal)
+        self.watch_before = file_state(self.watched) if self.watched else {}
         self.step_limit_hit = False
         self.unproven = None
         # Fresh persona + long-term memory for every task.
@@ -798,7 +804,7 @@ class SyraxAgent(Manus):
             result += "\n" + await BaseAgent.run(self, CITE_NUDGE)
             if self.last_reply.startswith("SYRAX:"):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
-        if self.last_reply and not self.changed and self._claims_change(self.last_reply):
+        if self.last_reply and not self._really_changed() and self._claims_change(self.last_reply):
             # M3: the journal counts what was sent back, not only what got through
             await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
             await self._final_answer(CLAIM_ASK)
@@ -858,6 +864,15 @@ class SyraxAgent(Manus):
         if cleaned != (self.last_reply or ""):
             await self._send({"type": "notice", "text": "The answer carried a note in the console's style: removed."})
             self.last_reply = cleaned
+
+    def _really_changed(self) -> bool:
+        """Whether this task changed something. Python code that may write (changes_something) counts only when one
+        of the files or folders the request names changed, or the request names none (claims.file_state)."""
+        if not self.changed:
+            return False
+        if self.changed_by - {"python_execute"} or not self.watched:
+            return True
+        return file_state(self.watched) != self.watch_before
 
     def _claims_change(self, text: str) -> bool:
         return bool(self._change_claimed(CLAIM, text) or self._change_claimed(WORLD_CLAIM, text)
@@ -1150,6 +1165,7 @@ class SyraxAgent(Manus):
                 seen[key] = self.current_step
                 if _succeeded(result) and changes_something(name, _args_of(command)):
                     self.changed = True
+                    self.changed_by.add(name)
                 if _succeeded(result):
                     self.acted |= classes_of(name, decision.level, _args_of(command))  # OUTCOME_CLAIMS
                     if (name == "desktop" and PLAYING_READ.search(_body(result))) or not _level_known(name):
