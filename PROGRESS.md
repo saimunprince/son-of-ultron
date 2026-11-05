@@ -893,6 +893,9 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   talk), seeing pictures and videos, the HUD camera fallback and the Ollama last resort.
 - **Auto-push on (owner's decision, 2026-11-05):** on this PC, SYRAX's own GREEN releases now push to GitHub by
   themselves (`SYRAX_AUTOPUSH=1` in the syrax user service). The gate's secret scan still runs before every commit.
+- **Quality run #24:** 60 of 67 (89.6 %, +3 points). The misses: find_fact (203 characters, limit 200), browser_read,
+  md_table, deep_two_bugs, deep_rename_api, deep2_log_report and deep2_spec_from_tests. A command check's detail now
+  shows the exit code and the deciding output, not a plugin's warning.
 
 ## Open
 
