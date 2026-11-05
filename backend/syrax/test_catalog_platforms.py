@@ -10,11 +10,14 @@ def by_id(fid):
 
 
 def test_windows_only_features_say_so_and_are_not_here_on_linux():
-    for fid in ("windows", "display_sleep", "click_by_sight", "brightness", "wallpaper"):
+    for fid in ("display_sleep", "click_by_sight", "brightness", "wallpaper"):
         f = by_id(fid)
         assert f.platforms == ("win32",) and not catalog.on_this_platform(f, "linux") and catalog.on_this_platform(f, "win32")
     assert catalog.on_this_platform(by_id("dark_mode"), "linux") and not catalog.on_this_platform(by_id("dark_mode"), "darwin")
     assert catalog.on_this_platform(by_id("volume_media"), "darwin")  # no platforms: everywhere
+    # 2026-11-05: window control on Linux X11 desktops too (x11input.py); never on macOS
+    w = by_id("windows")
+    assert catalog.on_this_platform(w, "win32") and catalog.on_this_platform(w, "linux") and not catalog.on_this_platform(w, "darwin")
 
 
 def test_the_rendered_catalog_has_a_platforms_column():
