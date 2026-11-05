@@ -23,7 +23,7 @@ MACOS = sys.platform == "darwin"
 
 TOOLS = ("wl-copy", "wl-paste", "xsel", "xclip", "xdotool", "ydotool", "playerctl", "wpctl", "pactl", "amixer",
          "notify-send", "gnome-screenshot", "grim", "scrot", "spectacle", "import", "loginctl", "gtk-launch", "xdg-open",
-         "gsettings", "gdbus", "ffmpeg", "ffprobe", "adb", "tesseract", "python3")
+         "gsettings", "gdbus", "ffmpeg", "ffprobe", "adb", "tesseract", "python3", "wmctrl")
 
 _cache: Optional[dict] = None
 
@@ -121,24 +121,29 @@ def actions(family: str, desktop: str, server: str, tools: Dict[str, bool], port
                 "view_video": need(tools.get("ffmpeg", False), "ffmpeg is not installed")}
     wayland = server == "wayland"
     gnome = "gnome" in desktop.lower()
-    shot = any(tools.get(t) for t in ("gnome-screenshot", "grim", "scrot", "import")) or (gnome and portal)
-    clip = (wayland and tools.get("wl-copy") and tools.get("wl-paste")) or tools.get("xsel")
-    hands = gnome and portal
-    hands_why = ("needs GNOME's RemoteDesktop portal (GNOME with the system python3 and PyGObject)" if not gnome
+    x11 = server == "x11"
+    shot = any(tools.get(t) for t in ("gnome-screenshot", "grim", "scrot", "spectacle", "import")) or (gnome and portal)
+    clip = (wayland and tools.get("wl-copy") and tools.get("wl-paste")) or tools.get("xsel") or tools.get("xclip")
+    xdo = x11 and tools.get("xdotool", False)
+    hands = xdo or (gnome and portal)
+    hands_why = ("needs xdotool (sudo apt install xdotool)" if x11 else
+                 "needs GNOME's RemoteDesktop portal (GNOME with the system python3 and PyGObject)" if not gnome
                  else "the system python3 lacks PyGObject (python3-gi) or gdbus is missing")
     return {
         "open": need(tools.get("xdg-open", False), "xdg-open is not installed"),
         "launch_app": "yes",
         "list_apps": "yes",
-        "volume": need(tools.get("wpctl", False) or tools.get("amixer", False), "neither wpctl nor amixer is installed"),
+        "volume": need(tools.get("wpctl", False) or tools.get("amixer", False) or tools.get("pactl", False),
+                       "none of wpctl, amixer or pactl is installed"),
         "media": need(tools.get("playerctl", False), "playerctl is not installed"),
-        "screenshot": need(shot, "no screenshot program (gnome-screenshot, grim, scrot) and no GNOME portal"),
+        "screenshot": need(shot, "no screenshot program (gnome-screenshot, grim, spectacle, scrot) and no GNOME portal"),
         "notify": need(tools.get("notify-send", False), "notify-send is not installed"),
-        "clipboard": need(bool(clip), "needs wl-clipboard on Wayland or xsel on X11"),
+        "clipboard": need(bool(clip), "needs wl-clipboard on Wayland, or xsel or xclip on X11"),
         "lock_screen": need(tools.get("loginctl", False), "loginctl is not available"),
         "trash": "yes",
-        "window": "no: window control is built for Windows only" + ("; Wayland lets no program list or move other "
-                                                                     "windows" if wayland else ""),
+        "window": "yes" if xdo else ("no: needs xdotool (sudo apt install xdotool)" if x11 else
+                                     "no: Wayland lets no program list or move other windows" if wayland else
+                                     "no: needs an X11 session with xdotool"),
         "type_text": need(hands, hands_why), "hotkey": need(hands, hands_why), "click": need(hands, hands_why),
         "dark_mode": need(hands, hands_why),
         "click_text": "no: reading controls on the screen is built for Windows only",

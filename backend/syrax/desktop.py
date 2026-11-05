@@ -635,7 +635,20 @@ class DesktopControl(BaseTool):
             # audit 2026-11-01 (I-11): amixer's "[off]" is its mute state; without it the undo of a mute was always wrong
             muted = " (muted)" if re.search(r"\[off\]", out) else ""
             return ToolResult(output=f"Volume {m.group(1)}%{muted}." if m else out[:200])
-        return ToolResult(error="No volume control (wpctl/amixer) found.")
+        if shutil.which("pactl"):  # PulseAudio desktops without PipeWire's wpctl or ALSA's amixer (2026-11-05)
+            sink = "@DEFAULT_SINK@"
+            arg = {"up": "+10%", "down": "-10%"}.get(v, f"{min(100, int(v))}%" if v.isdigit() else None)
+            if arg:
+                await _run("pactl", "set-sink-volume", sink, arg)
+            elif v in ("mute", "unmute"):
+                await _run("pactl", "set-sink-mute", sink, "1" if v == "mute" else "0")
+            elif v != "get":
+                return ToolResult(error="volume value must be 0-100, up, down, mute, unmute or get.")
+            _, out, _ = await _run("pactl", "get-sink-volume", sink)
+            _, mute, _ = await _run("pactl", "get-sink-mute", sink)
+            m = re.search(r"(\d+)%", out)
+            return ToolResult(output=f"Volume {m.group(1)}%{' (muted)' if 'yes' in mute.lower() else ''}." if m else out[:200])
+        return ToolResult(error="No volume control (wpctl, amixer or pactl) found.")
 
     async def _win_volume(self, v: str) -> ToolResult:
         # Volume keys move the master level 2 % per tap; that is all Windows
@@ -775,6 +788,8 @@ class DesktopControl(BaseTool):
             attempts.append(("gnome-screenshot", "-f", str(path)))
         if shutil.which("grim"):
             attempts.append(("grim", str(path)))
+        if shutil.which("spectacle"):  # KDE (2026-11-05)
+            attempts.append(("spectacle", "-b", "-n", "-f", "-o", str(path)))
         if shutil.which("scrot"):
             attempts.append(("scrot", "-o", str(path)))
         if shutil.which("import"):
@@ -826,7 +841,9 @@ class DesktopControl(BaseTool):
         if MACOS:
             cmd = ("pbpaste",)
         else:
-            cmd = ("wl-paste", "--no-newline") if env.get("WAYLAND_DISPLAY") and shutil.which("wl-paste") else ("xsel", "-ob")
+            cmd = (("wl-paste", "--no-newline") if env.get("WAYLAND_DISPLAY") and shutil.which("wl-paste")
+                   else ("xclip", "-selection", "clipboard", "-o") if not shutil.which("xsel") and shutil.which("xclip")
+                   else ("xsel", "-ob"))
         code, out, err = await _run(*cmd)
         if code != 0:
             return ToolResult(error=err or "clipboard is empty or unavailable")
@@ -840,7 +857,9 @@ class DesktopControl(BaseTool):
         if MACOS:
             cmd = ("pbcopy",)
         else:
-            cmd = ("wl-copy",) if env.get("WAYLAND_DISPLAY") and shutil.which("wl-copy") else ("xsel", "-ib")
+            cmd = (("wl-copy",) if env.get("WAYLAND_DISPLAY") and shutil.which("wl-copy")
+                   else ("xclip", "-selection", "clipboard") if not shutil.which("xsel") and shutil.which("xclip")
+                   else ("xsel", "-ib"))
         code, _, err = await _run(*cmd, stdin=value.encode())
         return ToolResult(output="Copied to clipboard.") if code == 0 else ToolResult(error=err or "clipboard write failed")
 
@@ -901,6 +920,11 @@ class DesktopControl(BaseTool):
         return ToolResult(output="\n".join(lines))
 
     async def _do_window(self, value: str, target: str = "", **_) -> ToolResult:
+        if not WINDOWS and not MACOS and _x11():
+            from syrax import x11input
+
+            if x11input.available():
+                return await self._hands(x11input.window, (value or "list").lower(), target)
         if not WINDOWS:
             # Live 2026-11-04: on GNOME (Wayland) SYRAX tried `window list` again and again and wasted its steps. Wayland
             # lets no program list, focus or move other windows. Say so once, plainly, with what does work.
@@ -928,11 +952,11 @@ class DesktopControl(BaseTool):
 
     # ——— hands (Windows: syrax/wininput.py; Linux GNOME: syrax/linuxinput.py): SYSTEM level, a human conversation only ———
     async def _hands(self, fn, *args) -> ToolResult:
-        from syrax import linuxinput, wininput
+        from syrax import linuxinput, wininput, x11input
 
         try:
             return ToolResult(output=await asyncio.to_thread(fn, *args))
-        except (ValueError, RuntimeError, OSError, wininput.Stopped, linuxinput.Stopped) as e:
+        except (ValueError, RuntimeError, OSError, wininput.Stopped, linuxinput.Stopped, x11input.Stopped) as e:
             return ToolResult(error=str(e))
 
     async def _with_front(self, done: ToolResult, before: Optional[str] = None) -> ToolResult:
@@ -1202,7 +1226,22 @@ def _hands_module():
 
     if MACOS:
         return _NotOnMac  # audit 2026-11-01 (I-07): macOS went to the GNOME portal backend and failed oddly
+    if not WINDOWS and _x11():
+        from syrax import x11input
+
+        if x11input.available():
+            return x11input  # 2026-11-05: X11 desktops (KDE, Xfce, Cinnamon, MATE...) through xdotool
     return wininput if WINDOWS else linuxinput  # the module's own platform flag, as every other desktop action
+
+
+def _x11() -> bool:
+    """Whether this Linux session runs on X11 (hostprofile)."""
+    try:
+        from syrax import hostprofile
+
+        return hostprofile.profile()["display"] == "x11"
+    except Exception:
+        return False
 
 
 class _NotOnMac:

@@ -16,10 +16,10 @@ def test_gnome_wayland_has_hands_through_the_portal_but_no_window_control():
 
 def test_kde_on_x11_without_helpers_says_what_is_missing():
     a = H.actions("Linux", "KDE", "x11", NONE, False, False)
-    assert a["type_text"].startswith("no: needs GNOME")
-    assert "wpctl nor amixer" in a["volume"] and "playerctl" in a["media"] and "xsel on X11" in a["clipboard"]
+    assert a["type_text"].startswith("no: needs xdotool")
+    assert "wpctl, amixer or pactl" in a["volume"] and "playerctl" in a["media"] and "xclip on X11" in a["clipboard"]
     assert a["camera"].startswith("no") and a["phone"].startswith("no") and a["view_video"].startswith("no")
-    assert "Wayland" not in a["window"]
+    assert "Wayland" not in a["window"] and "xdotool" in a["window"]
 
 
 def test_windows_can_do_every_desktop_action():

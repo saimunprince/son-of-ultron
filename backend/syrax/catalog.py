@@ -113,7 +113,9 @@ CATALOG: List[Feature] = [
     Feature("open_apps", "Open apps and links", "Computer control", HAVE, "Opens any app, file or website by name.",
             "desktop.py: open, launch_app, list_apps", seen_in="all"),
     Feature("volume_media", "Volume and media keys", "Computer control", HAVE, "Volume, mute, play/pause.", "desktop.py: volume, media", seen_in="Mark-LV"),
-    Feature("windows", "Window control", "Computer control", HAVE, "Focus, minimise or list windows.", "desktop.py: window (winctl.py)", seen_in="Mark-LV", platforms=("win32",)),
+    Feature("windows", "Window control", "Computer control", HAVE, "Focus, minimise or list windows.",
+            "desktop.py: window (winctl.py on Windows; x11input.py with xdotool on Linux X11 desktops; Wayland allows none)",
+            seen_in="Mark-LV", platforms=("win32", "linux")),
     Feature("android_control", "Use the Android phone", "Computer control", HAVE,
             "Sees the phone's screen, taps, types, swipes and opens apps or links, the way the human does.",
             "android.py + desktop.py: phone (adb over WiFi or USB; the ANDROID panel pairs and connects; a send in a chat app "
