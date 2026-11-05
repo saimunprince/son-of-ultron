@@ -896,6 +896,14 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
 - **Quality run #24:** 60 of 67 (89.6 %, +3 points). The misses: find_fact (203 characters, limit 200), browser_read,
   md_table, deep_two_bugs, deep_rename_api, deep2_log_report and deep2_spec_from_tests. A command check's detail now
   shows the exit code and the deciding output, not a plugin's warning.
+- **Run #24 misses, by cause:**
+  - find_fact: the reply announced "I will retrieve the file" with no tool call and the task ended. Such a reply is
+    now sent back once to do the work.
+  - browser_read: the brain read the page's HTML source. The tool guide now says a page is read as rendered.
+  - md_table: Gemini and Groq were rate limited; Ollama on CPU ran past the 240 s limit.
+  - deep_two_bugs, deep_rename_api, deep2_log_report, deep2_spec_from_tests: weaker fallback brains got the code
+    wrong. One claim went unchecked: "the bugs have been corrected" after only reading and running tests. The
+    check counts any `python_execute` as a possible write. Still open.
 
 ## Open
 
