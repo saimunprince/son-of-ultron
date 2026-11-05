@@ -246,3 +246,9 @@ def test_the_shared_screen_goes_up_as_pictures_and_sharing_is_journaled():
     asyncio.run(bridge.screen(False))
     shares = [(k, p["on"]) for k, p, _ in core.journal.events if k == "live.screen"]
     assert shares == [("live.screen", True), ("live.screen", False)]
+
+
+def test_the_live_voice_hears_bangla_and_hands_actions_over():
+    # live 2026-11-04: Bangla heard as Hindi, Spanish, Japanese; "speak English"; "I cannot open a file on your desktop"
+    assert "Never ask them to speak English" in live.SYSTEM and "Bangla" in live.SYSTEM
+    assert "Never say you cannot do such a" in live.SYSTEM and "run_task" in live.SYSTEM

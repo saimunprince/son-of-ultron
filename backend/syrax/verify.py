@@ -80,9 +80,17 @@ class Verification:
         }
 
 
+FAILING_LINE = re.compile(r"^(FAILED|ERROR) \S")
+FAILING_MAX = 20
+
+
 def _tail(text: str, lines: int = TAIL_LINES) -> str:
+    """The last lines of a gate's output, after its failing tests. Live 2026-11-04: pytest's warnings and the
+    plugins' stderr filled the last 40 lines, the FAILED lines fell out, and SYRAX blamed the warnings."""
     parts = text.strip().splitlines()
-    return "\n".join(parts[-lines:])
+    tail = parts[-lines:]
+    failing = [ln for ln in parts[:-lines] if FAILING_LINE.match(ln)][:FAILING_MAX]
+    return "\n".join(failing + (["..."] if failing else []) + tail)
 
 
 SLEEP_GAP_S = 30.0  # a gate loop iteration this late means the machine was asleep

@@ -131,6 +131,13 @@ TOOLS_GUIDE = (
     # live 2026-10-25: Notepad was minimized, then alt+f4 went to whatever came to the front
     "Keys go to the window in front: before a key that closes or deletes (alt+f4, ctrl+w, delete), bring the window "
     "to the front with `desktop` window focus and its title, and check where the keys went before you say what closed. "
+    # live 2026-11-04: "push everything to GitHub when your job is done" got "I will push all changes", which no tool does
+    "Never promise to do something later or on a condition (push to GitHub, check back, keep watching) that no tool "
+    "of yours does now: say what you did, and plainly what you cannot do. Your own code reaches git only through "
+    "`release`; pushing to GitHub is the owner's setting. "
+    # live 2026-11-04: a BLOCKED pytest gate was blamed on its warnings
+    "When a verification gate FAILed, name the failing tests from its evidence (the FAILED and ERROR lines); "
+    "warnings never fail a gate. "
 )
 from syrax import intent, permissions
 from syrax.prompt import SYRAX_PERSONA
