@@ -112,7 +112,10 @@ def session_env() -> Dict[str, str]:
 
 
 async def _run(*args: str, timeout: float = 15, stdin: Optional[bytes] = None, detach: bool = False,
-               extra_env: Optional[Dict[str, str]] = None) -> tuple:
+               extra_env: Optional[Dict[str, str]] = None, quiet: bool = False) -> tuple:
+    """(exit code, stdout, stderr). quiet: the output is not read, for a program that leaves a child holding its
+    pipes (wl-copy and xclip stay behind to serve the clipboard; reading their pipes waited for the timeout,
+    found by the host check 2026-11-05)."""
     env = session_env()
     if extra_env:
         env.update(extra_env)
@@ -124,16 +127,17 @@ async def _run(*args: str, timeout: float = 15, stdin: Optional[bytes] = None, d
         )
         return 0, "", ""
     kw = {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)} if WINDOWS else {}
+    pipe = asyncio.subprocess.DEVNULL if quiet else asyncio.subprocess.PIPE
     proc = await asyncio.create_subprocess_exec(
         *args, stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE, env=env, **kw,
+        stdout=pipe, stderr=pipe, env=env, **kw,
     )
     try:
         out, err = await asyncio.wait_for(proc.communicate(stdin), timeout)
     except asyncio.TimeoutError:
         proc.kill()
         return 124, "", "timed out"
-    return proc.returncode, out.decode(errors="replace").strip(), err.decode(errors="replace").strip()
+    return proc.returncode, (out or b"").decode(errors="replace").strip(), (err or b"").decode(errors="replace").strip()
 
 
 async def _powershell(script: str, timeout: float = 15, extra_env: Optional[Dict[str, str]] = None) -> tuple:
@@ -860,7 +864,7 @@ class DesktopControl(BaseTool):
             cmd = (("wl-copy",) if env.get("WAYLAND_DISPLAY") and shutil.which("wl-copy")
                    else ("xclip", "-selection", "clipboard") if not shutil.which("xsel") and shutil.which("xclip")
                    else ("xsel", "-ib"))
-        code, _, err = await _run(*cmd, stdin=value.encode())
+        code, _, err = await _run(*cmd, stdin=value.encode(), quiet=True)
         return ToolResult(output="Copied to clipboard.") if code == 0 else ToolResult(error=err or "clipboard write failed")
 
     async def _do_find_files(self, target: str, folder: str = "", **_) -> ToolResult:
