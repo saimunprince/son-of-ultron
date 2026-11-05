@@ -41,15 +41,26 @@ def test_the_regression_objective_names_them_and_how_to_test_one(tmp_path):
     assert o["evidence"]["suspects"][0]["commit"] == "abc1234def5678"
 
 
-def test_git_adds_every_commit_between_the_runs_heads(tmp_path):
+def test_git_adds_every_commit_between_the_runs_heads(tmp_path, monkeypatch):
+    # a small repository of its own: the live one's history is not linear after a merge (2026-11-04, 9d8bea4), and
+    # its last three commits are then no range of two
     import subprocess
 
-    from syrax.journal import BACKEND_ROOT
+    from syrax import autonomy
 
-    root = BACKEND_ROOT.parent
-    heads = subprocess.run(["git", "rev-list", "--max-count=3", "HEAD"], cwd=root, capture_output=True, text=True).stdout.split()
-    if len(heads) < 3:
-        return  # a shallow checkout: nothing to range over
+    repo = tmp_path / "repo"
+    (repo / "backend").mkdir(parents=True)
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True).stdout
+
+    git("init", "-q")
+    for n in range(3):
+        (repo / f"f{n}.txt").write_text(str(n))
+        git("add", ".")
+        git("-c", "user.name=T", "-c", "user.email=t@x", "commit", "-qm", f"change {n}")
+    heads = git("rev-list", "HEAD").split()
+    monkeypatch.setattr(autonomy, "BACKEND_ROOT", repo / "backend")
     j = Journal(tmp_path / "j.db")
     now = time.time()
     found = suspects(j, {"ts": now, "git_head": heads[0]}, {"ts": now - 60, "git_head": heads[2]})
