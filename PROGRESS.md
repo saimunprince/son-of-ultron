@@ -904,6 +904,9 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   - deep_two_bugs, deep_rename_api, deep2_log_report, deep2_spec_from_tests: weaker fallback brains got the code
     wrong. One claim went unchecked: "the bugs have been corrected" after only reading and running tests. The
     check counts any `python_execute` as a possible write. Still open.
+- **Rerun of the 7 misses (after the fixes):** 4 pass: find_fact, browser_read, md_table, deep_two_bugs. With run
+  #24 that makes 64 of 67 (95.5 %). Still failing: deep_rename_api, deep2_log_report, deep2_spec_from_tests. Gemini
+  was rate limited, so Ollama did them.
 
 ## Open
 
