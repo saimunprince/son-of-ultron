@@ -889,6 +889,10 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   40-line evidence tail, behind the warnings. Failing tests now lead the evidence.
 - **Merge fallout:** after the merge, `test_release_attribution` failed on main. It read the live history as linear.
   It now checks on a small repository of its own.
+- **Self-knowledge:** the feature catalog, which `self_inspect` reads, now lists live sight (screen and camera in live
+  talk), seeing pictures and videos, the HUD camera fallback and the Ollama last resort.
+- **Auto-push on (owner's decision, 2026-11-05):** on this PC, SYRAX's own GREEN releases now push to GitHub by
+  themselves (`SYRAX_AUTOPUSH=1` in the syrax user service). The gate's secret scan still runs before every commit.
 
 ## Open
 
