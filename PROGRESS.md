@@ -914,6 +914,18 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   pairs). When a connect fails and the phone is on another network, the error names this PC's network
   (192.168.10.x by cable).
 
+### 2026-11-05: SYRAX knows the computer it runs on (step 1 of "run right everywhere")
+
+- **The ask:** SYRAX should run right on any Linux, any Windows and other systems, and know its own system.
+- **Step 1, done:** `hostprofile.py` reads the OS and its version, the desktop and display server, and the helper
+  programs found. For each desktop action it says whether it works here and, if not, why. Every task's prompt gets
+  one line, for example: "THIS COMPUTER: Ubuntu 26.04.1 LTS, GNOME on Wayland (x86_64). Desktop actions that do not
+  work here (do not try them): click_text, display_off, find_text, window." `self_inspect` runtime shows the whole
+  profile.
+- **Next, step 2:** more ways per system: window control on X11 (xdotool), KDE screenshots and input, PulseAudio
+  volume (pactl), xclip, and a fallback for each desktop action.
+- **Then, step 3:** test runs on Windows and other Linux desktops (the office PC).
+
 ## Open
 
 - The Android phone link is built but not yet tried on the owner's phone (its USB connection keeps dropping).
