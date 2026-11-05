@@ -701,8 +701,11 @@ def check_case(case: dict, task: dict, events: List[dict], env: Dict[str, str]) 
             cmd = [sys.executable if part == "{python}" else part for part in c["cmd"]]
             try:
                 run = subprocess.run(cmd, cwd=c["cwd"], capture_output=True, text=True, timeout=30)
-                output = (run.stdout or "") + (run.stderr or "")
-                ok, detail = run.returncode == 0 and re.search(c["pattern"], run.stdout or "") is not None, output.strip()[-160:]
+                # live 2026-11-05: the detail was the last 160 characters of stdout and stderr, which a plugin's
+                # deprecation warning filled; the exit code and the output that decides come first now
+                shown = (run.stdout or "").strip() or (run.stderr or "").strip()
+                ok = run.returncode == 0 and re.search(c["pattern"], run.stdout or "") is not None
+                detail = f"exit {run.returncode}: {shown[-200:]}"
             except (OSError, subprocess.TimeoutExpired) as e:
                 ok, detail = False, str(e)[:160]
             out.append({"check": f"`{' '.join(c['cmd'][1:])}` prints {c['pattern']}", "ok": ok, "detail": detail})
