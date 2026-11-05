@@ -42,3 +42,13 @@ A user-level `SYRAX_ALLOWED_ORIGINS` (set when the UI moved to :3001) makes abou
 - Clipboard: Set-Clipboard fails some of the time ("Requested Clipboard operation did not succeed"). 2 of 3 direct calls failed while another program was syncing the clipboard, and a second host check passed. A short retry on Windows clipboard writes would cover it.
 - Camera: this computer has no webcam (DSHOW and MSMF both fail to open device 0). The host check's camera row was a MISMATCH for another reason: the journal is owned by the running SYRAX, so a second process cannot journal the photo. The check should either skip journaling or say why it failed.
 - Shift press (`--hostcheck hands`): OK.
+
+## Follow-up: 1a9cfff on Windows (2026-11-05 17:15)
+
+Full gate: BLOCKED. pytest had 3 failures, 2914 passed and 35 skipped. Every other gate passed. The rest of the fixes work: clipboard, drive paths, skips, hostprofile, CRLF, read boundary, service path, untrash.
+
+| Test | Cause | Fix |
+|---|---|---|
+| test_quality_fixes_1101.py::test_open_takes_a_file_url | The test sets `desktop.WINDOWS = False` on a Windows host, so `_do_open` takes the `unquote(u.path)` branch and gets `/C:/.../page one.html`, which does not exist. | Use `url2pathname(u.path)` on every platform: on POSIX it is `unquote`, on Windows it gives `C:\...`. Keep the UNC branch for Windows. |
+| test_change_proof.py::test_a_correction_that_changed_a_named_file_stands | The scripted python code is `open('{target}', 'w')`, and `target` is `C:\Users\...`. `\U` is a unicode escape, so the code raises a SyntaxError, the file never changes, and the claim is rewritten. | Put the path in as `{str(target)!r}` or `target.as_posix()`. |
+| test_linux_input.py::test_tests_never_reach_the_real_portal | `L.hotkey` tries to start the Linux portal helper before the "input is off" check: FileNotFoundError (WinError 2). | Skip it on Windows like the other portal tests, or check `SYRAX_NO_REAL_INPUT` before looking for the helper. |
