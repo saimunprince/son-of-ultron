@@ -948,6 +948,10 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   brain. Two fixes from them:
   - the brain's own sign-off ("There are no further requests, I will terminate.") is cut from the end of an answer;
   - `know` says it is not for common facts, so "What is the capital of Japan?" is answered with no tool.
+- **Live questions (2026-11-06):** 8 questions a person would ask (OS, time here and in Tokyo, volume, window list on
+  Wayland, the date in Bengali, PDFs in Downloads, abilities, clipboard). 7 were right. "tumi ki ki korte paro?" was
+  answered in English and spoke of "the human's computer": the persona now answers Banglish in Banglish and calls the
+  human "you".
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open
