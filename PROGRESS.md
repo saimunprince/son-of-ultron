@@ -940,7 +940,11 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
     - The host check tests the webcam alone, so the running SYRAX's journal no longer gets in the way.
   - Linux-only tests are skipped on Windows. Two test helpers were fixed: one now closes the journal it opens, and one
     writes files with `\n` line endings.
-- **Then:** run `python syrax.py --gate` and `--hostcheck` on Windows again, and on any other Linux desktop.
+- **Windows, second run (1a9cfff):** 2914 passed, 3 failed. The three are fixed:
+  - `open` reads `file://` links with `url2pathname` on every OS;
+  - a test put a Windows path into Python source unescaped (`\U`);
+  - dark mode checked that input is off only after calling gsettings, which Windows does not have.
+- **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open
 

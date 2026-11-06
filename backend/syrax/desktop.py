@@ -525,11 +525,11 @@ class DesktopControl(BaseTool):
         t = os.path.expanduser(target)
         if t.lower().startswith("file://"):
             # quality case browser_read, 2026-11-01: "file:///…/page.html" was "not a URL, an existing path or an app"
-            from urllib.parse import unquote, urlparse
+            from urllib.parse import urlparse
             from urllib.request import url2pathname
 
             u = urlparse(t)  # Windows test run 2026-11-05: "/C:/x/page%20one.html" is no path there; url2pathname makes it C:\x\page one.html
-            local = url2pathname(u.path) if WINDOWS else unquote(u.path)
+            local = url2pathname(u.path)  # POSIX: unquote; Windows: C:\\...
             if WINDOWS and u.netloc and u.netloc != "localhost":
                 local = "\\\\" + u.netloc + local  # file://server/share/x
             if os.path.exists(local):

@@ -43,7 +43,7 @@ def test_a_correction_that_changed_a_named_file_stands(script, tmp_path):
     target = shop / "pricing.py"
     target.write_text("def discounted(p, pct):\\n    return p\\n")
     script.queue = [
-        call("python_execute", {"code": f"open('{target}', 'w').write('def discounted(p, pct):\\\\n    return p * (1 - pct / 100)\\\\n')"}),
+        call("python_execute", {"code": f"open({str(target)!r}, 'w').write('def discounted(p, pct):\\\\n    return p * (1 - pct / 100)\\\\n')"}),
         reply("The bug in pricing.py has been corrected."),
     ]
     task, _ = run(f"The tests in {shop} fail. Fix the bugs.")
