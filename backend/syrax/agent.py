@@ -251,13 +251,19 @@ ECHO = re.compile(r"\[SYRAX (?:step )?check, not a new request\]|^\s*the user sa
 _NOTE = (r"(?:\[SYRAX\b(?![^\]\n]*not a new request)[^\[\]\n]{0,300}\]|\[terminate\b[^\[\]\n]{0,80}\]"
          r"|\bterminate\(\s*status\s*=\s*['\"]?\w+['\"]?\s*\))")
 CONSOLE_NOTE = re.compile(rf"(?m)^[ \t]*{_NOTE}[ \t]*(?:\n|\Z)|[ \t]*{_NOTE}[ \t]*\Z|\A[ \t]*{_NOTE}[ \t]*")
+# Quality run #26 (act_delete): "Deleted old.log. There are no further requests, I will terminate." The brain's own
+# sign-off: a whole last sentence, never for the human.
+SIGN_OFF = re.compile(
+    r"(?im)(?:(?<=[.!?])|^)[ \t]*(?:(?:there (?:are|is) )?no (?:further|more|other) (?:requests?|tasks?|actions?|steps?)"
+    r"[^.\n]{0,40}?[,.;][ \t]*)?(?:(?:so |now )?(?:i will|i'll|i am going to) (?:now )?(?:terminate|end the task)"
+    r"(?: now| here)?|terminating)[.!]?\s*\Z")
 
 
 def without_console_notes(text: str) -> str:
     """`text` without the console-style notes the brain wrote into it (CONSOLE_NOTE), trimmed; unchanged otherwise."""
-    if not text or ("[SYRAX" not in text and "terminate" not in text):
+    if not text or ("[SYRAX" not in text and "erminat" not in text and "end the task" not in text.lower()):
         return text
-    cleaned = CONSOLE_NOTE.sub("", text).strip()
+    cleaned = SIGN_OFF.sub("", CONSOLE_NOTE.sub("", text)).strip()
     return cleaned if cleaned != text.strip() else text
 
 PROMISE = re.compile(

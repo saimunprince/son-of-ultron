@@ -335,7 +335,8 @@ class KnowTool(BaseTool):
     name: str = "know"
     description: str = (
         "Search what SYRAX already knows (stored knowledge with sources and confidence). "
-        "Use before researching. Returns matching entries with ids, confidence and source URLs."
+        "Use before researching. Not for common knowledge you are sure of (a capital, a unit, arithmetic): answer "
+        "that directly with no tool (quality run #26, act_concise). Returns matching entries with ids, confidence and source URLs."
     )
     parameters: dict = {
         "type": "object",

@@ -944,6 +944,10 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   - `open` reads `file://` links with `url2pathname` on every OS;
   - a test put a Windows path into Python source unescaped (`\U`);
   - dark mode checked that input is off only after calling gsettings, which Windows does not have.
+- **Quality run #26 (2026-11-06):** 61/67 (91%). Rerunning the six misses gave 6/6, so they come and go with the
+  brain. Two fixes from them:
+  - the brain's own sign-off ("There are no further requests, I will terminate.") is cut from the end of an answer;
+  - `know` says it is not for common facts, so "What is the capital of Japan?" is answered with no tool.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open
