@@ -4,12 +4,13 @@ The short, current page: where SYRAX stands now, what was done, what is next. Up
 Detail lives in [docs/AUDIT_2026-10-28.md](docs/AUDIT_2026-10-28.md) (findings and the open list), the commit
 messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
-## Now (2026-11-03, +0600)
+## Now (2026-11-06, +0600)
 
-- **Stage:** the 11-01 audit mission is merged and pushed; SYRAX runs on `main` as a login service. The evening was
-  live testing: SYRAX was asked real tasks, and what went wrong outside the protected files was fixed.
-- **Live SYRAX:** the super-villain persona with the Freedom Engine; autonomy level 3; the emergency stop is off.
-- **Open:** see Open below, and the report [docs/AUDIT_2026-11-01.md](docs/AUDIT_2026-11-01.md), sections 7 and 8.
+- **Stage:** a day of live and stress testing: about 100 requests in 12 rounds plus a stress run, a load test and a
+  multi-file project. Every bug found was fixed, gated GREEN and pushed (see Done, 2026-11-05 onward).
+- **Live SYRAX:** runs on `main` as a login service, autonomy level 5, emergency stop off. It restarts itself into
+  new code through systemd now. Ollama runs with a 16,384-token context.
+- **Open:** see Open below.
 
 ## Done
 
@@ -1018,17 +1019,22 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
 
 ## Open
 
-- The Android phone link is built but not yet tried on the owner's phone (its USB connection keeps dropping).
-
 - **Needs the owner:**
+  - **More free brain keys** (Cerebras, GitHub Models, Mistral, OpenRouter, Upstage): Gemini's free quota runs out
+    several times a day. Keys go in through the UI's brain panel, never in chat or git.
+  - **The Windows PC:** `git pull`, then ask its coding agent to "test SYRAX" (docs/hostchecks/TEST_PLAN.md).
+  - **The phone:** Android version, whether Wireless debugging exists, and the phone's IP:port.
+  - **Step limit:** 20 steps (30 for SYRAX's own code); raise it for long projects if the owner agrees.
   - **Review the protected files:** `agent.py` and `brains.py` were changed on 10-30 and 10-31 under "sob koro",
-    before the mission named them protected (the 11-03 changes were approved).
+    before the mission named them protected (later changes were approved).
   - **Offline Bengali speech:** `SYRAX_WHISPER_MODEL=small`, a 460 MB download.
-  - **Objective #35:** say "play lo-fi on YouTube" once.
   - **3 plan items:** personality adaptation, visual tracking and sensor fusion.
-  - **5 Windows skills** have no code here; and the **Windows PC** needs a `git pull`.
+- **Known limits:**
+  - Ollama (qwen3 4B on the CPU) takes about 3 minutes for a 9,000-token request and is weak at finding a fact in
+    a long text: a last resort, not a replacement.
+  - S10 and S11 from the 11-01 audit (packages vendored through tests; unconfined skill tests on Windows).
 - **Watching:**
-  - CPU heat during long runs: heavy runs now wait for the CPU to go below 65 °C;
+  - CPU heat during long runs: heavy runs wait for the CPU to go below 65 °C.
 
 ## Next
 
