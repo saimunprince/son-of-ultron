@@ -9,6 +9,7 @@
     python syrax.py --status            show the login service
     python syrax.py --gate              run the release gate (pytest, tsc, eslint, build...)
     python syrax.py --hostcheck         try the desktop actions on this computer, write docs/hostchecks/<system>.md
+    python syrax.py --testhere          the host check and the release gate, one report (docs/hostchecks/TEST_PLAN.md)
     python syrax.py --backup            verified copy of the journal and config into backend/config/backups
     python syrax.py --restore DIR       put a backup folder back (SYRAX must be stopped)
 
@@ -925,6 +926,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument("--gate", action="store_true", help="run the release gate and exit")
     ap.add_argument("--hostcheck", nargs="*", choices=("hands", "camera"), metavar="EXTRA",
                     help="try SYRAX's desktop actions on this computer and write a report (extras: hands, camera)")
+    ap.add_argument("--testhere", nargs="*", choices=("hands", "camera"), metavar="EXTRA",
+                    help="host check and release gate on this computer, one report in docs/hostchecks (extras: hands, camera)")
     ap.add_argument("--backup", action="store_true", help="copy the journal, brains, memory and config into backend/config/backups (verified, 7 kept)")
     ap.add_argument("--restore", metavar="DIR", help="put a backup folder back into backend/config; refuses while SYRAX runs")
     ap.add_argument("--token", action="store_true", help="print the token a non-browser client needs for /ws, /live and the voice endpoints")
@@ -988,6 +991,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if a.hostcheck is not None:
         setup(verbose=False)
         return subprocess.run([str(venv_python()), "-m", "syrax.hostcheck", *a.hostcheck], cwd=str(BACKEND)).returncode
+    if a.testhere is not None:
+        setup(verbose=False)
+        return subprocess.run([str(venv_python()), "-m", "syrax.hostcheck", "--gate", *a.testhere], cwd=str(BACKEND)).returncode
     if a.backup or a.restore:  # syrax.backup is stdlib only: the venv is all it needs, even on a bare machine
         if not venv_python().exists():
             setup(verbose=False)

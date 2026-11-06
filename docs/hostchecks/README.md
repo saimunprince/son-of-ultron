@@ -21,4 +21,5 @@ screen gives a black screenshot. Then send the report back:
     git commit -m "hostcheck: <this computer>"
     git push
 
-For the whole picture also run the release gate: `python syrax.py --gate`.
+For the whole picture, `python syrax.py --testhere` runs the host check and the release gate together, in one
+report. A coding agent on that computer follows [TEST_PLAN.md](TEST_PLAN.md).

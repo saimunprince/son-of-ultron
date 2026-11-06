@@ -173,6 +173,43 @@ def report(p: dict, rows: List[dict], when: Optional[str] = None) -> str:
     return "\n".join(lines)
 
 
+def run_gate(runner=None) -> dict:
+    """The release gate (syrax.verify --json) in a child process: its own environment rules apply (SYRAX_* dropped
+    for pytest). {"status", "head", "gates": [{name, status, required, seconds}], "failing": [test lines]}."""
+    import json
+    import subprocess
+
+    backend = Path(__file__).resolve().parents[1]
+    if runner is None:
+        r = subprocess.run([sys.executable, "-m", "syrax.verify", "--json"], cwd=str(backend), capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=3600)
+        raw = r.stdout
+    else:
+        raw = runner()
+    try:
+        v = json.loads(raw[raw.index("{"):])
+    except ValueError:
+        return {"status": "NOT_RUN", "head": "", "gates": [], "failing": [private(raw[-300:] or "no output")]}
+    failing = []
+    for g in v.get("gates", []):
+        for line in str(g.get("evidence") or "").splitlines():
+            if re.match(r"^(FAILED|ERROR) \S", line.strip()) and line.strip() not in failing:
+                failing.append(private(line.strip()))
+    return {"status": v.get("status", "?"), "head": (v.get("git_head") or "")[:7],
+            "gates": [{"name": g["name"], "status": g["status"], "required": g.get("required", True),
+                       "seconds": round((g.get("duration_ms") or 0) / 1000)} for g in v.get("gates", [])],
+            "failing": failing[:40]}
+
+
+def gate_report(g: dict) -> str:
+    lines = ["## Release gate", "", f"- Result: {g['status']} on {g['head'] or 'unknown commit'}", "",
+             "| Gate | Result | Seconds |", "|---|---|---|"]
+    lines += [f"| {x['name']}{'' if x['required'] else ' (optional)'} | {x['status']} | {x['seconds']} |" for x in g["gates"]]
+    if g["failing"]:
+        lines += ["", "Failing tests:", ""] + [f"- `{f}`" for f in g["failing"]]
+    return "\n".join(lines) + "\n"
+
+
 def slug(*parts: str) -> str:
     return "-".join(re.sub(r"[^a-z0-9]+", "", s.lower()) or "x" for s in parts)
 
@@ -181,11 +218,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("extras", nargs="*", choices=("hands", "camera"), help="also press Shift once / take one webcam photo")
     ap.add_argument("--out", type=Path, default=REPORT_DIR)
+    ap.add_argument("--gate", action="store_true", help="also run the release gate and put it in the report (python syrax.py --testhere)")
     a = ap.parse_args(argv)
     p = hostprofile.profile()
     say(hostprofile.summary(p), flush=True)
     rows = asyncio.run(run_checks(tuple(a.extras)))
     text = report(p, rows)
+    gate = None
+    if a.gate:
+        say("running the release gate (pytest, tsc, eslint, build...): several minutes", flush=True)
+        gate = run_gate()
+        text += "\n" + gate_report(gate)
+        say(f"gate: {gate['status']}" + "".join(f"\n  {f}" for f in gate["failing"]))
     a.out.mkdir(parents=True, exist_ok=True)
     path = a.out / f"{slug(p['os'], p['desktop'], p['display'])}-{time.strftime('%Y%m%d')}.md"
     path.write_text(text, encoding="utf-8", newline="\n")
@@ -193,7 +237,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         say(f"  {r['verdict']:<18} {r['action']:<12} {r['detail']}")
     say(f"report: {path}")
     say("Share it: git add docs/hostchecks && git commit -m 'hostcheck' && git push  (or send the file)")
-    return 1 if any(r["verdict"] == "MISMATCH" for r in rows) else 0
+    bad = any(r["verdict"] == "MISMATCH" for r in rows) or (gate is not None and gate["status"] != "GREEN")
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":

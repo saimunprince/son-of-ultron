@@ -967,6 +967,10 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   the 2 largest files, `disk_usage` returned huge.bin and mid.bin, and the answer named data_large.json and
   logs_2026.txt, which exist nowhere. Now an answer that names files no tool showed, the request did not name, and
   the disk does not have is asked once again, from the results only.
+- **Testing on the Windows PC without the main PC:** `python syrax.py --testhere` runs the host check and the release
+  gate and writes one report. `docs/hostchecks/TEST_PLAN.md` tells a coding agent there what to do when the owner
+  says "test SYRAX": pull, run, explain each failure with a suggested fix, and push the report. A short `CLAUDE.md`
+  at the root points to it. Its "This round" list says what to check each time.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open

@@ -56,3 +56,19 @@ def test_quiet_run_does_not_wait_for_a_child_holding_the_pipes():
     code = "import subprocess,sys; subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); print('x')"
     got = asyncio.run(desktop._run(sys.executable, "-c", code, timeout=8, quiet=True))
     assert got[0] == 0
+
+
+def test_the_gate_report_lists_failing_tests_and_hides_home():
+    import json
+
+    home = str(Path.home())
+    raw = "warning first\n" + json.dumps({"status": "BLOCKED", "git_head": "ce7bf97abc", "gates": [
+        {"name": "pytest", "status": "FAIL", "required": True, "duration_ms": 260000,
+         "evidence": f"FAILED syrax/test_x.py::test_a - assert 1 in {home}/y\nERROR syrax/test_y.py\n.... passed"},
+        {"name": "performance", "status": "PASS", "required": False, "duration_ms": 200, "evidence": ""}]})
+    g = hostcheck.run_gate(runner=lambda: raw)
+    assert g["status"] == "BLOCKED" and g["head"] == "ce7bf97" and len(g["failing"]) == 2
+    assert home not in g["failing"][0] and "~/y" in g["failing"][0]
+    text = hostcheck.gate_report(g)
+    assert "| pytest | FAIL | 260 |" in text and "| performance (optional) | PASS | 0 |" in text and "`ERROR syrax/test_y.py`" in text
+    assert hostcheck.run_gate(runner=lambda: "crashed")["status"] == "NOT_RUN"
