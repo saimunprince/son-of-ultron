@@ -23,6 +23,20 @@ def test_the_brain_is_told_where_the_long_message_is(script, monkeypatch):
         return await real(self, llm, messages, **kwargs)
 
     monkeypatch.setattr(script.__class__, "__call__", spy)
-    script.queue = [reply("3000")]
-    run("Count the words in this text: " + "word " * (PASTE_CHARS // 4))
+    script.queue = [reply("The same word, again and again.")]
+    run("Summarise this text: " + "word " * (PASTE_CHARS // 4))
     assert "THE HUMAN'S MESSAGE is long" in systems[0] and "/pasted/" in systems[0]
+
+
+def test_a_count_with_no_tool_is_sent_back_to_count_the_file(script):
+    from syrax.test_bridge import call
+
+    script.queue = [reply("625"), call("python_execute", {"code": "print(3000)"}), reply("3000")]
+    task, _ = run("Count the words in this text: " + "word " * (PASTE_CHARS // 4))
+    assert task["result"] == "3000" and not script.queue
+
+
+def test_a_long_message_that_asks_no_count_is_not_sent_back(script):
+    script.queue = [reply("It is a list of the same word.")]
+    task, _ = run("What is this text about? " + "word " * (PASTE_CHARS // 4))
+    assert task["result"] == "It is a list of the same word." and not script.queue

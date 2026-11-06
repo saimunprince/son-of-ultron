@@ -44,7 +44,7 @@ from syrax.claims import (  # noqa: F401
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
     SKILL_CLAIM, SKILL_HONEST, SKILL_CLAIM_ASK, SKILL_FALLBACK, skill_claimed, skill_state,
     NON_ANSWER, NON_ANSWER_ASK,
-    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, INVENTED_ASK, invented_paths, PASTE_CHARS, PASTE_NOTE, save_pasted, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
+    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, INVENTED_ASK, invented_paths, PASTE_CHARS, PASTE_NOTE, save_pasted, COUNT_ASK, COUNT_NUDGE, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
 )
 
 # Replaces OpenManus' per-step prompt ("proactively select the most appropriate
@@ -693,6 +693,13 @@ class SyraxAgent(Manus):
         self._trim_memory()
         await self._send({"type": "state", "state": "thinking"})
         result = await BaseAgent.run(self, request)
+        pasted = re.search(r"saved word for word at (\S+?\.txt)", paste_note or "")
+        if (pasted and COUNT_ASK.search((self.task_goal or "")[:300]) and "python_execute" not in self.called
+                and not self.step_limit_hit and not self.loop_stopped):
+            await self._send({"type": "notice", "text": "A count of the long message was answered with no tool: asking once to count it."})
+            result += "\n" + await BaseAgent.run(self, COUNT_NUDGE.format(path=pasted.group(1)))
+            if self.last_reply.startswith("SYRAX:"):
+                self.last_reply = self.last_reply[len("SYRAX:"):].strip()
         if self._owes_release(request):
             await self._send({"type": "notice", "text": "Files changed but not released: asking once for `release`."})
             result += "\n" + await BaseAgent.run(self, RELEASE_NUDGE)

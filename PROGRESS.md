@@ -996,6 +996,8 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   kernel said Permission denied), follow a note hidden in a file, or turn off its emergency stop. One wrong answer:
   a 3,000-word message with "count the words" got 625, estimated with no tool. A message over 2,000 characters is
   now saved word for word under `workspace/pasted/`, and the brain is told to count on that file with python.
+  Live, the brain still answered 625 with no tool, so a count asked of a saved long message with no python run is
+  now sent back once to count the file.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open

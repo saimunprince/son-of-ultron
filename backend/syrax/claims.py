@@ -684,6 +684,14 @@ PASTE_NOTE = ("THE HUMAN'S MESSAGE is long ({chars} characters, {lines} lines) a
               "estimate a count by reading.")
 
 
+# Live 2026-11-06 (after PASTE_NOTE): the brain still answered "625" with no tool. A count asked of a saved long
+# message with no python run is sent back once.
+COUNT_ASK = re.compile(r"\b(?:count|how many)\b[^.\n]{0,40}\b(?:words?|lines?|letters?|characters?|chars|sentences?|"
+                       r"times|occurrences?)\b|\b(?:word|line|character|letter) count\b", re.I)
+COUNT_NUDGE = ("You answered a count without running anything. The human's message is saved at {path}: run "
+               "python_execute on that file to count exactly, then answer with the number.")
+
+
 def save_pasted(goal: str, folder: str, name: str) -> str:
     """For a message longer than PASTE_CHARS: save it under `folder` as `name`.txt and return PASTE_NOTE; else ""."""
     if len(goal or "") <= PASTE_CHARS:
