@@ -44,7 +44,7 @@ from syrax.claims import (  # noqa: F401
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
     SKILL_CLAIM, SKILL_HONEST, SKILL_CLAIM_ASK, SKILL_FALLBACK, skill_claimed, skill_state,
     NON_ANSWER, NON_ANSWER_ASK,
-    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, INVENTED_ASK, invented_paths, PASTE_CHARS, PASTE_NOTE, save_pasted, COUNT_ASK, COUNT_NUDGE, PADDED_ASK, PADDED_EXT, PADDED_MIN_SENTENCES, PADDED_UNIQUE, padded_text, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
+    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, INVENTED_ASK, invented_paths, PASTE_CHARS, PASTE_NOTE, save_pasted, COUNT_ASK, COUNT_NUDGE, NOTHING_FOUND, SEARCH_CLAIM, SEARCH_TOOLS, SEARCH_ASK, PADDED_ASK, PADDED_EXT, PADDED_MIN_SENTENCES, PADDED_UNIQUE, padded_text, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
 )
 
 # Replaces OpenManus' per-step prompt ("proactively select the most appropriate
@@ -847,8 +847,15 @@ class SyraxAgent(Manus):
             if self._dispute_unread():  # still nothing read
                 self.last_reply = (self.last_reply or "").rstrip() + DISPUTE_NOTE
                 self.unproven = self.unproven or "dispute"
+        if (self.last_reply and SEARCH_CLAIM.search(self.last_reply) and not any(t in self.called for t in SEARCH_TOOLS)
+                and not any(t.startswith("browser") for t in self.called) and not self.step_limit_hit and not self.loop_stopped):
+            await self._send({"type": "claim", "event": "rejected", "text": self.last_reply[:500], "task_kind": self.task_kind})
+            await self._send({"type": "notice", "text": "The answer claims a search no tool made: asking once to search or not claim it."})
+            result += "\n" + await BaseAgent.run(self, SEARCH_ASK)
+            if self.last_reply.startswith("SYRAX:"):
+                self.last_reply = self.last_reply[len("SYRAX:"):].strip()
         if (self.last_reply and self.researched and not URL.search(self.last_reply) and "[Spoken aloud" not in (request or "")
-                and not self.step_limit_hit and not self.loop_stopped):
+                and not NOTHING_FOUND.search(self.last_reply) and not self.step_limit_hit and not self.loop_stopped):
             # the answer rests on research: it names its source once asked, or the journal shows it would not
             await self._send({"type": "claim", "event": "uncited", "text": self.last_reply[:500], "task_kind": self.task_kind})
             await self._send({"type": "notice", "text": "A researched answer without its source: asking once for the URL."})

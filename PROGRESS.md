@@ -1006,6 +1006,14 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
     padding;
   - a question sent right after an answer, while the task was still cleaning up, got "Already executing" and was
     lost; it now waits in the queue and starts when the cleanup ends.
+- **A real multi-file project** (a library app: package, JSON store, borrowing rules, CLI, pytest): built and checked
+  by hand. The tests pass and the CLI keeps the rules (a borrowed book cannot be borrowed again, at most 3 per
+  member). A 20-request load test answered 20 of 20 right, and memory stayed flat (558 to 561 MB).
+- **Round 12 (traps: a made-up paper, a teleport tool, a city that does not exist, the 2030 World Cup):** no made-up
+  facts, but made-up sources. A made-up paper got "searches in academic repositories such as Zenodo return no such
+  work", with no tool run; "Glarnovia" was researched, nothing was found, and the citation check got Genoa's
+  Wikipedia page cited. A claimed search with no search tool run is now sent back, and an answer that says nothing
+  was found is not asked for a URL.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open

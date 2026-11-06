@@ -619,8 +619,23 @@ def is_reading(name: str, args: Any) -> bool:
 URL = re.compile(r"https?://\S+")
 CITE_NUDGE = (
     "[SYRAX check, not a new request] You used `research` in this task, but your answer carries no source URL. "
-    "Repeat the answer with the URL(s) it rests on, taken from the research results. No new tool calls."
+    "Repeat the answer with the URL(s) it rests on, taken from the research results. No new tool calls. If the "
+    "research found nothing about it, say that plainly and cite nothing: never cite a page that does not support "
+    "the answer."
 )
+# Round 12, 2026-11-06: "What is the population of Glarnovia?" found nothing, and asked for a source the answer cited
+# Genoa's Wikipedia page. An answer that says nothing was found needs no URL.
+NOTHING_FOUND = re.compile(r"\b(?:no (?:record|trace|information|results?|evidence|data)|(?:could|can) ?not find|"
+                           r"found nothing|not found|no such|does not exist|doesn't exist|fictional|made[- ]up)\b", re.I)
+# Round 12, 2026-11-06: "Summarize the 2027 paper 'Quantum Banana Networks'" ran no tool and answered that "searches
+# in academic repositories such as Zenodo return no such work", with a link. A search the answer claims must have run.
+SEARCH_CLAIM = re.compile(r"\b(?:i (?:have )?(?:searched|looked (?:it )?up|checked (?:online|the web))|searches (?:in|of|on|across)\b|"
+                          r"a search (?:of|in|on)\b|(?:my|the) search(?:es)? (?:returned|found|show)|"
+                          r"databases? (?:such as|like)\b[^.]{0,80}\b(?:return|show))", re.I)
+SEARCH_TOOLS = ("research", "know", "paper_search", "github_search", "browser_exec", "browser_navigate", "browser_read")
+SEARCH_ASK = ("[SYRAX check, not a new request] Your answer says a search was made, but no search tool ran in this "
+              "task. Either search now with `research`, or answer without claiming a search and without links you "
+              "did not read.")
 
 
 EDIT_COMMANDS = {"create", "str_replace", "insert", "undo_edit"}
