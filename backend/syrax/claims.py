@@ -775,6 +775,25 @@ LANG_ASK_EN = ("The human wrote this message in English. Give the same answer ag
 WANTS_BENGALI = re.compile(r"\b(?:bangla|bengali|banglay|bangla[iy]|bengali script)\b|বাংলা", re.I)
 
 
+# Live 2026-11-06: "tumi ki ki korte paro? 3 line e bolo" (Bengali in Latin letters) was answered in English twice,
+# even with the rule in the persona. Banglish is told by its common small words.
+BANGLISH_WORDS = frozenset(
+    "ami amar amake amra tumi tomar tomake apni apnar apnake ki keno kothay koyta koto kemon kivabe ache achhe nai "
+    "nei hobe hoy hoyeche hocche korte koro koren korbo korbe kore korechi korlam bolo bolun bolte dao dite daw "
+    "ekhon aj ajke ei oi eta ota sob kichu khub valo bhalo jodi tahole kintu theke diye jonno moto "
+    "ekta duita baki cholche chalao chalu dekho dekhao lagbe parbe paro pari jano jani naki".split())
+LANG_ASK_BANGLISH = ("The human wrote in Banglish (Bengali in Latin letters). Give the same answer again in Banglish: "
+                     "keep code, file names, commands, numbers and technical terms as they are. Reply with that and nothing else.")
+
+
+def banglish(text: str, share: float = 0.25, hits: int = 2) -> bool:
+    """Whether `text` is Bengali written in Latin letters: at least `hits` distinct Banglish words that make up at
+    least `share` of its words."""
+    words = re.findall(r"[a-z]+", (text or "").lower())
+    found = [w for w in words if w in BANGLISH_WORDS]
+    return bool(words) and len(set(found)) >= hits and len(found) / len(words) >= share
+
+
 def bengali(text: str, share: float = 0.3) -> bool:
     """Whether at least `share` of the letters in `text` are Bengali script."""
     letters = _LETTER.findall(text or "")

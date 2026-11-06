@@ -44,7 +44,7 @@ from syrax.claims import (  # noqa: F401
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
     SKILL_CLAIM, SKILL_HONEST, SKILL_CLAIM_ASK, SKILL_FALLBACK, skill_claimed, skill_state,
     NON_ANSWER, NON_ANSWER_ASK,
-    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, WANTS_BENGALI, bengali,
+    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
 )
 
 # Replaces OpenManus' per-step prompt ("proactively select the most appropriate
@@ -723,7 +723,14 @@ class SyraxAgent(Manus):
             # language follow (claims.bengali): a request in Bengali script gets its answer in Bengali, asked once
             await self._send({"type": "notice", "text": "The request was in Bengali script and the answer was not: asking once in Bengali."})
             await self._final_answer(LANG_ASK)
+        elif (self.last_reply and banglish(self.task_goal or "") and not banglish(self.last_reply, share=0.08, hits=1)
+              and not bengali(self.last_reply, share=0.15)
+              and not self.exact_form and not self.step_limit_hit and not self.loop_stopped):
+            # Banglish (claims.banglish, live 2026-11-06): a request in Bengali with Latin letters gets a Banglish answer
+            await self._send({"type": "notice", "text": "The request was in Banglish and the answer was not: asking once in Banglish."})
+            await self._final_answer(LANG_ASK_BANGLISH)
         elif (self.last_reply and (self.task_goal or "").strip() and not bengali(self.task_goal or "", share=0.05)
+              and not banglish(self.task_goal or "")
               and not WANTS_BENGALI.search(self.task_goal or "") and bengali(self.last_reply)
               and not self.exact_form and not self.step_limit_hit and not self.loop_stopped):
             # the reverse (claims.LANG_ASK_EN, live 2026-10-31): the current message decides, not the conversation before

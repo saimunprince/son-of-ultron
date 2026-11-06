@@ -951,7 +951,9 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
 - **Live questions (2026-11-06):** 8 questions a person would ask (OS, time here and in Tokyo, volume, window list on
   Wayland, the date in Bengali, PDFs in Downloads, abilities, clipboard). 7 were right. "tumi ki ki korte paro?" was
   answered in English and spoke of "the human's computer": the persona now answers Banglish in Banglish and calls the
-  human "you".
+  human "you". The rule alone was not enough (asked again, still English), so SYRAX now tells Banglish by its small
+  words and asks the brain once for a Banglish answer, as it already did for Bengali script. This replaces the
+  2026-10-30 choice "Banglish stays English"; the persona the owner first dictated was Banglish.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open

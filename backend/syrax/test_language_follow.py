@@ -1,6 +1,7 @@
 """Catalog language_follow (owner's decision delegated on 2026-10-30): the persona said "Pure English only", so a
 question in Bengali script got an English answer. A request in Bengali script is now answered in Bengali script, asked
-once if the brain answered in English; Latin-script Banglish stays English."""
+once if the brain answered in English. Latin-script Banglish stayed English until 2026-11-06; it now gets a Banglish
+answer (test_banglish.py)."""
 
 from syrax.claims import LANG_ASK, bengali
 from syrax.journal import get_journal
@@ -25,11 +26,11 @@ def test_an_english_answer_to_a_bengali_request_is_asked_again_in_bengali(script
     assert task["result"] == "এখন ৩১ ডিগ্রি।" and LANG_ASK.split(":")[0] in str(script.seen[-1][-1].content)
 
 
-def test_banglish_and_english_are_not_asked(script):
+def test_an_english_request_with_an_english_answer_is_not_asked(script):
     script.queue = [reply("It is 31 degrees.")]
     with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
         boot(ws)
-        ws.send_json({"type": "task", "text": "aj koto gorom?"})
+        ws.send_json({"type": "task", "text": "how hot is it today?"})
         drain_until_idle(ws)
     assert get_journal().tasks()[0]["result"] == "It is 31 degrees." and not script.queue
 
