@@ -281,6 +281,32 @@ def _win_cpu_percent(sample_s: float = 0.15) -> Optional[float]:
 CPU_SENSORS = ("k10temp", "coretemp", "zenpower", "cpu_thermal", "acpitz")
 
 
+# Drivers whose first sensor is the CPU itself. Live 2026-11-06: asked for the CPU temperature, the brain read
+# thermal_zone0 (acpitz, a fixed 16.8 C board value) and answered 16.8 C while k10temp read 44 C.
+CPU_SENSORS = ("k10temp", "coretemp", "zenpower", "cpu_thermal", "x86_pkg_temp", "soc_thermal", "cpu-thermal")
+
+
+def cpu_temperature(readings: Optional[list] = None) -> Optional[dict]:
+    """The CPU's own sensor from temperatures(), or None when this computer has none we know."""
+    for want in CPU_SENSORS:
+        for r in readings if readings is not None else temperatures():
+            if r["sensor"] == want:
+                return r
+    return None
+
+
+def temperatures_line(readings: Optional[list] = None) -> str:
+    """'Temperatures: CPU 44.8 C (k10temp); nvme 31.9 C; ...' for system_info, or a plain 'not readable' line."""
+    readings = temperatures() if readings is None else readings
+    cpu = cpu_temperature(readings)
+    parts = [f"CPU {cpu['c']} C ({cpu['sensor']})"] if cpu else ["CPU: no CPU sensor readable here"]
+    for r in readings:
+        if r is not cpu:
+            note = " (board, not the CPU)" if r["sensor"] == "acpitz" else ""
+            parts.append(f"{r['sensor']} {r['c']} C{note}")
+    return "Temperatures: " + "; ".join(parts)
+
+
 def temperatures(root: str = "/sys/class/hwmon") -> list:
     """Linux hardware temperatures, no root (EVOLUTION_PLAN direction 218 hardware fault detection): one entry per
     hwmon sensor, {"sensor", "c", "crit"} in degrees Celsius (crit None when the driver gives none). Empty elsewhere."""

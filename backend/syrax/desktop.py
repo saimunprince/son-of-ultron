@@ -928,6 +928,7 @@ class DesktopControl(BaseTool):
         bat = sysinfo.battery()
         if bat:
             lines.append(f"Battery: {bat['percent']}% ({bat['status']})")
+        lines.append(await asyncio.to_thread(sysinfo.temperatures_line))
         up = sysinfo.uptime_seconds()
         if up is not None:
             lines.append(f"Uptime: {int(up // 3600)}h {int(up % 3600 // 60)}m")

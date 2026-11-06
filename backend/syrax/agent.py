@@ -98,7 +98,11 @@ TOOLS_GUIDE_SHORT = (
 TOOLS_GUIDE = (
     "TOOL GUIDE: When the human wants something on THEIR computer (open a site or app, "
     "play music, volume, screenshot of their screen, notifications, clipboard, find their "
-    "files, battery/CPU), use the `desktop` tool. Use browser_* tools only when you yourself "
+    "files, battery/CPU, temperatures), use the `desktop` tool (system_info reads the CPU's own temperature sensor). "
+    # live 2026-11-06: "delete notes.txt" ran os.remove, and "undo" could not bring it back
+    "To delete the human's files use `desktop` trash, so they can be restored and undone; never os.remove or rm in "
+    "python_execute unless the human asks for a permanent delete. "
+    "Use browser_* tools only when you yourself "
     "must read or operate a web page. Use python_execute for calculations and scripts. "
     "When asked what you are, what you can do, what failed, your version, your code or your "
     "weaknesses, call `self_inspect` and answer from its evidence; never guess. "

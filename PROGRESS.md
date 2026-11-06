@@ -954,6 +954,11 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   human "you". The rule alone was not enough (asked again, still English), so SYRAX now tells Banglish by its small
   words and asks the brain once for a Banglish answer, as it already did for Bengali script. This replaces the
   2026-10-30 choice "Banglish stays English"; the persona the owner first dictated was Banglish.
+- **Second live round (multi-step):** a file written and read, lines counted, the sum of primes (1060), Python
+  3.15.2 with its source (checked on python.org), and RAM were all right. Fixed:
+  - the CPU temperature came out as 16.8 C, read from a board sensor (acpitz), while the CPU sensor read 44 C;
+    `system_info` now gives every temperature and names the CPU's own sensor;
+  - "delete notes.txt" ran `os.remove`, so "undo" could not bring it back: the human's files now go to the trash.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open
