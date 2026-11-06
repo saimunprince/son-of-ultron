@@ -96,3 +96,33 @@ def test_the_brain_sets_one_and_the_ui_hears_it_fire(script):
     (ev,) = [e for e in j.events_since(before) if e.type == "reminder.fired"]
     wire = ev.wire()  # what the UI receives through the journal fan-out
     assert wire["type"] == "reminder" and wire["event"] == "fired" and wire["text"] == "call Rahim"
+
+
+def test_a_daily_reminder_sets_the_next_one_when_it_fires(tmp_path):
+    """Live 2026-11-06: "remind me every day at 9 AM" set one reminder and the answer said daily."""
+    j = Journal(tmp_path / "j.db")
+    r = reminders.create(j, "drink water", NOW + 60, now=NOW, repeat="daily")
+    fired = asyncio.run(reminders.fire_due(j, now=NOW + 120))
+    assert [f["id"] for f in fired] == [r["id"]]
+    (nxt,) = reminders.pending(j)
+    assert nxt["id"] != r["id"] and nxt["repeat"] == "daily" and nxt["due_ts"] == pytest.approx(NOW + 60 + 86400)
+    assert reminders.cancel(j, nxt["id"]) and not reminders.pending(j)  # cancel stops it for good
+
+
+def test_a_repeating_reminder_missed_for_days_fires_once_and_moves_on(tmp_path):
+    j = Journal(tmp_path / "j.db")
+    reminders.create(j, "stretch", NOW + 60, now=NOW, repeat="weekly")
+    late = NOW + 60 + 3 * 7 * 86400 + 5  # SYRAX was off for three weeks
+    assert len(asyncio.run(reminders.fire_due(j, now=late))) == 1
+    (nxt,) = reminders.pending(j)
+    assert nxt["due_ts"] == pytest.approx(NOW + 60 + 4 * 7 * 86400)
+
+
+def test_the_tool_says_once_or_daily(tmp_path):
+    j = Journal(tmp_path / "j.db")
+    tool = reminders.RemindTool(journal_provider=lambda: j)
+    daily = asyncio.run(tool.execute(action="set", text="drink water", at="09:00", repeat="daily")).output
+    once = asyncio.run(tool.execute(action="set", text="call Rahim", in_minutes=30)).output
+    assert ", then daily: drink water" in daily and " (once): call Rahim" in once
+    assert ", then daily · drink water" in asyncio.run(tool.execute(action="list")).output
+    assert "repeat must be" in asyncio.run(tool.execute(action="set", text="x", in_minutes=5, repeat="hourly")).error

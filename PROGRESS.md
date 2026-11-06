@@ -979,6 +979,10 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   the login service's cgroup, and systemd killed it together with the old launcher. Inside its own systemd unit,
   SYRAX now asks systemd to restart the unit (`systemctl --user restart --no-block`); only the unit's own
   INVOCATION_ID counts, so a terminal or editor started by systemd never restarts the service.
+- **Round 7 (research with sources, JSON, translation, conversation memory, haiku, counting files, reminders):**
+  right except one claim: "remind me every day at 9 AM" set a single reminder and answered "daily". Reminders now
+  take `repeat` (daily or weekly): a repeating one sets its next one when it fires, a day SYRAX was off is skipped
+  rather than fired late twice, and every answer says "once" or "then daily".
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open

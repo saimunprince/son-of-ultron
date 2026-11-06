@@ -27,6 +27,9 @@ from syrax.journal import Journal, get_journal
 CHECK_EVERY_S = 15.0
 MAX_TEXT = 300
 MAX_AHEAD_S = 366 * 86400
+# Live 2026-11-06: "remind me every day at 9 AM to drink water" set one reminder for tomorrow and the answer said
+# "daily". A repeating reminder sets its next one when it fires.
+REPEATS = {"daily": 86400, "weekly": 7 * 86400}
 
 
 def pending(journal: Journal) -> List[Dict[str, Any]]:
@@ -69,16 +72,32 @@ def parse_when(at: Optional[str] = None, in_minutes: Optional[float] = None, now
     return ts
 
 
-def create(journal: Journal, text: str, due_ts: float, now: Optional[float] = None) -> Dict[str, Any]:
+def create(journal: Journal, text: str, due_ts: float, now: Optional[float] = None, repeat: str = "") -> Dict[str, Any]:
     text = " ".join(str(text or "").split())[:MAX_TEXT]
     if not text:
         raise ValueError("a reminder needs its text")
+    repeat = (repeat or "").strip().lower()
+    if repeat in ("none", "once", "no"):
+        repeat = ""
+    if repeat and repeat not in REPEATS:
+        raise ValueError(f"repeat must be one of: {', '.join(REPEATS)} (or leave it out for once)")
     now = now if now is not None else time.time()
     if due_ts - now > MAX_AHEAD_S:
         raise ValueError("a reminder can be at most a year ahead")
     r = {"id": uuid.uuid4().hex[:8], "text": text, "due_ts": round(float(due_ts), 3), "created_ts": round(now, 3)}
+    if repeat:
+        r["repeat"] = repeat
     journal.record_sync("reminder.created", r)
     return r
+
+
+def next_due(due_ts: float, repeat: str, now: float) -> float:
+    """The next time a repeating reminder is due after `now` (a day it was off is skipped, not fired late)."""
+    step = REPEATS[repeat]
+    nxt = float(due_ts) + step
+    while nxt <= now:
+        nxt += step
+    return nxt
 
 
 def cancel(journal: Journal, rid: str) -> bool:
@@ -90,6 +109,10 @@ def cancel(journal: Journal, rid: str) -> bool:
 
 def when_text(ts: float) -> str:
     return dt.datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+
+
+def repeat_text(r: Dict[str, Any]) -> str:
+    return f", then {r['repeat']}" if r.get("repeat") else ""
 
 
 async def fire_due(journal: Journal, notify: Optional[Callable[[str], Awaitable[Any]]] = None,
@@ -107,6 +130,8 @@ async def fire_due(journal: Journal, notify: Optional[Callable[[str], Awaitable[
         payload = {"id": r["id"], "text": r["text"], "due_ts": r["due_ts"], "late_s": late}
         await journal.record("reminder.fired", payload)  # fans out: the UI shows and speaks it
         fired.append(payload)
+        if r.get("repeat") in REPEATS:
+            await asyncio.to_thread(create, journal, r["text"], next_due(r["due_ts"], r["repeat"], now), now, r["repeat"])
         if notify is not None:
             try:
                 await notify(r["text"] + (f" (late by {late // 60} min)" if late >= 120 else ""))
@@ -137,7 +162,9 @@ class RemindTool(BaseTool):
     name: str = "remind"
     description: str = (
         "Reminders for the human. action=set with `text` and either `at` (local time, e.g. 17:30 or "
-        "2026-10-12T17:30) or `in_minutes`; action=list shows the pending ones; action=cancel with `id`. "
+        "2026-10-12T17:30) or `in_minutes`, and `repeat` daily or weekly when the human says every day or every week "
+        "(without it the reminder fires once: never call a reminder daily unless repeat is set); "
+        "action=list shows the pending ones; action=cancel with `id` (a repeating reminder stops for good). "
         "SYRAX fires a reminder itself at its time (a spoken line, a notice and a desktop notification), "
         "also after a restart."
     )
@@ -148,6 +175,7 @@ class RemindTool(BaseTool):
             "text": {"type": "string", "description": "what to remind, for set"},
             "at": {"type": "string", "description": "local time for set: HH:MM or YYYY-MM-DDTHH:MM"},
             "in_minutes": {"type": "number", "description": "for set: minutes from now"},
+            "repeat": {"type": "string", "enum": ["daily", "weekly"], "description": "for set: repeat every day or week"},
             "id": {"type": "string", "description": "reminder id, for cancel"},
         },
         "required": ["action"],
@@ -155,17 +183,17 @@ class RemindTool(BaseTool):
     journal_provider: Callable[[], Journal] = Field(default=get_journal, exclude=True)
 
     async def execute(self, action: str, text: str = "", at: Optional[str] = None,
-                      in_minutes: Optional[float] = None, id: str = "") -> ToolResult:
+                      in_minutes: Optional[float] = None, id: str = "", repeat: str = "") -> ToolResult:
         journal = self.journal_provider()
         try:
             if action == "set":
-                r = await asyncio.to_thread(create, journal, text, parse_when(at, in_minutes))
-                return ToolResult(output=f"Reminder {r['id']} set for {when_text(r['due_ts'])}: {r['text']}")
+                r = await asyncio.to_thread(create, journal, text, parse_when(at, in_minutes), None, repeat)
+                return ToolResult(output=f"Reminder {r['id']} set for {when_text(r['due_ts'])}{repeat_text(r) or ' (once)'}: {r['text']}")
             if action == "list":
                 rows = await asyncio.to_thread(pending, journal)
                 if not rows:
                     return ToolResult(output="No pending reminders.")
-                return ToolResult(output="\n".join(f"{r['id']} · {when_text(r['due_ts'])} · {r['text']}" for r in rows))
+                return ToolResult(output="\n".join(f"{r['id']} · {when_text(r['due_ts'])}{repeat_text(r)} · {r['text']}" for r in rows))
             if action == "cancel":
                 ok = await asyncio.to_thread(cancel, journal, id)
                 return ToolResult(output=f"Reminder {id} cancelled.") if ok else ToolResult(error=f"no pending reminder {id!r}")
