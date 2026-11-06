@@ -98,6 +98,7 @@ class Running:
     phase: Optional[str] = None  # F4: understand | plan | act | observe | verify (phases.py)
     tools_run: int = 0
     cancel_reason: str = "aborted by human"  # who or what stopped it, as journaled on task.cancelled
+    finishing: bool = False  # the answer is out; only the cleanup after the task is left (finishing())
 
 
 # Live 2026-10-03: right after boot the autonomy cycle and a human "hi" both
@@ -362,6 +363,12 @@ class Core:
         the agent build, the worktree and the routing, so a RESUME (or a quality run, a forced cycle, a brief proof)
         passed its busy check in that window and a second coroutine drove the same agent."""
         return self._starting > 0 or self._task_running()
+
+    def finishing(self) -> bool:
+        """The running task has answered and only its cleanup is left. Stress test 2026-11-06: a question sent right
+        after an answer got "Already executing. Stop it first."; the server queues it instead, and it starts the
+        moment the cleanup ends."""
+        return self._task_running() and self.current is not None and self.current.finishing
 
     def _task_running(self) -> bool:
         """The running task's coroutine exists and has not ended (what cancel, reset and the deadline act on)."""
@@ -834,6 +841,7 @@ class Core:
         assert self.agent is not None and self.current is not None
         try:
             reply = await self.agent.run(request)
+            self.current.finishing = True
             await self.journal.record("final", {"text": reply}, task_id=self.current.task_id)
             nxt = phases.after(self.current.phase, "final", {}, self.current.tools_run)
             if nxt is not None:

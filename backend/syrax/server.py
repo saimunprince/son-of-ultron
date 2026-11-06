@@ -568,7 +568,7 @@ class Session:
         elif kind == "task":
             if not text:
                 return
-            queue = bool(msg.get("queue"))
+            queue = bool(msg.get("queue")) or self.core.finishing()  # answered, cleaning up: wait for it, never refuse
             if self.core.busy and not queue:
                 await self.send(
                     {"type": "notice", "text": "Already executing. Stop it first."}

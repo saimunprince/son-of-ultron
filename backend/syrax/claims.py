@@ -689,7 +689,34 @@ PASTE_NOTE = ("THE HUMAN'S MESSAGE is long ({chars} characters, {lines} lines) a
 COUNT_ASK = re.compile(r"\b(?:count|how many)\b[^.\n]{0,40}\b(?:words?|lines?|letters?|characters?|chars|sentences?|"
                        r"times|occurrences?)\b|\b(?:word|line|character|letter) count\b", re.I)
 COUNT_NUDGE = ("You answered a count without running anything. The human's message is saved at {path}: run "
-               "python_execute on that file to count exactly, then answer with the number.")
+               "python_execute on that file to count exactly, counting only the text the request points at (usually "
+               "what follows the colon), never the request's own words, then answer with the number.")
+
+
+# Stress test 2026-11-06: "Write a 3000-word essay about rivers into essay.md" took one python call that wrote one
+# sentence 600 times (6,630 words, 11 distinct lines), and the task ended SUCCESS. A text file the request names that
+# is mostly the same sentences again is sent back once.
+PADDED_EXT = (".md", ".txt", ".rst", ".html", ".tex")
+PADDED_MIN_SENTENCES = 20
+PADDED_UNIQUE = 0.5
+PADDED_ASK = ("{path} repeats the same sentences ({unique} distinct of {total}): that is padding, not the text the "
+              "human asked for. Rewrite it with real, varied content (never generate prose by repeating text in a "
+              "loop), then answer.")
+
+
+def padded_text(path: str) -> Optional[tuple]:
+    """(distinct, total) sentences when a text file is mostly repeats, else None."""
+    if not path.lower().endswith(PADDED_EXT) or not os.path.isfile(path):
+        return None
+    try:
+        text = open(path, encoding="utf-8", errors="replace").read(400_000)
+    except OSError:
+        return None
+    sentences = [" ".join(s.split()).lower() for s in re.split(r"(?<=[.!?])\s+|\n+", text) if len(s.split()) >= 4]
+    if len(sentences) < PADDED_MIN_SENTENCES:
+        return None
+    unique = len(set(sentences))
+    return (unique, len(sentences)) if unique / len(sentences) < PADDED_UNIQUE else None
 
 
 def save_pasted(goal: str, folder: str, name: str) -> str:

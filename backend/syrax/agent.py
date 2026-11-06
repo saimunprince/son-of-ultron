@@ -44,7 +44,7 @@ from syrax.claims import (  # noqa: F401
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
     SKILL_CLAIM, SKILL_HONEST, SKILL_CLAIM_ASK, SKILL_FALLBACK, skill_claimed, skill_state,
     NON_ANSWER, NON_ANSWER_ASK,
-    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, INVENTED_ASK, invented_paths, PASTE_CHARS, PASTE_NOTE, save_pasted, COUNT_ASK, COUNT_NUDGE, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
+    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, INVENTED_ASK, invented_paths, PASTE_CHARS, PASTE_NOTE, save_pasted, COUNT_ASK, COUNT_NUDGE, PADDED_ASK, PADDED_EXT, PADDED_MIN_SENTENCES, PADDED_UNIQUE, padded_text, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
 )
 
 # Replaces OpenManus' per-step prompt ("proactively select the most appropriate
@@ -104,7 +104,8 @@ TOOLS_GUIDE = (
     "python_execute unless the human asks for a permanent delete. "
     "Use browser_* tools only when you yourself "
     "must read or operate a web page. Use python_execute for calculations and scripts, and for any count over a "
-    "text (words, lines, letters): never estimate one. "
+    "text (words, lines, letters): never estimate one. Write prose yourself: never pad a text to a length by "
+    "repeating sentences or generating them in a loop. "
     "When asked what you are, what you can do, what failed, your version, your code or your "
     "weaknesses, call `self_inspect` and answer from its evidence; never guess. "
     "To read a past task, call `self_inspect` with its task_id; for anything else in your journal use "
@@ -700,6 +701,15 @@ class SyraxAgent(Manus):
             result += "\n" + await BaseAgent.run(self, COUNT_NUDGE.format(path=pasted.group(1)))
             if self.last_reply.startswith("SYRAX:"):
                 self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+        if not self.step_limit_hit and not self.loop_stopped:
+            for named in goal_paths(self.task_goal or "")[:5]:
+                padded = padded_text(named)
+                if padded:
+                    await self._send({"type": "notice", "text": f"{named} is mostly repeated sentences: asking once for real content."})
+                    result += "\n" + await BaseAgent.run(self, PADDED_ASK.format(path=named, unique=padded[0], total=padded[1]))
+                    if self.last_reply.startswith("SYRAX:"):
+                        self.last_reply = self.last_reply[len("SYRAX:"):].strip()
+                    break
         if self._owes_release(request):
             await self._send({"type": "notice", "text": "Files changed but not released: asking once for `release`."})
             result += "\n" + await BaseAgent.run(self, RELEASE_NUDGE)

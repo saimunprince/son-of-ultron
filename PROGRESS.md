@@ -998,6 +998,14 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   now saved word for word under `workspace/pasted/`, and the brain is told to count on that file with python.
   Live, the brain still answered 625 with no tool, so a count asked of a saved long message with no python run is
   now sent back once to count the file.
+- **Stress test (malformed input, five clients at once, a queue of five, a stop, unicode):** malformed messages
+  (not JSON, unknown types, nulls, 5 MB, 5,000-deep nesting) never took SYRAX down, the queue answered 5 of 5 in
+  order, and /health stayed under 5 ms. Two bugs:
+  - "Write a 3000-word essay into essay.md" wrote one sentence 600 times with a python loop and ended SUCCESS. A
+    text file the request names that is mostly repeated sentences is now sent back once, and the guide forbids
+    padding;
+  - a question sent right after an answer, while the task was still cleaning up, got "Already executing" and was
+    lost; it now waits in the queue and starts when the cleanup ends.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open
