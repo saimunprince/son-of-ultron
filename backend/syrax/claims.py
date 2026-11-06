@@ -675,6 +675,29 @@ def invented_paths(answer: str, seen: str, goal: str = "") -> List[str]:
     return list(dict.fromkeys(out))
 
 
+# Live 2026-11-06: "Count the words in this text: word word ..." (3,000 words) was answered "625" with no tool: the
+# brain estimated, and putting 15,000 characters into python code is not practical. A long message is saved word for
+# word, and the brain is told where, so a count or a search runs on the file.
+PASTE_CHARS = 2000
+PASTE_NOTE = ("THE HUMAN'S MESSAGE is long ({chars} characters, {lines} lines) and is saved word for word at {path}. "
+              "To count, measure, search, sort or change any part of it, run python_execute on that file; never "
+              "estimate a count by reading.")
+
+
+def save_pasted(goal: str, folder: str, name: str) -> str:
+    """For a message longer than PASTE_CHARS: save it under `folder` as `name`.txt and return PASTE_NOTE; else ""."""
+    if len(goal or "") <= PASTE_CHARS:
+        return ""
+    path = os.path.join(folder, "pasted", re.sub(r"[^\w.-]", "_", name)[:60] + ".txt")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(goal)
+    except OSError:
+        return ""
+    return PASTE_NOTE.format(chars=len(goal), lines=goal.count("\n") + 1, path=path)
+
+
 def file_state(paths: List[str]) -> Dict[str, tuple]:
     """{file: (mtime_ns, size)} for the files under `paths` (folders walked, junk skipped, at most WATCH_MAX_FILES)."""
     state: Dict[str, tuple] = {}

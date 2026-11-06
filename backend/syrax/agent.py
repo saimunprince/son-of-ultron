@@ -44,7 +44,7 @@ from syrax.claims import (  # noqa: F401
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
     SKILL_CLAIM, SKILL_HONEST, SKILL_CLAIM_ASK, SKILL_FALLBACK, skill_claimed, skill_state,
     NON_ANSWER, NON_ANSWER_ASK,
-    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, INVENTED_ASK, invented_paths, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
+    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, INVENTED_ASK, invented_paths, PASTE_CHARS, PASTE_NOTE, save_pasted, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
 )
 
 # Replaces OpenManus' per-step prompt ("proactively select the most appropriate
@@ -103,7 +103,8 @@ TOOLS_GUIDE = (
     "To delete the human's files use `desktop` trash, so they can be restored and undone; never os.remove or rm in "
     "python_execute unless the human asks for a permanent delete. "
     "Use browser_* tools only when you yourself "
-    "must read or operate a web page. Use python_execute for calculations and scripts. "
+    "must read or operate a web page. Use python_execute for calculations and scripts, and for any count over a "
+    "text (words, lines, letters): never estimate one. "
     "When asked what you are, what you can do, what failed, your version, your code or your "
     "weaknesses, call `self_inspect` and answer from its evidence; never guess. "
     "To read a past task, call `self_inspect` with its task_id; for anything else in your journal use "
@@ -673,13 +674,17 @@ class SyraxAgent(Manus):
                              "request seems to go against it. Before acting, say so in one line and use `ask_human` to ask "
                              "whether to go ahead anyway. If it does not really conflict, say why in a few words and go on.")
                 self.rule_conflicts = hits[:3]
-        self.system_prompt = "\n\n".join(x for x in (base, TOOLS_GUIDE, clock, block, rule_note) if x)
+        import time as _time
+
+        paste_note = save_pasted(self.task_goal or "", str(config.workspace_root),
+                                 (self.task_id_provider() if self.task_id_provider else None) or f"msg-{int(_time.time())}")
+        self.system_prompt = "\n\n".join(x for x in (base, TOOLS_GUIDE, clock, block, rule_note, paste_note) if x)
         # the same prompt in few words, for a brain the full one does not fit (brains.SHORT_SYSTEMS, live 2026-10-31)
         from syrax.brains import register_short_system
         from syrax.prompt import SYRAX_PERSONA_SHORT
 
         facts = (block or "").split("\n\nRECENT CONVERSATIONS")[0]
-        short = "\n\n".join(x for x in (SYRAX_PERSONA_SHORT.format(directory=config.workspace_root), TOOLS_GUIDE_SHORT, clock, facts, rule_note) if x)
+        short = "\n\n".join(x for x in (SYRAX_PERSONA_SHORT.format(directory=config.workspace_root), TOOLS_GUIDE_SHORT, clock, facts, rule_note, paste_note) if x)
         register_short_system(self.system_prompt, short)
         self.next_step_prompt = STEP_PROMPT
         if self.next_step_prompt:
