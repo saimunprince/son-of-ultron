@@ -348,6 +348,7 @@ def test_a_human_restart_clears_the_mark_and_syraxs_own_does_not(launcher, monke
 
 
 def test_respawn_starts_a_self_restart(launcher, monkeypatch):
+    monkeypatch.delenv("INVOCATION_ID", raising=False)  # outside a systemd unit: the detached restarter (test_service_respawn)
     seen = []
     monkeypatch.setattr(launcher.subprocess, "Popen", lambda cmd, **kw: seen.append(cmd))
     assert launcher.main(["--respawn"]) == 0

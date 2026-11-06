@@ -975,6 +975,10 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   reviewer saw only 24,000 of the 80,000 characters of change and so could not approve it (the rule worked). The
   jump came from the Windows journal's days added to DEVLOG.md. The catch-up was regenerated from the journal,
   read for private data by a maintainer, and committed by hand; daily changes are about 3,000 characters again.
+- **SYRAX stayed down after restarting itself into new code (live, 19:12):** the restarter it detached was still in
+  the login service's cgroup, and systemd killed it together with the old launcher. Inside its own systemd unit,
+  SYRAX now asks systemd to restart the unit (`systemctl --user restart --no-block`); only the unit's own
+  INVOCATION_ID counts, so a terminal or editor started by systemd never restarts the service.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open

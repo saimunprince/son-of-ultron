@@ -915,6 +915,27 @@ def drop_foreign_session_env(environ=None) -> List[str]:
     return gone
 
 
+def systemd_service_restart(environ: Optional[dict] = None, runner=subprocess.run) -> bool:
+    """SYRAX restarting itself from inside the login service: systemd restarts the unit. Live 2026-11-06: the
+    detached restarter was in the service's cgroup, so systemd killed it with the old launcher (KillMode
+    control-group), and SYRAX stayed down after "new code on disk; restarting into it". INVOCATION_ID is set
+    by systemd for a unit's processes and their children. --no-block: this process is in the unit it restarts."""
+    env = os.environ if environ is None else environ
+    if not LINUX or not env.get("INVOCATION_ID"):
+        return False
+    # only this unit's own id: an editor or a terminal started by systemd has an INVOCATION_ID of its own
+    # (2026-11-06: a test run from VS Code restarted the live service)
+    try:
+        r = runner(["systemctl", "--user", "show", f"{SERVICE_NAME}.service", "-p", "InvocationID", "--value"],
+                   capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    if r.returncode != 0 or (getattr(r, "stdout", "") or "").strip() != env["INVOCATION_ID"]:
+        return False
+    r = runner(["systemctl", "--user", "restart", "--no-block", f"{SERVICE_NAME}.service"], capture_output=True)
+    return r.returncode == 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     drop_foreign_session_env()
     ap = argparse.ArgumentParser(description="Run SYRAX (core + orb UI) on any OS.", formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -980,7 +1001,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 say(f"could not clear the known-bad mark: {e}")
         stop()
         return start_detached()
-    if a.respawn:  # detach once more so the restarter outlives SYRAX's process tree
+    if a.respawn:
+        if systemd_service_restart():
+            return 0
+        # detach once more so the restarter outlives SYRAX's process tree
         kw = {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if WINDOWS else {"start_new_session": True}
         subprocess.Popen([sys.executable, str(ROOT / "syrax.py"), "--restart", "--self-restart"], cwd=str(ROOT),
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **kw)
