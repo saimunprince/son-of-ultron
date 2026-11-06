@@ -959,6 +959,9 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   - the CPU temperature came out as 16.8 C, read from a board sensor (acpitz), while the CPU sensor read 44 C;
     `system_info` now gives every temperature and names the CPU's own sensor;
   - "delete notes.txt" ran `os.remove`, so "undo" could not bring it back: the human's files now go to the trash.
+- **Third and fourth rounds (memory, reminders, browser, missing files; then English: exact math, CSV averages,
+  code with tests, time zones, unit conversion, 9.11 vs 9.9, letters in "strawberry"):** all 15 answers were right.
+  The audit list is current: I-07 (macOS input) and D14 (Ollama context) were already fixed; S10 and S11 stay open.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open
