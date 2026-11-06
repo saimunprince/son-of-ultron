@@ -988,6 +988,10 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   loaded as text and sorted "18" < "31" < "4"; `data_query` now stores number columns as numbers (leading zeros keep
   a column text). And the reminder's own Bengali text was translated when the answer was asked again in English:
   that ask now keeps data (reminder texts, file content, names, quotes) as written.
+- **Round 9 (mail summary, days until a due date, correlation, move and undo, Node.js version from the web, a bash
+  one-liner):** right. One gap: "What can you do that you could not do a week ago?" got "I cannot answer". SYRAX
+  now knows its own recent changes: `self_inspect` section `changes` lists the last 7 days of commits by kind (new
+  abilities, fixes) with dates.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open

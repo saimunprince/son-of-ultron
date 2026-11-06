@@ -47,7 +47,9 @@ PRINCIPLES = [
     "The UI observes; the core is the brain.",
     "Don't announce your evolution. Demonstrate it. Don't claim power. Prove capability. Let the evidence speak.",
 ]
-SECTIONS = ("summary", "identity", "structure", "runtime", "behavior", "capabilities", "performance", "weaknesses", "proposals", "brains", "all")
+SECTIONS = ("summary", "identity", "structure", "runtime", "behavior", "capabilities", "performance", "weaknesses", "proposals", "brains", "changes", "all")
+CHANGES_DAYS = 7
+CHANGES_MAX = 80
 _PROCESS_STARTED = time.time()
 # The commit this process loaded, per repository root, captured the first time
 # it is asked (at boot for the real repo). After a `release` HEAD moves on but
@@ -466,6 +468,20 @@ class SelfModel:
 
     # ——— assembly ———
 
+    def changes(self, days: int = CHANGES_DAYS) -> dict:
+        """The commits to SYRAX in the last `days` days, newest first: what it gained, fixed or changed, with dates.
+        docs/DEVLOG.md has the same by day with the journal's numbers."""
+        out = _git(["log", f"--since={days} days ago", "--no-merges", "--date=short", "--format=%h %ad %s",
+                    f"-{CHANGES_MAX + 1}"], self.repo_root) or ""
+        lines = [ln for ln in out.splitlines() if ln.strip()]
+        kinds: Dict[str, int] = {}
+        for ln in lines:
+            kind = ln.split(" ", 2)[-1].split(":", 1)[0].split("(", 1)[0].strip() if ":" in ln else "other"
+            kinds[kind] = kinds.get(kind, 0) + 1
+        return {"days": days, "commits": len(lines[:CHANGES_MAX]), "more": len(lines) > CHANGES_MAX,
+                "by_kind": kinds, "log": lines[:CHANGES_MAX],
+                "note": "feat = a new ability, fix = something that was wrong; docs/DEVLOG.md has each day in detail"}
+
     def snapshot(self, section: str = "all") -> dict:
         if section not in SECTIONS:
             raise ValueError(f"unknown section {section!r}; one of {', '.join(SECTIONS)}")
@@ -485,6 +501,10 @@ class SelfModel:
             return {"performance": self.performance()}
         if section == "proposals":
             return {"proposals": self.proposals()}
+        if section == "changes":
+            # Live 2026-11-06: "What can you do that you could not do a week ago?" got "I cannot answer"; git has
+            # every change SYRAX received, by day
+            return {"changes": self.changes()}
         if section == "brains":
             from syrax import scorecard
 
@@ -587,6 +607,8 @@ class SelfInspectTool(BaseTool):
         "resources, task history and failures from the journal, the capability registry with "
         "evidence, and derived weaknesses. Use it to answer questions about what you are, what "
         "you can do, what failed, or what to improve. Never guess these; call this. "
+        "section=changes lists what changed in you over the last 7 days (new abilities and fixes, by date): use it "
+        "for 'what is new', 'what did you learn', 'what can you do now that you could not before'. "
         "Pass task_id to read one journaled task (goal, status, events, checkpoints, objective); "
         "never query the journal database directly."
     )

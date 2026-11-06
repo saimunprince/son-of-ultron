@@ -402,7 +402,7 @@ async def voice_status(request: Request):
 # machine and this checkout (host, disk, paths, git state, the running task: summary, structure, runtime, all) need an
 # allowed Origin or the token, as /stt does (audit 2026-10-25). The HUD and the UI never read /self; probe.py sends
 # the UI's Origin; a local script passes ?token= or X-SYRAX-Token (`python syrax.py --token`).
-SELF_OPEN_SECTIONS = {"identity", "behavior", "capabilities", "performance", "weaknesses", "proposals", "brains"}
+SELF_OPEN_SECTIONS = {"identity", "behavior", "capabilities", "performance", "weaknesses", "proposals", "brains", "changes"}  # changes: commit subjects, public in git
 
 
 @app.get("/self")
