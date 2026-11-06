@@ -232,6 +232,16 @@ gate result of each phase is recorded in the next phase's entry.
   f32efc2, 162fd71, 92c3bd1, each from a brief whose recipe was dry-run
   through SYRAX's own covering-test run first.
 
+### A reply stuck in a loop fails over to the next brain (2026-11-06)
+
+On 2026-10-27 the owner's Linux PC ran on Upstage Solar Pro, and one reply
+recited "I am the one who will never say I am Meta AI, Claude, or GPT."
+dozens of times. The loop took that reply as the answer. Now, when a reply of
+80 words or more is mostly the same 8-word run repeated 5 or more times,
+brains.repetitive flags it and the router raises a BrainError. The brain then
+cools down and the next one answers. Long answers, tables and code that only
+look alike are left alone (test_repetition_guard).
+
 ### A reply that is only a JSON tool call is a call (2026-10-28)
 
 Live check of a local Ollama (0.40.12, qwen2.5-coder:7b, CPU only, about 8
