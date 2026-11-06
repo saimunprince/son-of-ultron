@@ -44,7 +44,7 @@ from syrax.claims import (  # noqa: F401
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
     SKILL_CLAIM, SKILL_HONEST, SKILL_CLAIM_ASK, SKILL_FALLBACK, skill_claimed, skill_state,
     NON_ANSWER, NON_ANSWER_ASK,
-    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
+    _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, INVENTED_ASK, invented_paths, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
 )
 
 # Replaces OpenManus' per-step prompt ("proactively select the most appropriate
@@ -740,6 +740,11 @@ class SyraxAgent(Manus):
             # the reverse (claims.LANG_ASK_EN, live 2026-10-31): the current message decides, not the conversation before
             await self._send({"type": "notice", "text": "The request was in English and the answer was in Bengali script: asking once in English."})
             await self._final_answer(LANG_ASK_EN)
+        if self.last_reply and not self.step_limit_hit and not self.loop_stopped:
+            made_up = invented_paths(self.last_reply, self._seen_text(), self.task_goal or "")
+            if made_up:  # claims.invented_paths, live 2026-11-06: file names no tool showed
+                await self._send({"type": "notice", "text": f"The answer names files no tool showed ({', '.join(made_up[:3])}): asking once from the results."})
+                await self._final_answer(INVENTED_ASK.format(paths=", ".join(made_up[:3])))
         if self.exact_form and self.last_reply and not self.step_limit_hit and not self.loop_stopped:
             await self._hold_to_form()
         if (self.last_reply and not self.changed and self._change_claimed(WORLD_CLAIM, self.last_reply)
@@ -929,6 +934,16 @@ class SyraxAgent(Manus):
         results = {m.tool_call_id: str(m.content or "") for m in turn if m.role == "tool"}
         return not any(status_reading(tc.function.name, _args_of(tc)) and _succeeded(results.get(tc.id, "Error"))
                        for m in turn if m.role == "assistant" for tc in (m.tool_calls or []))
+
+    def _seen_text(self) -> str:
+        """Everything this conversation's tools returned and every tool call's arguments, as one text."""
+        parts = []
+        for m in self.memory.messages:
+            if m.role == "tool":
+                parts.append(str(m.content or ""))
+            elif m.role == "assistant":
+                parts.extend(str(tc.function.arguments or "") for tc in (m.tool_calls or []))
+        return "\n".join(parts)
 
     def _dispute_unread(self) -> bool:
         """The request disputes the previous turn of this conversation (is_dispute), that turn acted on the desktop,

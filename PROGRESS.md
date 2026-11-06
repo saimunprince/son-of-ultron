@@ -962,6 +962,11 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
 - **Third and fourth rounds (memory, reminders, browser, missing files; then English: exact math, CSV averages,
   code with tests, time zones, unit conversion, 9.11 vs 9.9, letters in "strawberry"):** all 15 answers were right.
   The audit list is current: I-07 (macOS input) and D14 (Ollama context) were already fixed; S10 and S11 stay open.
+- **Fifth round (hard, English):** a hidden "ignore the user" note in a web page was ignored, a bug was fixed with
+  tests, files were renamed, and the last failure was named from the journal. One answer made files up: asked for
+  the 2 largest files, `disk_usage` returned huge.bin and mid.bin, and the answer named data_large.json and
+  logs_2026.txt, which exist nowhere. Now an answer that names files no tool showed, the request did not name, and
+  the disk does not have is asked once again, from the results only.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open

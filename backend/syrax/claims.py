@@ -654,6 +654,27 @@ def goal_paths(goal: str) -> List[str]:
     return list(dict.fromkeys(out))
 
 
+# Live 2026-11-06: "the 2 largest files in t5/big?" The disk_usage tool returned huge.bin (900000) and mid.bin
+# (250000); the answer named data_large.json (1,193,000 bytes, the folder's total) and logs_2026.txt, neither of
+# which exists or appeared anywhere. A file path in an answer must come from what the task saw, the request, or disk.
+_ANSWER_PATH = re.compile(r"(?<![\w:/\\.])((?:[A-Za-z]:[\\/]|/)(?:[\w.\-]+[\\/])+[\w\-]+(?:\.[\w\-]+)*\.[A-Za-z]\w{0,7})\b")
+INVENTED_ASK = ("Your answer names {paths}, which no tool result showed and which does not exist. Answer again only "
+                "from the tool results above: name only the files they show, with the sizes and values they show. "
+                "Reply with the answer and nothing else.")
+
+
+def invented_paths(answer: str, seen: str, goal: str = "") -> List[str]:
+    """Absolute file paths in `answer` that appear neither in `seen` (tool results and calls) nor in the request, and
+    do not exist on disk: names the brain made up."""
+    out = []
+    for m in _ANSWER_PATH.finditer(answer or ""):
+        p = m.group(1)
+        if p in (seen or "") or p in (goal or "") or os.path.exists(p):
+            continue
+        out.append(p)
+    return list(dict.fromkeys(out))
+
+
 def file_state(paths: List[str]) -> Dict[str, tuple]:
     """{file: (mtime_ns, size)} for the files under `paths` (folders walked, junk skipped, at most WATCH_MAX_FILES)."""
     state: Dict[str, tuple] = {}
