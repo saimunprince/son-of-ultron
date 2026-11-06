@@ -983,6 +983,11 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   right except one claim: "remind me every day at 9 AM" set a single reminder and answered "daily". Reminders now
   take `repeat` (daily or weekly): a repeating one sets its next one when it fires, a day SYRAX was off is skipped
   rather than fired late twice, and every answer says "once" or "then daily".
+- **Round 8 (what this computer cannot do, a table, broken JSON, CSV to JSON, git state, a reminder in Bengali
+  script):** two wrong. "The coldest city" in a CSV came out as Tokyo 18 instead of Oslo 4, because CSV columns were
+  loaded as text and sorted "18" < "31" < "4"; `data_query` now stores number columns as numbers (leading zeros keep
+  a column text). And the reminder's own Bengali text was translated when the answer was asked again in English:
+  that ask now keeps data (reminder texts, file content, names, quotes) as written.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
 
 ## Open

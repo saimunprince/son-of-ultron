@@ -70,14 +70,17 @@ def open_data(path: str) -> sqlite3.Connection:
             raise ValueError(f"{p.name} is empty or not a CSV/TSV")
         seen: set = set()
         cols = [_column(h, seen) for h in header]
-        db = sqlite3.connect(":memory:")
-        db.execute(f"CREATE TABLE data ({', '.join(f'[{c}]' for c in cols)})")
         batch = []
         for i, r in enumerate(rows):
             if i >= MAX_LOAD_ROWS:
                 break
             r = (r + [""] * len(cols))[: len(cols)]
             batch.append([v if v != "" else None for v in r])
+        # Live 2026-11-06: every column was untyped text, so ORDER BY temp put 18 before 31 before 4 and "the coldest
+        # city" came out wrong. A column whose every value is a number is stored as one.
+        kinds = [_sql_type([row[k] for row in batch if row[k] is not None]) for k in range(len(cols))]
+        db = sqlite3.connect(":memory:")
+        db.execute(f"CREATE TABLE data ({', '.join(f'[{c}] {t}' for c, t in zip(cols, kinds))})")
         db.executemany(f"INSERT INTO data VALUES ({', '.join('?' * len(cols))})", batch)
         db.commit()
         return db
@@ -97,6 +100,16 @@ def query(path: str, sql: str) -> str:
     more = len(rows) > MAX_ROWS
     lines = [" | ".join(names)] + [" | ".join(str(v)[:MAX_CELL] for v in r) for r in rows[:MAX_ROWS]]
     return "\n".join(lines) + (f"\n(first {MAX_ROWS} rows shown)" if more else f"\n({len(rows)} row(s))")
+
+
+def _sql_type(values: List[str]) -> str:
+    """INTEGER or REAL for a column of numbers, else TEXT. A number with a leading zero (a postcode, a phone number,
+    an id like 007) keeps the column text, so the zero is not lost."""
+    vals = [v.strip() for v in values]
+    if not vals or any(len(v) > 1 and v.lstrip("+-").startswith("0") and not v.lstrip("+-").startswith("0.") for v in vals):
+        return "TEXT"
+    kind = _type_of(vals)
+    return {"integer": "INTEGER", "number": "REAL"}.get(kind, "TEXT")
 
 
 def _type_of(values: List[str]) -> str:

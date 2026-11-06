@@ -791,8 +791,11 @@ LANG_ASK = ("The human wrote in Bengali script. Give the same answer again in Be
 # Live 2026-10-31: the exchange before was in Bengali, and an English "which work scenes do you have?" got a Bengali
 # answer (the recent conversations are in the prompt, and a small brain kept their language). The current message
 # decides: a request with no Bengali script that does not ask for Bengali is asked once again in English.
+# Live 2026-11-06: "List my reminders." listed a reminder the human wrote in Bengali; asked again in English, the
+# answer translated the reminder's own text ("Go for a walk"). Data is never translated.
 LANG_ASK_EN = ("The human wrote this message in English. Give the same answer again in English: keep code, file names, "
-               "commands and numbers as they are. Reply with that and nothing else.")
+               "commands and numbers as they are, and keep data exactly as written (a reminder's text, a file's "
+               "content, names, quotes, the human's own words): never translate it. Reply with that and nothing else.")
 WANTS_BENGALI = re.compile(r"\b(?:bangla|bengali|banglay|bangla[iy]|bengali script)\b|বাংলা", re.I)
 
 
