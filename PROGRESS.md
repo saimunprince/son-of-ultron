@@ -1071,6 +1071,17 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   - **Volume by an amount:** "+30", "-20", "up by 30" set the exact level once (before, only 10 % steps).
   - Next from the list: one routines engine (monthly, every N minutes, quiet hours, start a task), a read-only
     background task lane that pauses when every brain is out of quota, research whose quotes are checked in code.
+- **More from Mark-LVII (ideas only), built by four agents in parallel and gated one by one:**
+  - **Research answers are checked:** a quotation the cited page does not hold is removed, a citation number with
+    no source becomes [?], a finding from a search snippet only says so, and the answer carries a check line.
+  - **Media seek and hotkey repeat:** "seek +30", "seek 1:20" (Linux playerctl, Windows media session, macOS Music),
+    the position read back and undoable; "ctrl+tab x3" presses up to 20 times. "enter x3" still counts as a send.
+  - **One routines engine:** monthly (day or last), every N minutes in a time window, weekdays, quiet hours
+    (`SYRAX_QUIET_HOURS`), a run more than 2 h late (a task: 6 h) skipped and journaled instead of firing late, and
+    routines that start an unattended task (autonomous permissions; setting one up is asked for, never quiet).
+  - **The short-persona token tests** no longer count the path of the folder SYRAX runs in.
+  - **Waiting for a stronger brain** (instead of falling to Pollinations at once) is built on a branch and waits
+    for the owner's yes: it changes `brains.py`.
 
 ## Open
 
