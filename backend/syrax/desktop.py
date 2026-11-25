@@ -1167,9 +1167,16 @@ def phone_args(value: str, target: str) -> tuple:
     """(command, target) for the phone action. Live 2026-11-25 (Waydroid): asked to search YouTube, the brain wrote
     value "tap YouTube", "tap,856,263", "tap 858,266" and "open YouTube" in 20 calls with no target, each failed, and
     the task ended at the step limit saying taps do not work. A command written with its argument is split."""
+    target = (target or "").strip()
+    if not (value or "").strip() and target:
+        # Live 2026-11-21 ("open playstore in android device"): the command came in target ("ui", "tap Play Store",
+        # "open com.android.vending") with no value, so 15 calls each answered the phone's status
+        m = re.match(r"^\s*([a-z]+)\b[\s,:]*(.*)$", target, re.I | re.S)
+        if m and m.group(1).lower() in PHONE_COMMANDS:
+            return m.group(1).lower(), m.group(2).strip()
     raw = (value or "status").strip()
     m = re.match(r"^\s*([a-z]+)[\s,:]+(.+)$", raw, re.I | re.S)
-    if m and m.group(1).lower() in PHONE_COMMANDS and not (target or "").strip():
+    if m and m.group(1).lower() in PHONE_COMMANDS and not target:
         return m.group(1).lower(), m.group(2).strip()
     return raw.lower(), target
 

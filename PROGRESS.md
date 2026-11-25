@@ -1041,6 +1041,9 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
 - **"now play john wick theme song" (11-23) was marked unverified while it played:** the phone's screen showed the
   player at 0:38 of 18:04, but only the computer's media status counted as evidence. A phone reading of a player past
   its start, or a Pause button, now counts.
+- **"Open playstore in android device" (11-21) took 20 steps:** the brain put the command in `target` ("ui", "tap
+  Play Store") with no `value`, so 15 calls answered the phone's status; it finally ran adb through python. A command
+  given in `target` is now read as the command.
 
 ## Open
 

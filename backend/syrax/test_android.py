@@ -209,3 +209,8 @@ def test_a_phone_command_written_with_its_argument_is_split():
     assert phone_args("screen", "") == ("screen", "")
     assert phone_args("", "") == ("status", "")
     assert phone_args("tapdance now", "") == ("tapdance now", "")
+    # 2026-11-21: the command in target, no value
+    assert phone_args("", "ui") == ("ui", "")
+    assert phone_args("", "tap Play Store") == ("tap", "Play Store")
+    assert phone_args("", "open com.android.vending") == ("open", "com.android.vending")
+    assert phone_args("", "com.android.vending") == ("status", "com.android.vending")
