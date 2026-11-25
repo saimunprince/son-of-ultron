@@ -178,7 +178,10 @@ def submits_text(args: Any) -> bool:
     action = str(a.get("action") or "")
     value = str(a.get("value") or "").strip()
     if action == "hotkey":
-        keys = {k.strip().lower() for k in value.replace(" ", "").split("+") if k.strip()}
+        # 2026-11-25: "enter x3" / "enter*3" repeat the keys (desktop.hotkey_repeat); without this split "enterx3" read
+        # as no Enter and a repeated send went past the messaging check
+        m = re.match(r"^(.*?\S)\s*(?:\*|\sx)\s*\d+$", value, re.I)
+        keys = {k.strip().lower() for k in (m.group(1) if m else value).replace(" ", "").split("+") if k.strip()}
         return bool(keys & {"enter", "return"}) and "shift" not in keys
     if action == "type_text":
         return "\n" in value or "\r" in value

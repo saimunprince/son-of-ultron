@@ -150,6 +150,9 @@ async def _powershell(script: str, timeout: float = 15, extra_env: Optional[Dict
 # YouTube search page, "play it your self" pressed the play/pause key (a toggle: it pauses what plays) and said
 # "Media play sent.", and the answers said "Media is playing" four times while the human said it was not.
 # $env:SYRAX_MEDIA_CMD: "" reads only; play | pause | toggle | next | previous | stop act on the current session first.
+# 2026-11-25 (Mark-LVII idea): seek moves the current session's position to $env:SYRAX_MEDIA_SEEK ("+30", "-10" relative,
+# "80" absolute seconds) through TryChangePlaybackPositionAsync; the answer carries the position before and after
+# (the timeline's last position plus the time since it was written while it plays), so the tool can prove the move.
 MEDIA_PS = r"""
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
@@ -159,9 +162,19 @@ function Await($op, [Type]$t) { $task = $asTask.MakeGenericMethod($t).Invoke($nu
 $mgr = Await ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
 $cmd = $env:SYRAX_MEDIA_CMD
 $cur = $mgr.GetCurrentSession()
+function Pos($s) { $tl = $s.GetTimelineProperties(); $p = $tl.Position.TotalSeconds; if ("$($s.GetPlaybackInfo().PlaybackStatus)" -eq 'Playing') { $p += ([DateTimeOffset]::Now - $tl.LastUpdatedTime).TotalSeconds }; [math]::Round($p, 1) }
 $done = $null
+$before = $null
 if ($cur -and $cmd) {
-  $op = switch ($cmd) { 'play' { $cur.TryPlayAsync() } 'pause' { $cur.TryPauseAsync() } 'toggle' { $cur.TryTogglePlayPauseAsync() } 'next' { $cur.TrySkipNextAsync() } 'previous' { $cur.TrySkipPreviousAsync() } 'stop' { $cur.TryStopAsync() } }
+  if ($cmd -eq 'seek') {
+    $before = Pos $cur
+    $s = $env:SYRAX_MEDIA_SEEK
+    $t = if ($s -match '^[+-]') { $before + [double]$s } else { [double]$s }
+    if ($t -lt 0) { $t = 0 }
+    $op = $cur.TryChangePlaybackPositionAsync([long]($t * 10000000))
+  } else {
+    $op = switch ($cmd) { 'play' { $cur.TryPlayAsync() } 'pause' { $cur.TryPauseAsync() } 'toggle' { $cur.TryTogglePlayPauseAsync() } 'next' { $cur.TrySkipNextAsync() } 'previous' { $cur.TrySkipPreviousAsync() } 'stop' { $cur.TryStopAsync() } }
+  }
   $done = Await $op ([bool])
   Start-Sleep -Milliseconds 900
 }
@@ -170,7 +183,8 @@ foreach ($x in $mgr.GetSessions()) {
   $p = Await ($x.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
   $out += [pscustomobject]@{ app = $x.SourceAppUserModelId; status = "$($x.GetPlaybackInfo().PlaybackStatus)"; title = $p.Title }
 }
-[pscustomobject]@{ current = $(if ($cur) { $cur.SourceAppUserModelId } else { $null }); done = $done; sessions = $out } | ConvertTo-Json -Depth 4 -Compress
+$after = if ($cur -and $cmd -eq 'seek') { Pos $cur } else { $null }
+[pscustomobject]@{ current = $(if ($cur) { $cur.SourceAppUserModelId } else { $null }); done = $done; before = $before; position = $after; sessions = $out } | ConvertTo-Json -Depth 4 -Compress
 """
 MEDIA_COMMANDS = {"play": "play", "pause": "pause", "toggle": "toggle", "next": "next", "previous": "previous", "prev": "previous",
                   "stop": "stop"}
@@ -491,6 +505,77 @@ def _looks_like_url(t: str) -> bool:
 
 VOLUME_STEP = re.compile(r"^(\+|-|up|down)\s*(?:by\s*)?(\d{1,3})$")  # "+30", "-20", "up 30", "down by 15"
 VOLUME_READ = re.compile(r"Volume (\d+)%( \(muted\))?\.")
+# 2026-11-25 (Mark-LVII idea): media "seek +30" / "seek -10" moves by seconds, "seek 1:20" / "seek 80" goes to a place
+SEEK = re.compile(r"^seek\s*(?:to\s*)?([+-])?\s*((?:\d+:)?(?:\d+:)?\d+(?:\.\d+)?)\s*s?$")
+# hotkey "ctrl+tab x3" or "down*5": the same keys several times (Mark-LVII idea, 2026-11-25), capped so a typo is not
+# a key storm; the gap lets the app take each press as its own
+HOTKEY_REPEAT = re.compile(r"^(.*?\S)\s*(?:\*|\sx)\s*(\d+)$", re.I)
+HOTKEY_MAX_TIMES = 20
+HOTKEY_GAP = 0.08
+SEEK_SETTLE = 0.3  # the player writes its new position a moment after a seek
+
+
+def _float(text: object) -> Optional[float]:
+    try:
+        return float(str(text).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_seek(value: str) -> tuple:
+    """media "seek +30" -> ("+", 30.0), "seek -10" -> ("-", 10.0), "seek 1:20" -> ("", 80.0). ValueError otherwise."""
+    m = SEEK.match(" ".join(str(value or "").lower().split()))
+    if not m:
+        raise ValueError("seek needs seconds or a time: 'seek +30' (forward), 'seek -10' (back), 'seek 1:20' or "
+                         "'seek 80' (to that place).")
+    secs = 0.0
+    for part in m.group(2).split(":"):
+        secs = secs * 60 + float(part)
+    return m.group(1) or "", secs
+
+
+def clock(secs: Optional[float]) -> str:
+    """83.4 -> "1:23", 3725 -> "1:02:05": a position as a player shows it."""
+    s = max(0, int(round(float(secs or 0))))
+    h, m = divmod(s // 60, 60)
+    return f"{h}:{m:02d}:{s % 60:02d}" if h else f"{m}:{s % 60:02d}"
+
+
+def seek_report(sign: str, secs: float, before: Optional[float], after: Optional[float], where: str = "") -> str:
+    """"Seeked +30s: position 1:20 -> 1:50." (undo.py reads the "position A -> B" to go back)."""
+    asked = f"{sign}{secs:g}s" if sign else f"to {clock(secs)}"
+    where = f" in {where}" if where else ""
+    if after is None:
+        return f"Seek {asked} sent{where}; the position could not be read back."
+    if before is None:
+        return f"Seeked {asked}{where}: position now {clock(after)}."
+    return f"Seeked {asked}{where}: position {clock(before)} -> {clock(after)}."
+
+
+def hotkey_repeat(value: str) -> tuple:
+    """"ctrl+tab x3" / "down*5" -> ("ctrl+tab", 3); a plain combination is pressed once. ValueError past the cap."""
+    v = str(value or "").strip()
+    m = HOTKEY_REPEAT.match(v)
+    if not m:
+        return v, 1
+    times = int(m.group(2))
+    if not 1 <= times <= HOTKEY_MAX_TIMES:
+        raise ValueError(f"hotkey repeats 1 to {HOTKEY_MAX_TIMES} times (e.g. 'ctrl+tab x3' or 'down*5'), not {times}.")
+    return m.group(1).strip(), times
+
+
+def _press_times(fn, spec: str, times: int) -> str:
+    """The hands backend's hotkey `times` times with HOTKEY_GAP between; a failure part-way says how many went out."""
+    for i in range(times):
+        try:
+            fn(spec)
+        except Exception as e:
+            if not i:
+                raise
+            raise RuntimeError(f"{e} (after {i} of {times} presses of {spec.lower()})") from e
+        if i < times - 1:
+            time.sleep(HOTKEY_GAP)
+    return f"Pressed {spec.lower()} {times} times."
 
 
 class DesktopControl(BaseTool):
@@ -517,7 +602,7 @@ class DesktopControl(BaseTool):
                 ],
             },
             "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name (Store apps included). find_files: name pattern. system_info: a city or time zone (Tokyo, Europe/London) to also read the time there. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin. untrash: the original path of a trashed file, to put it back (Linux)."},
-            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', '+N' or '-N' (by N points, e.g. +30), 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop; each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get. phone: status, screen, ui, tap, type, key, swipe or open."},
+            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', '+N' or '-N' (by N points, e.g. +30), 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop, 'seek +30' / 'seek -10' (seconds) or 'seek 1:20' (to that place); each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s; 'ctrl+tab x3' or 'down*5' presses it that many times (max 20). click: left, right, middle or double. dark_mode: on, off or get. phone: status, screen, ui, tap, type, key, swipe or open."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
         "required": ["action"],
@@ -787,16 +872,19 @@ class DesktopControl(BaseTool):
         except Exception:
             return None
 
-    async def _media_sessions(self, cmd: Optional[str] = None) -> dict:
-        """{current, done, sessions: [{app, status, title}]} from Windows (MEDIA_PS); `cmd` acts on the current session
-        first. RuntimeError when PowerShell gives no answer (an old Windows, a policy, a timeout)."""
-        code, out, err = await _powershell(MEDIA_PS, timeout=25, extra_env={"SYRAX_MEDIA_CMD": cmd or ""})
+    async def _media_sessions(self, cmd: Optional[str] = None, seek: str = "") -> dict:
+        """{current, done, before, position, sessions: [{app, status, title}]} from Windows (MEDIA_PS); `cmd` acts on
+        the current session first (seek: "+30", "-10" or "80" seconds). RuntimeError when PowerShell gives no answer (an
+        old Windows, a policy, a timeout)."""
+        code, out, err = await _powershell(MEDIA_PS, timeout=25, extra_env={"SYRAX_MEDIA_CMD": cmd or "", "SYRAX_MEDIA_SEEK": seek})
         line = next((ln for ln in reversed((out or "").splitlines()) if ln.strip().startswith("{")), "")
         if code != 0 or not line:
             raise RuntimeError(((err or out or "").strip().splitlines() or [f"exit {code}"])[-1][:200])
         return json.loads(line)
 
     async def _do_media(self, value: str, **_) -> ToolResult:
+        if (value or "").strip().lower().startswith("seek"):
+            return await self._seek(value)
         if WINDOWS:
             v = value.lower()
             if v in MEDIA_READS:
@@ -854,6 +942,53 @@ class DesktopControl(BaseTool):
             _, meta, _ = await _run("playerctl", "metadata", "--format", "{{artist}} - {{title}}")
             return ToolResult(output=f"{out}: {meta}".strip(": "))
         return ToolResult(output=f"Media {cmd} sent.")
+
+    async def _seek(self, value: str) -> ToolResult:
+        """media seek: moves the playing position and reads it back, before and after, so the answer proves the move."""
+        try:
+            sign, secs = parse_seek(value)
+        except ValueError as e:
+            return ToolResult(error=str(e))
+        if WINDOWS:
+            try:
+                data = await self._media_sessions("seek", f"{sign}{secs:g}")
+            except (RuntimeError, ValueError, OSError) as e:
+                return ToolResult(error=f"The seek could not be sent (Windows media sessions did not answer): {e}")
+            if not data.get("current"):
+                return ToolResult(error="No media session is open to seek.")
+            app = media_app(data["current"])
+            if not data.get("done"):
+                return ToolResult(error=f"{app} refused the seek (it does not let other apps move its position). "
+                                        f"Now: {media_report(data)}")
+            return ToolResult(output=f"{seek_report(sign, secs, _float(data.get('before')), _float(data.get('position')), app)} "
+                                     f"Now: {media_report(data)}")
+        if MACOS:  # the Music app, as the other media commands
+            tell = 'tell application "Music" to '
+            _, out, _ = await _osascript(tell + "player position")
+            before = _float(out)
+            target = f"(player position {sign} {secs:g})" if sign else f"{secs:g}"
+            code, _, err = await _osascript(tell + f"set player position to {target}")
+            if code != 0:
+                return ToolResult(error=err or "Music did not take the seek.")
+            _, out, _ = await _osascript(tell + "player position")
+            return ToolResult(output=seek_report(sign, secs, before, _float(out), "Music"))
+        if not shutil.which("playerctl"):
+            return ToolResult(error="playerctl is not installed.")
+        code, out, err = await _run("playerctl", "position")
+        if code != 0:
+            if "no players found" in (err or "").lower():
+                return ToolResult(error="No media player is open to seek.")
+            return ToolResult(error=err or "The player's position could not be read, so nothing was moved.")
+        before = _float(out)
+        # playerctl: "30+" / "10-" move by seconds, a bare number goes to that second
+        code, _, err = await _run("playerctl", "position", f"{secs:g}{sign}")
+        if code != 0:
+            return ToolResult(error=err or "The player did not take the seek.")
+        await asyncio.sleep(SEEK_SETTLE)
+        _, out, _ = await _run("playerctl", "position")
+        _, meta, _ = await _run("playerctl", "metadata", "--format", "{{artist}} - {{title}}")
+        meta = (meta or "").strip(" -")
+        return ToolResult(output=seek_report(sign, secs, before, _float(out), f"'{meta}'" if meta else ""))
 
     async def _do_screenshot(self, **_) -> ToolResult:
         shots = Path(config.workspace_root) / "screenshots"
@@ -1073,10 +1208,16 @@ class DesktopControl(BaseTool):
     async def _do_hotkey(self, value: str, **_) -> ToolResult:
         from syrax import wininput
 
+        try:
+            spec, times = hotkey_repeat(value)
+        except ValueError as e:
+            return ToolResult(error=str(e))
         before, own = await asyncio.to_thread(front_read)
         if own:
             return ToolResult(error=own_front_refusal(own))
-        return await self._with_front(await self._hands(_hands_module().hotkey, value), before)
+        if times == 1:
+            return await self._with_front(await self._hands(_hands_module().hotkey, value), before)
+        return await self._with_front(await self._hands(_press_times, _hands_module().hotkey, spec, times), before)
 
     async def _do_click(self, target: str, value: str = "", **_) -> ToolResult:
         from syrax import wininput

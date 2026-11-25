@@ -12,8 +12,8 @@ undone and the exact call that reverses each, and the brain makes that call
 through the normal path, so permissions and the journal treat it like any
 other call. The editor keeps its undo history in memory, so a file edit made
 before a restart cannot be undone this way. A volume change says the level
-before it, and a trashed file comes back through desktop untrash on Linux; on
-Windows it is restored from the Recycle Bin.
+before it, a media seek the position before it, and a trashed file comes back
+through desktop untrash on Linux; on Windows it is restored from the Recycle Bin.
 
 From the feature catalog (undo); the idea came from the surveyed JARVIS
 assistants, the code is SYRAX's own.
@@ -38,6 +38,8 @@ THEME = re.compile(r"Windows switched from (light|dark) to (light|dark) mode")
 ORGANIZED = re.compile(r"Moved (\d+) file\(s\) in (.+?): .*? manifest: (.+?) \(action=undo")
 VOLUME = re.compile(r"Volume (\d+)% -> (\d+)%")
 MUTE_WAS = re.compile(r"it was (not muted|muted)\.")
+# media seek (desktop.seek_report): "Seeked +30s in Spotify: position 1:20 -> 1:50." goes back to 1:20 (2026-11-25)
+SEEKED = re.compile(r"Seeked .*?: position (\d+(?::\d\d){1,2}) -> (\d+(?::\d\d){1,2})\.")
 TRASHED = re.compile(r"Moved (.+?) to the Recycle Bin;")
 GNOME_THEME = re.compile(r"Dark mode turned (on|off) \(it was (on|off)\)")
 EDITS = {"create", "str_replace", "insert"}
@@ -64,6 +66,9 @@ def reverse_of(tool: str, args: Dict[str, Any], output: str) -> Optional[Dict[st
     if tool == "desktop" and a.get("action") == "dark_mode" and (m := GNOME_THEME.search(out)) and m.group(1) != m.group(2):
         return {"label": f"dark mode {m.group(2)} -> {m.group(1)}",
                 "reverse": {"tool": "desktop", "args": {"action": "dark_mode", "value": m.group(2)}}}
+    if tool == "desktop" and a.get("action") == "media" and (m := SEEKED.search(out)) and m.group(1) != m.group(2):
+        return {"label": f"media position {m.group(1)} -> {m.group(2)}",
+                "reverse": {"tool": "desktop", "args": {"action": "media", "value": f"seek {m.group(1)}"}}}
     if tool == "desktop" and a.get("action") == "volume":
         if (m := VOLUME.search(out)) and m.group(1) != m.group(2):
             return {"label": f"volume {m.group(1)}% -> {m.group(2)}%",
@@ -127,7 +132,7 @@ class UndoTool(BaseTool):
     name: str = "undo"
     description: str = (
         "When the human says 'undo' or 'put it back': shows SYRAX's newest reversible actions (volume, brightness, "
-        "wallpaper, dark mode, a trashed file, a sorted folder, file edits) and the exact call that reverses each. Then make that call yourself. This tool changes nothing."
+        "media position, wallpaper, dark mode, a trashed file, a sorted folder, file edits) and the exact call that reverses each. Then make that call yourself. This tool changes nothing."
     )
     parameters: dict = {"type": "object", "properties": {}, "required": []}
     journal_provider: Callable[[], Journal] = Field(default=get_journal, exclude=True)
