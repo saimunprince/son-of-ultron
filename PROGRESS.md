@@ -1053,13 +1053,21 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   and a long autonomy goal was the oldest, so it went first. Groq then answered "No undo is required…" to a goal it
   could no longer read, and the task was marked a success. Tool outputs now give their room first; the task's own
   request is clipped last and never below 400 characters. The owner approved this change to `brains.py` ("haa").
+- **Live Groq test of the goal fix:** free Groq rate-limits after one or two ~8,000-token steps, so a long task
+  cannot run on Groq alone; the fix stays proven by its test. The test found two more bugs, both fixed:
+  - **"The file is missing" while it was there:** the prompt called the workspace the working directory, but code
+    runs in `backend/`, and the human named the path from the project root. The prompt now names where code runs
+    and the project root, and asks to check both before saying a file is missing.
+  - **A new request answered with an earlier task:** the step check said "the original request", and Groq and
+    Gemini both went back to the previous task; "Never undo" was answered as if asked ("No undo is required…").
+    The step check now names the human's latest request. The owner approved this change to `agent.py`.
 
 ## Open
 
 - **Needs the owner:**
   - **More free brain keys** (Cerebras, GitHub Models, Mistral, OpenRouter, Upstage): Gemini's free quota runs out
     several times a day. Keys go in through the UI's brain panel, never in chat or git.
-  - **The Windows PC:** `git pull`, then ask its coding agent to "test SYRAX" (docs/hostchecks/TEST_PLAN.md).
+  - **The Windows PC:** the owner started "test SYRAX" there on 11-25; results to read.
   - **The phone:** Android version, whether Wireless debugging exists, and the phone's IP:port.
   - **Step limit:** 20 steps (30 for SYRAX's own code); raise it for long projects if the owner agrees.
   - **Review the protected files:** `agent.py` and `brains.py` were changed on 10-30 and 10-31 under "sob koro",
