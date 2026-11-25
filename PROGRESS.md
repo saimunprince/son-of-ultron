@@ -1037,6 +1037,10 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
 - **"Open YouTube on the Android device and search lo-fi":** SYRAX reached the step limit. The brain wrote the
   phone commands with their argument in one field ("tap YouTube", "tap,856,263", "open YouTube") 20 times, each
   failed, and it concluded taps do not work. Such a command is now split into command and target.
+  Asked again, it searched YouTube on the Android device in 6 steps and named the first result.
+- **"now play john wick theme song" (11-23) was marked unverified while it played:** the phone's screen showed the
+  player at 0:38 of 18:04, but only the computer's media status counted as evidence. A phone reading of a player past
+  its start, or a Pause button, now counts.
 
 ## Open
 

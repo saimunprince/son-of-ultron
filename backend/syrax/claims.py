@@ -469,6 +469,12 @@ PLAYING_CLAIM = re.compile(
 # ("playing: Artist - Name") or Linux (playerctl's bare "Playing")
 PLAYING_READ = re.compile(r"(?im)(?:^|[\s:;.(])playing: |^\s*playing\s*$")
 PLAYING_NOTE = " (Not verified: nothing in this task read what is playing.)"
+# Live 2026-11-23 ("now play john wick theme song" on the phone): the phone's screen read "0 minutes 38 seconds of 18
+# minutes 4 seconds" twenty seconds after the tap, and the answer was still marked unverified: only the computer's
+# media status counted. A phone reading with a player past its start, or a Pause button, says something plays.
+PHONE_PLAYING_READ = re.compile(
+    r"(?im)\bpause(?: video| song| music)?\b at \d+,\d+"
+    r"|\b(?!0 minutes 0 seconds\b)(?:\d+ hours? )?\d+ minutes? \d+ seconds? of \d+ (?:hours?|minutes?)")
 # class -> (pattern, the tool classes that stand for it, what the answer says happened, the tool class named to the human)
 OUTCOME_CLAIMS = {
     "send": (SEND_CLAIM, frozenset({"send"}), "sent, posted, paid or ordered", "sending"),
