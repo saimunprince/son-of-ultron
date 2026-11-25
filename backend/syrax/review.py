@@ -25,7 +25,11 @@ import json
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
-MAX_DIFF = 24000  # 12000 until 2026-10-25: a module change plus its whole new test file did not fit
+# 12000 until 2026-10-25: a module change plus its whole new test file did not fit. 24000 until 2026-11-25: the
+# capability matrix alone is a ~45,000-character change, so the daily ledger was held every day from 11-07. A brain
+# whose request limit the full diff exceeds (Groq, Ollama: brains.max_request_tokens) fails the call instead of
+# reading part of it, so whoever approves has read it all.
+MAX_DIFF = 60000
 TRUNCATED = "… {n} more lines not shown: reject if you cannot judge it"
 HARD = ("weakens_checks", "clear_bug", "secret")
 SYSTEM = (
@@ -123,6 +127,17 @@ def diff_for_review(info: Dict[str, Any]) -> str:
     return kept + "\n" + TRUNCATED.format(n=more) + "\n"
 
 
+REVIEW_COMPLETION = 1024  # tokens kept for the verdict
+
+
+def fits_whole(pid: str, messages: List[Dict[str, Any]]) -> bool:
+    """Whether brain `pid` can take the review messages without brains.fit_request clipping them."""
+    from syrax.brains import PROVIDERS, count_tokens
+
+    limit = getattr(PROVIDERS.get(pid), "max_request_tokens", None)
+    return not limit or count_tokens(messages) + REVIEW_COMPLETION + 64 <= limit
+
+
 def unavailable(reason: str, brains_tried: List[str]) -> Dict[str, Any]:
     """The verdict of a review that could not happen. Not an approval, not a rejection: the release
     holds the change and says so."""
@@ -157,6 +172,11 @@ async def review(router: Any, info: Dict[str, Any], summary: str, authors: Itera
             if not ready:
                 errors.append(f"{pid}: {why}")
                 continue
+        if not fits_whole(pid, messages):
+            # 2026-11-25: brains.fit_request clips a long message to fit a small brain (head and tail kept), so Groq
+            # or Ollama could approve a diff whose middle it never read. Such a brain is not asked.
+            errors.append(f"{pid}: the diff is too long for this brain to read whole")
+            continue
         try:
             msg = await router._call(pid, messages, None, "none", images=False)
         except Exception as e:

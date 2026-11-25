@@ -81,7 +81,9 @@ def test_the_cycle_publishes_only_when_the_service_asks(tmp_path, monkeypatch):
     assert asyncio.run(a.run_once()).outcome == "IDLE" and calls == []
     monkeypatch.setenv("SYRAX_PUBLISH_RISE", "1")
     rep = asyncio.run(a.run_once())
-    assert rep.outcome == "RAN" and "published the rise ledger: COMMITTED" in rep.reason and len(calls) == 1
+    assert rep.outcome == "RAN" and "published the rise ledger: COMMITTED" in rep.reason and len(calls) == 2
+    # 2026-11-25: the documents, then the capability matrix alone, as two reviewed releases (ledger.publish_all)
+    assert calls[0]["matrix"] is False and calls[1]["matrix"] is True and calls[1]["docs"] is False and calls[1]["force"]
 
 
 def test_a_false_claim_sent_back_is_journaled(script):

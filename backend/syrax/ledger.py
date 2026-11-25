@@ -33,6 +33,7 @@ RETRY_S = 6 * 3600.0
 PUBLISHED, ATTEMPTED = "rise_published", "rise_attempted"
 SUMMARY = "docs(rise): the ledger and the devlog, regenerated from the journal"
 SUMMARY_WITH_MATRIX = "docs(rise): the ledger, the devlog and the capability matrix, regenerated from evidence"
+SUMMARY_MATRIX_ONLY = "docs(matrix): the capability matrix, regenerated from evidence"
 PLAN = {"why": "the rise ledger is published daily from the journal (M3, evidence without gaps)",
         "risk": "docs only; every number is computed by syrax.rise, a judge file",
         "tests": "the full gate runs on the worktree"}
@@ -104,7 +105,7 @@ async def write_matrix(journal: Journal, wt: Path, xml: Path, head: str, junit: 
 async def publish(journal: Journal, root: Path = REPO_ROOT, gates: Optional[Callable] = None,
                   reviewer: Optional[Callable] = None, now: Optional[float] = None, force: bool = False,
                   matrix: bool = False, junit: Optional[Callable] = None, prober: Optional[Callable] = None,
-                  review_opt_out: Optional[bool] = None) -> Dict[str, Any]:
+                  review_opt_out: Optional[bool] = None, docs: bool = True) -> Dict[str, Any]:
     """Regenerate docs/RISE.md in an isolated worktree and release it. Returns the release report
     (outcome COMMITTED, ROLLED_BACK, REVIEW_REJECTED, COMMIT_FAILED, REFUSED or FAILED)."""
     from syrax import rise
@@ -115,7 +116,12 @@ async def publish(journal: Journal, root: Path = REPO_ROOT, gates: Optional[Call
         return {"outcome": "SKIPPED", "reason": "published or attempted recently"}
     root = Path(root)
     journal.set_meta(ATTEMPTED, str(now))
-    t = journal.start_task_sync("[MAINTENANCE] publish the rise ledger (docs/RISE.md) from the journal", kind="autonomous")
+    # docs=False with matrix=True: the capability matrix alone. Live 2026-11-07..23: the ledger with the matrix was a
+    # ~66,000-character change every day, past what the review may cut, so it was held every day; the cycle now
+    # releases the documents and the matrix one after the other (publish_all)
+    goal = ("[MAINTENANCE] publish the rise ledger (docs/RISE.md) from the journal" if docs
+            else "[MAINTENANCE] publish the capability matrix (docs/CAPABILITY_MATRIX.md) from evidence")
+    t = journal.start_task_sync(goal, kind="autonomous")
     # its own worktree folder: an objective's task prunes .syrax/worktrees, never this one
     dl = DevLoop(journal, root=root, gates=gates, task_id_provider=lambda: t, worktrees_dir=root / ".syrax" / "maintenance")
     dl.reviewer = reviewer
@@ -129,21 +135,23 @@ async def publish(journal: Journal, root: Path = REPO_ROOT, gates: Optional[Call
         wt = await asyncio.to_thread(dl.isolate, t)
         await journal.record("isolation.started", {"worktree": str(wt)}, task_id=t)
         head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=str(root), capture_output=True, text=True).stdout.strip() or "?"
-        data = await asyncio.to_thread(rise.measure, journal.path, now)
         (wt / "docs").mkdir(parents=True, exist_ok=True)
-        (wt / "docs" / "RISE.md").write_text(before_release(rise.render(data, head)), encoding="utf-8", newline="\n")
-        from syrax import devlog  # M6: one entry per day SYRAX ran, from the journal and git
+        if docs:
+            data = await asyncio.to_thread(rise.measure, journal.path, now)
+            (wt / "docs" / "RISE.md").write_text(before_release(rise.render(data, head)), encoding="utf-8", newline="\n")
+            from syrax import devlog  # M6: one entry per day SYRAX ran, from the journal and git
 
-        days = await asyncio.to_thread(devlog.entries, journal, now, root)
-        (wt / "docs" / "DEVLOG.md").write_text(before_release(devlog.render(days, head)), encoding="utf-8", newline="\n")
-        from syrax import archive  # Phase 5: the archive of SYRAX's own variants
+            days = await asyncio.to_thread(devlog.entries, journal, now, root)
+            (wt / "docs" / "DEVLOG.md").write_text(before_release(devlog.render(days, head)), encoding="utf-8", newline="\n")
+            from syrax import archive  # Phase 5: the archive of SYRAX's own variants
 
-        (wt / "docs" / "ARCHIVE.md").write_text(before_release(await asyncio.to_thread(archive.render, journal, head)), encoding="utf-8", newline="\n")
+            (wt / "docs" / "ARCHIVE.md").write_text(before_release(await asyncio.to_thread(archive.render, journal, head)), encoding="utf-8", newline="\n")
         counts = None
         if matrix:
             xml = root / ".syrax" / "maintenance" / f"{wt.name}-pytest.xml"  # beside the worktree, never committed
             counts = await write_matrix(journal, wt, xml, head, junit, prober)
-        report = await dl.release(SUMMARY_WITH_MATRIX if counts else SUMMARY, dict(PLAN))
+        summary = SUMMARY_MATRIX_ONLY if counts and not docs else SUMMARY_WITH_MATRIX if counts else SUMMARY
+        report = await dl.release(summary, dict(PLAN))
         report["matrix"] = counts
     except Exception as e:
         # 2026-10-19: "unsupported operand type(s) for +: 'NoneType' and 'str'" alone did not say where; the
@@ -168,3 +176,18 @@ async def publish(journal: Journal, root: Path = REPO_ROOT, gates: Optional[Call
         await journal.record("task.failed", {"error": f"RISE ledger not published ({outcome}): {why}"}, task_id=t)
     report["task_id"] = t
     return report
+
+
+async def publish_all(journal: Journal, **kw) -> Dict[str, Any]:
+    """The daily ledger as two reviewed releases: the documents (RISE, DEVLOG, ARCHIVE), then the capability matrix.
+    Each stays within what one review reads in full (review.MAX_DIFF). Returns the documents' report, with the
+    matrix's as report["matrix_release"]."""
+    first = await publish(journal, matrix=False, **kw)
+    if first.get("outcome") == "SKIPPED":
+        return first
+    kw = {**kw, "force": True}
+    try:
+        first["matrix_release"] = await publish(journal, matrix=True, docs=False, **kw)
+    except Exception as e:  # the documents stand on their own
+        first["matrix_release"] = {"outcome": "FAILED", "error": f"{type(e).__name__}: {e}"[:300]}
+    return first

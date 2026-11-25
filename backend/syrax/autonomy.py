@@ -1422,9 +1422,10 @@ class Autonomy:
                     # M3: the evidence publishes itself, through SYRAX's own isolated release
                     try:
                         core_dl = getattr(self.core, "devloop", None)
-                        res = await ledger.publish(self.journal, reviewer=getattr(core_dl, "reviewer", None), matrix=True,
-                                                   review_opt_out=getattr(core_dl, "review_opt_out", None))
-                        rep.outcome, rep.reason = "RAN", f"published the rise ledger: {res.get('outcome')}"
+                        res = await ledger.publish_all(self.journal, reviewer=getattr(core_dl, "reviewer", None),
+                                                       review_opt_out=getattr(core_dl, "review_opt_out", None))
+                        rep.outcome, rep.reason = "RAN", (f"published the rise ledger: {res.get('outcome')}; capability matrix: "
+                                                          f"{(res.get('matrix_release') or {}).get('outcome')}")
                     except Exception as e:
                         logger.warning(f"publishing the rise ledger failed: {e}")
                     return await self._finish(rep)

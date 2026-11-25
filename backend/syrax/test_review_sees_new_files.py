@@ -80,9 +80,9 @@ def test_a_module_change_with_its_test_fits_and_a_cut_is_named():
     body = R.diff_for_review(info)
     assert len(info["diff"]) > 12000  # did not fit the old cap
     assert "more lines not shown" not in body and body.endswith("+    assert value(59) == 59  # one assertion per line, as a generated table test would have\n")
-    huge = {"diff": "", "untracked": ["backend/syrax/big.py"], "new_files": {"backend/syrax/big.py": "\n".join(f"x{i} = {i}" for i in range(4000))}}
+    huge = {"diff": "", "untracked": ["backend/syrax/big.py"], "new_files": {"backend/syrax/big.py": "\n".join(f"x{i} = {i}" for i in range(12000))}}
     cut = R.diff_for_review(huge)
     assert len(cut) <= R.MAX_DIFF + len(R.TRUNCATED) + 8 and cut.endswith("\n")
     n = int(re.search(r"… (\d+) more lines not shown: reject if you cannot judge it", cut).group(1))
     assert n > 0 and n + len(cut.split("\n" + R.TRUNCATED.format(n=n))[0].splitlines()) == R.new_file_diff("backend/syrax/big.py", huge["new_files"]["backend/syrax/big.py"]).count("\n")
-    assert "+x0 = 0\n" in cut and f"+x3999 = 3999" not in cut
+    assert "+x0 = 0\n" in cut and f"+x11999 = 11999" not in cut
