@@ -1049,6 +1049,10 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   in 4 steps and checked by hand. The tests pass, the data is the same on a second run, and the top 3 products match
   an independent count. The chart was skipped because matplotlib is not installed, as asked, though the answer did
   not say so.
+- **A small brain lost the task's goal:** to fit Groq's 8,000 tokens the router clips long messages oldest first,
+  and a long autonomy goal was the oldest, so it went first. Groq then answered "No undo is required…" to a goal it
+  could no longer read, and the task was marked a success. Tool outputs now give their room first; the task's own
+  request is clipped last and never below 400 characters. The owner approved this change to `brains.py` ("haa").
 
 ## Open
 
