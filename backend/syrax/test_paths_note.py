@@ -8,12 +8,14 @@ from syrax import agent, prompt
 
 def test_persona_names_where_code_runs_and_the_project_root():
     root = str(Path(prompt.__file__).resolve().parents[2])
-    for persona in (prompt.SYRAX_PERSONA, prompt.SYRAX_PERSONA_SHORT):
-        text = persona.format(directory="/ws")
-        assert f"starts in: {os.getcwd()}" in text
-        assert f"project root is: {root}" in text
-        assert "before you say a file is missing" in text
-        assert "working directory (workspace)" not in text
+    text = prompt.SYRAX_PERSONA.format(directory="/ws")
+    assert f"starts in: {os.getcwd()}" in text
+    assert f"project root is: {root}" in text
+    assert "before you say a file is missing" in text
+    short = prompt.SYRAX_PERSONA_SHORT.format(directory="/ws")
+    assert f"Code runs in {os.getcwd()}; project root {root}." in short
+    for t in (text, short):
+        assert "working directory (workspace)" not in t
 
 
 def test_step_check_points_at_the_latest_request():

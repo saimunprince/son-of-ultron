@@ -128,4 +128,6 @@ PATHS_NOTE = (
     "places before you say a file is missing."
 ).format(cwd=_os.getcwd(), root=_Path(__file__).resolve().parents[2]).replace("{", "{{").replace("}", "}}")
 SYRAX_PERSONA = SYRAX_PERSONA.rstrip("\n") + "\n" + PATHS_NOTE + "\n"
-SYRAX_PERSONA_SHORT = SYRAX_PERSONA_SHORT.rstrip("\n") + "\n" + PATHS_NOTE + "\n"
+PATHS_NOTE_SHORT = "Code runs in {cwd}; project root {root}. Use absolute paths.".format(
+    cwd=_os.getcwd(), root=_Path(__file__).resolve().parents[2]).replace("{", "{{").replace("}", "}}")
+SYRAX_PERSONA_SHORT = SYRAX_PERSONA_SHORT.rstrip("\n") + "\n" + PATHS_NOTE_SHORT + "\n"
