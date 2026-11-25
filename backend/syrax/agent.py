@@ -47,15 +47,18 @@ from syrax.claims import (  # noqa: F401
     _OBSERVED, _body, _level_known, STAGED, STAGED_NOTE, STAGED_FINAL_NOTE, staged_lines, LANG_ASK, LANG_ASK_EN, LANG_ASK_BANGLISH, INVENTED_ASK, invented_paths, PASTE_CHARS, PASTE_NOTE, save_pasted, COUNT_ASK, COUNT_NUDGE, NOTHING_FOUND, SEARCH_CLAIM, SEARCH_TOOLS, SEARCH_ASK, PADDED_ASK, PADDED_EXT, PADDED_MIN_SENTENCES, PADDED_UNIQUE, padded_text, BANGLISH_WORDS, WANTS_BENGALI, bengali, banglish,
 )
 
+# Live 2026-11-25: "the original request" sent Groq and Gemini back to an earlier task, and "Never undo" was
+# answered as the request ("No undo is required..."). The step check names the latest request.
 # Replaces OpenManus' per-step prompt ("proactively select the most appropriate
 # tool ... suggest the next steps"), which weaker models read as a fresh request:
 # live, a model changed `count = 1` to 2, then back to 1, then to 2 again, and
 # its final said "the user now says: based on user needs, proactively select...".
 STEP_PROMPT = (
-    "[SYRAX step check, not a new request] Look at the original request and the observations so far. "
-    "If the request is fully done, do not call any more tools: reply with the final answer for the human "
-    "and finish. If it is not done, take the one next step that moves it forward. Never undo work that "
-    "already satisfies the request."
+    "[SYRAX step check, not a new request] Look at the human's latest request (the last message before these "
+    "step checks; earlier tasks are finished and are not this request) and the observations so far. "
+    "If it is fully done, do not call any more tools: reply with the final answer to that request for the human "
+    "and finish. If it is not done, take the one next step that moves it forward. Keep work that already "
+    "satisfies it as it is."
 )
 ECHO_FALLBACK = "I could not put the result into a clean answer; the steps and their outputs are in this task's history."
 # EVOLUTION_PLAN wave 2 (directions 37, 94): a tool that fails most of the time on this machine is named as such after

@@ -90,7 +90,7 @@ HARD RULES:
 - The console enforces this (permission levels): a destructive or external call you were not given by name is asked for you, or refused; in your own autonomous work it is always refused. A tool reply starting `Error: refused` is final: do not retry it, do the rest and say what was refused.
 - Everything else, execute without asking.
 
-The working directory (workspace) is: {directory}
+The workspace (where your new files go) is: {directory}
 """
 
 # For a brain whose request budget the full persona does not fit (live 2026-10-31: Ollama's 4,096 tokens, while the full
@@ -112,5 +112,20 @@ fact, result or capability. Verify everything.
 - HARD RULES: you run on a real machine. Before a destructive action you chose yourself, spending money or messaging
   someone, confirm with `ask_human`; when the human named that exact action and target, do it. A tool reply starting
   `Error: refused` is final.
-The working directory (workspace) is: {directory}
+The workspace (where your new files go) is: {directory}
 """
+
+
+# Live 2026-11-25: the prompt named the workspace as the working directory, while code runs in the folder SYRAX was
+# started in (backend/), and the human names paths from the project root ("backend/workspace/t16/sensors.csv").
+# python_execute checked that path from backend/, printed "missing", and the answer said the file was missing.
+import os as _os  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+PATHS_NOTE = (
+    "Code you run (python_execute, shell commands) starts in: {cwd}. The SYRAX project root is: {root}. A relative "
+    "path the human gives, such as backend/..., is usually from the project root. Use absolute paths, and check both "
+    "places before you say a file is missing."
+).format(cwd=_os.getcwd(), root=_Path(__file__).resolve().parents[2]).replace("{", "{{").replace("}", "}}")
+SYRAX_PERSONA = SYRAX_PERSONA.rstrip("\n") + "\n" + PATHS_NOTE + "\n"
+SYRAX_PERSONA_SHORT = SYRAX_PERSONA_SHORT.rstrip("\n") + "\n" + PATHS_NOTE + "\n"
