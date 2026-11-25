@@ -1080,8 +1080,10 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
     (`SYRAX_QUIET_HOURS`), a run more than 2 h late (a task: 6 h) skipped and journaled instead of firing late, and
     routines that start an unattended task (autonomous permissions; setting one up is asked for, never quiet).
   - **The short-persona token tests** no longer count the path of the folder SYRAX runs in.
-  - **Waiting for a stronger brain** (instead of falling to Pollinations at once) is built on a branch and waits
-    for the owner's yes: it changes `brains.py`.
+  - **Waiting for a stronger brain:** when every other brain is only briefly out (rate limit, quota, 503), a request
+    waits up to 3 minutes (`SYRAX_BRAIN_PAUSE_S`) for the soonest to come back instead of falling to Pollinations
+    or Ollama at once; long cool-downs fall through as before, and cancel or E-STOP ends the wait. A 403 on one
+    model of a pooled provider now rests only that model. The owner approved this change to `brains.py`.
 
 ## Open
 
