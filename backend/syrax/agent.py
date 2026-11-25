@@ -908,6 +908,19 @@ class SyraxAgent(Manus):
         await self._drop_console_notes()  # a rewrite asked for above may carry one too
         if not self.last_reply and any(m.role == "tool" for m in self.memory.messages):
             self.last_reply = ECHO_FALLBACK  # nothing but the note was left, and no ask is left to make
+        if self.last_reply and self.researched and self.last_reply != ECHO_FALLBACK:
+            # Idea from Mark-LVII (2026-11-25): a quotation the cited page does not hold is removed, a citation number
+            # no source has becomes [?], a finding on a search snippet only says so (quotecheck via verify_answer)
+            tool = self.available_tools.get_tool("research")
+            researcher = getattr(tool, "researcher", None)
+            if researcher is not None:
+                try:
+                    self.last_reply, checked = await researcher.verify_answer(self.last_reply)
+                except Exception as e:  # noqa: BLE001 - a broken check never loses the answer
+                    logger.warning(f"quote check failed: {e}")
+                else:
+                    if checked.missing or checked.broken:
+                        await self._send({"type": "notice", "text": f"Research answer checked: {checked.footer()}"})
         masked = mask_credentials(self.last_reply, self.task_goal)
         if masked != self.last_reply:
             await self._send({"type": "notice", "text": "The answer quoted a credential the request did not ask for: masked."})

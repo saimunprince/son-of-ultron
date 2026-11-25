@@ -77,3 +77,27 @@ def test_a_spoken_answer_is_exempt(script, monkeypatch):
     script.queue = [call("research", {"question": "y"}), reply("Y is two.")]
     task, uncited = run("Research y.\n\n[Spoken aloud by voice. Answer in one or two short spoken English sentences.]")
     assert task["result"] == "Y is two." and uncited == [] and not nudged(script)
+
+
+def test_a_quote_the_page_does_not_hold_is_removed_from_the_answer(script, monkeypatch):
+    """2026-11-25 (idea from Mark-LVII): the final answer of a researched task is held to what the research read."""
+    from syrax import research
+
+    async def fake_research(self, question="", max_sources=4, **_):
+        from app.tool.base import ToolResult
+
+        src = research.Source(url="https://www.sqlite.org/history.html", title="History", snippet="",
+                              content="SQLite version 1.0 was released in August of 2000 by D. Richard Hipp.")
+        self.researcher._remember(self.researcher.task_id_provider(), [src])
+        return ToolResult(output="[1] https://www.sqlite.org/history.html · SQLite version 1.0 was released in August of 2000")
+
+    monkeypatch.setattr(research.ResearchTool, "execute", fake_research)
+    script.queue = [
+        call("research", {"question": "when was SQLite first released"}),
+        reply('The page says "SQLite version 1.0 was released in August of 2000" [1] and '
+              '"it was written in a single weekend by a lone hacker" [1]. Source: https://www.sqlite.org/history.html'),
+    ]
+    task, _ = run("Research in what year SQLite was first released and quote the source.")
+    assert "August of 2000" in task["result"]
+    assert "single weekend" not in task["result"] and "not found in the cited source" in task["result"]
+    assert "1 not found and removed" in task["result"]
