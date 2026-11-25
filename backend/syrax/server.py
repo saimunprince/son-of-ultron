@@ -201,8 +201,10 @@ async def lifespan(_: FastAPI):
     voice.load_voice(journal)  # the voice the human picked in the UI last time
     from syrax import reminders
 
-    # reminders fire from SYRAX's own loop (journaled; the UI shows and speaks them)
-    reminder_loop = asyncio.create_task(reminders.loop(journal, reminders.desktop_notify))
+    # reminders fire from SYRAX's own loop (journaled; the UI shows and speaks them). 2026-11-25: a routine with a
+    # task starts it unattended through reminders.start_routine_task (kind autonomous, never conversation).
+    reminder_loop = asyncio.create_task(reminders.loop(
+        journal, reminders.desktop_notify, start_task=lambda instruction: reminders.start_routine_task(core, instruction)))
     from syrax import alerts
 
     alert_loop = asyncio.create_task(alerts.loop(journal))  # spoken warnings when the machine is in trouble

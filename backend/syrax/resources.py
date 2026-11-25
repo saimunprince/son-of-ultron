@@ -25,13 +25,14 @@ MIN_BATTERY_PCT_ON_BATTERY = 30
 
 
 def quiet_hours() -> Optional[Tuple[int, int]]:
-    """SYRAX_QUIET_HOURS="23-7" → (23, 7). None when unset or malformed."""
+    """SYRAX_QUIET_HOURS="23-7" → (23, 7). None when unset or malformed. 2026-11-25 (routines engine): "23:00-07:00"
+    reads the same (whole hours; the minutes are not used)."""
     raw = os.getenv("SYRAX_QUIET_HOURS", "").strip()
     if not raw:
         return None
     try:
         a, b = raw.split("-", 1)
-        start, end = int(a), int(b)
+        start, end = int(a.partition(":")[0]), int(b.partition(":")[0])
     except ValueError:
         return None
     if not (0 <= start <= 23 and 0 <= end <= 23) or start == end:

@@ -511,7 +511,7 @@ export type ServerEvent =
   | ({ type: "voice_status" } & VoiceStatus)
   | { type: "memories"; facts: MemoryFact[] }
   | { type: "memory_exported"; path: string; count: number }
-  | ({ type: "reminder"; event: "created" | "fired" | "cancelled"; id: string; text?: string; due_ts?: number; late_s?: number } & Journaled)
+  | ({ type: "reminder"; event: "created" | "fired" | "skipped" | "cancelled"; id: string; text?: string; due_ts?: number; late_s?: number; reason?: string } & Journaled)
   | ({ type: "alert"; event: "raised"; kind: string; detail: string } & Journaled)
   | ({ type: "checkin"; event: "made"; text: string; items: string[] } & Journaled)
   | ({ type: "camera"; event: "captured"; path: string; bytes: number } & Journaled)

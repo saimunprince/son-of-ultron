@@ -463,6 +463,9 @@ export default function Syrax() {
             const late = (e.late_s ?? 0) >= 120 ? ` (late by ${Math.round((e.late_s ?? 0) / 60)} min)` : "";
             push({ kind: "notice", id: nextId++, text: `REMINDER · ${e.text}${late}` });
             say(`Reminder: ${e.text}`);
+          } else if (e.event === "skipped" && e.text) {
+            // 2026-11-25 (routines engine): a run missed by hours, or an interval run in quiet hours: shown, never spoken
+            push({ kind: "notice", id: nextId++, text: `REMINDER · ${e.text} (skipped: ${e.reason ?? "missed"})` });
           }
           break;
         case "voice_status": {

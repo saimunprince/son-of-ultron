@@ -109,11 +109,14 @@ def test_a_daily_reminder_sets_the_next_one_when_it_fires(tmp_path):
     assert reminders.cancel(j, nxt["id"]) and not reminders.pending(j)  # cancel stops it for good
 
 
-def test_a_repeating_reminder_missed_for_days_fires_once_and_moves_on(tmp_path):
+def test_a_repeating_reminder_missed_for_days_is_skipped_once_and_moves_on(tmp_path):
+    """2026-11-25 (routines engine): a run weeks late is skipped (journaled), not fired; the next run still comes."""
     j = Journal(tmp_path / "j.db")
-    reminders.create(j, "stretch", NOW + 60, now=NOW, repeat="weekly")
+    r = reminders.create(j, "stretch", NOW + 60, now=NOW, repeat="weekly")
     late = NOW + 60 + 3 * 7 * 86400 + 5  # SYRAX was off for three weeks
-    assert len(asyncio.run(reminders.fire_due(j, now=late))) == 1
+    assert asyncio.run(reminders.fire_due(j, now=late)) == []
+    (skipped,) = j.events_of_type("reminder.skipped")
+    assert skipped["payload"]["id"] == r["id"] and "late by" in skipped["payload"]["reason"]
     (nxt,) = reminders.pending(j)
     assert nxt["due_ts"] == pytest.approx(NOW + 60 + 4 * 7 * 86400)
 

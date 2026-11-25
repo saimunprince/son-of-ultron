@@ -50,6 +50,8 @@ def test_quiet_hours_parsing_and_wraparound(monkeypatch):
     monkeypatch.setenv("SYRAX_QUIET_HOURS", "23-7")
     assert resources.quiet_hours() == (23, 7)
     assert resources.in_quiet_hours(23) and resources.in_quiet_hours(2) and not resources.in_quiet_hours(7) and not resources.in_quiet_hours(12)
+    monkeypatch.setenv("SYRAX_QUIET_HOURS", "23:00-07:00")  # 2026-11-25: the routines engine's spelling
+    assert resources.quiet_hours() == (23, 7)
     monkeypatch.setenv("SYRAX_QUIET_HOURS", "9-17")
     assert resources.in_quiet_hours(9) and resources.in_quiet_hours(16) and not resources.in_quiet_hours(17) and not resources.in_quiet_hours(3)
     for bad in ("nope", "25-3", "5-5", "5"):
