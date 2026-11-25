@@ -14,6 +14,10 @@ conclusion it can `learn` it, and that conclusion's confidence can never
 exceed the confidence of the sources it cites.
 
 Tools: research {question, max_sources}, know {query}, learn {claim, sources, confidence?}.
+
+The answer the model writes from it is held to those excerpts (quotecheck.verify via Researcher.verify_answer):
+a quotation the cited page does not hold is removed, a citation number no source has becomes [?], and a finding
+that rests on a search snippet only says so.
 """
 
 from __future__ import annotations
@@ -34,6 +38,7 @@ from pydantic import Field
 from app.tool.base import BaseTool, ToolResult
 from app.tool.web_search import WebContentFetcher
 
+from syrax import quotecheck
 from syrax.journal import Journal, JournalError, re_words
 from syrax.redact import UNTRUSTED_WEB
 
@@ -48,6 +53,8 @@ UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, 
 WINDOW_CHARS = 420
 MAX_EXCERPTS_PER_SOURCE = 2
 MAX_SOURCES = 6
+READ_TASKS = 8  # tasks whose read sources are kept in memory for the answer check
+READ_CHARS = 200_000  # page text kept per source for that check
 
 
 @dataclass
@@ -160,6 +167,9 @@ class Researcher:
         self.journal = journal
         self.task_id_provider = task_id_provider or (lambda: None)
         self.fetch = fetcher or WebContentFetcher.fetch_content
+        # what each task's research calls read, numbered across the task ([1] stays one page however many calls
+        # ran), so the answer's quotations and citation numbers can be checked against it (verify_answer)
+        self.read: dict = {}
 
     async def research(self, question: str, max_sources: int = 4) -> dict:
         question = (question or "").strip()
@@ -215,11 +225,12 @@ class Researcher:
             )
             src.knowledge_id = row["id"]
             stored += 1
+        numbered = self._remember(task_id, sources)
         report = {
             "question": question,
             "sources": [
-                {"knowledge_id": s.knowledge_id, "url": s.url, "title": s.title, "fetched": bool(s.content), "agreeing": agree.get(s.url, 1), "excerpts": s.excerpts}
-                for s in sources
+                {"n": n, "knowledge_id": s.knowledge_id, "url": s.url, "title": s.title, "fetched": bool(s.content), "agreeing": agree.get(s.url, 1), "excerpts": s.excerpts}
+                for n, s in zip(numbered, sources)
             ],
             "stored": stored,
             "reinforced": reinforced,
@@ -235,6 +246,48 @@ class Researcher:
         )
         return report
 
+    def _remember(self, task_id: Optional[str], sources: Sequence[Source]) -> List[int]:
+        """Keep what this call read under the task and return each source's task-wide number; a page read again
+        keeps its number and gains the newer text."""
+        key = task_id or ""
+        read = self.read.pop(key, [])
+        self.read[key] = read  # most recent task last
+        while len(self.read) > READ_TASKS:
+            self.read.pop(next(iter(self.read)))
+        numbers = []
+        for s in sources:
+            text = "\n".join([(s.content or "")[:READ_CHARS], s.snippet or "", *s.excerpts])
+            old = next((r for r in read if r["url"] == s.url), None)
+            if old is None:
+                old = {"n": len(read) + 1, "url": s.url, "title": s.title, "text": "", "fetched": False, "knowledge_id": None}
+                read.append(old)
+            old["text"] = "\n".join(t for t in (old["text"], text) if t)[-READ_CHARS * 2:]
+            old["fetched"] = old["fetched"] or bool(s.content)
+            old["knowledge_id"] = s.knowledge_id or old["knowledge_id"]
+            numbers.append(old["n"])
+        return numbers
+
+    def sources_read(self, task_id: Optional[str]) -> List[dict]:
+        return list(self.read.get(task_id or "", []))
+
+    async def verify_answer(self, text: str, task_id: Optional[str] = None) -> tuple:
+        """Hold the brain's answer to what this task's research read (quotecheck.verify) before it reaches the
+        human, and journal the result beside research.completed. Returns (answer with its footer line, Checked).
+        A task that researched nothing gets its answer back unchanged and nothing is journaled."""
+        task_id = task_id if task_id is not None else self.task_id_provider()
+        sources = self.sources_read(task_id)
+        if not sources or not text:
+            return text, quotecheck.Checked()
+        # a source with no text kept (a snippet-less search hit) is checked against its stored knowledge row
+        for s in sources:
+            if s.get("knowledge_id") is not None and not s.get("text"):
+                row = await asyncio.to_thread(self.journal.knowledge, s["knowledge_id"])
+                s["text"] = (row or {}).get("excerpt") or (row or {}).get("claim") or ""
+        out, checked = quotecheck.verify(text, sources)
+        if checked.quotes or checked.broken or checked.snippet_only or checked.unchecked:
+            await self.journal.record("research.verified", {**checked.payload(), "footer": checked.footer()}, task_id=task_id)
+        return out, checked
+
 
 def render_report(report: dict) -> str:
     # the first line says what the rest is: excerpts from pages, data for the model, never instructions (audit 2026-10-25)
@@ -244,7 +297,7 @@ def render_report(report: dict) -> str:
         lines.append("State: UNKNOWN. Do not answer as if you had evidence.")
         return "\n".join(lines)
     for i, s in enumerate(report["sources"], 1):
-        lines.append(f"\n[{i}] knowledge_id={s['knowledge_id']} · {s['title'] or 'untitled'} · {s['url']} · {'page fetched' if s['fetched'] else 'snippet only'} · agreeing sources: {s['agreeing']}")
+        lines.append(f"\n[{s.get('n') or i}] knowledge_id={s['knowledge_id']} · {s['title'] or 'untitled'} · {s['url']} · {'page fetched' if s['fetched'] else 'snippet only'} · agreeing sources: {s['agreeing']}")
         for ex in s["excerpts"]:
             lines.append(f"    \"{ex}\"")
     again = report.get("reinforced") or 0
@@ -252,7 +305,8 @@ def render_report(report: dict) -> str:
                  + (f"; {again} already known (same page and excerpt), reinforced under the same knowledge_id" if again else "")
                  + f" ({report['ms']} ms).")
     lines.append("These are excerpts, not conclusions. Compare them, note disagreement, and cite knowledge_ids. "
-                 "If you reach a verified conclusion, store it with `learn` citing those ids.")
+                 "If you reach a verified conclusion, store it with `learn` citing those ids. "
+                 "Quote only words these excerpts hold, citing [n] or the URL: quotations are checked against them.")
     return "\n".join(lines)
 
 
