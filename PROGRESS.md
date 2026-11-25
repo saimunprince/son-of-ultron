@@ -4,7 +4,7 @@ The short, current page: where SYRAX stands now, what was done, what is next. Up
 Detail lives in [docs/AUDIT_2026-10-28.md](docs/AUDIT_2026-10-28.md) (findings and the open list), the commit
 messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
-## Now (2026-11-06, +0600)
+## Now (2026-11-25, +0600)
 
 - **Stage:** a day of live and stress testing: about 100 requests in 12 rounds plus a stress run, a load test and a
   multi-file project. Every bug found was fixed, gated GREEN and pushed (see Done, 2026-11-05 onward).
@@ -1016,6 +1016,19 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   Wikipedia page cited. A claimed search with no search tool run is now sent back, and an answer that says nothing
   was found is not asked for a URL.
 - **Then:** run the gate on Windows again; keep testing SYRAX live with the quality suite.
+
+### 2026-11-25: back after two weeks
+
+- **Health since 11-06:** 361 tasks; failures were the daily ledger (held every day) and two partial requests.
+- **The daily ledger was held every day from 11-07:** with the capability matrix it was a ~66,000-character change,
+  over what the review reads whole. It now goes out as two reviewed releases (documents, then the matrix), and the
+  review reads up to 60,000 characters.
+- **A hole in the review closed:** the brain router clips a long message to fit a small brain, so Groq or Ollama
+  could approve a diff whose middle it never saw. A brain whose request limit the review exceeds is not asked.
+- **Next.js 16.4.2 to 16.4.6:** seven moderate advisories; `next build` refused to run. `npm audit`: 0.
+- **SYRAX's own change reverted itself:** 17fd802 ("optimize GPU info") was reverted by its quality check (run #32
+  fell 15.4 points). What it meant to do (find the GPU on Windows when nvidia-smi fails) is now done right, with tests.
+- **Waydroid** (Android 13 with Google Play) is installed on this PC; SYRAX reaches it over adb at 192.168.240.112.
 
 ## Open
 

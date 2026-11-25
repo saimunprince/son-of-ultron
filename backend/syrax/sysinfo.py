@@ -97,20 +97,17 @@ def gpu() -> Optional[Dict[str, Any]]:
             timeout=2,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if WINDOWS else 0,  # the constant exists only on Windows
         )
-        if res.returncode != 0:
-            return None
-        line = res.stdout.strip().splitlines()
-        if not line:
-            return None
-        parts = [p.strip() for p in line[0].split(",")]
-        if len(parts) < 4:
-            return None
-        return {
-            "name": parts[0],
-            "memory_total_mb": int(parts[1]) if parts[1].isdigit() else None,
-            "memory_used_mb": int(parts[2]) if parts[2].isdigit() else None,
-            "utilization_pct": int(parts[3]) if parts[3].isdigit() else None,
-        }
+        # no NVIDIA answer (no driver, an AMD or Intel GPU): fall through to the Windows check, never return None
+        # here. SYRAX's own 17fd802 (objective #95) meant this and still returned None first; it was reverted.
+        line = res.stdout.strip().splitlines() if res.returncode == 0 else []
+        parts = [p.strip() for p in line[0].split(",")] if line else []
+        if len(parts) >= 4:
+            return {
+                "name": parts[0],
+                "memory_total_mb": int(parts[1]) if parts[1].isdigit() else None,
+                "memory_used_mb": int(parts[2]) if parts[2].isdigit() else None,
+                "utilization_pct": int(parts[3]) if parts[3].isdigit() else None,
+            }
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError, ValueError, IndexError):
         pass
 
