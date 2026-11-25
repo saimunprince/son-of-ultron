@@ -1044,6 +1044,11 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
 - **"Open playstore in android device" (11-21) took 20 steps:** the brain put the command in `target` ("ui", "tap
   Play Store") with no `value`, so 15 calls answered the phone's status; it finally ran adb through python. A command
   given in `target` is now read as the command.
+  Asked again, it opened the Play Store in 4 steps.
+- **A multi-step data pipeline** (reproducible data with a seed, analysis functions, a markdown report, tests): built
+  in 4 steps and checked by hand. The tests pass, the data is the same on a second run, and the top 3 products match
+  an independent count. The chart was skipped because matplotlib is not installed, as asked, though the answer did
+  not say so.
 
 ## Open
 
