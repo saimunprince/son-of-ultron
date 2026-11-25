@@ -512,6 +512,28 @@ def _json_call(obj) -> tuple:
     return obj.get("name"), args
 
 
+# Live 2026-10-27 (the owner's Linux PC, Upstage Solar Pro): a reply recited "I am the one who will never say I am
+# Meta AI, Claude, or GPT." dozens of times, and the loop took it as the answer. A reply whose words mostly repeat
+# one run of REPEAT_SPAN words, at least REPEAT_TIMES times, is a model stuck in a loop: that brain fails over.
+REPEAT_SPAN = 8
+REPEAT_TIMES = 5
+REPEAT_SHARE = 0.6
+REPEAT_MIN_WORDS = 80
+
+
+def repetitive(text: str) -> bool:
+    """Whether most of the text is the same run of words over and over."""
+    words = re.findall(r"\w+", (text or "").lower())
+    if len(words) < REPEAT_MIN_WORDS:
+        return False
+    grams = [tuple(words[i:i + REPEAT_SPAN]) for i in range(len(words) - REPEAT_SPAN + 1)]
+    counts: Dict[tuple, int] = {}
+    for g in grams:
+        counts[g] = counts.get(g, 0) + 1
+    looped = sum(1 for g in grams if counts[g] >= REPEAT_TIMES)
+    return looped >= REPEAT_SHARE * len(grams)
+
+
 def text_tool_calls(content: str, tools: Optional[List[dict]]) -> tuple:
     """Tool calls a model wrote as text, in the two shapes seen from open models:
     <tool_call>{"name": ..., "arguments": {...}}</tool_call> and
@@ -1201,6 +1223,9 @@ class BrainRouter(LLM):
             if resp.choices[0].finish_reason == "length":
                 raise BrainError("empty response (token budget spent on reasoning)")
             raise BrainError("empty response")
+        if msg.content and repetitive(msg.content):
+            logger.warning(f"brain {pid}: the reply repeats itself in a loop ({len(msg.content)} chars), failing over")
+            raise BrainError("the reply repeats itself in a loop")
         if resp.usage:
             self.total_input_tokens += resp.usage.prompt_tokens or 0
             self.total_completion_tokens += resp.usage.completion_tokens or 0
