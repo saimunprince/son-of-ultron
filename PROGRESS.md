@@ -1029,6 +1029,11 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
 - **SYRAX's own change reverted itself:** 17fd802 ("optimize GPU info") was reverted by its quality check (run #32
   fell 15.4 points). What it meant to do (find the GPU on Windows when nvidia-smi fails) is now done right, with tests.
 - **Waydroid** (Android 13 with Google Play) is installed on this PC; SYRAX reaches it over adb at 192.168.240.112.
+- **SYRAX's phone control, tried on Waydroid:** describe, open an app, read the screen, tap by words, type, keys and
+  screenshots all work. Two bugs fixed: `monkey` failed on a device without hardware keys and opened nothing (apps
+  now start by their launcher activity), and a driver warning ahead of the PNG broke screenshots.
+- **Quality run #33:** 60/67 (89.6 %), up from 76.9 %; objective #96 closed itself. The misses were brain time-outs
+  (Gemini 503, Groq rate limits) and a weak brain's answer.
 
 ## Open
 

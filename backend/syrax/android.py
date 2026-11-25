@@ -268,7 +268,12 @@ async def screenshot(folder: Path) -> Tuple[str, str]:
         raise PhoneError(f"The phone's screen could not be read: {err or rc}")
     from PIL import Image
 
-    img = Image.open(io.BytesIO(png))
+    # 2026-11-25 (Waydroid): a driver warning ("/vendor/etc/hwdata/amdgpu.ids: No such file or directory") came out
+    # ahead of the PNG on the same stream, and the picture could not be read. The picture starts at its signature.
+    start = png.find(b"\x89PNG\r\n\x1a\n")
+    if start < 0:
+        raise PhoneError("The phone's screen could not be read: no picture in screencap's output.")
+    img = Image.open(io.BytesIO(png[start:]))
     scale = max(1.0, img.height / PICTURE_HEIGHT)
     if scale > 1:
         img = img.resize((round(img.width / scale), round(img.height / scale)))
@@ -452,7 +457,14 @@ async def open_app(target: str) -> str:
     pkg = match_package(t, await packages())
     if not pkg:
         raise PhoneError(f"No app on the phone matches '{t}'.")
-    await shell("monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1")
+    # 2026-11-25 (Waydroid): `monkey` fails with "SYS_KEYS has no physical keys" on a device without hardware keys
+    # and opened nothing. The app's launcher activity is started by name; monkey only when it has none.
+    out = await shell("cmd", "package", "resolve-activity", "--brief", "-c", "android.intent.category.LAUNCHER", pkg)
+    activity = next((ln.strip() for ln in reversed(str(out).splitlines()) if "/" in ln), "")
+    if activity:
+        await shell("am", "start", "-n", activity)
+    else:
+        await shell("monkey", "-p", pkg, "-c", "android.intent.category.LAUNCHER", "1")
     return f"Opened {pkg} on the phone."
 
 

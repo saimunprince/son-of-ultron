@@ -145,3 +145,52 @@ def test_a_failed_connect_names_this_computers_network(monkeypatch):
         asyncio.run(android.connect("192.168.10.40", "37000"))
     assert "This computer is on" not in str(same.value)
     assert android.same_net("192.168.10.40", "192.168.10.249") and not android.same_net("10.0.0.2", "192.168.10.249")
+
+
+def test_an_app_opens_by_its_launcher_activity_and_monkey_is_the_fallback(monkeypatch):
+    """2026-11-25 (Waydroid): monkey failed with "SYS_KEYS has no physical keys" and opened nothing."""
+    import asyncio
+
+    calls = []
+
+    def fake(resolved):
+        async def shell(*args, timeout=20):
+            calls.append(args)
+            if args[:2] == ("cmd", "package"):
+                return resolved
+            return ""
+        return shell
+
+    async def pkgs():
+        return ["com.android.settings", "com.whatsapp"]
+
+    monkeypatch.setattr(android, "packages", pkgs)
+    monkeypatch.setattr(android, "shell", fake("priority=0 preferredOrder=0\ncom.android.settings/.Settings\n"))
+    assert asyncio.run(android.open_app("Settings")) == "Opened com.android.settings on the phone."
+    assert calls[-1] == ("am", "start", "-n", "com.android.settings/.Settings")
+    calls.clear()
+    monkeypatch.setattr(android, "shell", fake("No activity found"))
+    asyncio.run(android.open_app("Settings"))
+    assert calls[-1][0] == "monkey"
+
+
+def test_a_driver_warning_before_the_picture_is_skipped(monkeypatch, tmp_path):
+    """2026-11-25 (Waydroid): "amdgpu.ids: No such file or directory" came ahead of the PNG on exec-out."""
+    import asyncio
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 800), (10, 20, 30)).save(buf, format="PNG")
+
+    async def one():
+        return "w:5555"
+
+    async def adb(*args, timeout=20, binary=False):
+        return 0, b"/vendor/etc/hwdata/amdgpu.ids: No such file or directory\n" + buf.getvalue(), ""
+
+    monkeypatch.setattr(android, "serial", one)
+    monkeypatch.setattr(android, "adb", adb)
+    path, data = asyncio.run(android.screenshot(tmp_path))
+    assert path.endswith(".png") and data
