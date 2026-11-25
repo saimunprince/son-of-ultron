@@ -11,7 +11,11 @@ def test_the_short_persona_keeps_the_rules_and_is_small():
     for must in ("SYRAX", "Bengali script", "current message decides", "ask_human", "Error: refused", "terminate",
                  "self_inspect", "remember", "/w"):
         assert must in short, must
-    assert count_tokens(short) < 450 < count_tokens(SYRAX_PERSONA.format(directory="/w")) / 3
+    from syrax.prompt import PATHS_NOTE_SHORT
+
+    assert count_tokens(short.replace(PATHS_NOTE_SHORT, "")) < 450  # the paths note grows with the folder SYRAX runs in
+    assert count_tokens(short) - count_tokens(short.replace(PATHS_NOTE_SHORT, "")) < 80
+    assert 450 < count_tokens(SYRAX_PERSONA.format(directory="/w")) / 3
 
 
 def test_a_registered_prompt_is_replaced_only_in_system_messages():
