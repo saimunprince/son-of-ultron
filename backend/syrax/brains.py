@@ -87,7 +87,8 @@ def fit_request(messages: List[dict], tools: Optional[List[dict]], budget: int, 
     never cut away from its steps. The same request asked twice is still two
     turns. In order, until it fits: drop the oldest turns; shrink
     the completion to MIN_COMPLETION; clip long contents oldest first (head and
-    tail kept, the newest message last). Raises BrainError when even that does
+    tail kept, the newest message last, the task's own request after all of
+    them and never below CLIP_TO // 3). Raises BrainError when even that does
     not fit."""
     completion = max(256, min(max_tokens, budget // 4))
     system = [m for m in messages if m.get("role") == "system"]
@@ -112,12 +113,20 @@ def fit_request(messages: List[dict], tools: Optional[List[dict]], budget: int, 
         completion = min(completion, MIN_COMPLETION)
     if over():
         rest = [dict(m) for m in rest]
-        for keep in (CLIP_TO, CLIP_TO // 3, CLIP_TO // 8):  # gentle first, harder only if needed
-            for m in rest:  # oldest first, the newest last
-                if isinstance(m.get("content"), str) and len(m["content"]) > keep + 80:
-                    m["content"] = _clip_text(m["content"], keep)
-                    if not over():
-                        break
+        # The task's own request is clipped last: live 2026-11-25 it was the oldest
+        # message, clipped first, and Groq answered a goal it could no longer read.
+        goal = next((m for m in reversed(rest) if starts_turn(m)), None)
+        others = [m for m in rest if m is not goal]  # oldest first, the newest last
+        for group, levels in ((others, (CLIP_TO, CLIP_TO // 3, CLIP_TO // 8)),
+                              ([goal] if goal else [], (CLIP_TO * 2, CLIP_TO, CLIP_TO // 3))):
+            for keep in levels:  # gentle first, harder only if needed
+                for m in group:
+                    if isinstance(m.get("content"), str) and len(m["content"]) > keep + 80:
+                        m["content"] = _clip_text(m["content"], keep)
+                        if not over():
+                            break
+                if not over():
+                    break
             if not over():
                 break
     if over() and system:

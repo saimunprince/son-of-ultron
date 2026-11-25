@@ -224,6 +224,29 @@ def test_fit_request_clips_a_huge_turn_instead_of_failing():
     assert ids <= calls  # never a tool result without its call
 
 
+def test_fit_request_clips_the_task_request_last():
+    """Live 2026-11-25: a long autonomy goal was the oldest message, so it was
+    clipped first and Groq answered "No undo is required" to a goal it could no
+    longer read. Tool outputs are clipped before the request; the request keeps
+    its head and tail."""
+    from syrax.brains import CLIP_TO, count_tokens, fit_request
+    system = [{"role": "system", "content": "persona " * 200}]
+    goal = "GOAL-START compare the GPU change with its parent " + "context " * 600 + " GOAL-END undo it if it regressed"
+    turn = [{"role": "user", "content": goal}]
+    for i in range(4):
+        turn += [{"role": "assistant", "content": "", "tool_calls": [{"id": f"g{i}", "type": "function", "function": {"name": "python_execute", "arguments": "{}"}}]},
+                 {"role": "tool", "tool_call_id": f"g{i}", "content": f"out{i} " + "z " * 2500},
+                 {"role": "user", "content": "goal step prompt"}]
+    brains.STEP_PROMPTS.add("goal step prompt")
+    msgs, completion = fit_request(system + turn, TOOLS, budget=5000, max_tokens=8192)
+    assert count_tokens(msgs) + count_tokens(TOOLS) + completion <= 5000
+    kept = next(m["content"] for m in msgs if m.get("role") == "user" and "GOAL-START" in m["content"])
+    assert "GOAL-END undo it if it regressed" in kept
+    assert len(kept) >= CLIP_TO  # the request is the last thing clipped, and gently
+    tools = [m["content"] for m in msgs if m.get("role") == "tool"]
+    assert all(len(t) < len(kept) for t in tools)  # tool outputs gave their room first
+
+
 def test_fit_request_clips_extra_system_manuals_but_never_the_persona():
     """Live case: persona + a 2.6k-token MCP manual + 3.9k of tools left no room
     on Groq's 8k before the conversation even started."""
