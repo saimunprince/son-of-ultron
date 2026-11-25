@@ -214,3 +214,12 @@ def test_the_tool_sets_the_new_rules(tmp_path):
     listed = asyncio.run(tool.execute(action="list")).output
     assert listed.count("\n") == 2 and "(starts a task) · report" in listed
     assert "every_minutes" in asyncio.run(tool.execute(action="set", text="x", repeat="interval")).error
+
+
+def test_a_routine_that_starts_a_task_is_a_system_level_call():
+    """A scheduled task runs unattended again and again: it is never set up quietly (a plain reminder stays WRITE)."""
+    from syrax import permissions as P
+
+    assert P.classify("remind", {"text": "stand up", "at": "18:00"}).level == P.WRITE
+    d = P.classify("remind", {"text": "news", "task": "summarise the news", "repeat": "daily"})
+    assert d.level == P.SYSTEM and "unattended task" in d.reason

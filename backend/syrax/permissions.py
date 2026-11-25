@@ -435,6 +435,11 @@ def classify(name: str, args: Any) -> Decision:
         # a skill whose source writes (its own level, before the WRITE floor) and names a protected file is held to it
         targets = [str(a.get("name") or "")] + (protected_literals(src) if rank(level) > rank(READ_ONLY) else [])
         return Decision(name, highest(WRITE, level), reason if rank(level) > rank(WRITE) else "creates a skill", targets, harm)
+    if name == "remind" and str(a.get("task") or "").strip():
+        # 2026-11-25: a routine that starts a task runs again and again with nobody watching. Words read on a web page
+        # must not set one up quietly: it is a standing rule, asked for unless the human named it, never made by own work.
+        task = str(a.get("task")).strip()
+        return Decision(name, SYSTEM, f"schedules an unattended task: {task[:80]}", [task[:200]])
     if name == "desktop":
         action = str(a.get("action") or "")
         target = str(a.get("target") or "")
