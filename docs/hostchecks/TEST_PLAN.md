@@ -30,12 +30,12 @@ need to say more.
 
 ## This round
 
-Updated on the main PC with every push that needs a check here. Last update: 2026-11-06 (52ca844 and later).
+Updated on the main PC with every push that needs a check here. Last update: 2026-11-25, after the Windows report 2d4f3e9.
 
-- The gate on 1a9cfff had 3 failures (`test_open_takes_a_file_url`, `test_a_correction_that_changed_a_named_file_stands`,
-  `test_tests_never_reach_the_real_portal`); ce7bf97 fixed them. Confirm the gate is now GREEN on Windows.
-- New since then, check they pass here: `test_hostcheck.py`, `test_sign_off.py`, `test_banglish.py`,
-  `test_cpu_temperature.py`, `test_invented_paths.py`.
-- `system_info` now has a `Temperatures:` line. On Windows there are no hwmon sensors, so it should read
-  "CPU: no CPU sensor readable here". Run `python -c "from syrax import sysinfo; print(sysinfo.temperatures_line())"`
-  from `backend` with the venv python and report the line.
+- The gate on bc86d98 failed only `test_pasted_text.py::test_the_brain_is_told_where_the_long_message_is` (a POSIX
+  separator in the test); the test now normalises the separator. Confirm the gate is GREEN on Windows.
+- New since then, check they pass here: `test_paths_note.py` (the prompt names where code runs and the project root),
+  `test_gpu_fallback.py` (no nvidia-smi falls through to the PowerShell GPU check), `test_review_whole.py`,
+  `test_phone_playing.py`, and `test_brains.py::test_fit_request_clips_the_task_request_last`.
+- Run `python -c "from syrax import sysinfo; print(sysinfo.gpu())"` from `backend` with the venv python and report
+  the result: on this PC it should name the GPU through PowerShell, not return nothing.

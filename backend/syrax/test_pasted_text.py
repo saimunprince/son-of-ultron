@@ -25,7 +25,7 @@ def test_the_brain_is_told_where_the_long_message_is(script, monkeypatch):
     monkeypatch.setattr(script.__class__, "__call__", spy)
     script.queue = [reply("The same word, again and again.")]
     run("Summarise this text: " + "word " * (PASTE_CHARS // 4))
-    assert "THE HUMAN'S MESSAGE is long" in systems[0] and "/pasted/" in systems[0]
+    assert "THE HUMAN'S MESSAGE is long" in systems[0] and "/pasted/" in systems[0].replace("\\", "/")  # Windows joins with a backslash
 
 
 def test_a_count_with_no_tool_is_sent_back_to_count_the_file(script):

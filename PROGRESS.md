@@ -1061,13 +1061,16 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   - **A new request answered with an earlier task:** the step check said "the original request", and Groq and
     Gemini both went back to the previous task; "Never undo" was answered as if asked ("No undo is required…").
     The step check now names the human's latest request. The owner approved this change to `agent.py`.
+- **Windows 11 check on bc86d98:** the host check was all as predicted; the gate failed one test, which only
+  assumed `/` in a path. Fixed; the next Windows round (TEST_PLAN.md) checks this day's new tests and the GPU
+  fallback on that PC.
 
 ## Open
 
 - **Needs the owner:**
   - **More free brain keys** (Cerebras, GitHub Models, Mistral, OpenRouter, Upstage): Gemini's free quota runs out
     several times a day. Keys go in through the UI's brain panel, never in chat or git.
-  - **The Windows PC:** the owner started "test SYRAX" there on 11-25; results to read.
+  - **The Windows PC:** `git pull`, then "test SYRAX" again for this round (docs/hostchecks/TEST_PLAN.md).
   - **The phone:** Android version, whether Wireless debugging exists, and the phone's IP:port.
   - **Step limit:** 20 steps (30 for SYRAX's own code); raise it for long projects if the owner agrees.
   - **Review the protected files:** `agent.py` and `brains.py` were changed on 10-30 and 10-31 under "sob koro",
