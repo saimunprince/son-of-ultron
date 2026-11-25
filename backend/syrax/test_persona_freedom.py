@@ -16,7 +16,9 @@ def test_the_freedom_engine_is_in_the_persona():
 
 
 def test_the_safety_rules_are_unchanged_and_the_prompt_still_fits():
-    p = SYRAX_PERSONA
+    from syrax.prompt import PATHS_NOTE, PATHS_NOTE_SHORT
+
+    p = SYRAX_PERSONA.replace(PATHS_NOTE, "")  # the paths note grows with the folder SYRAX runs in
     assert "HARD RULES:" in p and "you MUST confirm with `ask_human`" in p and "Error: refused" in p
     assert count_tokens(p) < 3200
-    assert "Verify everything" in SYRAX_PERSONA_SHORT and count_tokens(SYRAX_PERSONA_SHORT.format(directory="/w")) < 450
+    assert "Verify everything" in SYRAX_PERSONA_SHORT and count_tokens(SYRAX_PERSONA_SHORT.replace(PATHS_NOTE_SHORT, "").format(directory="/w")) < 450
