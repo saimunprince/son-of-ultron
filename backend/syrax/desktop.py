@@ -376,6 +376,68 @@ WIN_BUILTINS = {
 }
 
 
+# Mark-LVII idea (2026-11-25, reimplemented): a launch is proven by a new process, not by the launcher's exit code.
+# gtk-launch returns 0 even when the app dies at once, and "Launched X." was then a claim nothing had checked.
+LAUNCH_WAIT_S = 8.0
+_LAUNCH_SKIP = {"env", "sh", "bash", "flatpak", "snap", "run", "gtk-launch", "python", "python3", "java"}
+
+
+def launch_keys(app: dict) -> set:
+    """Lower-case words a process of `app` is expected to carry in its name or command line."""
+    keys = set()
+    exe = os.path.basename(str(app.get("exec") or "")).lower()
+    if exe and exe not in _LAUNCH_SKIP:
+        keys.add(exe)
+    stem = str(app.get("id") or "").rsplit("/", 1)[-1].removesuffix(".desktop").lower()
+    if stem:
+        keys.add(stem)  # flatpak / reverse-DNS ids appear in the command line
+        last = stem.rsplit(".", 1)[-1]
+        if len(last) >= 4:
+            keys.add(last)
+    name = re.sub(r"[^a-z0-9]", "", str(app.get("name") or "").lower())
+    if len(name) >= 4:
+        keys.add(name)
+    return {k for k in keys if len(k) >= 3}
+
+
+def _process_table() -> Dict[int, str]:
+    """{pid: "name cmdline"} in lower case; empty when processes cannot be read."""
+    try:
+        import psutil
+    except ImportError:
+        return {}
+    table: Dict[int, str] = {}
+    for p in psutil.process_iter(["pid", "name", "cmdline"]):
+        try:
+            info = p.info
+            table[info["pid"]] = f"{info.get('name') or ''} {' '.join(info.get('cmdline') or [])}".lower()
+        except Exception:  # noqa: BLE001 - a process may vanish while read
+            continue
+    return table
+
+
+def _matches(text: str, keys: set) -> bool:
+    return any(k in text for k in keys)
+
+
+async def verify_launch(name: str, keys: set, before: Dict[int, str], wait: float = LAUNCH_WAIT_S) -> str:
+    """The launch result, checked: a new matching process, an app that was already running, or not verified."""
+    if not keys or not before:
+        return f"Launched {name}."
+    deadline = time.monotonic() + wait
+    while True:
+        now = _process_table()
+        if any(_matches(t, keys) for pid, t in now.items() if pid not in before):
+            return f"Launched {name}: it is running now."
+        if time.monotonic() >= deadline:
+            break
+        await asyncio.sleep(0.5)
+    if any(_matches(t, keys) for t in before.values()):
+        return f"{name} was already running; it was asked to open again (a window may have come forward)."
+    return (f"Asked to launch {name}, but no {name} process appeared within {wait:g} seconds: not verified. "
+            f"Check with a screenshot or the window list before saying it is open.")
+
+
 def match_app(query: str, apps: Optional[List[dict]] = None) -> Optional[dict]:
     q = " ".join(query.lower().split())
     if not q:
@@ -427,6 +489,7 @@ def _looks_like_url(t: str) -> bool:
     return bool(re.match(r"^(https?://|www\.)", t) or re.match(r"^[\w-]+(\.[\w-]+)+(/\S*)?$", t))
 
 
+VOLUME_STEP = re.compile(r"^(\+|-|up|down)\s*(?:by\s*)?(\d{1,3})$")  # "+30", "-20", "up 30", "down by 15"
 VOLUME_READ = re.compile(r"Volume (\d+)%( \(muted\))?\.")
 
 
@@ -454,7 +517,7 @@ class DesktopControl(BaseTool):
                 ],
             },
             "target": {"type": "string", "description": "open: URL, file or folder. launch_app/list_apps: app name (Store apps included). find_files: name pattern. system_info: a city or time zone (Tokyo, Europe/London) to also read the time there. click: 'x,y' screen pixels. click_text/find_text: the words on the control or the screen, e.g. Save. trash: the file or folder to move to the Recycle Bin. untrash: the original path of a trashed file, to put it back (Linux)."},
-            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop; each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get. phone: status, screen, ui, tap, type, key, swipe or open."},
+            "value": {"type": "string", "description": "volume: 0-100, 'up', 'down', '+N' or '-N' (by N points, e.g. +30), 'mute', 'unmute', 'get'. media: status (what plays in which app), play, pause, toggle, next, previous, stop; each answer says what plays after it. notify/clipboard_set: text. window: list, focus, minimize, maximize, restore, left, right (target = part of the window title). type_text: the text. hotkey: keys joined by +, e.g. ctrl+shift+s. click: left, right, middle or double. dark_mode: on, off or get. phone: status, screen, ui, tap, type, key, swipe or open."},
             "folder": {"type": "string", "description": "find_files: folder to search (default: home)."},
         },
         "required": ["action"],
@@ -565,13 +628,15 @@ class DesktopControl(BaseTool):
         app = match_app(target)
         if not app:
             return ToolResult(error=f"No installed app matches '{target}'. Try list_apps.")
+        keys = launch_keys(app)
+        before = _process_table()
         code, _, err = await _run("gtk-launch", app["id"].removesuffix(".desktop"), timeout=10)
         if code != 0:
             exe = shutil.which(app["exec"]) if app["exec"] else None
             if not exe:
                 return ToolResult(error=f"Could not launch {app['name']}: {err or code}")
             await _run(exe, detach=True)
-        return ToolResult(output=f"Launched {app['name']}.")
+        return ToolResult(output=await verify_launch(app["name"], keys, before))
 
     async def _win_launch_app(self, target: str) -> ToolResult:
         builtin = _win_builtin(target)
@@ -602,10 +667,18 @@ class DesktopControl(BaseTool):
     async def _do_volume(self, value: str, **_) -> ToolResult:
         """The volume action. A change says the level before it ("Volume 35% -> 80%.", "..., it was not muted."), so
         undo (undo.py) can put it back."""
-        v = (value or "").lower().rstrip("%") or "get"
+        v = (value or "").lower().strip().rstrip("%").strip() or "get"
         if v == "get":
             return await self._volume_raw(v)
         before = await self._volume_raw("get")
+        step = VOLUME_STEP.match(v)
+        if step:
+            # Mark-LVII idea (2026-11-25): "up by 30" is an amount, never faked with repeated presses or the fixed 10%
+            b = VOLUME_READ.match(before.output or "") if not before.error else None
+            if not b:
+                return ToolResult(error=f"The volume could not be read, so it was not changed by {v}: {before.error or before.output}")
+            amount = int(step.group(2)) * (-1 if step.group(1) in ("-", "down") else 1)
+            v = str(max(0, min(100, int(b.group(1)) + amount)))
         done = await self._volume_raw(v)
         b = VOLUME_READ.match(before.output or "") if not before.error else None
         a = VOLUME_READ.match(done.output or "") if not done.error else None
@@ -631,7 +704,7 @@ class DesktopControl(BaseTool):
             elif v.isdigit():
                 await _run("wpctl", "set-volume", sink, f"{min(100, int(v))}%")
             elif v != "get":
-                return ToolResult(error="volume value must be 0-100, up, down, mute, unmute or get.")
+                return ToolResult(error="volume value must be 0-100, up, down, +N, -N, mute, unmute or get.")
             _, out, _ = await _run("wpctl", "get-volume", sink)
             m = re.search(r"([\d.]+)", out)
             level = f"{round(float(m.group(1)) * 100)}%" if m else out
@@ -653,7 +726,7 @@ class DesktopControl(BaseTool):
             elif v in ("mute", "unmute"):
                 await _run("pactl", "set-sink-mute", sink, "1" if v == "mute" else "0")
             elif v != "get":
-                return ToolResult(error="volume value must be 0-100, up, down, mute, unmute or get.")
+                return ToolResult(error="volume value must be 0-100, up, down, +N, -N, mute, unmute or get.")
             _, out, _ = await _run("pactl", "get-sink-volume", sink)
             _, mute, _ = await _run("pactl", "get-sink-mute", sink)
             m = re.search(r"(\d+)%", out)
@@ -675,7 +748,7 @@ class DesktopControl(BaseTool):
             _press_keys("vol_down", times=50)
             _press_keys("vol_up", times=round(min(100, int(v)) / 2))
         elif v != "get":
-            return ToolResult(error="volume value must be 0-100, up, down, mute, unmute or get.")
+            return ToolResult(error="volume value must be 0-100, up, down, +N, -N, mute, unmute or get.")
         level = self._win_volume_level()
         if level is None:
             return ToolResult(output="Volume set." if v != "get" else "Volume level is not readable on this machine.")
@@ -691,7 +764,7 @@ class DesktopControl(BaseTool):
         elif v.isdigit():
             await _osascript(f"set volume output volume {min(100, int(v))}")
         elif v != "get":
-            return ToolResult(error="volume value must be 0-100, up, down, mute, unmute or get.")
+            return ToolResult(error="volume value must be 0-100, up, down, +N, -N, mute, unmute or get.")
         _, out, _ = await _osascript("get volume settings")
         m = re.search(r"output volume:(\d+)", out)
         muted = "output muted:true" in out

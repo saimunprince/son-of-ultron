@@ -1064,6 +1064,13 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
 - **Windows 11 check on bc86d98:** the host check was all as predicted; the gate failed one test, which only
   assumed `/` in a path. Fixed; the next Windows round (TEST_PLAN.md) checks this day's new tests and the GPU
   fallback on that PC.
+- **Ideas from Mark-LVII (FatihMakes' JARVIS, CC BY-NC 4.0): ideas only, written anew, no code copied.**
+  A read of the repo ranked ten gaps; the first two are in:
+  - **A Linux launch proves itself:** `launch_app` said "Launched X." as soon as gtk-launch returned. It now waits
+    up to 8 seconds for a new matching process and says "running now", "was already running" or "not verified".
+  - **Volume by an amount:** "+30", "-20", "up by 30" set the exact level once (before, only 10 % steps).
+  - Next from the list: one routines engine (monthly, every N minutes, quiet hours, start a task), a read-only
+    background task lane that pauses when every brain is out of quota, research whose quotes are checked in code.
 
 ## Open
 
