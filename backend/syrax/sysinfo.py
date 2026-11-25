@@ -98,10 +98,7 @@ def gpu() -> Optional[Dict[str, Any]]:
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if WINDOWS else 0,  # the constant exists only on Windows
         )
         if res.returncode != 0:
-            # If nvidia-smi fails, it might be because it's not installed or not in PATH.
-            # We should not return None immediately, but rather try other methods if available.
-            # For now, we will let it proceed to the Windows-specific check if applicable.
-            pass
+            return None
         line = res.stdout.strip().splitlines()
         if not line:
             return None
