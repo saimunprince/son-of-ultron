@@ -194,3 +194,18 @@ def test_a_driver_warning_before_the_picture_is_skipped(monkeypatch, tmp_path):
     monkeypatch.setattr(android, "adb", adb)
     path, data = asyncio.run(android.screenshot(tmp_path))
     assert path.endswith(".png") and data
+
+
+def test_a_phone_command_written_with_its_argument_is_split():
+    """Live 2026-11-25 (Waydroid): 20 calls like value "tap YouTube" with no target each failed."""
+    from syrax.desktop import phone_args
+
+    assert phone_args("tap YouTube", "") == ("tap", "YouTube")
+    assert phone_args("tap,856,263", "") == ("tap", "856,263")
+    assert phone_args("tap 858,266", "") == ("tap", "858,266")
+    assert phone_args("open https://m.youtube.com", "") == ("open", "https://m.youtube.com")
+    assert phone_args("type lo-fi music", "") == ("type", "lo-fi music")
+    assert phone_args("tap", "Search") == ("tap", "Search")
+    assert phone_args("screen", "") == ("screen", "")
+    assert phone_args("", "") == ("status", "")
+    assert phone_args("tapdance now", "") == ("tapdance now", "")

@@ -1034,6 +1034,9 @@ The owner had ChatGPT read a SYRAX log from the office PC. Checked against the r
   now start by their launcher activity), and a driver warning ahead of the PNG broke screenshots.
 - **Quality run #33:** 60/67 (89.6 %), up from 76.9 %; objective #96 closed itself. The misses were brain time-outs
   (Gemini 503, Groq rate limits) and a weak brain's answer.
+- **"Open YouTube on the Android device and search lo-fi":** SYRAX reached the step limit. The brain wrote the
+  phone commands with their argument in one field ("tap YouTube", "tap,856,263", "open YouTube") 20 times, each
+  failed, and it concluded taps do not work. Such a command is now split into command and target.
 
 ## Open
 

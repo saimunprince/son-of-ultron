@@ -495,7 +495,7 @@ class DesktopControl(BaseTool):
     async def _do_phone(self, target: str, value: str, **_) -> ToolResult:
         from syrax import android
 
-        cmd = (value or "status").lower()
+        cmd, target = phone_args(value, target)
         try:
             if cmd == "status":
                 return ToolResult(output=await android.describe())
@@ -517,7 +517,9 @@ class DesktopControl(BaseTool):
                 return ToolResult(output=await android.open_app(target))
         except android.PhoneError as e:
             return ToolResult(error=str(e))
-        return ToolResult(error=f"Unknown phone command '{value}': status, screen, ui, tap, type, key, swipe or open.")
+        return ToolResult(error=f"Unknown phone command '{value}': value is one of status, screen, ui, tap, type, key, "
+                                "swipe or open, and target is what it acts on (tap: the words on the button or 'x,y'; "
+                                "open: an app name or a link).")
 
     async def _do_open(self, target: str, **_) -> ToolResult:
         if not target:
@@ -1156,6 +1158,20 @@ class DesktopControl(BaseTool):
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".heic"}
 VIDEO_EXT = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v", ".3gp"}
 VIEW_MAX_SIDE = 1600  # an image's longest side for the brain
+
+
+PHONE_COMMANDS = ("status", "screen", "ui", "tap", "type", "key", "swipe", "open")
+
+
+def phone_args(value: str, target: str) -> tuple:
+    """(command, target) for the phone action. Live 2026-11-25 (Waydroid): asked to search YouTube, the brain wrote
+    value "tap YouTube", "tap,856,263", "tap 858,266" and "open YouTube" in 20 calls with no target, each failed, and
+    the task ended at the step limit saying taps do not work. A command written with its argument is split."""
+    raw = (value or "status").strip()
+    m = re.match(r"^\s*([a-z]+)[\s,:]+(.+)$", raw, re.I | re.S)
+    if m and m.group(1).lower() in PHONE_COMMANDS and not (target or "").strip():
+        return m.group(1).lower(), m.group(2).strip()
+    return raw.lower(), target
 
 
 def media_kind(path: Path) -> str:
