@@ -4,10 +4,11 @@ a model that is itself limited is skipped for a while; providers without the
 pool fail over exactly as before. Fake calls; no network."""
 
 import asyncio
+import time
 
 import httpx
 import pytest
-from openai import RateLimitError
+from openai import AuthenticationError, PermissionDeniedError, RateLimitError
 from openai.types.chat import ChatCompletionMessage
 
 from syrax import brains
@@ -92,3 +93,40 @@ def test_the_pool_tries_the_closest_chat_models_first(router, monkeypatch):
     assert [m for _, m in router.calls] == ["m-lite", "m-mini-lite"]
     assert brains.kinship("gemini-3.1-flash-lite", "gemini-3.5-flash-lite") > brains.kinship("gemini-2.5-pro", "gemini-3.5-flash-lite")
     assert all(brains.POOL_DENY.search(m) for m in ("antigravity-preview-latest", "deep-research-pro-preview-12-2025", "lyria-3-clip-preview"))
+
+
+def _status_error(cls, status, model):
+    resp = httpx.Response(status, request=httpx.Request("POST", "https://x/v1/chat/completions"), json={"error": {"message": "no"}})
+    return cls(f"{model} refused", response=resp, body={"error": {"message": "no"}})
+
+
+def test_a_403_on_one_pooled_model_rests_that_model_not_the_provider(router, monkeypatch):
+    # Mark-LVII's lesson: one refused model is not a refused key; the provider fails over as the rate limit it was
+    original = router._call
+
+    async def call(pid, messages, tools, tool_choice, images, model=None, extra=None):
+        if pid == "pooled" and model in ("m-other", "m-pro"):
+            router.calls.append((pid, model))
+            raise _status_error(PermissionDeniedError, 403, model)
+        return await original(pid, messages, tools, tool_choice, images, model=model, extra=extra)
+
+    monkeypatch.setattr(router, "_call", call)
+    assert ask(router).content == "plain/p1"
+    assert ("pooled", "m-pro") in router.calls  # the 403 on m-other did not end the pool
+    assert router.health["pooled"].reason == "rate limited" and router.health["pooled"].transient
+    assert router.health["pooled"].until - time.time() < 600  # not the hour a refused key earns
+    assert router.health["plain"].until == 0  # the other provider is untouched
+
+
+def test_a_401_in_the_pool_benches_only_that_provider_as_a_bad_key(router, monkeypatch):
+    original = router._call
+
+    async def call(pid, messages, tools, tool_choice, images, model=None, extra=None):
+        if pid == "pooled" and model == "m-other":
+            raise _status_error(AuthenticationError, 401, model)
+        return await original(pid, messages, tools, tool_choice, images, model=model, extra=extra)
+
+    monkeypatch.setattr(router, "_call", call)
+    assert ask(router).content == "plain/p1"
+    assert router.health["pooled"].reason == "invalid API key" and not router.health["pooled"].transient
+    assert router.health["plain"].until == 0

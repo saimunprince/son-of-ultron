@@ -648,7 +648,7 @@ SKILL_STATUSES = ("NOT_TESTED", "VERIFIED", "FAILED", "DISABLED")
 
 # Events maintenance prunes from finished tasks (Journal.maintain): kept out of the integrity chain, so pruning them never
 # reads as tampering. Every other event is chained.
-UNCHAINED = ("think", "brain.failover", "brain.answered", "presentation.created", "presentation.dismissed")
+UNCHAINED = ("think", "brain.failover", "brain.answered", "brain.waiting", "presentation.created", "presentation.dismissed")
 GENESIS = "syrax-journal-chain-v1"
 CHAIN_HEAD = "chain_head"  # meta: the signed newest chained event (LIFE-3)
 
@@ -2155,7 +2155,7 @@ class Journal:
             pruned = trimmed = 0
             for tid in old:
                 cur.execute(
-                    "DELETE FROM events WHERE task_id=? AND type IN ('think','brain.failover','brain.answered',"
+                    "DELETE FROM events WHERE task_id=? AND type IN ('think','brain.failover','brain.answered','brain.waiting',"
                     "'presentation.created','presentation.dismissed')", (tid,)
                 )
                 pruned += cur.rowcount

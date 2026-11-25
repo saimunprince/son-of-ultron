@@ -167,6 +167,11 @@ def _first_sentence(text: str, limit: int = 200) -> str:
 LOCAL_BRAIN = "ollama"
 LOCAL_WAIT_S = float(os.getenv("SYRAX_LOCAL_WAIT_S", "120"))
 LOCAL_POLL_S = 3.0
+# Live 2026-11-25: Groq answered "rate limited" for a few seconds, the task fell to anonymous Pollinations at once, and
+# its made-up answer was marked SUCCESS. When every stronger brain is only briefly out (rate limit, quota, 5xx, time-out:
+# Health.transient) and one is back within this many seconds in all, a request waits for it instead of dropping to a
+# last resort (anonymous Pollinations, the local brain). A longer rest (a daily quota spent for hours) falls through as before.
+BRAIN_PAUSE_S = float(os.getenv("SYRAX_BRAIN_PAUSE_S", "180"))
 
 ESSENTIAL_TOOLS = frozenset({"terminate", "ask_human", "python_execute", "desktop", "recall", "remember", "research",
                              "know", "undo", "present"})
@@ -582,6 +587,9 @@ class Health:
     reason: str = ""
     last_ok: float = 0.0
     last_model: str = ""
+    # the cool-down is a rate limit, quota, 5xx or time-out (_penalize): the brain comes back by itself, so a request
+    # may wait for it (BRAIN_PAUSE_S); an auth, not-found or bad-request failure never earns a wait
+    transient: bool = False
 
 
 @dataclass
@@ -950,9 +958,12 @@ class BrainRouter(LLM):
 
         wait_rounds = 0
         local_tried = False
-        for attempt in range(4):
+        pause_left = BRAIN_PAUSE_S
+        attempt = 0
+        while attempt < 4:
             failures = []
             soonest = None
+            held = False
             for pid in chain:
                 h = self.health[pid]
                 wait = h.until - time.time()
@@ -960,6 +971,9 @@ class BrainRouter(LLM):
                     failures.append(f"{PROVIDERS[pid].label}: cooling down ({h.reason})")
                     soonest = wait if soonest is None else min(soonest, wait)
                     continue
+                if self._last_resort(pid) and self._pause_for(chain, pause_left):
+                    held = True  # a stronger brain is back soon: wait for it below rather than ask this one
+                    break
                 formatted = self._format(messages, system_msgs, PROVIDERS[pid].vision)
                 try:
                     started = time.monotonic()
@@ -1016,6 +1030,15 @@ class BrainRouter(LLM):
                     }
                 )
                 return msg
+            # Every stronger brain only briefly out: wait for the soonest (bounded per request by BRAIN_PAUSE_S); a
+            # wait does not count as an attempt, the budget bounds it
+            hold = self._pause_for(chain, pause_left)
+            if hold:
+                pause_left -= await self._pause(*hold)
+                continue
+            attempt += 1
+            if held:
+                continue  # the brain waited for came back between the two checks: try it now
             # Everything failed. If a provider frees up soon, wait once and retry.
             now = time.time()
             waits = [self.health[p].until - now for p in chain if self.health[p].until > now]
@@ -1037,6 +1060,40 @@ class BrainRouter(LLM):
                     continue
             raise BrainError("All brains failed. " + " | ".join(failures[:6]))
         raise BrainError("All brains failed.")
+
+    def _last_resort(self, pid: str) -> bool:
+        """A brain asked only when nothing stronger answers: the local one (slow, weak) and a key-less tier (anonymous
+        Pollinations: plain chat only, no tools). With a key Pollinations is a full brain."""
+        p = PROVIDERS[pid]
+        return p.tier == "local" or (p.tier == "no-key" and not self.store.key(pid))
+
+    def _pause_for(self, chain: List[str], budget: float) -> Optional[Tuple[str, float]]:
+        """The stronger brain worth waiting for, and how long: every brain of the chain that is not a last resort is
+        cooling down, and the soonest of those only briefly out (Health.transient) is back within `budget` seconds.
+        None when any stronger brain is ready, or the only ones out are out for a key / model / request problem, or
+        the soonest is back too late (a daily quota spent until midnight)."""
+        now = time.time()
+        strong = [p for p in chain if not self._last_resort(p)]
+        if not strong or any(self.health[p].until <= now for p in strong):
+            return None
+        back = [(self.health[p].until - now, p) for p in strong if self.health[p].transient]
+        if not back:
+            return None
+        wait, pid = min(back)
+        return (pid, wait) if wait <= budget else None
+
+    async def _pause(self, pid: str, wait: float) -> float:
+        """Wait for one stronger brain to come back; the UI and the journal see it (brain.waiting). A cancelled task
+        (E-STOP, cancel) ends the wait at once: CancelledError leaves asyncio.sleep. Returns the seconds spent."""
+        secs = wait + 0.5
+        label, reason = PROVIDERS[pid].label, self.health[pid].reason
+        logger.info(f"brain {pid} {reason}: waiting {secs:.1f}s for it instead of a last-resort brain")
+        await self._emit({"type": "brain", "event": "waiting", "provider": pid, "label": label,
+                          "seconds": round(secs), "reason": reason})
+        await self._emit({"type": "notice", "text": f"Waiting for {label} ({round(secs)} s): {reason}."})
+        started = time.monotonic()
+        await asyncio.sleep(secs)
+        return time.monotonic() - started
 
     async def _local_ready(self, wait_s: float) -> bool:
         """Whether Ollama answers on this machine, waiting up to wait_s for it to start (after a boot it comes up
@@ -1245,7 +1302,10 @@ class BrainRouter(LLM):
             except RateLimitError as e:
                 self.model_cooldown[(pid, candidate)] = time.time() + _model_rest(pid, e, False)
                 continue
-            except (NotFoundError, BadRequestError):
+            except (NotFoundError, BadRequestError, PermissionDeniedError):
+                # a 403 here is this one model refused to this key (a gated or paid model in the pool), not the key:
+                # it rests alone, and the provider fails over as the rate limit it was, not benched for an hour.
+                # A 401 (the key itself) still ends the pool and benches only this provider (_penalize)
                 self.model_cooldown[(pid, candidate)] = time.time() + 3600.0
                 continue
             except BrainError as e:
@@ -1281,6 +1341,9 @@ class BrainRouter(LLM):
 
     def _penalize(self, pid: str, e: Exception, reason: str) -> None:
         cooldown = 30.0
+        # only these come back by themselves (rate limit, quota, 5xx, time-out); a 401/403 is the key, never a wait
+        transient = isinstance(e, (RateLimitError, APITimeoutError)) or (
+            isinstance(e, APIStatusError) and e.status_code >= 500)
         if isinstance(e, (AuthenticationError, PermissionDeniedError)):
             cooldown = 3600.0
         elif isinstance(e, NotFoundError):
@@ -1301,7 +1364,7 @@ class BrainRouter(LLM):
             cooldown = 15.0 if _malformed_generation(e) else 120.0  # a bad sample is not a broken provider
         elif isinstance(e, APIStatusError) and e.status_code >= 500:
             cooldown = 15.0  # short, so "all busy, wait and retry" can kick in
-        self.health[pid] = Health(until=time.time() + cooldown, reason=reason)
+        self.health[pid] = Health(until=time.time() + cooldown, reason=reason, transient=transient)
 
     @staticmethod
     def _reason(e: Exception) -> str:

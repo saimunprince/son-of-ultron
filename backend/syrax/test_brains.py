@@ -516,3 +516,81 @@ def test_no_local_brain_still_fails_readably_and_waits_once(router, monkeypatch,
         ask(router)
     assert "ALPHA: invalid API key" in str(e.value)
     assert len(calls) == 1
+
+
+# ——— waiting for a stronger brain instead of a last resort (BRAIN_PAUSE_S) ———
+def _weak_gamma(router, monkeypatch):
+    """gamma becomes a key-less tier (anonymous Pollinations): a last resort; beta is off, so alpha is the one strong
+    brain (omega has no key)."""
+    fake = dict(brains.PROVIDERS)
+    fake["gamma"] = dataclasses.replace(fake["gamma"], tier="no-key")
+    monkeypatch.setattr(brains, "PROVIDERS", fake)
+    router.store.settings["beta"]["enabled"] = False
+    events = []
+
+    async def listen(e):
+        events.append(e)
+
+    router.listeners.add(listen)
+    return events
+
+
+def test_a_short_rate_limit_waits_for_the_stronger_brain_not_the_last_resort(router, monkeypatch):
+    # live 2026-11-25: Groq "rate limited" for seconds, the task fell to anonymous Pollinations and its answer was false
+    events = _weak_gamma(router, monkeypatch)
+    BEHAVIOR["alpha"] = "429"
+
+    async def flip():
+        await asyncio.sleep(0.3)
+        BEHAVIOR["alpha"] = "ok"
+
+    async def both():
+        return (await asyncio.gather(router.ask_tool(messages=[Message.user_message("hi")], tools=TOOLS), flip()))[0]
+
+    assert run(both()).content == "alpha says hi"
+    assert "gamma" not in [p for p, _, _ in SEEN]
+    waits = [e for e in events if e.get("event") == "waiting"]
+    assert waits and waits[0]["provider"] == "alpha" and waits[0]["seconds"] >= 1
+    assert any(e["type"] == "notice" and e["text"].startswith("Waiting for ALPHA") for e in events)
+
+
+def test_a_long_cool_down_falls_through_to_the_last_resort_as_before(router, monkeypatch):
+    events = _weak_gamma(router, monkeypatch)
+    monkeypatch.setattr(brains, "BRAIN_PAUSE_S", 5.0)
+    BEHAVIOR["alpha"] = "429-long"  # 60 s: past the 5 s budget, like a daily quota spent until midnight
+    started = time.monotonic()
+    assert ask(router).content == "gamma says hi"
+    assert time.monotonic() - started < 5
+    assert not [e for e in events if e.get("event") == "waiting"]
+
+
+def test_an_auth_error_never_waits(router, monkeypatch):
+    events = _weak_gamma(router, monkeypatch)
+    BEHAVIOR["alpha"] = "401"
+    started = time.monotonic()
+    assert ask(router).content == "gamma says hi"
+    assert time.monotonic() - started < 5
+    assert not router.health["alpha"].transient
+    assert not [e for e in events if e.get("event") == "waiting"]
+
+
+def test_cancelling_the_task_ends_the_wait_at_once(router, monkeypatch):
+    # E-STOP / cancel reach the router as task.cancel(): CancelledError inside the wait's asyncio.sleep
+    events = _weak_gamma(router, monkeypatch)
+    BEHAVIOR["alpha"] = "429-long"  # 60 s, within the default 180 s budget: the request waits
+
+    async def go():
+        task = asyncio.ensure_future(router.ask_tool(messages=[Message.user_message("hi")], tools=TOOLS))
+        for _ in range(100):
+            await asyncio.sleep(0.05)
+            if any(e.get("event") == "waiting" for e in events):
+                break
+        started = time.monotonic()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return time.monotonic() - started
+
+    assert run(go()) < 1
+    assert any(e.get("event") == "waiting" for e in events)
+    assert "gamma" not in [p for p, _, _ in SEEN]

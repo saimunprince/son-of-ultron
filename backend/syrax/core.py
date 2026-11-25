@@ -67,7 +67,7 @@ def _journal_type(event: dict) -> Optional[str]:
         return "tool.started"
     if t == "tool_result":
         return "tool.completed" if event.get("ok") else "tool.failed"
-    if t == "brain" and event.get("event") in ("failover", "answered"):
+    if t == "brain" and event.get("event") in ("failover", "answered", "waiting"):  # waiting: a pause for a stronger brain
         return f"brain.{event['event']}"
     if t == "permission" and event.get("event") in ("authorized", "refused"):
         return f"permission.{event['event']}"
