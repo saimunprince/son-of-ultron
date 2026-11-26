@@ -4,7 +4,7 @@ The short, current page: where SYRAX stands now, what was done, what is next. Up
 Detail lives in [docs/AUDIT_2026-10-28.md](docs/AUDIT_2026-10-28.md) (findings and the open list), the commit
 messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
-## Now (2026-11-25, +0600)
+## Now (2026-11-26, +0600)
 
 - **Stage:** a day of live and stress testing: about 100 requests in 12 rounds plus a stress run, a load test and a
   multi-file project. Every bug found was fixed, gated GREEN and pushed (see Done, 2026-11-05 onward).
@@ -13,6 +13,21 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 - **Open:** see Open below.
 
 ## Done
+
+### 2026-11-26: more Mark-LVII ideas, three agents in parallel
+
+- **Windows 11 check on 0824def: GREEN**, host check all as predicted, the GPU named through PowerShell.
+- **Live checks of 11-25's work:** a researched quote was matched word for word ("1 exact"); a monthly routine on
+  the month's last day was set for 30 Nov 10:00 and cancelled again.
+- **Background lane:** long read-only work runs beside the chat (`background` start / status / finish / cancel /
+  steer). It may only research and write inside `workspace/background/<id>/`; memory, desktop, phone, browser and
+  code are refused by the permission layer. 20 min / 30 steps by default, a write-up when the budget ends, a pause
+  when every brain is out, at most 2 at once, stopped by E-STOP, the report saved as `report.md`. No UI panel yet.
+- **Did the screen change:** after a click, keys or typing SYRAX glances at the screen before and after and says
+  "The screen changed (N %)" or "Nothing on the screen changed"; an act that changed nothing stands for no
+  outcome in the answer. Windows, X11 and macOS; GNOME Wayland only with `SYRAX_SCREEN_PORTAL=1`.
+- **Push-to-talk and an audio device picker:** hold Space (or another key) to talk; an AUDIO panel picks the
+  microphone and the speaker, with a TEST and a level meter. Not tried in a real browser yet.
 
 ### 2026-10-28: moved back to Linux, audit and stabilization
 
