@@ -18,6 +18,10 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
 - **Quality run #35: 86.6 % (58/67).** Seven timeouts: Gemini answered 503, Groq was rate-limited and the saved
   order sent the steps to slow local Ollama before Cerebras. The nine failed cases rerun: 8/9 pass.
+- **Quality run #37 after these fixes: 92.5 % (62/67), +5.9 pp.** Two of the five failures were SYRAX refusing its
+  own workspace work: `os.path.join(base, "geo", "core.py")` was read as SYRAX's own `core.py` (a judge), and a
+  regex literal `"\\s+"` as a network share. Both fixed in the permission gate; judges reached by climbing out of
+  the workspace, keys named by basename and real `\\host\share` paths stay refused.
 - **Weak brains always last:** Ollama and key-less Pollinations are now asked only after every stronger brain,
   whatever the saved order (an explicit pick or a routing choice still goes first).
 - **Rename check:** when an edit renames a function or class (or the request says "rename X to Y"), SYRAX searches
