@@ -32,6 +32,7 @@ from syrax.devloop import ReleaseTool
 from syrax.selfedit import ApplyPatchTool, RepoMapTool
 from syrax.experiments import ExperimentTool
 from syrax.memory import ForgetTool, RecallTool, RememberTool, get_memory
+from syrax.renamecheck import RenameWatch
 # The rules that catch SYRAX's own false claims live in claims.py, a judge (devloop.JUDGES): only a human
 # changes them. This module keeps the flow; the names stay importable from syrax.agent.
 from syrax.claims import (  # noqa: F401
@@ -524,6 +525,7 @@ class SyraxAgent(Manus):
     changed_by: set = Field(default_factory=set)  # the tools that set `changed`
     watched: list = Field(default_factory=list)  # files and folders the request names (claims.goal_paths)
     watch_before: dict = Field(default_factory=dict)  # their state when the task began (claims.file_state)
+    renames: Any = None  # the renames this task's edits made, checked for old uses left (renamecheck.RenameWatch)
     researched: bool = False  # `research` succeeded this task: the answer owes a source URL
     called: set = Field(default_factory=set)  # tools this task called (refusals excluded): NAMED_NUDGE
     acted: set = Field(default_factory=set)  # classes of the tools that succeeded this task (classes_of): OUTCOME_CLAIMS
@@ -645,6 +647,7 @@ class SyraxAgent(Manus):
         self.given_patch = None if self.task_kind == "autonomous" else given_patch(self.task_goal)
         self.watched = goal_paths(self.task_goal)
         self.watch_before = file_state(self.watched) if self.watched else {}
+        self.renames = RenameWatch(self.task_goal, self.watched)
         self.step_limit_hit = False
         self.unproven = None
         # Fresh persona + long-term memory for every task.
@@ -726,6 +729,12 @@ class SyraxAgent(Manus):
         if missing and not self.step_limit_hit and not self.loop_stopped and "max steps" not in result:
             await self._send({"type": "notice", "text": f"The request names `{missing[0]}` and the task never called it: asking once."})
             result += "\n" + await BaseAgent.run(self, NAMED_NUDGE.format(tool=missing[0]))
+        # quality deep_rename_api (2026-11-26): a rename that left old uses behind is asked to be finished, once
+        rename_ask = (self.renames.final_nudge() if self.renames is not None and self.changed and not self.step_limit_hit
+                      and not self.loop_stopped and "max steps" not in result else None)
+        if rename_ask:
+            await self._send({"type": "notice", "text": "The rename left uses of the old name: asking once to finish it."})
+            result += "\n" + await BaseAgent.run(self, rename_ask)
         if self.current_step == 0 and "max steps" in result:
             self.step_limit_hit = True
             await self._send(
@@ -1271,6 +1280,9 @@ class SyraxAgent(Manus):
                 if (self.release_brief and not self.change_noted and name in ("str_replace_editor", "apply_patch")
                         and _succeeded(result) and changes_something(name, _args_of(command))):
                     result += await self._change_started(name, _args_of(command))
+                if (self.renames is not None and name in ("str_replace_editor", "apply_patch") and _succeeded(result)
+                        and changes_something(name, _args_of(command))):
+                    result += await asyncio.to_thread(self.renames.after_edit, name, _args_of(command))
                 if name == "ask_human":  # a yes to a question that names a target authorizes it (permissions.named_in)
                     self.consents.append((str(_args_of(command).get("inquire", "")), _OBSERVED.sub("", result, count=1).strip()))
                 result += await self._streak_after(name, result)
