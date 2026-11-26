@@ -538,7 +538,11 @@ async def run_command(lane: BackgroundLane, msg: dict, origin: str = "chat") -> 
         if action == "start":
             t = await lane.start(msg.get("instruction") or msg.get("text") or "", msg.get("minutes"), msg.get("steps"), origin=origin)
             return ToolResult(output=f"Background task {t.id} started ({t.minutes} min, {t.steps} steps); it runs beside the "
-                                     f"chat and its report goes to {t.folder / 'report.md'}. The human is told when it is done.")
+                                     f"chat and its report goes to {t.folder / 'report.md'}. The human is told when it is done. "
+                                     # live 2026-11-26: the chat's brain answered the question itself at once, from
+                                     # its own knowledge, while the lane was still researching it
+                                     "Do not answer the background question yourself now: reply in one or two lines "
+                                     "that it started and that the report will follow, then finish.")
         if action == "status":
             rows = [lane.get(tid).summary()] if tid else lane.status()
             return ToolResult(output=json.dumps(rows, ensure_ascii=False) if rows else "No background tasks.")

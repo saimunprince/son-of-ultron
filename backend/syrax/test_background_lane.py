@@ -372,3 +372,13 @@ def test_the_chat_tool_starts_it_and_a_restart_marks_it_interrupted(script, root
     chat, t, interrupted = asyncio.run(go())
     assert chat["status"] == "SUCCESS" and t.minutes == bg.MAX_MINUTES  # 999 minutes is capped
     assert interrupted == [t.id]
+
+
+def test_the_start_tells_the_chat_not_to_answer_the_question_itself():
+    """Live 2026-11-26: the chat's brain answered from its own knowledge while the lane still researched."""
+    import inspect
+
+    from syrax import background
+
+    src = inspect.getsource(background)
+    assert "Do not answer the background question yourself now" in src
