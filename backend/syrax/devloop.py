@@ -252,6 +252,7 @@ JUDGES = (
     # autonomy, the core that refuses self-started work and cancels, the resource gate, the isolation redirect,
     # credential masking and the known-good fallback. A self-release must not rewrite what stops it.
     "backend/syrax/estop.py", "backend/syrax/server.py", "backend/syrax/core.py", "backend/syrax/resources.py",
+    "backend/syrax/background.py",  # the background lane's loop and its folder tools (2026-11-26): it confines web reading
     "backend/syrax/editor.py", "backend/syrax/redact.py", "backend/syrax/knowngood.py",
     # and what measures it: a system that reports its own rise must not edit the ruler
     "backend/syrax/rise.py", "backend/syrax/capmatrix.py", "backend/syrax/contracts.py", "backend/syrax/ledger.py",

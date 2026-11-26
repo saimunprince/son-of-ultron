@@ -257,6 +257,10 @@ class Core:
             self.journal, lambda: self.agent.available_tools if self.agent else None, task_id_provider=self.current_task_id
         )
         self.journal.subscribe(self.presentation.on_event)
+        from syrax.background import BackgroundLane
+
+        # Idea from Mark-LVII, 2026-11-26: long read-only work runs in a lane beside the one running task (background.py)
+        self.background = BackgroundLane(self.journal, self.broadcast)
 
     # ——— observers ———
 
@@ -341,6 +345,10 @@ class Core:
         vt = tools.get_tool("compare_versions")
         if isinstance(vt, CompareVersionsTool):
             vt.comparer = self.versions
+        from syrax.background import BackgroundTool
+
+        if tools.get_tool("background") is None:  # the chat's handle on the background lane (permissions: the human's only)
+            tools.add_tool(BackgroundTool(lane=self.background))
         loaded = self.skills.attach(tools)  # VERIFIED skills from the registry become live tools
         if loaded:
             logger.info(f"registered {loaded} skill(s) from the registry")
@@ -1220,6 +1228,7 @@ class Core:
             "recent": [_task_summary(t) for t in self.journal.tasks(limit=10)],
             "presentation": self.presentation.plan(),
             "presence": self.presence.snapshot(),
+            "background": self.background.status(),
         }
 
     async def shutdown(self, timeout: float = SHUTDOWN_TIMEOUT_S) -> None:
@@ -1238,6 +1247,7 @@ class Core:
                 late.append(f"{name}: {type(e).__name__}")
 
         await bounded("autonomy", self.autonomy.stop())
+        await bounded("background", self.background.cancel_all("shutdown"))
         if self._task_running():
             assert self.current is not None and self.current.task is not None
             self.current.task.cancel()

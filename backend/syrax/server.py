@@ -161,6 +161,10 @@ async def lifespan(_: FastAPI):
             logger.warning(f"queued requests after restart: started {rq['started']}, cancelled as stale {rq['dropped']}")
     except Exception as e:
         logger.warning(f"queue after restart failed: {e}")
+    try:  # background tasks live in one process: those a restart cut are journaled as interrupted
+        await core.background.settle_after_boot()
+    except Exception as e:
+        logger.warning(f"background settle after restart failed: {e}")
     from syrax import stallwatch
 
     # if the event loop ever blocks, the stacks of every thread are kept (live 2026-10-12: two silent stalls)
@@ -433,6 +437,10 @@ async def emergency_stop(core, note: str = "", who: str = "operator", session: O
     await core.autonomy.stop()
     if running is not None and core.busy:
         await core.cancel()
+    # the background lane (background.py) stops too: an emergency stop means nothing of SYRAX keeps working
+    background = getattr(core, "background", None)
+    if background is not None:
+        await background.cancel_all("emergency stop")
     await core.broadcast({"type": "autonomy_status", **await asyncio.to_thread(core.autonomy.status)})
 
 
@@ -527,6 +535,7 @@ class Session:
                 "voice": {"current": voice.current_voice(get_journal()), "voices": voice.VOICES},
                 "presentation": snap["presentation"],
                 "presence": snap["presence"],
+                "background": snap.get("background", []),
             }
         )
         await self.send({"type": "brains", **get_router().describe()})
@@ -590,6 +599,14 @@ class Session:
             if waiting is not None:
                 await self.send({"type": "notice", "text": f"Queued (position {waiting['position']}): it runs when the current task ends.",
                                  "action": {"label": "REMOVE", "msg": {"type": "queue_cancel", "task_id": started}}})
+        elif kind == "background":
+            # Idea from Mark-LVII, 2026-11-26: the background lane from the UI (start | status | finish | cancel | steer);
+            # it never waits on the running task, so it is answered while SYRAX works
+            from syrax.background import run_command
+
+            res = await run_command(self.core.background, msg, origin=f"ws session {self.id}")
+            await self.send({"type": "notice", "text": res.error or str(res.output)[:600]})
+            await self.send({"type": "background", "event": "status", "items": self.core.background.status()})
         elif kind == "queue":
             await self.send({"type": "queue", "items": self.core.queued()})
         elif kind == "queue_cancel":

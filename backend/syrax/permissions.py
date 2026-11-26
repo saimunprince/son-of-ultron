@@ -57,6 +57,8 @@ STATIC: Dict[str, str] = {
     "journal_query": READ_ONLY, "data_query": READ_ONLY, "scene": READ_ONLY, "logic_check": READ_ONLY, "compare_versions": READ_ONLY, "terminate": READ_ONLY, "ask_human": READ_ONLY,
     "remember": WRITE, "forget": WRITE, "remind": WRITE, "watch_topic": WRITE, "undo": READ_ONLY, "learn": WRITE, "present": WRITE, "experiment": WRITE,
     "skill_test": WRITE, "release": WRITE, "repo_map": READ_ONLY,
+    # the background lane (background.py): the chat's tool that starts and steers it, and the lane's own folder tools
+    "background": WRITE, "background_write": WRITE, "background_read": READ_ONLY,
     "research": EXTERNAL_READ, "github_search": EXTERNAL_READ, "paper_search": EXTERNAL_READ, "browser_screenshot": EXTERNAL_READ, "browser_exec": EXTERNAL_READ,
     # polymorphic tools: the static entry is their ceiling; classify() refines per call
     "str_replace_editor": WRITE, "skill_create": WRITE, "python_execute": SYSTEM, "desktop": SYSTEM,
@@ -418,6 +420,12 @@ def classify(name: str, args: Any) -> Decision:
         root = work_root()
         paths = diff_paths(normalize_headers(str(a.get("diff") or "").replace("\r\n", "\n")))
         return Decision(name, WRITE, f"patches {', '.join(Path(x).name for x in paths[:3]) or '?'}", [str(root / x) for x in paths], [], "repo")
+    if name == "background_write":  # the lane's one write: a file in its own folder (decide judges the folder)
+        path = str(a.get("path") or "")
+        return Decision(name, WRITE, f"writes {Path(path).name or '?'} in its own folder", [path] if path else [], [], "workspace")
+    if name == "background_read":
+        path = str(a.get("path") or "")
+        return Decision(name, READ_ONLY, "reads a file in its own folder", [path] if path else [])
     if name == "python_execute":
         code = str(a.get("code") or "")
         level, reason, harm = level_of_source(code)
@@ -706,7 +714,63 @@ def level_needed(decision: "Decision") -> int:
     return 2
 
 
-def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[str, str]] = (), grants: Optional[Dict[str, bool]] = None) -> Verdict:
+# ——— the background lane (background.py) ———
+# Idea from Mark-LVII, 2026-11-26: long read-only work (research a topic for 20 minutes) runs beside the chat instead of
+# blocking it. That agent reads the web, so it is the one most open to prompt injection: it gets its own task kind,
+# judged here before anything else and never normalized to "conversation" (it is not in KINDS on purpose, so a kind
+# this module does not know still reads as a conversation, never as the lane). It may observe, read the network
+# and write files only inside its own folder (BACKGROUND_ROOT/<id>). The human's memory, the desktop, the phone, the
+# browser, code and every other tool are refused, whatever the tool list it was given: web text and personal memory
+# are never in one agent.
+BACKGROUND_KIND = "background"
+BACKGROUND_ROOT = WORKSPACE / "background"
+BACKGROUND_TOOLS = ("research", "know", "github_search", "paper_search", "background_write", "background_read")
+MEMORY_TOOLS = ("remember", "recall", "forget")
+
+
+def _inside(target: str, root: Path) -> bool:
+    """``target`` (relative to ``root`` when it is not absolute) really leads inside ``root`` (symlinks resolved)."""
+    try:
+        p = Path(os.path.expanduser(str(target or "").strip().strip("'\"")))
+        if not p.is_absolute():
+            p = Path(root) / p
+        real, base = os.path.realpath(p), os.path.realpath(root)
+    except (OSError, ValueError):
+        return False
+    return real == base or real.startswith(base.rstrip(os.sep) + os.sep)
+
+
+def decide_background(decision: Decision, write_root: Optional[Any] = None) -> Verdict:
+    """The background lane's rule: READ_ONLY / EXTERNAL_READ calls of its own tools, and background_write inside its
+    own folder; everything else is refused. A write root that is not under BACKGROUND_ROOT allows no write at all."""
+    if decision.harm:
+        return Verdict("refuse", None, f"the code {'; '.join(decision.harm)}; SYRAX must not harm the host")
+    name = decision.tool
+    if name in MEMORY_TOOLS:
+        return Verdict("refuse", None, "the background lane reads the web, so it never sees or changes the human's memory "
+                       "(prompt-injection safety); leave memory to the chat")
+    if name not in BACKGROUND_TOOLS:
+        return Verdict("refuse", None, f"{name} is not a background tool: the lane only researches and writes inside its own "
+                       "folder; desktop, phone, browser, code and memory stay with the chat")
+    root = Path(write_root) if write_root else None
+    if root is not None and not _inside(str(root), BACKGROUND_ROOT):
+        root = None  # fail closed: a folder outside the lane's root is no folder of its own
+    if name == "background_read":
+        if root is None or not decision.targets or not all(_inside(t, root) for t in with_real(decision.targets)):
+            return Verdict("refuse", None, "background_read reads only inside the task's own folder")
+        return Verdict("allow", "policy")
+    if decision.level in (READ_ONLY, EXTERNAL_READ):
+        return Verdict("allow", "policy")
+    if (decision.level == WRITE and name == "background_write" and root is not None and decision.targets
+            and all(_inside(t, root) for t in with_real(decision.targets))):
+        return Verdict("allow", "policy")
+    return Verdict("refuse", None, f"{decision.reason} ({decision.level}): the background lane writes only inside its own folder")
+
+
+def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[str, str]] = (), grants: Optional[Dict[str, bool]] = None,
+           write_root: Optional[Any] = None) -> Verdict:
+    if kind == BACKGROUND_KIND:
+        return decide_background(decision, write_root)
     kind = kind if kind in KINDS else "conversation"
     grants = grants or {}
     if decision.harm:
@@ -714,6 +778,9 @@ def decide(decision: Decision, kind: str, goal: str, consents: Iterable[Tuple[st
         if any(h not in (guard.WEAKENS_GUARD_WHY, guard.SELF_CONTROL_WHY) for h in decision.harm):
             why += "; SYRAX must not harm the host"
         return Verdict("refuse", None, why)
+    if kind in ("autonomous", "eval") and decision.tool == "background":
+        # the lane is the human's: SYRAX's own work does not start a second agent beside itself
+        return Verdict("refuse", None, "only the human starts background work; SYRAX's own work does it in its own task")
     if kind == "autonomous" and (need := level_needed(decision)) > OWN_LEVEL:
         return Verdict("refuse", None, f"the operator set autonomy level {OWN_LEVEL} ({LEVEL_NAMES.get(OWN_LEVEL, '?')}); "
                        f"{decision.tool} needs level {need} ({LEVEL_NAMES[need]}). Do what this level allows, or report "
