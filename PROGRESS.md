@@ -14,6 +14,18 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 
 ## Done
 
+### 2026-11-26, later: quality run #35 follow-up
+
+- **Quality run #35: 86.6 % (58/67).** Seven timeouts: Gemini answered 503, Groq was rate-limited and the saved
+  order sent the steps to slow local Ollama before Cerebras. The nine failed cases rerun: 8/9 pass.
+- **Weak brains always last:** Ollama and key-less Pollinations are now asked only after every stronger brain,
+  whatever the saved order (an explicit pick or a routing choice still goes first).
+- **Rename check:** when an edit renames a function or class (or the request says "rename X to Y"), SYRAX searches
+  the project for the old name and lists the `file:line` uses left; before the task ends it asks once to finish
+  the rename. For quality case `deep_rename_api`, which kept `from geo.core import calc_area` in `report.py`.
+- **Background panel in the UI:** a BACKGROUND button shows the background tasks with state, steps and time
+  against the budget, CANCEL / FINISH NOW, and the saved report text. Tasks from before a restart are not listed.
+
 ### 2026-11-26: more Mark-LVII ideas, three agents in parallel
 
 - **Windows 11 check on 0824def: GREEN**, host check all as predicted, the GPU named through PowerShell.
@@ -22,7 +34,7 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 - **Background lane:** long read-only work runs beside the chat (`background` start / status / finish / cancel /
   steer). It may only research and write inside `workspace/background/<id>/`; memory, desktop, phone, browser and
   code are refused by the permission layer. 20 min / 30 steps by default, a write-up when the budget ends, a pause
-  when every brain is out, at most 2 at once, stopped by E-STOP, the report saved as `report.md`. No UI panel yet.
+  when every brain is out, at most 2 at once, stopped by E-STOP, the report saved as `report.md`.
 - **Did the screen change:** after a click, keys or typing SYRAX glances at the screen before and after and says
   "The screen changed (N %)" or "Nothing on the screen changed"; an act that changed nothing stands for no
   outcome in the answer. Windows, X11 and macOS; GNOME Wayland only with `SYRAX_SCREEN_PORTAL=1`.
