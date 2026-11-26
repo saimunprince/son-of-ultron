@@ -6,6 +6,7 @@ import { API_BASE } from "@/lib/syraxClient";
 import { duck, isSpeaking } from "@/lib/speech";
 import { interpret, type Heard, type HeardContext } from "@/lib/wake";
 import { WebSpeechEar, webSpeechAvailable } from "@/lib/webSpeech";
+import { micConstraints } from "@/lib/audioDevices";
 
 export type EarEngine = "web" | "whisper";
 
@@ -16,6 +17,8 @@ interface Options {
   onLevel?: (level: number) => void;
   /** recognition language for the browser engine, e.g. "en-IN" or "bn-BD" */
   lang: string;
+  /** the chosen microphone ("" = system default), used from the next mic start */
+  micId?: string;
 }
 
 /**
@@ -24,7 +27,7 @@ interface Options {
  * - "whisper": browser VAD + backend Whisper, used when "web" is unavailable.
  * The mic stream always runs too, for the level meter and orb.
  */
-export function useHandsFree({ context, onHeard, onLevel, lang }: Options) {
+export function useHandsFree({ context, onHeard, onLevel, lang, micId = "" }: Options) {
   const micRef = useRef<MicListener | null>(null);
   const webRef = useRef<WebSpeechEar | null>(null);
   const webFailedRef = useRef(false);
@@ -42,6 +45,15 @@ export function useHandsFree({ context, onHeard, onLevel, lang }: Options) {
   const [lastHeard, setLastHeard] = useState<{ text: string; kind: Heard["kind"] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Push-to-talk (2026-11-26): the held key records through the same MicListener and sends to /stt on release.
+  const [ptt, setPtt] = useState(false);
+  const pttRef = useRef(false);
+  /** the mic was off: push-to-talk opened it and closes it again on release */
+  const pttOwnsMicRef = useRef(false);
+  /** the browser engine hears the held words too: its results are dropped until then, Whisper's one counts */
+  const muteWebUntilRef = useRef(0);
+  const micIdRef = useRef(micId);
+  micIdRef.current = micId;
 
   const ctxRef = useRef(context);
   const heardRef = useRef(onHeard);
@@ -53,20 +65,22 @@ export function useHandsFree({ context, onHeard, onLevel, lang }: Options) {
     levelRef.current = onLevel;
   });
 
-  const deliver = useCallback((text: string) => {
-    const heard = interpret(text || "", ctxRef.current());
+  const deliver = useCallback((text: string, pushed = false) => {
+    const ctx = ctxRef.current();
+    // a held push-to-talk key is the human addressing SYRAX: no wake word, and not mistaken for SYRAX's own voice
+    const heard = interpret(text || "", pushed ? { ...ctx, armed: true, speaking: false } : ctx);
     if (text) setLastHeard({ text, kind: heard.kind });
     heardRef.current(heard, text || "");
   }, []);
 
   const handleUtterance = useCallback(
-    async (wav: Blob) => {
+    async (wav: Blob, pushed = false) => {
       setTranscribing((n) => n + 1);
       try {
         const res = await fetch(`${API_BASE}/stt`, { method: "POST", headers: { "content-type": "audio/wav" }, body: wav });
         if (!res.ok) throw new Error(`speech recognition failed (${res.status})`);
         const { text } = (await res.json()) as { text: string };
-        deliver(text);
+        deliver(text, pushed);
         setError(null);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
@@ -95,6 +109,7 @@ export function useHandsFree({ context, onHeard, onLevel, lang }: Options) {
         webAliveAtRef.current = Date.now();
         setInterim("");
         duck(false);
+        if (pttRef.current || Date.now() < muteWebUntilRef.current) return; // push-to-talk sends these words itself
         deliver(t);
       },
       onInterim: (t) => {
@@ -114,9 +129,11 @@ export function useHandsFree({ context, onHeard, onLevel, lang }: Options) {
     ear.start(langRef.current);
   }, [deliver, switchToWhisper]);
 
-  const start = useCallback(async () => {
-    if (micRef.current) return;
+  /** Open the mic; withWeb=false (push-to-talk alone) skips the browser engine. True when the mic runs. */
+  const openMic = useCallback(async (withWeb: boolean): Promise<boolean> => {
+    if (micRef.current) return true;
     const m = new MicListener({
+      constraints: () => micConstraints(micIdRef.current),
       onUtterance: (wav) => {
         if (engineRef.current === "whisper") {
           void handleUtterance(wav);
@@ -142,7 +159,7 @@ export function useHandsFree({ context, onHeard, onLevel, lang }: Options) {
       await m.start();
       if (micRef.current !== m) {
         m.stop(); // hands-free went off while the mic was starting: nothing may keep listening
-        return;
+        return false;
       }
       setError(null);
     } catch (e) {
@@ -154,11 +171,70 @@ export function useHandsFree({ context, onHeard, onLevel, lang }: Options) {
             ? e.message
             : "MIC FAILED",
       );
-      return;
+      return false;
     }
+    if (!withWeb) return true;
     if (webSpeechAvailable() && !webFailedRef.current) startWeb();
     else switchToWhisper(webSpeechAvailable() ? undefined : "not supported in this browser");
+    return true;
   }, [handleUtterance, startWeb, switchToWhisper]);
+
+  const start = useCallback(async () => {
+    if (micRef.current) {
+      // push-to-talk had the mic open on its own: hands-free takes it over and adds the browser engine
+      if (pttOwnsMicRef.current) {
+        pttOwnsMicRef.current = false;
+        if (webSpeechAvailable() && !webFailedRef.current) startWeb();
+      }
+      return;
+    }
+    await openMic(true);
+  }, [openMic, startWeb]);
+
+  /** Close the mic that push-to-talk opened on its own (hands-free was off). */
+  const closePttMic = useCallback(() => {
+    pttOwnsMicRef.current = false;
+    micRef.current?.stop();
+    micRef.current = null;
+  }, []);
+
+  /** Push-to-talk pressed: record everything until pttUp(). */
+  const pttDown = useCallback(async () => {
+    if (pttRef.current) return;
+    pttRef.current = true;
+    setPtt(true);
+    muteWebUntilRef.current = Number.POSITIVE_INFINITY;
+    setInterim("");
+    if (!micRef.current) {
+      pttOwnsMicRef.current = true;
+      const ok = await openMic(false);
+      if (!ok) {
+        pttOwnsMicRef.current = false;
+        pttRef.current = false;
+        setPtt(false);
+        muteWebUntilRef.current = 0;
+        return;
+      }
+      if (!pttRef.current) {
+        // released while the browser was still opening the mic: nothing was said through it
+        if (pttOwnsMicRef.current) closePttMic();
+        return;
+      }
+    }
+    micRef.current?.beginManual();
+  }, [openMic, closePttMic]);
+
+  /** Push-to-talk released: send what was held to /stt as an addressed command. */
+  const pttUp = useCallback(() => {
+    if (!pttRef.current) return;
+    pttRef.current = false;
+    setPtt(false);
+    // the browser engine finalises a beat late: keep its copy of these words out
+    muteWebUntilRef.current = Date.now() + 2500;
+    const wav = micRef.current?.endManual() ?? null;
+    if (pttOwnsMicRef.current) closePttMic();
+    if (wav) void handleUtterance(wav, true);
+  }, [handleUtterance, closePttMic]);
 
 
   const stop = useCallback(() => {
@@ -166,6 +242,9 @@ export function useHandsFree({ context, onHeard, onLevel, lang }: Options) {
     webRef.current = null;
     micRef.current?.stop();
     micRef.current = null;
+    pttOwnsMicRef.current = false;
+    pttRef.current = false;
+    setPtt(false);
     setInterim("");
   }, []);
 
@@ -200,8 +279,11 @@ export function useHandsFree({ context, onHeard, onLevel, lang }: Options) {
       start,
       stop,
       setStrict,
+      ptt,
+      pttDown,
+      pttUp,
       active: mic !== "off" && mic !== "error",
     }),
-    [mic, engine, interim, transcribing, lastHeard, error, note, start, stop, setStrict],
+    [mic, engine, interim, transcribing, lastHeard, error, note, start, stop, setStrict, ptt, pttDown, pttUp],
   );
 }

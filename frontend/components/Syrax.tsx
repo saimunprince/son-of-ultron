@@ -29,6 +29,9 @@ import {
 
 type ConsoleTab = "live" | "history" | "today";
 import BrainPanel from "@/components/BrainPanel";
+import AudioPanel from "@/components/AudioPanel";
+import { applySink, DEFAULT_PREFS, loadAudioPrefs, micConstraints, saveAudioPrefs, type AudioPrefs } from "@/lib/audioDevices";
+import { keyLabel, pttStarts } from "@/lib/pushToTalk";
 import SelfPanel from "@/components/SelfPanel";
 import AndroidPanel from "@/components/AndroidPanel";
 import MindPanel, { mindRequest, type MindData, type MindTab } from "@/components/MindPanel";
@@ -47,9 +50,9 @@ import Toasts from "@/components/Toasts";
 import { stageElements } from "@/lib/stageView";
 import type { PaletteCommand } from "@/lib/palette";
 import { addToast, classifyError, classifyNotice, dismissToast, makeToast, type Toast } from "@/lib/toasts";
-import { sfx, type SfxEvent } from "@/lib/sfx";
+import { setSfxSpeaker, sfx, type SfxEvent } from "@/lib/sfx";
 import UltronEyes from "@/components/UltronEyes";
-import { audioReady, chirp, isSpeaking, onAudioReady, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
+import { audioReady, chirp, isSpeaking, onAudioReady, setVoiceSpeaker, speak, stopSpeaking, unlockAudio } from "@/lib/speech";
 import type { Heard } from "@/lib/wake";
 import { useHandsFree } from "@/components/useHandsFree";
 import { LiveTalk, type LiveEvent, type LiveState } from "@/lib/live";
@@ -186,6 +189,11 @@ export default function Syrax() {
   const [brainModels, setBrainModels] = useState<Record<string, { list: string[]; error?: string; loading: boolean }>>({});
   const [brainTests, setBrainTests] = useState<Record<string, BrainTestResult | "running">>({});
   const [brainOpen, setBrainOpen] = useState(false);
+  // Audio devices and push-to-talk (2026-11-26): chosen per browser, kept in localStorage when it is there
+  const [audioOpen, setAudioOpen] = useState(false);
+  const [audioPrefs, setAudioPrefs] = useState<AudioPrefs>(DEFAULT_PREFS);
+  const [audioSaved, setAudioSaved] = useState(true);
+  const audioPrefsRef = useRef(audioPrefs);
   const [selfOpen, setSelfOpen] = useState(false);
   const [androidOpen, setAndroidOpen] = useState(false);
   const [android, setAndroid] = useState<AndroidState | null>(null);
@@ -281,6 +289,16 @@ export default function Syrax() {
       /* storage unavailable */
     }
   }, [voiceOn, consoleOpen, theme, wakeWord, hearLang, sfxOn]);
+
+  useEffect(() => {
+    setAudioPrefs(loadAudioPrefs());
+  }, []);
+
+  useEffect(() => {
+    audioPrefsRef.current = audioPrefs;
+    setVoiceSpeaker(audioPrefs.speakerId);
+    setSfxSpeaker(audioPrefs.speakerId);
+  }, [audioPrefs]);
 
   useEffect(() => {
     const switched = sfxRef.current.theme !== theme;
@@ -1045,6 +1063,7 @@ export default function Syrax() {
 
   const ear = useHandsFree({
     lang: hearLang,
+    micId: audioPrefs.micId,
     context: () => ({
       // Conversation mode (default): no name needed. Wake-word mode: name,
       // follow-up window, or a pending question.
@@ -1082,6 +1101,65 @@ export default function Syrax() {
     }
   }, [arm, earStart, earStop, say]);
 
+  const changeAudio = useCallback(
+    (next: AudioPrefs) => {
+      const micChanged = next.micId !== audioPrefsRef.current.micId;
+      audioPrefsRef.current = next;
+      setAudioPrefs(next);
+      setAudioSaved(saveAudioPrefs(next));
+      // hands-free is listening on the old microphone: reopen it on the new one (live talk takes it at its next start)
+      if (micChanged && handsFreeRef.current) {
+        earStop();
+        void earStart();
+      }
+    },
+    [earStart, earStop],
+  );
+
+  // Push-to-talk: hold the key (Space unless changed) to listen, release to send. Never while typing in a field,
+  // with a panel or the palette open, or during live talk (which has the microphone).
+  const { pttDown, pttUp } = ear;
+  const pttKey = audioPrefs.pttKey;
+  useEffect(() => {
+    let held = false;
+    const release = () => {
+      if (!held) return;
+      held = false;
+      pttUp();
+    };
+    const down = (e: KeyboardEvent) => {
+      if (held) {
+        if (e.code === pttKey) e.preventDefault(); // the key's auto-repeat must not scroll the page
+        return;
+      }
+      if (paletteOpen || brainOpen || audioOpen || selfOpen || androidOpen || mindTab || booting) return;
+      if (talk === "on" || talk === "connecting") return;
+      if (!pttStarts(e, pttKey)) return;
+      e.preventDefault();
+      held = true;
+      unlockAudio();
+      stopSpeaking(); // the human cuts in
+      void pttDown();
+    };
+    const up = (e: KeyboardEvent) => {
+      if (!held || e.code !== pttKey) return;
+      e.preventDefault();
+      release();
+    };
+    const hidden = () => document.visibilityState === "hidden" && release();
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", release); // a key released in another window never reaches us
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", release);
+      document.removeEventListener("visibilitychange", hidden);
+      release();
+    };
+  }, [pttKey, pttDown, pttUp, paletteOpen, brainOpen, audioOpen, selfOpen, androidOpen, mindTab, booting, talk]);
+
   // Live talk (Gemini Live through /live): one microphone at a time, so hands-free stops first.
   const toggleTalk = useCallback(() => {
     if (talkRef.current) {
@@ -1109,6 +1187,8 @@ export default function Syrax() {
       onLevel: (l) => sceneRef.current?.setLevel(l),
       onScreen: setSharing,
       camera: () => videoRef.current,
+      constraints: () => micConstraints(audioPrefsRef.current.micId),
+      onContext: (c) => applySink(c, audioPrefsRef.current.speakerId),
     });
     talkRef.current = live;
     void live.start();
@@ -1201,7 +1281,7 @@ export default function Syrax() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (paletteOpen || brainOpen || selfOpen || androidOpen || mindTab || booting) return; // the panel / boot screen own the keyboard
+      if (paletteOpen || brainOpen || audioOpen || selfOpen || androidOpen || mindTab || booting) return; // the panel / boot screen own the keyboard
       if (isTypingTarget(e.target)) {
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
@@ -1255,7 +1335,7 @@ export default function Syrax() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [booting, brainOpen, selfOpen, androidOpen, mindTab, paletteOpen, openBrain, openMind, openSelf, stopTask, toggleGestures, toggleHandsFree]);
+  }, [booting, brainOpen, audioOpen, selfOpen, androidOpen, mindTab, paletteOpen, openBrain, openMind, openSelf, stopTask, toggleGestures, toggleHandsFree]);
 
   const cameraOn = camera === "on";
 
@@ -1294,6 +1374,7 @@ export default function Syrax() {
       { id: "theme.jarvis", label: "Theme: JARVIS", section: "Appearance", keywords: ["cyan", "blue"], disabled: theme === "jarvis" },
       { id: "voice.speak", label: voiceOn ? "Speech off" : "Speech on", section: "Voice", keywords: ["tts", "mute", "speak"] },
       { id: "voice.sfx", label: sfxOn ? "Sound effects off" : "Sound effects on", section: "Voice", keywords: ["sfx", "audio"] },
+      { id: "panel.audio", label: "Open Audio devices", section: "Voice", keywords: ["microphone", "speaker", "output", "push to talk", "ptt"] },
       { id: "voice.mic", label: handsFree ? "Hands-free mic off" : "Hands-free mic on", section: "Voice", hint: "M", keywords: ["listen", "microphone"] },
       { id: "voice.talk", label: talk === "on" ? "Stop live talk" : "Start live talk", section: "Voice", keywords: ["live", "conversation"], disabled: link !== "online" },
       { id: "view.gestures", label: cameraOn ? "Gestures off" : "Gestures on", section: "View", hint: "G", keywords: ["camera", "hands"] },
@@ -1332,6 +1413,9 @@ export default function Syrax() {
           break;
         case "panel.self":
           openSelf();
+          break;
+        case "panel.audio":
+          setAudioOpen(true);
           break;
         case "safety.estop":
           command(estopMessage(autonomy), "the emergency stop");
@@ -1627,6 +1711,15 @@ export default function Syrax() {
         }}
       >
         {pendingAsk && <div className="ask-banner">SYRAX ASKS · {pendingAsk}</div>}
+        <div className="sr-only" role="status" aria-live="polite">
+          {ear.ptt ? "Push-to-talk: listening. Release to send." : ""}
+        </div>
+        {ear.ptt && (
+          <div className="voice-pill state-hearing ptt-pill" aria-hidden="true">
+            <span className="voice-dot" />
+            <span className="voice-label">PUSH-TO-TALK · LISTENING · RELEASE {keyLabel(pttKey)} TO SEND</span>
+          </div>
+        )}
         {handsFree && (
           <div className={`voice-pill state-${speaking ? "speaking" : ear.mic === "hearing" ? "hearing" : ear.transcribing ? "transcribing" : armed || pendingAsk ? "armed" : "waiting"}`}>
             <span className="voice-dot" />
@@ -1891,6 +1984,15 @@ export default function Syrax() {
           >
             {sfxOn ? "SFX ON" : "SFX OFF"}
           </button>
+          <button
+            type="button"
+            className="hud-btn"
+            aria-haspopup="dialog"
+            onClick={() => setAudioOpen(true)}
+            title={`Microphone, speaker and push-to-talk key (hold ${keyLabel(pttKey)} to talk)`}
+          >
+            AUDIO
+          </button>
           {voicePick && voicePick.voices.length > 1 && (
             <button
               type="button"
@@ -1929,6 +2031,7 @@ export default function Syrax() {
           {[
             ["/", "command"],
             ["M", "voice"],
+            [keyLabel(pttKey), "hold to talk"],
             ["B", "brain"],
             ["S", "self"],
             ["O", "mind"],
@@ -1954,6 +2057,8 @@ export default function Syrax() {
           onClose={() => setBrainOpen(false)}
         />
       )}
+
+      {audioOpen && <AudioPanel prefs={audioPrefs} saved={audioSaved} onChange={changeAudio} onClose={() => setAudioOpen(false)} />}
 
       {androidOpen && (
         <AndroidPanel

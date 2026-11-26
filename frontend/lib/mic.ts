@@ -13,6 +13,8 @@ export interface MicHandlers {
   onSpeechStart?: () => void;
   onLevel?: (level: number) => void; // 0..1, ~30 fps
   onState?: (s: MicState) => void;
+  /** microphone constraints, read at each start (the chosen input device) */
+  constraints?: () => MediaTrackConstraints;
 }
 
 const TARGET_RATE = 16000;
@@ -21,6 +23,8 @@ const PREROLL_MS = 400;
 const END_SILENCE_MS = 850;
 const MIN_SPEECH_MS = 180; // "stop" must survive noise suppression
 const MAX_UTTERANCE_MS = 15000;
+const MAX_HELD_MS = 30000; // push-to-talk: a held key keeps at most this much
+const MIN_HELD_MS = 250; // push-to-talk: a tap shorter than this is not speech
 
 const WORKLET = `
 class Tap extends AudioWorkletProcessor {
@@ -58,6 +62,8 @@ export class MicListener {
   /** Raise the bar while SYRAX is talking so its own voice is not picked up. */
   strict = false;
   paused = false;
+  /** push-to-talk is held: every block is kept, the VAD does not decide */
+  private manual = false;
 
   private h: MicHandlers;
   /** stop() ran: a start() still awaiting the mic or the worklet lets go of what it got. */
@@ -78,7 +84,7 @@ export class MicListener {
     this.h.onState?.("starting");
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+        audio: this.h.constraints?.() ?? { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       });
       // hands-free went off while the browser asked for the mic: stop() ran before the stream existed
       if (this.stopped) return this.stop();
@@ -117,7 +123,32 @@ export class MicListener {
     this.h.onState?.("off");
   }
 
+  /** Push-to-talk pressed: keep everything from now (plus the pre-roll) until endManual(). */
+  beginManual() {
+    if (!this.ctx) return;
+    this.manual = true;
+    this.utter = [...this.preroll];
+    this.preroll = [];
+    this.speaking = false;
+    this.speechMs = 0;
+    this.silenceMs = 0;
+    this.h.onState?.("hearing");
+  }
+
+  /** Push-to-talk released: the held audio as 16 kHz WAV, or null when it was only a tap. */
+  endManual(): Blob | null {
+    if (!this.manual) return null;
+    this.manual = false;
+    const chunks = this.utter;
+    this.utter = [];
+    if (this.ctx) this.h.onState?.("idle");
+    const length = chunks.reduce((n, c) => n + c.length, 0);
+    if ((length / this.rate) * 1000 < MIN_HELD_MS) return null;
+    return encodeWav(downsample(concat(chunks, length), this.rate, TARGET_RATE), TARGET_RATE);
+  }
+
   private reset() {
+    this.manual = false;
     this.block = [];
     this.blockLen = 0;
     this.preroll = [];
@@ -146,6 +177,10 @@ export class MicListener {
     if (now - this.lastLevelAt > 33) {
       this.lastLevelAt = now;
       this.h.onLevel?.(Math.min(1, rms * 12));
+    }
+    if (this.manual) {
+      if (this.utter.length * BLOCK_MS < MAX_HELD_MS) this.utter.push(block);
+      return;
     }
     if (this.paused) return;
 

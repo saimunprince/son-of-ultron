@@ -3,6 +3,7 @@
  * own speechSynthesis when the backend voice is unavailable. */
 
 import { API_BASE } from "@/lib/syraxClient";
+import { applySink } from "@/lib/audioDevices";
 
 export interface SpeakHandlers {
   onStart?: () => void;
@@ -15,12 +16,20 @@ let ctx: AudioContext | null = null;
 let current: { stop: () => void } | null = null;
 let duckGain: GainNode | null = null;
 let unlockListeners: Array<(ready: boolean) => void> = [];
+let speakerId = "";
+
+/** Send SYRAX's voice to the chosen speaker ("" = system default; ignored where unsupported). */
+export function setVoiceSpeaker(id: string) {
+  speakerId = id;
+  applySink(ctx, id);
+}
 
 function audioCtx() {
   if (!ctx) {
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     ctx = new Ctor();
     (window as unknown as { __ac?: AudioContext }).__ac = ctx;
+    if (speakerId) applySink(ctx, speakerId);
   }
   if (ctx.state === "suspended") void ctx.resume();
   return ctx;

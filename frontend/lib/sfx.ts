@@ -1,15 +1,27 @@
 // Theme sound effects, synthesised with WebAudio (no files), off unless the human turns them on (2026-11-03).
 // ULTRON: a low thrum and a glitch crackle. JARVIS: a soft two-note chime and a light sweep.
 
+import { applySink } from "@/lib/audioDevices";
+
 export type SfxTheme = "ultron" | "jarvis";
 export type SfxEvent = "reply" | "tool" | "theme" | "ask";
 
 let ctx: AudioContext | null = null;
+let speakerId = "";
+
+/** Theme sounds follow the chosen speaker too ("" = system default). */
+export function setSfxSpeaker(id: string) {
+  speakerId = id;
+  applySink(ctx, id);
+}
 
 function audio(): AudioContext | null {
   if (typeof window === "undefined") return null;
   try {
-    ctx = ctx ?? new AudioContext();
+    if (!ctx) {
+      ctx = new AudioContext();
+      if (speakerId) applySink(ctx, speakerId);
+    }
     if (ctx.state === "suspended") void ctx.resume();
     return ctx;
   } catch {

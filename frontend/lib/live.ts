@@ -26,6 +26,10 @@ export interface LiveHandlers {
   onScreen?: (on: boolean) => void;
   /** the HUD's camera preview, when it shows one: SYRAX sees the human live too (in the screen's corner, or alone) */
   camera?: () => HTMLVideoElement | null;
+  /** microphone constraints (the chosen input device) */
+  constraints?: () => MediaTrackConstraints;
+  /** a new audio context was made: route it to the chosen speaker */
+  onContext?: (ctx: AudioContext) => void;
 }
 
 const IN_RATE = 16000;
@@ -76,12 +80,13 @@ export class LiveTalk {
     this.h.onState("connecting");
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+        audio: this.h.constraints?.() ?? { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       });
       // stopped while the browser asked for the mic: finish() ran before the stream existed, so release it here
       if (this.ended) return this.release();
       const ctx = new AudioContext();
       this.ctx = ctx;
+      this.h.onContext?.(ctx);
       if (ctx.state === "suspended") await ctx.resume();
       const mod = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
       await ctx.audioWorklet.addModule(mod);
