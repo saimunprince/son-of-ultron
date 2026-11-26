@@ -23,6 +23,9 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
 - **Rename check:** when an edit renames a function or class (or the request says "rename X to Y"), SYRAX searches
   the project for the old name and lists the `file:line` uses left; before the task ends it asks once to finish
   the rename. For quality case `deep_rename_api`, which kept `from geo.core import calc_area` in `report.py`.
+- **Screen change on GNOME Wayland without a screenshot:** with no pixel capture, SYRAX compares the front window
+  (its GNOME focus extension) and the accessibility tree before and after an act. It only proves "the screen
+  changed"; it never claims "nothing changed", because Chrome and VS Code show little in that tree.
 - **Background panel in the UI:** a BACKGROUND button shows the background tasks with state, steps and time
   against the budget, CANCEL / FINISH NOW, and the saved report text. Tasks from before a restart are not listed.
 
