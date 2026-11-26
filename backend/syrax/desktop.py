@@ -281,7 +281,9 @@ def _portal_allowed() -> bool:
     global _PORTAL_ALLOWED
     if _PORTAL_ALLOWED is None:
         _PORTAL_ALLOWED = False
-        if os.getenv("SYRAX_SCREEN_PORTAL", "1") != "0" and shutil.which("gdbus"):
+        # default off (2026-11-26): on GNOME a portal capture may flash the screen or play the shutter sound on every
+        # click; SYRAX_SCREEN_PORTAL=1 turns it on
+        if os.getenv("SYRAX_SCREEN_PORTAL", "0") == "1" and shutil.which("gdbus"):
             try:
                 r = subprocess.run(["gdbus", "call", "--session", "--dest", "org.freedesktop.impl.portal.PermissionStore",
                                     "--object-path", "/org/freedesktop/impl/portal/PermissionStore", "--method",
