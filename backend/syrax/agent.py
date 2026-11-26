@@ -39,6 +39,7 @@ from syrax.claims import (  # noqa: F401
     CLAIM_FALLBACK, NOT_RELEASED_NOTE, UNPROVEN_SOFT, NUMBER, FORM_ASK, FORM_FINAL_ASK, exact_form, meets_form,
     GIVEN_PATCH_REFUSED, diff_changed_lines, given_patch, goal_paths, file_state, WATCH_MAX_FILES, CLAIM, OWN_WORK_CLAIM, WORLD_CLAIM, CHANGE_ASKED,
     WORLD_NUDGE, SEND_CLAIM, DESKTOP_CLAIM, BROWSER_CLAIM, PLAYING_CLAIM, PLAYING_READ, PHONE_PLAYING_READ, PLAYING_NOTE, OUTCOME_CLAIMS,
+    SCREEN_ACTIONS, SCREEN_UNCHANGED, seen_acting,
     BOAST, SELF_ASKED, LIMITS_ASKED, LIMITS_NUDGE, without_boasts, SELF_NUDGE, SELF_NOTE, SELF_NOTE_READ, STATUS_CLAIM, STATUS_ASK, STATUS_NUDGE, STATUS_NOTE, status_reading,
     OUTCOME_NUDGE, OUTCOME_NOTE, DISPUTE_MAX, DISPUTE_NO, DISPUTE, DISPUTE_NUDGE, DISPUTE_NOTE, DISPUTE_ACTS,
     is_dispute, is_reading, URL, CITE_NUDGE, EDIT_COMMANDS, WRITES, CLAIM_ASK, changes_something, classes_of,
@@ -1251,7 +1252,9 @@ class SyraxAgent(Manus):
                     self.changed = True
                     self.changed_by.add(name)
                 if _succeeded(result):
-                    self.acted |= classes_of(name, decision.level, _args_of(command))  # OUTCOME_CLAIMS
+                    # 2026-11-26: a click, keys or typing after which nothing on the screen changed stands for no outcome
+                    self.acted |= seen_acting(name, _args_of(command), _body(result),
+                                              classes_of(name, decision.level, _args_of(command)))  # OUTCOME_CLAIMS
                     if (name == "desktop" and (PLAYING_READ.search(_body(result)) or (
                             str(_args_of(command).get("action") or "") == "phone" and PHONE_PLAYING_READ.search(_body(result))))
                             or not _level_known(name)):
