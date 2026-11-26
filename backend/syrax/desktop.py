@@ -257,6 +257,130 @@ def in_front() -> str:
     return f" In front now: {w}." if w else " Nothing is in front now."
 
 
+# Idea from Mark-LVII, 2026-11-26: after a click, keys or typed text, say whether the screen visibly changed, as
+# evidence. "Left-clicked at 412,630." only said the mouse went down; whether Save did anything was never seen. One small
+# grayscale glance before the action and one a moment after it (SCREEN_WAIT_S) are compared. A pixel counts when its gray
+# moved more than SCREEN_PIXEL_DELTA (of 255); the screen "changed" when at least SCREEN_CHANGED_MIN of the pixels did.
+# 0.5 %: at 256x144 a blinking text cursor or a ticking clock is a handful of pixels (well under 0.1 %), a dialog, a menu
+# or a new page is many percent. A change smaller than that (a checkbox can be one) is named "a tiny spot", not hidden.
+# No glance (no display, the Wayland portal not allowed, an error, tests) adds nothing and never fails the action. Each
+# glance is cut at SCREEN_GLANCE_S, so the check adds at most SCREEN_GLANCE_S * 2 + SCREEN_WAIT_S (about 2.5 s).
+SCREEN_WAIT_S = float(os.getenv("SYRAX_SCREEN_WAIT_S") or 0.5)
+SCREEN_GLANCE_S = 1.0
+SCREEN_SIZE = (256, 144)
+SCREEN_PIXEL_DELTA = 32
+SCREEN_CHANGED_MIN = 0.005
+SCREEN_UNCHANGED_LINE = "Nothing on the screen changed after this"
+_PORTAL_ALLOWED: Optional[bool] = None  # GNOME's portal answers without asking the human (permission store), per process
+
+
+def _portal_allowed() -> bool:
+    """Whether GNOME's Screenshot portal may be used for a glance: only when it will not ask the human (a dialog popping
+    up before a click would take the click). True once the permission store says yes for host apps, or a portal
+    screenshot worked in this process (_do_screenshot)."""
+    global _PORTAL_ALLOWED
+    if _PORTAL_ALLOWED is None:
+        _PORTAL_ALLOWED = False
+        if os.getenv("SYRAX_SCREEN_PORTAL", "1") != "0" and shutil.which("gdbus"):
+            try:
+                r = subprocess.run(["gdbus", "call", "--session", "--dest", "org.freedesktop.impl.portal.PermissionStore",
+                                    "--object-path", "/org/freedesktop/impl/portal/PermissionStore", "--method",
+                                    "org.freedesktop.impl.portal.PermissionStore.Lookup", "screenshot", "screenshot"],
+                                   capture_output=True, text=True, timeout=3)
+                _PORTAL_ALLOWED = "'': ['yes']" in r.stdout
+            except (OSError, subprocess.SubprocessError):
+                pass
+    return _PORTAL_ALLOWED
+
+
+def _small_gray(img):
+    return img.convert("L").resize(SCREEN_SIZE, reducing_gap=2.0)
+
+
+def _glance_file(fn) -> object:
+    """Run `fn(path)` to write a screenshot into a temporary file, and read it small and gray."""
+    import tempfile
+
+    from PIL import Image
+
+    fd, tmp = tempfile.mkstemp(prefix="syrax-glance-", suffix=".png")
+    os.close(fd)
+    try:
+        fn(tmp)
+        with Image.open(tmp) as img:
+            return _small_gray(img)
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+
+
+def glance(timeout: float = SCREEN_GLANCE_S) -> Optional[object]:
+    """The screen now, as a small grayscale PIL image (SCREEN_SIZE), through the capture SYRAX already uses on this
+    system: Pillow's ImageGrab on Windows and on X11, screencapture on macOS, grim/spectacle/scrot on other Linux
+    desktops, and GNOME's Screenshot portal on Wayland when it will not ask (_portal_allowed). None when the screen
+    cannot be read; never raises. Never in tests: SYRAX_NO_REAL_INPUT=1 reads nothing."""
+    if os.getenv("SYRAX_NO_REAL_INPUT") == "1" or os.getenv("SYRAX_SCREEN_CHECK", "1") == "0":
+        return None
+    try:
+        from PIL import Image, ImageGrab
+
+        def run(*args):
+            subprocess.run(args, capture_output=True, timeout=timeout, check=True)
+
+        if WINDOWS:
+            return _small_gray(ImageGrab.grab(all_screens=True))
+        if MACOS:
+            return _glance_file(lambda p: run("screencapture", "-x", p))
+        if _x11():
+            return _small_gray(ImageGrab.grab())
+        for tool, args in (("grim", ()), ("spectacle", ("-b", "-n", "-f", "-o")), ("scrot", ("-o",))):
+            if shutil.which(tool):
+                try:
+                    return _glance_file(lambda p: run(tool, *args, p))
+                except (OSError, subprocess.SubprocessError, ValueError):
+                    continue
+        if _portal_allowed():
+            got = _portal_screenshot(timeout=timeout)
+            try:
+                with Image.open(got) as img:
+                    return _small_gray(img)
+            finally:
+                os.remove(got)  # the portal saves into ~/Pictures: a glance leaves nothing there
+    except Exception:
+        return None
+    return None
+
+
+def screen_change(before, after) -> Optional[float]:
+    """The share of the screen (0..1) whose gray moved more than SCREEN_PIXEL_DELTA between two glances; None when
+    either is missing or they cannot be compared."""
+    if before is None or after is None or getattr(before, "size", None) != getattr(after, "size", 0):
+        return None  # Pillow's difference would compare only the overlap of two sizes
+    try:
+        from PIL import ImageChops
+
+        moved = ImageChops.difference(before, after).point(lambda v: 255 if v > SCREEN_PIXEL_DELTA else 0)
+        return moved.histogram()[255] / float(before.size[0] * before.size[1])
+    except Exception:
+        return None
+
+
+def screen_change_note(share: Optional[float]) -> str:
+    """" The screen changed (N% of it)." / " Nothing on the screen changed after this." for a share from screen_change;
+    "" when nothing was compared."""
+    if share is None:
+        return ""
+    if share >= SCREEN_CHANGED_MIN:
+        pct = share * 100
+        return f" The screen changed ({pct:.0f}% of it)." if pct >= 10 else f" The screen changed ({pct:.1f}% of it)."
+    if share > 0:
+        return (f" {SCREEN_UNCHANGED_LINE}, beyond a tiny spot (under {SCREEN_CHANGED_MIN * 100:g}% of it, as small as a "
+                "cursor, a clock or a checkbox).")
+    return f" {SCREEN_UNCHANGED_LINE}."
+
+
 def _press_keys(*names: str, times: int = 1) -> None:
     """Tap virtual keys in the human's session (Windows only)."""
     import ctypes
@@ -1022,6 +1146,8 @@ class DesktopControl(BaseTool):
             # direction 201). The portal saves into ~/Pictures; the shot is moved here, so that folder does not fill
             try:
                 got = await asyncio.to_thread(_portal_screenshot)
+                global _PORTAL_ALLOWED
+                _PORTAL_ALLOWED = True  # it answered without a question now: screen-change glances may use it too
                 shutil.move(got, path)
                 data = base64.b64encode(path.read_bytes()).decode()
                 return ToolResult(output=f"Screenshot saved to {path}", base64_image=data)
@@ -1184,18 +1310,33 @@ class DesktopControl(BaseTool):
         except (ValueError, RuntimeError, OSError, wininput.Stopped, linuxinput.Stopped, x11input.Stopped) as e:
             return ToolResult(error=str(e))
 
-    async def _with_front(self, done: ToolResult, before: Optional[str] = None) -> ToolResult:
+    @staticmethod
+    async def _glance() -> Optional[object]:
+        """One screen glance (glance), cut at SCREEN_GLANCE_S; None on any failure, so the action goes on as before."""
+        try:
+            return await asyncio.wait_for(asyncio.to_thread(glance, SCREEN_GLANCE_S), SCREEN_GLANCE_S + 0.25)
+        except Exception:
+            return None
+
+    async def _changed(self, shot) -> str:
+        """screen_change_note between `shot` (taken before the action) and a glance now; "" without `shot`."""
+        if shot is None:
+            return ""
+        return screen_change_note(screen_change(shot, await self._glance()))
+
+    async def _with_front(self, done: ToolResult, before: Optional[str] = None, shot=None) -> ToolResult:
         """A hands action's result with the window in front after it (in_front), read a moment later. Given the
         window that was in front `before` keys went out, and it is not the one in front now, the answer names it:
         the keys went there. Live 2026-10-25: "close the notepadd application" minimized Notepad, then pressed
-        alt+f4 at whatever came to the front, and answered that Notepad was closed."""
+        alt+f4 at whatever came to the front, and answered that Notepad was closed. Given a glance `shot` from before
+        the action, the wait is SCREEN_WAIT_S and the answer says whether the screen changed (2026-11-26)."""
         if done.error:
             return done
-        await asyncio.sleep(0.15)
+        await asyncio.sleep(0.15 if shot is None else max(0.15, SCREEN_WAIT_S))
         now = await asyncio.to_thread(front_window)
         went = f" The keys went to {before}." if before and now is not None and before != now else ""
         tail = "" if now is None else (f" In front now: {now}." if now else " Nothing is in front now.")  # as in_front
-        return ToolResult(output=f"{done.output}{went}{tail}")
+        return ToolResult(output=f"{done.output}{went}{tail}{await self._changed(shot)}")
 
     async def _do_type_text(self, value: str, **_) -> ToolResult:
         from syrax import wininput
@@ -1203,7 +1344,8 @@ class DesktopControl(BaseTool):
         before, own = await asyncio.to_thread(front_read)
         if own:
             return ToolResult(error=own_front_refusal(own))
-        return await self._with_front(await self._hands(_hands_module().type_text, value), before)
+        shot = await self._glance()
+        return await self._with_front(await self._hands(_hands_module().type_text, value), before, shot)
 
     async def _do_hotkey(self, value: str, **_) -> ToolResult:
         from syrax import wininput
@@ -1215,9 +1357,10 @@ class DesktopControl(BaseTool):
         before, own = await asyncio.to_thread(front_read)
         if own:
             return ToolResult(error=own_front_refusal(own))
+        shot = await self._glance()
         if times == 1:
-            return await self._with_front(await self._hands(_hands_module().hotkey, value), before)
-        return await self._with_front(await self._hands(_press_times, _hands_module().hotkey, spec, times), before)
+            return await self._with_front(await self._hands(_hands_module().hotkey, value), before, shot)
+        return await self._with_front(await self._hands(_press_times, _hands_module().hotkey, spec, times), before, shot)
 
     async def _do_click(self, target: str, value: str = "", **_) -> ToolResult:
         from syrax import wininput
@@ -1225,7 +1368,8 @@ class DesktopControl(BaseTool):
         _, own = await asyncio.to_thread(front_read)
         if own:
             return ToolResult(error=own_front_refusal(own))
-        return await self._with_front(await self._hands(_hands_module().click, target, value or "left"))
+        shot = await self._glance()
+        return await self._with_front(await self._hands(_hands_module().click, target, value or "left"), shot=shot)
 
     async def _sight(self, target: str):
         """(the one best place, the places seen, the places dropped because they lie in SYRAX's own window)."""
@@ -1285,10 +1429,14 @@ class DesktopControl(BaseTool):
         if spot is None:
             return ToolResult(error=f'"{target}" matches several places equally well; nothing was clicked. '
                                     "Choose one and use click with its x,y: " + "; ".join(s.say() for s in seen) + self._skipped(own))
+        shot = await self._glance()
         done = await self._hands(wininput.click, f"{spot.x},{spot.y}", value or "left")
         if done.error:
             return done
-        return ToolResult(output=f"{done.output} That is {spot.label}, found by {spot.how}.{self._skipped(own)}")
+        if shot is not None:
+            await asyncio.sleep(SCREEN_WAIT_S)
+        return ToolResult(output=f"{done.output} That is {spot.label}, found by {spot.how}.{self._skipped(own)}"
+                                 f"{await self._changed(shot)}")
 
     async def _do_dark_mode(self, value: str, **_) -> ToolResult:
         from syrax import wininput
@@ -1506,9 +1654,10 @@ class _NotOnMac:
     click = hotkey = type_text = dark_mode = _no
 
 
-def _portal_screenshot(runner=None) -> str:
+def _portal_screenshot(runner=None, timeout: float = 90) -> str:
     """Path of a fresh screenshot from GNOME's Screenshot portal, through _portal_screenshot.py under the system
-    python3. `runner` (tests) returns the helper's JSON answer. Never in tests: SYRAX_NO_REAL_INPUT=1 refuses."""
+    python3. `runner` (tests) returns the helper's JSON answer. Never in tests: SYRAX_NO_REAL_INPUT=1 refuses.
+    `timeout` is short for a screen-change glance (2026-11-26), 90 s for a screenshot the human may be asked about."""
     import json as _json
     import os as _os
     import subprocess as _sp
@@ -1519,7 +1668,7 @@ def _portal_screenshot(runner=None) -> str:
         if _os.getenv("SYRAX_NO_REAL_INPUT") == "1":
             raise RuntimeError("reading the real screen is off here (SYRAX_NO_REAL_INPUT=1)")
         r = _sp.run([linuxinput.SYSTEM_PY, str(Path(__file__).with_name("_portal_screenshot.py"))],
-                    capture_output=True, text=True, timeout=90)
+                    capture_output=True, text=True, timeout=timeout)
         answer = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else _json.dumps({"ok": False, "error": r.stderr[-200:]})
     else:
         answer = runner()

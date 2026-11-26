@@ -482,6 +482,22 @@ OUTCOME_CLAIMS = {
     "browser": (BROWSER_CLAIM, frozenset({"browser", "desktop"}), "opened or operated on a page or app", "browser or desktop"),
     "playing": (PLAYING_CLAIM, frozenset({"playing"}), "playing", "`desktop` media status"),
 }
+# Idea from Mark-LVII, 2026-11-26: a click, keys or typed text now say whether the screen changed after them
+# (desktop.screen_change_note). "Left-clicked at 412,630. ... Nothing on the screen changed after this." is a call that
+# succeeded and did nothing anyone can see: it should not stand for "I clicked Save and it saved". SCREEN_UNCHANGED
+# reads that line (also its "beyond a tiny spot" form); seen_acting drops the classes such a call would stand for.
+SCREEN_UNCHANGED = re.compile(r"\bNothing on the screen changed after this\b")
+SCREEN_ACTIONS = frozenset({"click", "click_text", "type_text", "hotkey"})
+
+
+def seen_acting(name: str, args: Any, body: str, classes: set) -> set:
+    """`classes` (classes_of) of a successful call, without "desktop" and "browser" when it was a desktop click, keys or
+    typed text after which nothing on the screen changed (SCREEN_UNCHANGED): such a call stands for no outcome."""
+    a = args if isinstance(args, dict) else {}
+    if name == "desktop" and str(a.get("action") or "") in SCREEN_ACTIONS and SCREEN_UNCHANGED.search(body or ""):
+        return set(classes) - {"desktop", "browser"}
+    return set(classes)
+
 # A claim about SYRAX's own abilities that nothing in the task read. Live 2026-10-13: "how many capabilites you have?"
 # -> "I have no limits." (the persona rule and quality case self_capabilities followed); live 2026-10-25, other words,
 # the same answer: "can you controll my hole desktop?" -> "I command this machine. Every window, every pixel, every
