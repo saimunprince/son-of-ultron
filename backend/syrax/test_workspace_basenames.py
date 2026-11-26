@@ -24,7 +24,22 @@ def test_a_workspace_file_named_like_a_judge_is_not_the_judge():
     assert CORE not in d.targets and v.action == "allow", (d, v)
 
 
+WORKSPACE_SHAPES = [
+    f'geo = "{WS}"\nopen(f"{{geo}}/geo/core.py", "w").write("")\nopen(f"{{geo}}/geo/report.py", "w").write("")',
+    f"import os, subprocess\nbase = r'{WS}'\nopen(os.path.join(base, 'geo', 'core.py'), 'w').write('')\n"
+    "subprocess.run(['pytest'], cwd=base)",
+]
+
+
+@pytest.mark.parametrize("code", WORKSPACE_SHAPES)
+def test_more_workspace_shapes_are_not_the_judge(code):
+    d, v = _decide(code)
+    assert CORE not in d.targets and v.action == "allow", (d, v)
+
+
 JUDGE_STILL = [
+    f'geo = "{WS}"\nopen(f"{{geo}}/../../../syrax/core.py", "w").write("")',
+    f'geo = "{WS}"\nopen(f"{{geo}}/syrax/core.py", "w").write("")',
     f"import os\nbase = r'{WS}'\nopen(os.path.join(base, '..', '..', '..', 'syrax', 'core.py'), 'w').write('')",
     f"import os\nbase = r'{WS}'\nopen(os.path.join(os.path.dirname(os.path.dirname(base)), 'syrax', 'core.py'), 'w').write('')",
     f"import os\nbase = r'{WS}'\nos.chdir(base)\nopen(os.path.join(os.pardir, 'core.py'), 'w').write('')",

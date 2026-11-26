@@ -360,9 +360,9 @@ def _protected_place(literal: str, names: Dict[str, str]) -> Optional[str]:
 # os.path.join(base, "geo", "core.py") were refused as backend/syrax/core.py, a judge: a bare basename stood for the
 # judge although every place the code names lies in the workspace. A bare judge basename is that other place when
 # the code names the workspace by an absolute literal, names no rooted path outside it, does not climb (.., pardir,
-# .parent, __file__, chdir) and names no folder on the judge's own path ("syrax", "backend"). Keys, evidence and the
+# .parent, __file__, chdir, getcwd) and names no folder on the judge's own path ("syrax", "backend"). Keys, evidence and the
 # owner's files stay matched by basename everywhere; the runtime walls (guard.py, Landlock) still hold the judges.
-_CLIMBS = re.compile(r"\.\.|\bpardir\b|\.parent\b|__file__|\bchdir\b|\bgetcwd\b|\bcwd\b")
+_CLIMBS = re.compile(r"\.\.|\bpardir\b|\.parent\b|__file__|\bchdir\b|\bgetcwd\b")
 
 
 def _workspace_only(code: str) -> bool:
@@ -389,8 +389,11 @@ def protected_literals(code: str) -> List[str]:
     for source in (text, _JOINED.sub("", text)):
         for m in _protected_rx(names).finditer(source):
             rel = _protected_place((m.group(1) or "") + m.group(2), names)
-            if (rel and in_workspace and not m.group(1) and rel in JUDGES
-                    and not words & set(rel.lower().split("/")[:-1])):
+            prefix = (m.group(1) or "").replace("\\", "/").lower()
+            folders = set(rel.lower().split("/")[:-1]) if rel else set()
+            if (rel and in_workspace and rel in JUDGES and not re.match(r"^(?:[a-z]:)?[/~]", prefix)
+                    and not words & folders and not folders & set(prefix.split("/"))):
+                # a bare name, or one under a placeholder or folder of the code ({geo_path}/geo/core.py)
                 continue  # the workspace file of that name, not the judge
             if rel and rel not in out:
                 out.append(rel)
