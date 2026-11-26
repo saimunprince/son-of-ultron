@@ -356,14 +356,42 @@ def _protected_place(literal: str, names: Dict[str, str]) -> Optional[str]:
     return known  # a prefix the gate cannot place ({d}/, ../, root/): the protected file is what it may be
 
 
+# Quality run #37 (2026-11-26, deep_rename_api): `base = ".../workspace/quality/deep/geo_proj"` and
+# os.path.join(base, "geo", "core.py") were refused as backend/syrax/core.py, a judge: a bare basename stood for the
+# judge although every place the code names lies in the workspace. A bare judge basename is that other place when
+# the code names the workspace by an absolute literal, names no rooted path outside it, does not climb (.., pardir,
+# .parent, __file__, chdir) and names no folder on the judge's own path ("syrax", "backend"). Keys, evidence and the
+# owner's files stay matched by basename everywhere; the runtime walls (guard.py, Landlock) still hold the judges.
+_CLIMBS = re.compile(r"\.\.|\bpardir\b|\.parent\b|__file__|\bchdir\b|\bgetcwd\b|\bcwd\b")
+
+
+def _workspace_only(code: str) -> bool:
+    rooted = [s for s in path_literals(code) if re.match(r"^(?:[A-Za-z]:)?[\\/~]", s)]
+    if not rooted or _CLIMBS.search(code):
+        return False
+    ws = os.path.normcase(str(WORKSPACE.resolve()))
+    for s in rooted:
+        p = os.path.normcase(os.path.normpath(os.path.expanduser(s)))
+        if p != ws and not p.startswith(ws + os.sep):
+            return False
+    return True
+
+
 def protected_literals(code: str) -> List[str]:
     """Repository paths of the protected files that code names by basename (see the note above _JOINED)."""
     names = protected_basenames()
     text = code or ""
+    from syrax.devloop import JUDGES  # devloop does not import permissions
+
+    in_workspace = _workspace_only(text)
+    words = {w.lower() for w in re.findall(r"""['"]([^'"\n/\\]{1,64})['"]""", text)}
     out: List[str] = []
     for source in (text, _JOINED.sub("", text)):
         for m in _protected_rx(names).finditer(source):
             rel = _protected_place((m.group(1) or "") + m.group(2), names)
+            if (rel and in_workspace and not m.group(1) and rel in JUDGES
+                    and not words & set(rel.lower().split("/")[:-1])):
+                continue  # the workspace file of that name, not the judge
             if rel and rel not in out:
                 out.append(rel)
     return out
@@ -686,7 +714,8 @@ def network_targets(targets: Iterable[str], admin_only: bool = False) -> List[st
     hits = []
     for t in targets:
         s = guard.canonical_path(str(t or "").strip())
-        if guard.ADMIN_SHARE.match(s) or (not admin_only and re.match(r"^[\\/]{2}", s)):
+        # \\host\share and \\?\ / \\.\ device paths; a regex literal such as "\\s+" (quality #37, deep2) is no share
+        if guard.ADMIN_SHARE.match(s) or (not admin_only and re.match(r"^[\\/]{2,}(?:[^\\/\s]+[\\/]|[\w.$?-]+$)", s)):
             hits.append(str(t))
     return hits
 
