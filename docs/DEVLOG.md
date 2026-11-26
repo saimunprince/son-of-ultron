@@ -2,17 +2,115 @@
 
 > Written by the daily publish before its own gate and commit: this publish's verification, commit and matrix appear in the next one (audit 2026-11-01, D1).
 
-Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+Generated 2026-11-26 12:00 +0600 by `python -m syrax.devlog` at commit `711ba5f`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+
+## 2026-11-26
+
+- Tasks: 0 finished, 0 failed (17 journal events).
+
+## 2026-11-25
+
+- Tasks: 99 finished, 3 failed (3258 journal events).
+- Objectives closed: 3
+  - #95 Benchmark metric selfmodel_summary_ms regressed from 20.218 ms to 160.545 ms (+694.1%). Fi
+  - #94 Task quality regressed to 72.7% (-18.2 pp); failing cases: browser_read, fix_import, self_
+  - #96 Task quality regressed to 76.9% (-15.4 pp); failing cases: deep_cli_todo, deep_rename_api,
+- Quality run #33: 89.6 % of 67 cases; failed: browser_read, append_line, python_script, self_patch_edit, self_patch_docs, deep_rename_api, deep2_log_report.
+- Incidents: rollbacks 7, restarts 11.
+- Commits SYRAX made to itself: 2
+  - `94ff898` syrax: revert 17fd8020de7f (Optimize GPU info retrieval in sysinfo.py): quality run #32 fell -15.4 p
+  - `17fd802` syrax: Optimize GPU info retrieval in sysinfo.py
+- Commits by its maintainers: 25
+  - `711ba5f` docs(progress): waiting for a stronger brain
+  - `a0b9878` feat(brains): wait briefly for a stronger brain instead of a last resort
+  - `c88a38d` docs(progress): research check, media seek, routines engine
+  - `3354c61` fix(permissions): a routine that starts a task is asked for, never set up quietly
+  - `115c28a` feat(reminders): one routines engine - monthly, interval windows, lateness, quiet hours, task routin
+  - `dc5ce23` feat(desktop): media seek reads the position back; hotkey repeats
+  - `1c941e8` test(persona): the full-persona budget leaves out the paths note too
+  - `4933345` test(persona): the short-persona budget leaves out the paths note
+  - `474404b` feat(agent): a researched answer is held to the pages read before it goes out
+  - `4884a99` feat(research): quotations in a researched answer are checked against the pages read
+  - `2e93644` feat(desktop): a Linux launch proves itself; volume moves by an amount
+  - `c60b6f8` test(pasted): accept the Windows path separator; next Windows round
+  - `2d4f3e9` hostcheck: Windows 11 on bc86d98
+  - `7d2f1cd` docs(progress): Groq live test, paths and latest-request fixes
+  - `c192969` fix(prompt): a short paths note keeps the short persona under its budget
+  - `d75fadb` fix(prompt): name where code runs and the latest request
+  - `bc86d98` docs(progress): a small brain keeps the task's goal
+  - `227d840` fix(brains): clip the task's own request last so a small brain keeps the goal
+  - `7127076` docs(progress): play store in 4 steps; the data pipeline checked by hand
+  - `60a53d4` fix(phone): a phone command given in target with no value is read as the command
+  - `9bd7cfa` fix(claims): a phone screen showing a player past its start proves something plays
+  - `af1822b` fix(phone): a phone command written with its argument ('tap YouTube') is split
+  - `e2d054b` fix(android): open apps by their launcher activity; skip driver noise before a screenshot
+  - `7777b4d` fix(sysinfo): a failed nvidia-smi falls through to Windows' GPU list (what 17fd802 meant)
+  - `682b367` fix(ledger): the daily ledger goes out as two reviewed releases; a reviewer must read the whole diff
+
+## 2026-11-23
+
+- Tasks: 27 finished, 1 failed (1017 journal events).
+- Objectives closed: 3
+  - #91 My biggest measured limitation right now: OpenManus core (upstream): no callbacks; SYRAX h
+  - #93 My biggest measured limitation right now: Live talk: echo cancellation is the browser's; h
+  - #90 Benchmark metric recovery_ms regressed from 4.813 ms to 16.56 ms (+244.1%). Find the cause
+- Quality run #31: 72.7 % of 11 cases; failed: browser_read, fix_import, self_map_release.
+- Incidents: rollbacks 1, claims sent back 2.
+
+## 2026-11-21
+
+- Tasks: 47 finished, 2 failed (1937 journal events).
+- Objectives closed: 5
+  - #83 Learn how to do what objective #82 could not: Verify that the `browser_login` tool works o
+  - #86 3 objectives about the `browser_login` tool are BLOCKED after repeated failures. Research 
+  - #87 My biggest measured limitation right now: Live talk: needs a Gemini key; the free tier's L
+  - #89 My biggest measured limitation right now: Feature catalog: prebuilt skills install when th
+  - #77 Task quality regressed to 83.3% (-16.7 pp); failing cases: browser_read, count_files. Insp
+- Quality run #30: 90.9 % of 11 cases; failed: browser_read.
+- Incidents: rollbacks 2, claims sent back 2.
+
+## 2026-11-16
+
+- Tasks: 11 finished, 0 failed (398 journal events).
+- Objectives closed: 2
+  - #81 Learn how to do what objective #80 could not: Verify that the `browser_login` tool works o
+  - #85 2 objectives about the `browser_login` tool are BLOCKED after repeated failures. Research 
+
+## 2026-11-08
+
+- Tasks: 21 finished, 1 failed (831 journal events).
+- Objectives closed: 1
+  - #75 My biggest measured limitation right now: Live talk: the microphone streams to Google whil
+- Quality run #29: 83.3 % of 12 cases; failed: browser_read, count_files.
+- Incidents: interrupted 1, rollbacks 1.
+
+## 2026-11-07
+
+- Tasks: 26 finished, 1 failed (972 journal events).
+- Objectives closed: 1
+  - #73 My biggest measured limitation right now: Proactive loops: topic news depends on the resea
+- Quality run #28: 80.0 % of 10 cases; failed: research_cite, fix_bug.
+- Incidents: rollbacks 1.
 
 ## 2026-11-06
 
-- Tasks: 131 finished, 1 failed (3454 journal events).
+- Tasks: 215 finished, 1 failed (5164 journal events).
 - Objectives closed: 2
   - #71 My biggest measured limitation right now: Process supervision: one instance per machine. I
   - #72 My biggest measured limitation right now: Proactive loops: a reminder due while SYRAX is o
 - Quality run #27: 100.0 % of 6 cases.
-- Incidents: rollbacks 7, claims sent back 1, restarts 2.
-- Commits by its maintainers: 8
+- Incidents: rollbacks 7, claims sent back 1, restarts 11.
+- Commits by its maintainers: 18
+  - `fa33980` docs(progress): now and open at the end of 2026-11-06
+  - `b71cf36` fix(answers): a search claimed with no tool is sent back; 'nothing found' needs no URL
+  - `6e6b29e` fix(agent): padded text is sent back; a request during the cleanup is queued, not refused
+  - `65641a3` fix(agent): a count of a long message answered with no tool is sent back to count the file
+  - `a07e3e6` fix(agent): a long message is saved to a file so counts run on it, never estimated
+  - `f062e75` feat(self): self_inspect changes lists what changed in SYRAX over the last week
+  - `92348c3` fix(data): CSV number columns sort as numbers; language follow never translates data
+  - `27105a7` feat(reminders): daily and weekly reminders; the answer says once or daily
+  - `8cddbd1` fix(launcher): restarting itself inside the login service goes through systemd
+  - `26cd9b7` docs(ledger): catch up RISE, DEVLOG and ARCHIVE from the journal (held since 11-01: too long to revi
   - `975b3ad` feat(testing): --testhere and a test plan, so an agent on the Windows PC tests SYRAX when the owner 
   - `52ca844` fix(answers): an answer naming files no tool showed is asked again from the results
   - `a2f9d60` docs: audit list current (I-07, D14 fixed); live rounds 3 and 4 all right
@@ -375,7 +473,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-26
 
-- Tasks: 102 finished, 0 failed (2862 journal events).
+- Tasks: 102 finished, 0 failed (1628 journal events).
 - Objectives closed: 6
   - #-9999686 My biggest measured limitation right now: Research engine + knowledge store: depends on Du
   - #-9999685 My biggest measured limitation right now: Skill factory: skill code runs in-process (no sa
@@ -416,7 +514,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-25
 
-- Tasks: 126 finished, 0 failed (3413 journal events).
+- Tasks: 126 finished, 0 failed (1759 journal events).
 - Objectives closed: 4
   - #-9999690 My biggest measured limitation right now: Core: one task runs at a time; a human request m
   - #-9999689 My biggest measured limitation right now: Self-model: performance history: task durations 
@@ -455,7 +553,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-22
 
-- Tasks: 67 finished, 0 failed (2094 journal events).
+- Tasks: 67 finished, 0 failed (1158 journal events).
 - Objectives closed: 6
   - #-9999697 My biggest measured limitation right now: Core: one task at a time; no queue scheduling. I
   - #-9999696 My biggest measured limitation right now: Core: brain events from a running task are journ
@@ -486,7 +584,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-19
 
-- Tasks: 277 finished, 1 failed (8320 journal events).
+- Tasks: 277 finished, 1 failed (4458 journal events).
 - Objectives closed: 25
   - #-9999723 My biggest measured limitation right now: Frontend HUD: history/today views are polled on 
   - #-9999722 My biggest measured limitation right now: Frontend HUD: HUD regions (orb, controls, consol
@@ -518,7 +616,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-17
 
-- Tasks: 70 finished, 0 failed (2664 journal events).
+- Tasks: 70 finished, 0 failed (1522 journal events).
 - Objectives closed: 9
   - #-9999733 Brain latency. Three steps, one apply_patch each, then one release. (1) backend/syrax/brai
   - #-9999732 My biggest measured limitation right now: Self-model: performance history: task durations 
@@ -550,7 +648,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-15
 
-- Tasks: 92 finished, 12 failed (5024 journal events).
+- Tasks: 92 finished, 12 failed (2777 journal events).
 - Objectives closed: 21
   - #-9999770 The `python_execute` tool failed on its last use. Diagnose why, then call it again with a 
   - #-9999767 The `python_execute` tool failed on its last use. Diagnose why, then call it again with a 
@@ -597,7 +695,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-14
 
-- Tasks: 202 finished, 1 failed (8425 journal events).
+- Tasks: 202 finished, 1 failed (4594 journal events).
 - Objectives closed: 28
   - #-9999813 My biggest measured limitation right now: Journal: file edits are reality-checked and call
   - #-9999812 My biggest measured limitation right now: Journal: PENDING tasks are stored but not schedu
@@ -638,7 +736,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-13
 
-- Tasks: 54 finished, 1 failed (1477 journal events).
+- Tasks: 54 finished, 1 failed (874 journal events).
 - Objectives closed: 5
   - #-9999823 Task quality regressed to 0.0% (-100.0 pp); failing cases: browser_read. Inspect those tas
   - #-9999820 My biggest measured limitation right now: Core: one task at a time; no queue scheduling. I
@@ -667,7 +765,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-12
 
-- Tasks: 109 finished, 0 failed (4774 journal events).
+- Tasks: 109 finished, 0 failed (2850 journal events).
 - Objectives closed: 48
   - #-9999883 My biggest measured limitation right now: `python_execute` failed 15 of its last 40 uses (
   - #-9999882 My biggest measured limitation right now: Frontend HUD: history/today views are polled on 
@@ -710,7 +808,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-11
 
-- Tasks: 44 finished, 0 failed (1928 journal events).
+- Tasks: 44 finished, 0 failed (1105 journal events).
 - Objectives closed: 9
   - #-9999904 My biggest measured limitation right now: `release` failed 3 of its last 5 uses (60%). Imp
   - #-9999900 My biggest measured limitation right now: `release` failed 3 of its last 5 uses (60%). Imp
@@ -738,7 +836,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-10
 
-- Tasks: 27 finished, 0 failed (2164 journal events).
+- Tasks: 27 finished, 0 failed (1320 journal events).
 - Objectives closed: 14
   - #-9999908 My biggest measured limitation right now: Autonomy: no research or self-modification objec
   - #-9999907 My biggest measured limitation right now: Autonomy: lessons are derived strings, not model
@@ -779,7 +877,7 @@ Generated 2026-11-06 19:04 +0600 by `python -m syrax.devlog` at commit `975b3ad`
 
 ## 2026-10-08
 
-- Tasks: 5 finished, 0 failed (336 journal events).
+- Tasks: 5 finished, 0 failed (262 journal events).
 - Objectives closed: 4
   - #-9999946 My biggest measured limitation right now: `present` failed 2 of its last 11 uses (18%). Im
   - #-9999910 My biggest measured limitation right now: Self-model: no historical performance/latency me
