@@ -57,6 +57,7 @@ BRAIN_OUT_RETRIES = int(os.getenv("SYRAX_BACKGROUND_BRAIN_RETRIES", "3"))
 TOOL_TIMEOUT_S = float(os.getenv("SYRAX_BACKGROUND_TOOL_TIMEOUT_S", "180"))
 RESULT_CHARS = 6000  # one tool result, as the lane's agent reads it
 FILE_CHARS = 200_000  # one file in the task's folder
+REPORT_CHARS = 100_000  # a report as the UI's Background panel shows it
 ACTIVE = ("running", "paused")
 WEB_TOOLS = ("research", "github_search", "paper_search")
 
@@ -127,7 +128,8 @@ class BgTask:
         return {"id": self.id, "instruction": self.instruction[:200], "state": self.state, "step": self.step,
                 "steps": self.steps, "minutes": self.minutes, "elapsed_min": round(self.elapsed() / 60, 1),
                 "notes_waiting": len(self.notes), "finishing": self.finish_now, "folder": str(self.folder),
-                "report": str(self.report) if self.report else None, "error": self.error, "refused": self.refused}
+                "report": str(self.report) if self.report else None, "error": self.error, "refused": self.refused,
+                "started_at": self.started_at, "ended_at": self.ended_at}
 
 
 def _confined(folder: Path, path: str) -> Path:
@@ -278,6 +280,16 @@ class BackgroundLane:
         if not act:
             raise BackgroundError("no background task is running")
         raise BackgroundError(f"name the background task: {', '.join(t.id for t in act)}")
+
+    def report_text(self, tid: str) -> str:
+        """The saved report.md of the task named (the UI's Background panel shows it), clipped to REPORT_CHARS.
+        Only a task of this lane, only its own report file: nothing else on disk is read by id."""
+        t = self.tasks.get(str(tid or ""))
+        if t is None:
+            raise BackgroundError(f"no background task {tid}")
+        if t.report is None or not Path(t.report).is_file():
+            raise BackgroundError(f"{t.id} has no report yet ({t.state})")
+        return _clip(Path(t.report).read_text(encoding="utf-8", errors="replace"), REPORT_CHARS)
 
     def status(self) -> List[dict]:
         return [t.summary() for t in sorted(self.tasks.values(), key=lambda x: x.started_at, reverse=True)[:10]]

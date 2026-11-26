@@ -382,3 +382,80 @@ def test_the_start_tells_the_chat_not_to_answer_the_question_itself():
 
     src = inspect.getsource(background)
     assert "Do not answer the background question yourself now" in src
+
+
+# ——— the UI's Background panel over the websocket (2026-11-26) ———
+
+def bg_event(ws, event, limit=80):
+    """The next {"type": "background", "event": event} message; the others it passed on the way."""
+    seen = []
+    for _ in range(limit):
+        e = ws.receive_json()
+        seen.append(e)
+        if e["type"] == "background" and e.get("event") == event:
+            return e, seen
+    raise AssertionError(f"no background {event} in {seen}")
+
+
+def test_the_panel_starts_lists_and_reads_the_report_over_the_websocket(script, root):
+    script.queue = [reply("# Findings\n\nQuantum batteries charge fast (https://example.com).")]
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        hello = boot(ws)
+        assert isinstance(hello["background"], list)
+        ws.send_json({"type": "background", "action": "start", "instruction": "research quantum batteries", "minutes": 5, "steps": 4})
+        started, _ = bg_event(ws, "started")
+        task = started["task"]
+        assert task["state"] == "running" and task["steps"] == 4 and task["minutes"] == 5
+        assert task["started_at"] > 0 and task["ended_at"] is None
+        done, _ = bg_event(ws, "done")
+        assert done["task"]["id"] == task["id"] and done["task"]["state"] == "done"
+        assert done["task"]["report"].endswith("report.md") and done["task"]["ended_at"]
+
+        ws.send_json({"type": "background", "action": "status", "quiet": True})
+        status, passed = bg_event(ws, "status")
+        assert [i["id"] for i in status["items"]][:1] == [task["id"]]
+        assert not [e for e in passed if e["type"] == "notice" and e["text"].startswith("[")]  # quiet: no JSON notice
+
+        ws.send_json({"type": "background", "action": "report", "id": task["id"]})
+        rep, _ = bg_event(ws, "report")
+        assert rep["id"] == task["id"] and "Quantum batteries charge fast" in rep["text"]
+        assert rep["text"].startswith(f"# Background report {task['id']}")
+
+        ws.send_json({"type": "background", "action": "report", "id": "bg-nothere"})
+        miss, _ = bg_event(ws, "report")
+        assert "no background task" in miss["error"] and "text" not in miss
+        ws.send_json({"type": "background", "action": "report", "id": "../../config/brains.json"})
+        bad, _ = bg_event(ws, "report")
+        assert bad["error"] and "text" not in bad  # an id is a lane id, never a path
+
+
+def test_the_panel_cancel_goes_through_the_lane_cancel(script, root, monkeypatch):
+    class Waiting:
+        async def ask_tool(self, **kw):
+            await asyncio.sleep(3600)
+
+    cancels = []
+    real = bg.BackgroundLane.cancel
+
+    async def spy(self, tid, reason="cancelled by human"):
+        cancels.append(tid)
+        return await real(self, tid, reason)
+
+    monkeypatch.setattr(bg.BackgroundLane, "cancel", spy)
+    with TestClient(server.app).websocket_connect("/ws", headers=ORIGIN) as ws:
+        boot(ws)
+        core_mod.get_core().background.router_factory = Waiting
+        ws.send_json({"type": "background", "action": "start", "instruction": "research for an hour"})
+        started, _ = bg_event(ws, "started")
+        bid = started["task"]["id"]
+        ws.send_json({"type": "background", "action": "report", "id": bid})
+        early, _ = bg_event(ws, "report")
+        assert "no report yet" in early["error"]
+        ws.send_json({"type": "background", "action": "cancel", "id": bid})
+        cancelled, _ = bg_event(ws, "cancelled")
+        assert cancelled["task"]["id"] == bid and cancelled["task"]["state"] == "cancelled"
+        status, passed = bg_event(ws, "status")
+        assert any(e["type"] == "notice" and bid in e["text"] for e in passed)  # a cancel is still told
+        assert next(i for i in status["items"] if i["id"] == bid)["state"] == "cancelled"
+    assert cancels == [bid]
+    assert payloads(bid, "background.cancelled")[0]["reason"] == "cancelled by human"

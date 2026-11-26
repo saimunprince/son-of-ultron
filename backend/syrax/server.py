@@ -602,10 +602,22 @@ class Session:
         elif kind == "background":
             # Idea from Mark-LVII, 2026-11-26: the background lane from the UI (start | status | finish | cancel | steer);
             # it never waits on the running task, so it is answered while SYRAX works
-            from syrax.background import run_command
+            # 2026-11-26: the UI's Background panel also reads a saved report (action "report", ws only: the chat's
+            # tool has no such action) and lists the tasks with quiet=true (no notice, the panel is the answer)
+            from syrax.background import BackgroundError, run_command
 
+            if str(msg.get("action") or "").lower() == "report":
+                bid = str(msg.get("id") or "")
+                try:
+                    text = await asyncio.to_thread(self.core.background.report_text, bid)
+                except BackgroundError as e:
+                    await self.send({"type": "background", "event": "report", "id": bid, "error": str(e)})
+                    return
+                await self.send({"type": "background", "event": "report", "id": bid, "text": text})
+                return
             res = await run_command(self.core.background, msg, origin=f"ws session {self.id}")
-            await self.send({"type": "notice", "text": res.error or str(res.output)[:600]})
+            if res.error or not msg.get("quiet"):
+                await self.send({"type": "notice", "text": res.error or str(res.output)[:600]})
             await self.send({"type": "background", "event": "status", "items": self.core.background.status()})
         elif kind == "queue":
             await self.send({"type": "queue", "items": self.core.queued()})

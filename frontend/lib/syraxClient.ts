@@ -1,3 +1,5 @@
+import type { BackgroundTask } from "./backgroundView";
+
 export type BrainTier = "no-key" | "local" | "free" | "paid";
 
 export interface BrainProvider {
@@ -440,8 +442,13 @@ export type ServerEvent =
       startup?: StartupStatus;
       voice?: VoiceStatus;
       presentation: PresentationPlan;
+      /** the background lane's tasks (background.py status()), newest first */
+      background?: BackgroundTask[];
     }
   | ({ type: "brains" } & BrainsState)
+  /** the background lane: started/paused/done/cancelled/failed (with the task) and status (the list) */
+  | { type: "background"; event: "started" | "paused" | "done" | "cancelled" | "failed" | "status"; task?: BackgroundTask; items: BackgroundTask[] }
+  | { type: "background"; event: "report"; id: string; text?: string; error?: string }
   | { type: "brain"; event: "answered"; provider: string; label: string; model: string }
   | { type: "brain"; event: "failover"; provider: string; reason: string }
   // journal brain.routed (routing.py, the quota saver) reaches the UI as {type: "brain", event: "routed"}
@@ -586,6 +593,9 @@ export type ClientMessage =
   | { type: "ping" }
   | { type: "vitals" }
   | { type: "android_status" }
+  /** the background lane (background.py run_command; "report" and quiet are the panel's, server.py) */
+  | { type: "background"; action: "status"; quiet?: boolean }
+  | { type: "background"; action: "cancel" | "finish" | "report"; id: string }
   /** one frame of the HUD's camera for SYRAX's camera action; "" when the HUD's camera is off */
   | { type: "camera_frame"; id: string; data: string }
   | { type: "android_find" }

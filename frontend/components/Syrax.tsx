@@ -34,6 +34,8 @@ import { applySink, DEFAULT_PREFS, loadAudioPrefs, micConstraints, saveAudioPref
 import { keyLabel, pttStarts } from "@/lib/pushToTalk";
 import SelfPanel from "@/components/SelfPanel";
 import AndroidPanel from "@/components/AndroidPanel";
+import BackgroundPanel from "@/components/BackgroundPanel";
+import { activeCount, type BackgroundReport, type BackgroundTask } from "@/lib/backgroundView";
 import MindPanel, { mindRequest, type MindData, type MindTab } from "@/components/MindPanel";
 import { DISMISS_INTERRUPTED, HistoryList, ReplayView, UNCERTAIN_RESUME, WhyView } from "@/components/HistoryView";
 import Stage from "@/components/Stage";
@@ -198,6 +200,10 @@ export default function Syrax() {
   const [androidOpen, setAndroidOpen] = useState(false);
   const [android, setAndroid] = useState<AndroidState | null>(null);
   const [androidBusy, setAndroidBusy] = useState(false);
+  // the background lane (background.py): its tasks as last sent, when they came, and the report asked for
+  const [bgOpen, setBgOpen] = useState(false);
+  const [bgItems, setBgItems] = useState<{ items: BackgroundTask[]; at: number }>({ items: [], at: 0 });
+  const [bgReport, setBgReport] = useState<BackgroundReport | null>(null);
   const [mindTab, setMindTab] = useState<MindTab | null>(null);
   const [mind, setMind] = useState<MindData>({ briefing: null, objectives: null, proposals: null, skills: null, scorecard: null });
   const [autonomy, setAutonomy] = useState<AutonomyStatus | null>(null);
@@ -431,6 +437,13 @@ export default function Syrax() {
           setStartup(e.startup ?? null);
           setVoicePick(e.voice ?? null);
           setStage(e.presentation.elements);
+          setBgItems({ items: e.background ?? [], at: Date.now() });
+          break;
+        case "background":
+          if (e.event === "report") {
+            const { id, text, error } = e;
+            setBgReport((r) => (r?.id === id ? { id, text, error } : r)); // only the one still asked for
+          } else setBgItems({ items: e.items ?? [], at: Date.now() });
           break;
         case "presentation":
           if (e.event === "created") {
@@ -945,6 +958,13 @@ export default function Syrax() {
     clientRef.current?.send({ type: "android_status" });
     setAndroidOpen(true);
   }, []);
+  const openBackground = useCallback(() => {
+    clientRef.current?.send({ type: "background", action: "status", quiet: true });
+    setBgOpen(true);
+  }, []);
+  const showBgReport = useCallback((id: string) => {
+    if (clientRef.current?.send({ type: "background", action: "report", id })) setBgReport({ id });
+  }, []);
   const androidSend = useCallback((msg: ClientMessage) => {
     if (clientRef.current?.send(msg)) setAndroidBusy(true);
   }, []);
@@ -1132,7 +1152,7 @@ export default function Syrax() {
         if (e.code === pttKey) e.preventDefault(); // the key's auto-repeat must not scroll the page
         return;
       }
-      if (paletteOpen || brainOpen || audioOpen || selfOpen || androidOpen || mindTab || booting) return;
+      if (paletteOpen || brainOpen || audioOpen || selfOpen || androidOpen || bgOpen || mindTab || booting) return;
       if (talk === "on" || talk === "connecting") return;
       if (!pttStarts(e, pttKey)) return;
       e.preventDefault();
@@ -1158,7 +1178,7 @@ export default function Syrax() {
       document.removeEventListener("visibilitychange", hidden);
       release();
     };
-  }, [pttKey, pttDown, pttUp, paletteOpen, brainOpen, audioOpen, selfOpen, androidOpen, mindTab, booting, talk]);
+  }, [pttKey, pttDown, pttUp, paletteOpen, brainOpen, audioOpen, selfOpen, androidOpen, bgOpen, mindTab, booting, talk]);
 
   // Live talk (Gemini Live through /live): one microphone at a time, so hands-free stops first.
   const toggleTalk = useCallback(() => {
@@ -1281,7 +1301,7 @@ export default function Syrax() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (paletteOpen || brainOpen || audioOpen || selfOpen || androidOpen || mindTab || booting) return; // the panel / boot screen own the keyboard
+      if (paletteOpen || brainOpen || audioOpen || selfOpen || androidOpen || bgOpen || mindTab || booting) return; // the panel / boot screen own the keyboard
       if (isTypingTarget(e.target)) {
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
@@ -1335,7 +1355,7 @@ export default function Syrax() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [booting, brainOpen, audioOpen, selfOpen, androidOpen, mindTab, paletteOpen, openBrain, openMind, openSelf, stopTask, toggleGestures, toggleHandsFree]);
+  }, [booting, brainOpen, audioOpen, selfOpen, androidOpen, bgOpen, mindTab, paletteOpen, openBrain, openMind, openSelf, stopTask, toggleGestures, toggleHandsFree]);
 
   const cameraOn = camera === "on";
 
@@ -1909,6 +1929,14 @@ export default function Syrax() {
           <button type="button" className="hud-btn" onClick={openAndroid} title="Connect your Android phone">
             ANDROID
           </button>
+          <button type="button" className="hud-btn" onClick={openBackground} title="Background tasks: long research beside the chat">
+            BACKGROUND
+            {activeCount(bgItems.items) > 0 && (
+              <span className="bg-count" aria-label={`${activeCount(bgItems.items)} running`}>
+                {activeCount(bgItems.items)}
+              </span>
+            )}
+          </button>
           <div className="rail-sep" aria-hidden="true" />
           <button
             type="button"
@@ -2059,6 +2087,20 @@ export default function Syrax() {
       )}
 
       {audioOpen && <AudioPanel prefs={audioPrefs} saved={audioSaved} onChange={changeAudio} onClose={() => setAudioOpen(false)} />}
+
+      {bgOpen && (
+        <BackgroundPanel
+          items={bgItems.items}
+          receivedAt={bgItems.at}
+          report={bgReport}
+          onRefresh={() => clientRef.current?.send({ type: "background", action: "status", quiet: true })}
+          onCancel={(id) => clientRef.current?.send({ type: "background", action: "cancel", id })}
+          onFinish={(id) => clientRef.current?.send({ type: "background", action: "finish", id })}
+          onReport={showBgReport}
+          onHideReport={() => setBgReport(null)}
+          onClose={() => setBgOpen(false)}
+        />
+      )}
 
       {androidOpen && (
         <AndroidPanel
