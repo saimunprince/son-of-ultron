@@ -22,6 +22,8 @@ messages, and [SYRAX_STATUS.md](SYRAX_STATUS.md) (the older measured snapshot).
   own workspace work: `os.path.join(base, "geo", "core.py")` was read as SYRAX's own `core.py` (a judge), and a
   regex literal `"\\s+"` as a network share. Both fixed in the permission gate; judges reached by climbing out of
   the workspace, keys named by basename and real `\\host\share` paths stay refused.
+  The five failed cases rerun: 4/5 pass; `deep_rename_api` then hit the same gate through `f"{geo_path}/geo/core.py"`,
+  fixed as well, and passed twice in a row.
 - **Weak brains always last:** Ollama and key-less Pollinations are now asked only after every stronger brain,
   whatever the saved order (an explicit pick or a routing choice still goes first).
 - **Rename check:** when an edit renames a function or class (or the request says "rename X to Y"), SYRAX searches
