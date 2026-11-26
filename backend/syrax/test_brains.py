@@ -594,3 +594,21 @@ def test_cancelling_the_task_ends_the_wait_at_once(router, monkeypatch):
     assert run(go()) < 1
     assert any(e.get("event") == "waiting" for e in events)
     assert "gamma" not in [p for p, _, _ in SEEN]
+
+
+def test_a_last_resort_early_in_the_order_is_asked_after_every_stronger_brain(router, monkeypatch):
+    # quality run #35 (2026-11-26): the saved order had Ollama before Cerebras; with the brains before it out, the
+    # steps went to the slow local brain and seven cases timed out. The order of the last resorts no longer matters.
+    monkeypatch.setattr(brains.BrainRouter, "_last_resort", lambda self, pid: pid == "alpha")
+    BEHAVIOR["alpha"] = "ok"
+    BEHAVIOR["beta"] = "ok"
+    assert ask(router).content == "beta says hi"
+    assert "alpha" not in [p for p, _, _ in SEEN]
+
+
+def test_an_explicit_preference_for_a_last_resort_still_goes_first(router, monkeypatch):
+    # a brain comparison (preferred) or a routing pick names the brain on purpose
+    monkeypatch.setattr(brains.BrainRouter, "_last_resort", lambda self, pid: pid == "alpha")
+    BEHAVIOR["alpha"] = "ok"
+    router.preferred = "alpha"
+    assert ask(router).content == "alpha says hi"

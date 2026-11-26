@@ -950,6 +950,10 @@ class BrainRouter(LLM):
         **kwargs,
     ):
         chain = [p for p in self.store.order if self.store.enabled(p)]
+        # Quality run #35 (2026-11-26): the saved order had Ollama before Cerebras, so with Gemini at 503 and Groq
+        # rate-limited the steps went to the slow local brain and seven cases timed out. A last resort is asked only
+        # after every stronger brain, whatever the order; an explicit preference or routing pick still goes first.
+        chain = [p for p in chain if not self._last_resort(p)] + [p for p in chain if self._last_resort(p)]
         first = self.preferred if self.preferred in chain else self.routed if self.routed in chain else None
         if first:
             chain = [first] + [p for p in chain if p != first]
