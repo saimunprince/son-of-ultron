@@ -321,8 +321,9 @@ def _glance_file(fn) -> object:
 def glance(timeout: float = SCREEN_GLANCE_S) -> Optional[object]:
     """The screen now, as a small grayscale PIL image (SCREEN_SIZE), through the capture SYRAX already uses on this
     system: Pillow's ImageGrab on Windows and on X11, screencapture on macOS, grim/spectacle/scrot on other Linux
-    desktops, and GNOME's Screenshot portal on Wayland when it will not ask (_portal_allowed). None when the screen
-    cannot be read; never raises. Never in tests: SYRAX_NO_REAL_INPUT=1 reads nothing."""
+    desktops, and GNOME's Screenshot portal on Wayland when it will not ask (_portal_allowed). Without any of them
+    (GNOME Wayland with the portal off) a Fingerprint of the accessibility tree and the window in front (tree_glance)
+    stands in, compared by tree_change. None when the screen cannot be read; never raises. Never in tests: SYRAX_NO_REAL_INPUT=1 reads nothing."""
     if os.getenv("SYRAX_NO_REAL_INPUT") == "1" or os.getenv("SYRAX_SCREEN_CHECK", "1") == "0":
         return None
     try:
@@ -350,9 +351,104 @@ def glance(timeout: float = SCREEN_GLANCE_S) -> Optional[object]:
                     return _small_gray(img)
             finally:
                 os.remove(got)  # the portal saves into ~/Pictures: a glance leaves nothing there
+        return tree_glance(timeout)
     except Exception:
         return None
-    return None
+
+
+# GNOME Wayland without the portal (it flashes, so it is off unless SYRAX_SCREEN_PORTAL=1, 2026-11-26) read no pixels,
+# and the screen check said nothing on Linux. Tested on this PC (2026-11-26): wmctrl/xdotool are not installed and see
+# no Wayland windows anyway; org.gnome.Shell.Introspect.GetWindows answers "GetWindows is not allowed"; SYRAX's focus
+# extension (gnomefocus) answers the focused window's title and class; the AT-SPI accessibility bus answers through the
+# system python3's PyGObject (the venv has none) in about 0.2 s, read-only, without a flash: every app's windows and
+# titles, GNOME Shell's own tree (a notification banner, a menu, the overview, a dialog change its shape) and the tree of
+# the active window (rich for GTK apps; Chrome and VS Code show only their frame without accessibility turned on). So a
+# Fingerprint of hashes (no title or text is kept) stands in for the glance. It is coarse: a change it sees is a real
+# change, but a change it misses (pixels inside a window that exposes no tree) is common, so a Fingerprint that did not
+# move never says SCREEN_UNCHANGED_LINE (claims.SCREEN_UNCHANGED would turn the act into "no outcome" on weak evidence).
+# A part that could not be read, or was cut short, is not compared: unknown is never "unchanged".
+TREE_WHAT = {
+    "focus": "the window in front changed",
+    "windows": "a window opened, closed, changed its title or took the focus",
+    "front": "the contents of the window in front changed",
+    "shell": "a GNOME menu, dialog, notification or the overview appeared or went away",
+}
+TREE_NO_CHANGE_LINE = ("No change was seen in the windows, the focus or the accessibility tree after this (the pixels were "
+                       "not read, so a change drawn inside a window can be missed).")
+
+
+class Fingerprint:
+    """A flash-free stand-in for a glance on GNOME Wayland: {part: hash} of the parts that were read whole."""
+
+    def __init__(self, parts: Dict[str, str]):
+        self.parts = dict(parts)
+
+    def __repr__(self) -> str:
+        return f"Fingerprint({sorted(self.parts)})"
+
+
+def _tree_parts(timeout: float) -> Dict[str, str]:
+    """The accessibility tree's hashes from _atspi_glance.py (system python3), only the parts read whole; {} when the
+    helper or the accessibility bus is missing, or it failed or ran out of time."""
+    from syrax import linuxinput
+
+    if not Path(linuxinput.SYSTEM_PY).exists():
+        return {}
+    budget = max(0.2, min(0.7, timeout - 0.3))
+    try:
+        r = subprocess.run([linuxinput.SYSTEM_PY, str(Path(__file__).with_name("_atspi_glance.py")), f"{budget:.2f}"],
+                           capture_output=True, text=True, timeout=timeout)
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+        return {}
+    if not isinstance(out, dict) or not out.get("ok") or not isinstance(out.get("parts"), dict):
+        return {}
+    got = {}
+    for name, value in out["parts"].items():
+        if name in TREE_WHAT and isinstance(value, list) and len(value) == 2 and value[1] is True and value[0]:
+            got[name] = str(value[0])
+    return got
+
+
+def tree_glance(timeout: float = SCREEN_GLANCE_S) -> Optional[Fingerprint]:
+    """A Fingerprint of the screen on Linux without pixels: the focused window from SYRAX's focus extension
+    (gnomefocus) and the AT-SPI tree (_tree_parts). None when neither could be read, or SYRAX_SCREEN_TREE=0."""
+    if WINDOWS or MACOS or os.getenv("SYRAX_SCREEN_TREE", "1") == "0" or os.getenv("SYRAX_NO_REAL_INPUT") == "1":
+        return None
+    import hashlib
+
+    from syrax import gnomefocus
+
+    parts: Dict[str, str] = {}
+    try:
+        w = gnomefocus.read()
+    except Exception:
+        w = None
+    if w is not None:  # {} (nothing in front) is a state too
+        parts["focus"] = hashlib.sha1(json.dumps(w, sort_keys=True).encode()).hexdigest()
+    parts.update(_tree_parts(timeout))
+    return Fingerprint(parts) if parts else None
+
+
+def tree_change(before, after) -> Optional[List[str]]:
+    """The parts (TREE_WHAT) that differ between two Fingerprints, [] when every part both read is the same; None when
+    either is missing or not a Fingerprint, or they share no part."""
+    if not isinstance(before, Fingerprint) or not isinstance(after, Fingerprint):
+        return None
+    both = [k for k in TREE_WHAT if k in before.parts and k in after.parts]
+    if not both:
+        return None
+    return [k for k in both if before.parts[k] != after.parts[k]]
+
+
+def tree_change_note(changed: Optional[List[str]]) -> str:
+    """" The screen changed: ... (seen in the accessibility tree ...)." for parts from tree_change; a no-change line
+    that is never SCREEN_UNCHANGED_LINE for []; "" when nothing was compared."""
+    if changed is None:
+        return ""
+    if not changed:
+        return f" {TREE_NO_CHANGE_LINE}"
+    return f" The screen changed: {'; '.join(TREE_WHAT[k] for k in changed)} (seen in the accessibility tree, without a screenshot)."
 
 
 def screen_change(before, after) -> Optional[float]:
@@ -1324,6 +1420,8 @@ class DesktopControl(BaseTool):
         """screen_change_note between `shot` (taken before the action) and a glance now; "" without `shot`."""
         if shot is None:
             return ""
+        if isinstance(shot, Fingerprint):
+            return tree_change_note(tree_change(shot, await self._glance()))
         return screen_change_note(screen_change(shot, await self._glance()))
 
     async def _with_front(self, done: ToolResult, before: Optional[str] = None, shot=None) -> ToolResult:
