@@ -2,11 +2,39 @@
 
 > Written by the daily publish before its own gate and commit: this publish's verification, commit and matrix appear in the next one (audit 2026-11-01, D1).
 
-Generated 2026-11-26 12:00 +0600 by `python -m syrax.devlog` at commit `711ba5f`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+Generated 2026-11-28 12:36 +0600 by `python -m syrax.devlog` at commit `aa83b84`, from the journal and git: one entry per day SYRAX ran, newest first. Nothing here is typed by hand; the numbers behind the trends are in [RISE.md](RISE.md).
+
+## 2026-11-28
+
+- Tasks: 0 finished, 0 failed (17 journal events).
 
 ## 2026-11-26
 
-- Tasks: 0 finished, 0 failed (17 journal events).
+- Tasks: 168 finished, 0 failed (5225 journal events).
+- Quality run #41: 100.0 % of 1 cases.
+- Incidents: rollbacks 13, claims sent back 4, restarts 4.
+- Commits SYRAX made to itself: 2
+  - `8ed173d` syrax: docs(matrix): the capability matrix, regenerated from evidence
+  - `0824def` syrax: docs(rise): the ledger and the devlog, regenerated from the journal
+- Commits by its maintainers: 18
+  - `aa83b84` docs(progress): rerun of quality #37's failures
+  - `13247a1` fix(permissions): a judge's name under a workspace placeholder or beside cwd= is the workspace file
+  - `6e51ba1` docs(progress): quality run #37 and the two false refusals
+  - `e276439` fix(permissions): a workspace file named like a judge, and a regex literal, are no longer refused
+  - `6cef134` docs(progress): flash-free screen change on GNOME Wayland
+  - `2bd5c93` feat(desktop): a flash-free screen-change signal on GNOME Wayland from the accessibility tree
+  - `fd5ba1c` docs(progress): weak brains last, rename check, background panel
+  - `4009f18` feat(ui): a Background panel for the background lane
+  - `25b8862` feat(agent): a rename that leaves uses of the old name is named file:line and asked to be finished
+  - `fcd56bf` fix(brains): last-resort brains are asked after every stronger brain, whatever the saved order
+  - `38e7b7f` fix(background): the chat says the task started instead of answering it itself
+  - `02206e2` docs(progress): background lane, screen check, push-to-talk
+  - `8381152` feat(background): a read-only background lane beside the chat
+  - `b7d1608` feat(ui): push-to-talk and a microphone / speaker picker
+  - `5998b88` feat(agent): a desktop act after which nothing on the screen changed stands for no outcome
+  - `294d081` fix(desktop): the portal glance is off unless SYRAX_SCREEN_PORTAL=1
+  - `b8a7079` feat(desktop): say whether the screen changed after a click, keys or typed text
+  - `35e0705` hostcheck: Windows 11 on 0824def
 
 ## 2026-11-25
 
@@ -434,7 +462,7 @@ Generated 2026-11-26 12:00 +0600 by `python -m syrax.devlog` at commit `711ba5f`
 
 ## 2026-10-27
 
-- Tasks: 166 finished, 0 failed (4606 journal events).
+- Tasks: 166 finished, 0 failed (3434 journal events).
 - Objectives closed: 4
   - #-9999682 My biggest measured limitation right now: Skill factory: no automatic skill generation fro
   - #-9999681 My biggest measured limitation right now: Autonomous development loop: push off by default
@@ -473,7 +501,7 @@ Generated 2026-11-26 12:00 +0600 by `python -m syrax.devlog` at commit `711ba5f`
 
 ## 2026-10-26
 
-- Tasks: 102 finished, 0 failed (1628 journal events).
+- Tasks: 102 finished, 0 failed (1538 journal events).
 - Objectives closed: 6
   - #-9999686 My biggest measured limitation right now: Research engine + knowledge store: depends on Du
   - #-9999685 My biggest measured limitation right now: Skill factory: skill code runs in-process (no sa

@@ -2,14 +2,16 @@
 
 > Written by the daily publish before its own gate and commit: this publish's verification, commit and matrix appear in the next one (audit 2026-11-01, D1).
 
-Generated 2026-11-26 12:00 +0600 by the daily ledger at commit `711ba5f`, from the journal's `archive` table: every release attempt SYRAX made to its own code, the commit it started from, the commit it produced, and the quality score measured at that commit. Parent selection (Darwin Gödel Machine style) favours a high score and penalises an ancestor that already has many children. Nothing here is typed by hand.
+Generated 2026-11-28 12:36 +0600 by the daily ledger at commit `aa83b84`, from the journal's `archive` table: every release attempt SYRAX made to its own code, the commit it started from, the commit it produced, and the quality score measured at that commit. Parent selection (Darwin Gödel Machine style) favours a high score and penalises an ancestor that already has many children. Nothing here is typed by hand.
 
-- Variants committed: 4; attempts that did not land: 21; scored: 1.
-- Best parent now: `17fd802` (score 77% with 1 child(ren): weight 0.468).
-- Lineage of the running build: `94ff898` ← `17fd802` 77%
+- Variants committed: 6; attempts that did not land: 21; scored: 2.
+- Best parent now: `8ed173d` (score 88% with 0 child(ren): weight 0.977).
+- Lineage of the running build: `8ed173d` 88% ← `0824def`
 
 | when | decision | parent → head | score | children | weight | objective | summary |
 |---|---|---|---|---|---|---|---|
+| 2026-11-26 12:15 | COMMITTED | `0824def` → `8ed173d` | 88% | 0 | 0.977 | - | docs(matrix): the capability matrix, regenerated from evidence |
+| 2026-11-26 12:05 | COMMITTED | `711ba5f` → `0824def` | - | 1 | 0.000 | - | docs(rise): the ledger and the devlog, regenerated from the journal |
 | 2026-11-25 18:06 | ROLLED_BACK | `2d4f3e9` → `-` | - | 0 | 0.000 | - | docs(matrix): the capability matrix, regenerated from evidence |
 | 2026-11-25 17:56 | ROLLED_BACK | `2d4f3e9` → `-` | - | 0 | 0.000 | - | docs(rise): the ledger and the devlog, regenerated from the journal |
 | 2026-11-25 12:24 | COMMITTED | `17fd802` → `94ff898` | - | 0 | 0.000 | - | revert 17fd8020de7f (Optimize GPU info retrieval in sysinfo.py): quali |
